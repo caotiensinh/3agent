@@ -287,7 +287,7 @@ SOURCES:
         store.record_artifact(task_id, self.agent_id, "research_json", str(json_path))
         store.record_artifact(task_id, self.agent_id, "research_markdown", str(md_path))
         store.record_artifact(task_id, self.agent_id, "research_handoff_json", str(handoff_path))
-        final_status = TaskStatus.RESEARCH_READY if handoff["presentation_ready"] else TaskStatus.RESEARCH_BLOCKED
+        final_status = TaskStatus.RESEARCH_COMPLETED if handoff["presentation_ready"] else TaskStatus.WAITING_HUMAN
         store.set_status(task_id, final_status)
         store.record_activity(
             task_id,
