@@ -38,6 +38,7 @@ jobs:
         run: |
           bash scripts/test_installer_contract.sh
           bash scripts/test_ai_stack_contract.sh
+          bash scripts/test_e2e_acceptance_contract.sh
       - name: ShellCheck
         run: |
           sudo apt-get update -y
@@ -46,8 +47,10 @@ jobs:
             scripts/install_ubuntu_2404_rtx5090.sh \
             scripts/setup_ai_stack_ubuntu2404.sh \
             scripts/verify_deployment.sh \
+            scripts/run_e2e_acceptance.sh \
             scripts/test_installer_contract.sh \
-            scripts/test_ai_stack_contract.sh
+            scripts/test_ai_stack_contract.sh \
+            scripts/test_e2e_acceptance_contract.sh
 
   harness-regression:
     runs-on: ubuntu-24.04
