@@ -7,7 +7,12 @@ from ..skills import ApprovedSkillLoader
 
 
 _DEFAULT_AGENT_SKILLS: dict[str, tuple[str, ...]] = {
-    "research": ("research-evidence-synthesis", "research-data-quality"),
+    "research": (
+        "research-web-trust",
+        "research-source-credibility",
+        "research-evidence-synthesis",
+        "research-data-quality",
+    ),
     "presentation": ("presentation-evidence-boundary",),
     "daily_report": ("daily-report-evidence",),
 }

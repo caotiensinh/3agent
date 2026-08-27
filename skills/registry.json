@@ -31,6 +31,36 @@
         "Yila-AI/awesome-research-skills@423803c3afd37d775e075a03934cbb37e30afe2d:skills/science-research-writing/SKILL.md"
       ]
     },
+    "research-source-credibility": {
+      "enabled": true,
+      "agent_ids": ["research"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "3c07ed44f3147257632ce2af55a344bffe64aad46b49befd688d69e68c98586c",
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW_2026-08-28.md",
+      "provenance": [
+        "PracticalSwan/agent-skills@4d12f29cb1993baf049fac617754d9ec8f2ca390:concept-adaptation-only",
+        "xcrrr/claude-skills@145342ceff6318d2f5ffe8f95473fecc8b27d1e9:concept-adaptation-only"
+      ]
+    },
+    "research-web-trust": {
+      "enabled": true,
+      "agent_ids": ["research"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "92e8fce254217681cb7526b7f537cfa07336d91398724b304565ca33f8528f2c",
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW_2026-08-28.md",
+      "provenance": [
+        "vercel-labs/agent-browser@fbd046c23a2c1156891bda294aaaee715c23b3f1:skill-data/core/references/trust-boundaries.md",
+        "getsentry/skills@0b8707a0f7ac86d3a2f0df6f8100c6f0bbd676ae:skill-scanner-concept-adaptation-only"
+      ]
+    },
     "presentation-evidence-boundary": {
       "enabled": true,
       "agent_ids": ["presentation"],

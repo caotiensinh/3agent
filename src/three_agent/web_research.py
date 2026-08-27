@@ -8,6 +8,7 @@ from typing import Iterable
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from .gateways import InternetGateway
+from .privacy import sanitize_research_query
 
 
 @dataclass(frozen=True)
@@ -189,7 +190,8 @@ class DuckDuckGoSearchProvider:
         self.gateway = gateway
 
     def search(self, agent_id: str, task_id: str, query: str, max_results: int = 5) -> list[SearchResult]:
-        url = "https://html.duckduckgo.com/html/?" + urlencode({"q": query})
+        safe_query = sanitize_research_query(query)
+        url = "https://html.duckduckgo.com/html/?" + urlencode({"q": safe_query})
         raw = self.gateway.get(agent_id, task_id, url, timeout=30)
         parser = DuckDuckGoHTMLParser()
         parser.feed(raw.decode("utf-8", errors="replace"))
@@ -232,7 +234,8 @@ class WebResearchClient:
                     max_results=max_results_per_query,
                 )
             except Exception as exc:
-                errors.append(f"search_failed query={query!r}: {exc}")
+                safe_query = sanitize_research_query(query)
+                errors.append(f"search_failed query={safe_query!r}: {exc}")
                 continue
             for result in found:
                 canonical = _canonical_url(result.url)
