@@ -4,8 +4,8 @@ Local-first multi-agent work system for an R&D test workstation.
 
 The project coordinates three AI roles around a shared task/evidence model:
 
-1. **Research Agent / 調査・情報収集AI** — gathers and verifies information.
-2. **Presentation Agent / 資料作成・発表AI** — turns verified research into management-ready material.
+1. **Research Agent / 調査・情報収集AI** — gathers, cleans, verifies and structures information.
+2. **Presentation Agent / 資料作成・発表AI** — turns presentation-ready research handoff data into management-ready material.
 3. **Daily Report Agent / 日報作成AI** — records work activity and generates a daily report.
 
 The initial target is a test PC with **2× NVIDIA RTX 5090, 32 GB RAM, Intel Core Ultra 7**. AI inference is local-first. Cloud LLM APIs are not required.
@@ -32,19 +32,36 @@ The first production-capable logical agent is **Research Agent / 調査・情報
 Task
   -> local LLM search plan
   -> DuckDuckGo HTML search through Internet Gateway
-  -> source fetch/extraction through Internet Gateway
+  -> canonicalize/deduplicate source URLs
+  -> source fetch through Internet Gateway
+  -> strip script/style/navigation/footer/form boilerplate
+  -> deduplicate extracted text fragments
   -> stable source IDs (S1, S2, ...)
   -> local LLM evidence-bounded synthesis
-  -> verified facts / inferences / unresolved separation
-  -> research_result.json + research_result.md
+  -> reject claims without valid source IDs
+  -> deduplicate facts and merge source lineage
+  -> confidence + conflict processing
+  -> presentation-ready quality gate
+  -> full research JSON/Markdown
+  -> compact TASK_handoff.json
 ```
 
-A model claim without a valid collected source ID cannot enter `verified_facts` or `inferences`; it is rejected into unresolved state. Search/fetch failures are retained in the artifact instead of being silently hidden.
+A model claim without a valid collected source ID cannot enter `verified_facts` or `inferences`; it is rejected into unresolved state. Search/fetch failures are retained in the full artifact instead of being silently hidden.
 
-The V1 contract and acceptance criteria are in:
+Agent 2 does **not** normally consume raw page text. It consumes the compact `TASK_handoff.json` and refuses to run unless all of these pass:
+
+- matching `task_id`;
+- supported handoff schema;
+- `presentation_ready=true`;
+- at least one verified key fact.
+
+Critical source conflicts block presentation generation.
+
+The V1 contracts are in:
 
 - `docs/RESEARCH_AGENT_IMPLEMENTATION_PLAN.md`
 - `docs/RESEARCH_AGENT_V1_ACCEPTANCE.md`
+- `docs/RESEARCH_HANDOFF_CONTRACT.md`
 
 ## Core design
 
@@ -107,6 +124,15 @@ three-agent presentation TASK-YYYYMMDD-0001 --live
 three-agent daily-report --live
 ```
 
+Research output is written under:
+
+```text
+data/research/YYYY-MM-DD/
+  TASK-....json
+  TASK-....md
+  TASK-...._handoff.json
+```
+
 ## CI
 
 - `harness-ci` validates the Python harness.
@@ -128,3 +154,4 @@ See:
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
 - `docs/AI_STACK_SETUP.md` — preferred setup when driver 590+ is already installed.
+- `docs/RESEARCH_HANDOFF_CONTRACT.md` — Agent 1 cleaning/quality gate and Agent 2 handoff rules.
