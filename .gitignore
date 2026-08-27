@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+config/local.json
+
+# Runtime database and SQLite sidecars
+data/tasks.db
+data/tasks.db-shm
+data/tasks.db-wal
+
+# Runtime activity logs are local by default. Curated reports may be committed.
+data/activity/*.jsonl
+
+# Temporary/generated working files
+data/tmp/
+*.tmp
+.DS_Store

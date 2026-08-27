@@ -1,0 +1,30 @@
+{
+  "environment": "test",
+  "test_mode_full_access": true,
+  "database_path": "data/tasks.db",
+  "artifact_root": "data",
+  "profile_root": "profiles",
+  "llm": {
+    "provider": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "model": "",
+    "timeout_seconds": 1200
+  },
+  "internet_gateway": {
+    "enabled": true,
+    "allow_all_outbound_in_test": true,
+    "audit_log": "data/activity/internet.jsonl",
+    "user_agent": "3Agent-TestHarness/0.1"
+  },
+  "execution_gateway": {
+    "enabled": true,
+    "allow_all_commands_in_test": true,
+    "audit_log": "data/activity/execution.jsonl"
+  },
+  "github": {
+    "enabled": true,
+    "repository": "caotiensinh/3agent",
+    "branch": "main",
+    "push_mode": "manual_or_gateway"
+  }
+}
