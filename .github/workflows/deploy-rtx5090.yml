@@ -11,11 +11,6 @@ on:
         description: 'Ollama model to install'
         required: true
         default: 'qwen3:30b'
-      auto_reboot:
-        description: 'Allow automatic reboot if NVIDIA driver installation requires it'
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -31,15 +26,20 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy 3Agent
+      - name: Verify preinstalled NVIDIA stack
+        run: |
+          nvidia-smi
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -ge 2
+      - name: Deploy application and local AI stack
         env:
           THREE_AGENT_MODEL: ${{ inputs.model }}
-          THREE_AGENT_AUTO_REBOOT: ${{ inputs.auto_reboot && '1' || '0' }}
           THREE_AGENT_REPO_REF: main
-          THREE_AGENT_STRICT_POINT_RELEASE: '1'
-        run: bash scripts/install_ubuntu_2404_rtx5090.sh
-      - name: Final verification
-        if: ${{ success() }}
-        env:
-          THREE_AGENT_MODEL: ${{ inputs.model }}
-        run: bash scripts/verify_deployment.sh "$THREE_AGENT_MODEL"
+          THREE_AGENT_MIN_DRIVER_MAJOR: '590'
+          THREE_AGENT_REQUIRED_RTX5090_COUNT: '2'
+          OLLAMA_CONTEXT_LENGTH: '65536'
+        run: bash scripts/setup_ai_stack_ubuntu2404.sh
+      - name: Final status
+        run: |
+          3agent smoke
+          ollama ps
+          nvidia-smi
