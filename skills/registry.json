@@ -6,29 +6,58 @@
       "enabled": true,
       "agent_ids": ["research"],
       "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
       "sha256": "4ead0c39c996db021202f66ea5b18c5d409507920e3aa1c0c3af55992b39deae",
-      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md"
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md",
+      "provenance": [
+        "Yila-AI/awesome-research-skills@423803c3afd37d775e075a03934cbb37e30afe2d:skills/science-research-writing/SKILL.md",
+        "Toadoum/ai-research-skill@bc98310bc2dc5c600f89f60099eed6cb950f6de1:SKILL.md"
+      ]
     },
     "research-data-quality": {
       "enabled": true,
       "agent_ids": ["research"],
       "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
       "sha256": "8c47160a1d95144c7daca69288f2ab48143dcc6510293c4b3bff1be1ace3ffa1",
-      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md"
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md",
+      "provenance": [
+        "Yila-AI/awesome-research-skills@423803c3afd37d775e075a03934cbb37e30afe2d:skills/science-research-writing/SKILL.md"
+      ]
     },
     "presentation-evidence-boundary": {
       "enabled": true,
       "agent_ids": ["presentation"],
       "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
       "sha256": "5c48170c94ed2d2bf08f53bc486eaf33944e7bd8cedb8f1a09567d48d1a5aab4",
-      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md"
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md",
+      "provenance": [
+        "Yila-AI/awesome-research-skills@423803c3afd37d775e075a03934cbb37e30afe2d:skills/research-presentation"
+      ]
     },
     "daily-report-evidence": {
       "enabled": true,
       "agent_ids": ["daily_report"],
       "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
       "sha256": "f9cf3e41dc865fce83f403216d61c7addc6c8b8e82a349cf85ecece9a8132700",
-      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md"
+      "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md",
+      "provenance": [
+        "project-specific adaptation; evidence-discipline concepts reviewed from Yila-AI/awesome-research-skills@423803c3afd37d775e075a03934cbb37e30afe2d"
+      ]
     }
   }
 }
