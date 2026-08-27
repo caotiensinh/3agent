@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from .base import BaseAgent
 from ..artifacts import ArtifactManager
 from ..models import TaskStatus
+from ..research_quality import build_handoff, clean_claims, clean_conflicts
 from ..store import TaskStore
 from ..web_research import ResearchSource, WebResearchClient
 
@@ -81,30 +82,6 @@ REQUEST: {request}
             total += len(chunk)
         return "\n---\n".join(chunks)
 
-    @staticmethod
-    def _normalize_claims(value: Any, valid_source_ids: set[str]) -> tuple[list[dict], list[str]]:
-        claims: list[dict] = []
-        rejected: list[str] = []
-        if not isinstance(value, list):
-            return claims, rejected
-        for item in value:
-            if isinstance(item, str):
-                claim = item.strip()
-                source_ids: list[str] = []
-            elif isinstance(item, dict):
-                claim = str(item.get("claim", "")).strip()
-                raw_ids = item.get("source_ids", [])
-                source_ids = [sid for sid in raw_ids if isinstance(sid, str) and sid in valid_source_ids] if isinstance(raw_ids, list) else []
-            else:
-                continue
-            if not claim:
-                continue
-            if not source_ids:
-                rejected.append(claim)
-                continue
-            claims.append({"claim": claim, "source_ids": source_ids})
-        return claims, rejected
-
     def _synthesize(
         self,
         title: str,
@@ -118,6 +95,7 @@ REQUEST: {request}
             return {
                 "verified_facts": [],
                 "inferences": [],
+                "conflicts": [],
                 "unresolved": ["No usable web source could be retrieved for this task."],
                 "conclusion": "Research could not be evidence-validated because no readable source was collected.",
                 "recommended_next_actions": ["Retry research with different search terms or verify Internet/source accessibility."],
@@ -128,12 +106,16 @@ REQUEST: {request}
 You are completing an evidence-bounded research task.
 Use ONLY the SOURCE blocks below. Never use unstated background knowledge as a verified fact.
 Every verified fact and inference MUST cite one or more source IDs exactly as S1, S2, etc.
+Detect material contradictions between sources instead of hiding them.
+For conflicts, cite at least two source IDs and set severity to low, medium, or critical.
 If evidence is insufficient, put the point in unresolved instead of guessing.
+Do not repeat the same fact using different wording.
 
 Return JSON only with this structure:
 {{
   "verified_facts": [{{"claim": "...", "source_ids": ["S1"]}}],
   "inferences": [{{"claim": "...", "source_ids": ["S1", "S2"]}}],
+  "conflicts": [{{"topic": "...", "description": "...", "severity": "low|medium|critical", "source_ids": ["S1", "S2"]}}],
   "unresolved": ["..."],
   "conclusion": "...",
   "recommended_next_actions": ["..."]
@@ -149,33 +131,45 @@ SOURCES:
 """.strip()
         result = self.llm.generate_json(self.profile(), prompt, think=False, num_predict=4096)
         valid_ids = {source.source_id for source in usable}
-        verified, rejected_verified = self._normalize_claims(result.get("verified_facts"), valid_ids)
-        inferences, rejected_inferences = self._normalize_claims(result.get("inferences"), valid_ids)
+        verified, rejected_verified = clean_claims(result.get("verified_facts"), valid_ids)
+        inferences, rejected_inferences = clean_claims(result.get("inferences"), valid_ids)
+        conflicts = clean_conflicts(result.get("conflicts"), valid_ids)
 
         unresolved = result.get("unresolved") if isinstance(result.get("unresolved"), list) else []
-        unresolved_clean = [str(item).strip() for item in unresolved if str(item).strip()]
+        unresolved_clean = [" ".join(str(item).split()) for item in unresolved if str(item).strip()]
         unresolved_clean.extend(f"Uncited model claim rejected: {claim}" for claim in rejected_verified)
         unresolved_clean.extend(f"Uncited model inference rejected: {claim}" for claim in rejected_inferences)
+        unresolved_clean = list(dict.fromkeys(unresolved_clean))
 
         conclusion = result.get("conclusion") if isinstance(result.get("conclusion"), str) else ""
         actions = result.get("recommended_next_actions") if isinstance(result.get("recommended_next_actions"), list) else []
-        actions_clean = [str(item).strip() for item in actions if str(item).strip()]
+        actions_clean = list(dict.fromkeys(" ".join(str(item).split()) for item in actions if str(item).strip()))
         return {
             "verified_facts": verified,
             "inferences": inferences,
+            "conflicts": conflicts,
             "unresolved": unresolved_clean,
-            "conclusion": conclusion.strip(),
+            "conclusion": " ".join(conclusion.split()),
             "recommended_next_actions": actions_clean,
         }
 
     @staticmethod
-    def _render_markdown(payload: dict[str, Any]) -> str:
+    def _render_markdown(payload: dict[str, Any], handoff: dict[str, Any]) -> str:
         lines = [
             f"# Research — {payload['title']}",
             "",
             f"**Task:** `{payload['task_id']}`  ",
             f"**Status:** `{payload['status']}`  ",
+            f"**Presentation ready:** `{str(handoff['presentation_ready']).lower()}`  ",
             f"**Objective:** {payload['objective']}",
+            "",
+            "## Quality gate",
+            f"- Presentation ready: **{handoff['presentation_ready']}**",
+            f"- Blockers: {', '.join(handoff['blockers']) if handoff['blockers'] else 'None'}",
+            f"- Usable sources: {handoff['quality_metrics']['usable_source_count']}",
+            f"- Verified facts: {handoff['quality_metrics']['verified_fact_count']}",
+            f"- High-confidence facts: {handoff['quality_metrics']['high_confidence_fact_count']}",
+            f"- Conflicts: {handoff['quality_metrics']['conflict_count']}",
             "",
             "## Search queries",
         ]
@@ -194,7 +188,7 @@ SOURCES:
         if payload["verified_facts"]:
             for item in payload["verified_facts"]:
                 refs = ", ".join(f"[{sid}]" for sid in item["source_ids"])
-                lines.append(f"- {item['claim']} — {refs}")
+                lines.append(f"- **{item['confidence']}** — {item['claim']} — {refs}")
         else:
             lines.append("- None verified.")
 
@@ -202,9 +196,17 @@ SOURCES:
         if payload["inferences"]:
             for item in payload["inferences"]:
                 refs = ", ".join(f"[{sid}]" for sid in item["source_ids"])
-                lines.append(f"- {item['claim']} — {refs}")
+                lines.append(f"- **{item['confidence']}** — {item['claim']} — {refs}")
         else:
             lines.append("- None.")
+
+        lines.extend(["", "## Source conflicts"])
+        if payload["conflicts"]:
+            for item in payload["conflicts"]:
+                refs = ", ".join(f"[{sid}]" for sid in item["source_ids"])
+                lines.append(f"- **{item['severity']}** — {item['topic']}: {item['description']} — {refs}")
+        else:
+            lines.append("- None detected.")
 
         lines.extend(["", "## Unresolved"])
         lines.extend(f"- {item}" for item in payload["unresolved_items"]) if payload["unresolved_items"] else lines.append("- None.")
@@ -234,7 +236,8 @@ SOURCES:
                 "search_errors": [],
                 "verified_facts": [],
                 "inferences": [],
-                "unresolved_items": [],
+                "conflicts": [],
+                "unresolved_items": ["Dry-run only; no evidence was collected."],
                 "conclusion": "Dry-run scaffold only. No research, web search, or factual verification was performed.",
                 "recommended_next_actions": [],
                 "generated_at": timestamp,
@@ -256,7 +259,7 @@ SOURCES:
             sources = self.web.fetch_sources(self.agent_id, task_id, search_results)
             synthesis = self._synthesize(task.title, task.request, objective, focus, sources)
             usable_count = sum(1 for source in sources if source.fetch_status == "ok" and source.extracted_text)
-            status = "researched_with_sources" if usable_count else "research_completed_no_usable_sources"
+            status = "researched_cleaned_and_verified" if usable_count else "research_completed_no_usable_sources"
             payload = {
                 "task_id": task.task_id,
                 "agent_id": self.agent_id,
@@ -270,16 +273,28 @@ SOURCES:
                 "search_errors": search_errors,
                 "verified_facts": synthesis["verified_facts"],
                 "inferences": synthesis["inferences"],
+                "conflicts": synthesis["conflicts"],
                 "unresolved_items": synthesis["unresolved"],
                 "conclusion": synthesis["conclusion"],
                 "recommended_next_actions": synthesis["recommended_next_actions"],
                 "generated_at": timestamp,
             }
 
-        markdown = self._render_markdown(payload)
+        handoff = build_handoff(payload)
+        markdown = self._render_markdown(payload, handoff)
         json_path, md_path = artifacts.write_task_artifact("research", task_id, payload, markdown)
+        handoff_path = artifacts.write_research_handoff(task_id, handoff)
         store.record_artifact(task_id, self.agent_id, "research_json", str(json_path))
         store.record_artifact(task_id, self.agent_id, "research_markdown", str(md_path))
-        store.set_status(task_id, TaskStatus.RESEARCH_COMPLETED)
+        store.record_artifact(task_id, self.agent_id, "research_handoff_json", str(handoff_path))
+        final_status = TaskStatus.RESEARCH_READY if handoff["presentation_ready"] else TaskStatus.RESEARCH_BLOCKED
+        store.set_status(task_id, final_status)
+        store.record_activity(
+            task_id,
+            self.agent_id,
+            "research_quality_gate",
+            "ok" if handoff["presentation_ready"] else "blocked",
+            f"presentation_ready={handoff['presentation_ready']} blockers={','.join(handoff['blockers'])}",
+        )
         store.record_activity(task_id, self.agent_id, "research_artifact_created", "ok", str(json_path))
-        return json_path, md_path
+        return json_path, md_path, handoff_path
