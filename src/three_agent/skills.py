@@ -31,6 +31,25 @@ _BIDI_OR_TAG_RE = re.compile(r"[\u202a-\u202e\u2066-\u2069\U000E0000-\U000E007F]
 _FENCE_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
 
+def _canonical_instruction_text(raw: bytes) -> str:
+    """Decode reviewed instruction text and normalize only newline encoding.
+
+    Git may check out text as CRLF on Windows while a security review was
+    recorded against LF content. Newline representation is transport metadata,
+    not instruction authority, so the integrity digest is defined over UTF-8
+    text with canonical LF line endings. All other bytes/content remain security
+    significant.
+    """
+
+    text = raw.decode("utf-8")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _skill_digest(raw: bytes) -> str:
+    canonical = _canonical_instruction_text(raw).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
 def _frontmatter(text: str) -> tuple[dict[str, str], str]:
     if not text.startswith("---\n"):
         raise SkillSecurityError("SKILL.md must start with YAML frontmatter")
@@ -144,12 +163,12 @@ class ApprovedSkillLoader:
         raw = path.read_bytes()
         if len(raw) > 65536:
             raise SkillSecurityError(f"Skill exceeds 64 KiB review limit: {name}")
-        actual = hashlib.sha256(raw).hexdigest()
+        actual = _skill_digest(raw)
         expected = str(entry.get("sha256", ""))
         if not expected or actual != expected:
             raise SkillSecurityError(f"Skill integrity mismatch: {name}")
 
-        text = raw.decode("utf-8")
+        text = _canonical_instruction_text(raw)
         metadata, body = _frontmatter(text)
         if metadata.get("name") != name:
             raise SkillSecurityError(f"Skill manifest name mismatch: {name}")
