@@ -1,0 +1,100 @@
+name: portable-deploy-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/bootstrap.sh'
+      - 'scripts/test_bootstrap_contract.sh'
+      - '.github/workflows/portable-deploy-ci.yml'
+      - 'pyproject.toml'
+      - 'config/test.example.json'
+      - 'README.md'
+      - 'docs/PORTABLE_DEPLOY.md'
+  pull_request:
+    paths:
+      - 'scripts/bootstrap.sh'
+      - 'scripts/test_bootstrap_contract.sh'
+      - '.github/workflows/portable-deploy-ci.yml'
+      - 'pyproject.toml'
+      - 'config/test.example.json'
+      - 'README.md'
+      - 'docs/PORTABLE_DEPLOY.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y shellcheck
+      - name: Bootstrap syntax and contract
+        run: bash scripts/test_bootstrap_contract.sh
+      - name: ShellCheck
+        run: shellcheck scripts/bootstrap.sh scripts/test_bootstrap_contract.sh
+
+  clean-install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: ubuntu-24.04
+            python: '3.12'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Resolve deployment ref
+        id: deploy_ref
+        shell: bash
+        run: |
+          if [[ -n "${GITHUB_HEAD_REF:-}" ]]; then
+            printf 'ref=%s\n' "$GITHUB_HEAD_REF" >> "$GITHUB_OUTPUT"
+          else
+            printf 'ref=%s\n' "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+      - name: One-command bootstrap from GitHub
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: bash scripts/bootstrap.sh
+      - name: Verify installed command and source lineage
+        shell: bash
+        env:
+          THREE_AGENT_CONFIG: ${{ runner.temp }}/three-agent-install/config/local.json
+        run: |
+          "${{ runner.temp }}/three-agent-bin/3agent" smoke
+          test -x "${{ runner.temp }}/three-agent-bin/3agent-update"
+          test -f "${{ runner.temp }}/three-agent-install/config/local.json"
+          test "$(git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD)" = "$(git rev-parse HEAD)" || {
+            echo "Installed commit does not match PR/head commit" >&2
+            exit 1
+          }
+      - name: Re-run bootstrap idempotently and preserve config
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          printf '\n' >> "${{ runner.temp }}/three-agent-install/config/local.json"
+          before="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          bash scripts/bootstrap.sh
+          after="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          test "$before" = "$after"
