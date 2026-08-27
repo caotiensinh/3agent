@@ -25,6 +25,16 @@ class ArtifactManager:
         md_path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
         return json_path, md_path
 
+    def write_research_handoff(self, task_id: str, payload: dict) -> Path:
+        folder = self.root / "research" / self.today()
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{task_id}_handoff.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return path
+
+    def research_handoff_path(self, task_id: str) -> Path:
+        return self.root / "research" / self.today() / f"{task_id}_handoff.json"
+
     def write_daily_report(self, date: str, payload: dict, markdown: str) -> tuple[Path, Path]:
         folder = self.root / "daily_reports"
         folder.mkdir(parents=True, exist_ok=True)
