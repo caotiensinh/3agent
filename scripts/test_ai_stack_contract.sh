@@ -14,6 +14,8 @@ grep -q 'python3 -m venv' "$SCRIPT"
 grep -q 'pip install -e' "$SCRIPT"
 grep -q '/usr/local/bin/3agent' "$SCRIPT"
 grep -q 'api/generate' "$SCRIPT"
+grep -q 'think:false' "$SCRIPT"
+grep -q 'num_predict:64' "$SCRIPT"
 
 if grep -Eq 'ubuntu-drivers|nvidia-driver-[0-9]|apt(-get)?[^#\n]*install[^#\n]*nvidia|(^|[[:space:]])reboot([[:space:]]|$)|rmmod[[:space:]]+nvidia|modprobe[[:space:]]+nvidia' "$SCRIPT"; then
   echo "AI-stack installer must not mutate NVIDIA driver/kernel state" >&2
