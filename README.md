@@ -10,6 +10,28 @@ The project coordinates three AI roles around a shared task/evidence model:
 
 The initial target is a test PC with **2× NVIDIA RTX 5090, 32 GB RAM, Intel Core Ultra 7**. AI inference is local-first. Cloud LLM APIs are not required.
 
+## One-command portable deployment
+
+On a supported Linux host, the application can be installed or updated directly from GitHub with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh | bash
+```
+
+The bootstrap clones/fetches the repository from GitHub, creates an isolated Python environment, installs project dependencies, preserves existing local config/data, installs `3agent` and `3agent-update` launchers, and runs compile/unit/smoke validation before reporting PASS.
+
+This portable path deliberately does **not** install or modify NVIDIA drivers, the kernel, bootloader, or reboot policy. Live AI is optional; to install Ollama and pull a model in the same command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh \
+  | THREE_AGENT_INSTALL_OLLAMA=1 \
+    THREE_AGENT_MODEL=qwen3:30b \
+    THREE_AGENT_PULL_MODEL=1 \
+    bash
+```
+
+Choose a model that fits the target PC. See `docs/PORTABLE_DEPLOY.md` for pinning a branch/tag/SHA, custom install paths, and CI acceptance.
+
 ## Preferred setup for the prepared RTX 5090 workstation
 
 If NVIDIA driver 590+ is already installed and `nvidia-smi` sees both RTX 5090 GPUs, use the application-only setup path:
@@ -200,6 +222,7 @@ data/research/YYYY-MM-DD/
 
 - `harness-ci` validates the Python harness.
 - `installer-ci` checks Bash syntax, installer contracts, ShellCheck and regression tests on GitHub-hosted Ubuntu 24.04.
+- `portable-deploy-ci` performs clean installs that fetch the source from GitHub, validates exact source lineage, re-runs deployment idempotently, and checks config preservation on Ubuntu 22.04/Python 3.11 and Ubuntu 24.04/Python 3.12.
 - `deploy-ubuntu-2404-rtx5090` can deploy to a registered self-hosted test PC labeled `rtx5090` after an explicit `DEPLOY` workflow-dispatch confirmation.
 
 Hosted GitHub runners do not contain RTX 5090 GPUs; real GPU acceptance is therefore executed on the target PC.
@@ -217,4 +240,5 @@ See:
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
 - `docs/AI_STACK_SETUP.md` — preferred setup when driver 590+ is already installed.
+- `docs/PORTABLE_DEPLOY.md` — one-command portable deployment from GitHub.
 - `docs/RESEARCH_HANDOFF_CONTRACT.md` — Agent 1 cleaning/quality gate and Agent 2 handoff rules.
