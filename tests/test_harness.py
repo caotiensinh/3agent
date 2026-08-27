@@ -84,6 +84,32 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(presentation["source_research_handoff"], str(handoff_path))
             self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.PRESENTATION_COMPLETED)
 
+    def test_presentation_rejects_mismatched_handoff_task_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            orch = Orchestrator(self.make_config(Path(tmp)))
+            orch.initialize()
+            task = orch.store.create_task("Lineage", "Lineage request")
+            handoff = {
+                "schema_version": "1.0",
+                "task_id": "TASK-WRONG",
+                "presentation_ready": True,
+                "blockers": [],
+                "key_facts": [
+                    {"fact_id": "F001", "claim": "Verified fact", "source_ids": ["S1"], "confidence": "medium"}
+                ],
+                "inferences": [],
+                "conflicts": [],
+                "unresolved_items": [],
+                "conclusion": "",
+                "recommended_next_actions": [],
+                "sources": [],
+                "quality_metrics": {},
+            }
+            orch.artifacts.write_research_handoff(task.task_id, handoff)
+            with self.assertRaisesRegex(ResearchHandoffNotReady, "HANDOFF_TASK_ID_MISMATCH"):
+                orch.presentation_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.WAITING_HUMAN)
+
     def test_task_ids_increment(self):
         with tempfile.TemporaryDirectory() as tmp:
             orch = Orchestrator(self.make_config(Path(tmp)))
