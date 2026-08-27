@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,12 @@ from .models import TaskStatus
 from .store import TaskStore
 
 TZ = ZoneInfo("Asia/Tokyo")
+
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"(?i)((?:token|password|passwd|secret|api[_-]?key|authorization)\s*[:=]\s*)[^\s,&;]+"),
+    re.compile(r"(?i)((?:token|password|secret|api[_-]?key)=)[^&\s]+"),
+)
 
 
 @dataclass
@@ -35,19 +42,35 @@ class WorkflowRunner:
     failed work is still represented in the daily evidence trail.
     """
 
-    def __init__(self, store: TaskStore, artifacts: ArtifactManager, research_agent: Any,
-                 presentation_agent: Any, daily_agent: Any):
+    def __init__(
+        self,
+        store: TaskStore,
+        artifacts: ArtifactManager,
+        research_agent: Any,
+        presentation_agent: Any,
+        daily_agent: Any,
+    ):
         self.store = store
         self.artifacts = artifacts
         self.research_agent = research_agent
         self.presentation_agent = presentation_agent
         self.daily_agent = daily_agent
 
+    @staticmethod
+    def _safe_error(exc: Exception) -> str:
+        text = f"{type(exc).__name__}: {exc}".replace("\n", " ")[:1200]
+        for pattern in _SECRET_PATTERNS:
+            text = pattern.sub(lambda m: f"{m.group(1)}<redacted>", text)
+        return text
+
     def _write_manifest(self, payload: dict[str, Any]) -> Path:
         folder = self.artifacts.root / "workflow_runs" / self.artifacts.today()
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{payload['task_id']}.json"
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
         return path
 
     def create_and_run(
@@ -98,7 +121,10 @@ class WorkflowRunner:
         outcome = "failed"
 
         self.store.record_activity(
-            task_id, "workflow", "workflow_started", "ok",
+            task_id,
+            "workflow",
+            "workflow_started",
+            "ok",
             f"live={live} report_date={target_date} format={output_format}",
         )
 
@@ -149,18 +175,22 @@ class WorkflowRunner:
                     "Research and presentation stages completed; task marked DONE.",
                 )
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
+            error = self._safe_error(exc)
             current = self.store.get_task(task_id)
             if current.status not in {TaskStatus.FAILED, TaskStatus.WAITING_HUMAN}:
                 self.store.set_status(task_id, TaskStatus.FAILED)
             outcome = "failed"
             self.store.record_activity(
-                task_id, "workflow", "workflow_stage_failed", "error", f"stage={stage} {error}"
+                task_id,
+                "workflow",
+                "workflow_stage_failed",
+                "error",
+                f"stage={stage} {error}",
             )
 
-        # Agent 3 is deliberately outside the stage try/except. It observes the
+        # Agent 3 is outside the stage try/except on purpose. It observes the
         # final Agent 1/2 state, including blocked and failed outcomes.
-        stage_before_report = stage
+        business_stage = stage
         try:
             stage = "daily_report"
             paths = self.daily_agent.run(
@@ -175,16 +205,23 @@ class WorkflowRunner:
                 f"date={target_date} outcome={outcome}",
             )
         except Exception as exc:
-            report_error = f"{type(exc).__name__}: {exc}"
-            error = f"{error}; daily_report={report_error}" if error else f"daily_report={report_error}"
+            report_error = self._safe_error(exc)
+            error = (
+                f"{error}; daily_report={report_error}"
+                if error
+                else f"daily_report={report_error}"
+            )
             outcome = "failed"
             self.store.set_status(task_id, TaskStatus.FAILED)
             self.store.record_activity(
-                task_id, "workflow", "daily_report_failed", "error", report_error
+                task_id,
+                "workflow",
+                "daily_report_failed",
+                "error",
+                report_error,
             )
 
         final_task = self.store.get_task(task_id)
-        finished_at = datetime.now(TZ).isoformat()
         final_stage = "daily_report_completed" if daily_paths else stage
         manifest = {
             "schema_version": "workflow-run/v1",
@@ -192,7 +229,7 @@ class WorkflowRunner:
             "status": outcome,
             "task_status": final_task.status.value,
             "stage": final_stage,
-            "business_stage": stage_before_report,
+            "business_stage": business_stage,
             "live": live,
             "report_date": target_date,
             "options": {
@@ -209,7 +246,7 @@ class WorkflowRunner:
             },
             "error": error,
             "started_at": started_at,
-            "finished_at": finished_at,
+            "finished_at": datetime.now(TZ).isoformat(),
         }
         manifest_path = self._write_manifest(manifest)
         self.store.record_artifact(

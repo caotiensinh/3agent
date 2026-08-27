@@ -7,11 +7,42 @@ from .config import load_config
 from .orchestrator import Orchestrator
 
 
+def _add_presentation_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--audience", default="R&D internal")
+    parser.add_argument("--purpose", default="inform")
+    parser.add_argument("--language", choices=("ja", "en", "vi"), default="ja")
+    parser.add_argument(
+        "--slides",
+        type=int,
+        default=6,
+        help="Target narrative slide count before deterministic appendices",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("source", "pptx", "pdf", "all"),
+        default="pptx",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="three-agent")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init")
     sub.add_parser("smoke")
+
+    workflow = sub.add_parser(
+        "workflow-run",
+        help="Create one task and run Research -> Presentation -> Daily Report end to end",
+    )
+    workflow.add_argument("--title", required=True)
+    workflow.add_argument("--request", required=True)
+    workflow.add_argument(
+        "--live",
+        action="store_true",
+        help="Enable live web research and local-model generation. Without this flag Agent 1 dry-runs and the quality gate blocks Agent 2 by design.",
+    )
+    workflow.add_argument("--date", help="Daily-report date (YYYY-MM-DD); defaults to today in Asia/Tokyo")
+    _add_presentation_options(workflow)
 
     create = sub.add_parser("task-create")
     create.add_argument("--title", required=True)
@@ -28,20 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     presentation = sub.add_parser("presentation")
     presentation.add_argument("task_id")
     presentation.add_argument("--live", action="store_true")
-    presentation.add_argument("--audience", default="R&D internal")
-    presentation.add_argument("--purpose", default="inform")
-    presentation.add_argument("--language", choices=("ja", "en", "vi"), default="ja")
-    presentation.add_argument(
-        "--slides",
-        type=int,
-        default=6,
-        help="Target narrative slide count before deterministic appendices",
-    )
-    presentation.add_argument(
-        "--format",
-        choices=("source", "pptx", "pdf", "all"),
-        default="pptx",
-    )
+    _add_presentation_options(presentation)
 
     daily = sub.add_parser("daily-report")
     daily.add_argument("--date")
@@ -58,6 +76,30 @@ def main(argv: list[str] | None = None) -> int:
         print("3Agent initialized")
     elif args.command == "smoke":
         print(json.dumps(orchestrator.smoke(), ensure_ascii=False, indent=2))
+    elif args.command == "workflow-run":
+        result = orchestrator.run_workflow(
+            args.title,
+            args.request,
+            live=args.live,
+            audience=args.audience,
+            purpose=args.purpose,
+            language=args.language,
+            slide_count=args.slides,
+            output_format=args.format,
+            report_date=args.date,
+        )
+        print(
+            json.dumps(
+                orchestrator.workflow.result_dict(result),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        if result.status == "completed":
+            return 0
+        if result.status == "blocked":
+            return 2
+        return 1
     elif args.command == "task-create":
         task = orchestrator.store.create_task(args.title, args.request)
         print(task.task_id)

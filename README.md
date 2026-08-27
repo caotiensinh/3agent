@@ -24,6 +24,72 @@ The default model is `qwen3:30b`. Qwen3 supports Ollama thinking mode; determini
 
 See `docs/AI_STACK_SETUP.md` and `docs/OLLAMA_QWEN3_VALIDATION_NOTE.md`.
 
+## End-to-end workflow
+
+The preferred operating path is now one workflow command rather than three manual agent commands:
+
+```text
+User request
+   |
+   v
+Task created
+   |
+   v
+Agent 1: Research
+   |
+   +--> web access only through InternetGateway
+   +--> source collection / cleanup / deduplication
+   +--> evidence synthesis
+   +--> deterministic quality gate
+   |
+   | presentation_ready=false
+   +-------------------------------> Agent 3 daily report -> BLOCKED
+   |
+   | presentation_ready=true
+   v
+Agent 2: Presentation
+   |
+   +--> consumes only validated research handoff
+   +--> evidence-bound planning
+   +--> PPTX/PDF/source output
+   |
+   v
+Task status = DONE
+   |
+   v
+Agent 3: Daily Report
+   |
+   +--> task/activity/artifact evidence
+   +--> completed, blocked and failed work are all recorded
+   |
+   v
+workflow_runs/YYYY-MM-DD/TASK-....json
+```
+
+Run the complete live pipeline:
+
+```bash
+three-agent workflow-run \
+  --title "AI camera traffic analytics" \
+  --request "Research AI-camera traffic analytics and prepare an internal R&D presentation." \
+  --live \
+  --audience "R&D internal" \
+  --purpose "inform" \
+  --language ja \
+  --slides 6 \
+  --format pptx
+```
+
+`--live` is intentionally explicit because it authorizes Agent 1 to use the configured Internet Gateway and enables local-model generation. Without `--live`, Agent 1 performs a dry run, the research quality gate blocks Agent 2, Agent 3 still records that blocked result, and `workflow-run` exits with code `2`.
+
+Workflow exit codes:
+
+- `0` — full workflow completed;
+- `2` — research/presentation gate blocked the workflow without bypassing it;
+- `1` — a hard workflow or daily-report failure occurred.
+
+Every run produces an auditable workflow manifest under `data/workflow_runs/YYYY-MM-DD/`. The manifest contains stage outcome and artifact lineage but not raw research page text or credentials.
+
 ## Research Agent V1
 
 The first production-capable logical agent is **Research Agent / 調査・情報収集AI**. V1 is implemented as:
@@ -105,19 +171,16 @@ three-agent init
 three-agent smoke
 ```
 
-Create a task:
-
-```bash
-three-agent task-create \
-  --title "AI camera traffic analytics" \
-  --request "Research AI-camera traffic analytics for an internal R&D review."
-```
-
-Run with the local model:
+For normal use, prefer the one-command `workflow-run` shown above. The individual commands remain available for debugging or controlled stage-by-stage operation:
 
 ```bash
 export THREE_AGENT_CONFIG=config/local.json
 export LOCAL_LLM_MODEL=<installed-model-name>
+
+three-agent task-create \
+  --title "AI camera traffic analytics" \
+  --request "Research AI-camera traffic analytics for an internal R&D review."
+
 three-agent task-list
 three-agent research TASK-YYYYMMDD-0001 --live
 three-agent presentation TASK-YYYYMMDD-0001 --live
