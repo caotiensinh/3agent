@@ -1,0 +1,11 @@
+# Keep repository text content byte-stable across Linux and Windows checkouts.
+* text=auto eol=lf
+
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
