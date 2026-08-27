@@ -24,20 +24,22 @@ The default model is `qwen3:30b`. Qwen3 supports Ollama thinking mode; determini
 
 See `docs/AI_STACK_SETUP.md` and `docs/OLLAMA_QWEN3_VALIDATION_NOTE.md`.
 
-## Current development focus
+## Research Agent V1
 
-The first production-capable logical agent is **Research Agent / 調査・情報収集AI**. V1 is being implemented as:
+The first production-capable logical agent is **Research Agent / 調査・情報収集AI**. V1 is implemented as:
 
 ```text
 Task
   -> local LLM search plan
-  -> Search Provider
-  -> Internet Gateway
-  -> source fetch/extraction
-  -> evidence store
+  -> DuckDuckGo HTML search through Internet Gateway
+  -> source fetch/extraction through Internet Gateway
+  -> stable source IDs (S1, S2, ...)
   -> local LLM evidence-bounded synthesis
+  -> verified facts / inferences / unresolved separation
   -> research_result.json + research_result.md
 ```
+
+A model claim without a valid collected source ID cannot enter `verified_facts` or `inferences`; it is rejected into unresolved state. Search/fetch failures are retained in the artifact instead of being silently hidden.
 
 The V1 contract and acceptance criteria are in:
 
