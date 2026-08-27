@@ -92,6 +92,24 @@ class TaskStore:
             for r in rows
         ]
 
+    def tasks_for_date(self, date: str) -> list[sqlite3.Row]:
+        """Return every task created, updated, or referenced by activity on a date."""
+        with self.connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM tasks
+                WHERE substr(created_at,1,10) = ?
+                   OR substr(updated_at,1,10) = ?
+                   OR task_id IN (
+                        SELECT DISTINCT task_id
+                        FROM activities
+                        WHERE substr(timestamp,1,10) = ? AND task_id IS NOT NULL
+                   )
+                ORDER BY created_at, task_id
+                """,
+                (date, date, date),
+            ).fetchall()
+
     def set_status(self, task_id: str, status: TaskStatus) -> Task:
         now = datetime.now(TZ).isoformat()
         with self.connect() as conn:
@@ -108,7 +126,14 @@ class TaskStore:
     def activities_for_date(self, date: str) -> list[sqlite3.Row]:
         with self.connect() as conn:
             return conn.execute(
-                "SELECT * FROM activities WHERE substr(timestamp,1,10) = ? ORDER BY timestamp",
+                "SELECT * FROM activities WHERE substr(timestamp,1,10) = ? ORDER BY timestamp, id",
+                (date,),
+            ).fetchall()
+
+    def artifacts_for_date(self, date: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT * FROM artifacts WHERE substr(timestamp,1,10) = ? ORDER BY timestamp, id",
                 (date,),
             ).fetchall()
 
