@@ -249,8 +249,7 @@ OVERRIDE
   as_root systemctl daemon-reload
   as_root systemctl enable --now ollama
 
-  local i
-  for i in {1..30}; do
+  for _ in {1..30}; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
       log "Ollama service PASS"
       return 0
@@ -329,7 +328,11 @@ verify_deployment() {
 main() {
   ensure_base_dirs
   exec > >(as_root tee -a "$LOG_FILE") 2>&1
-  log "Starting 3Agent Ubuntu 24.04.4 / dual RTX 5090 deployment"
+  if [[ "$RESUME_MODE" == "1" ]]; then
+    log "Resuming 3Agent deployment after reboot"
+  else
+    log "Starting 3Agent Ubuntu 24.04.4 / dual RTX 5090 deployment"
+  fi
   persist_bootstrap_env
   check_os
   install_base_packages
