@@ -44,11 +44,11 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(research["status"], "dry_run_not_researched")
             self.assertFalse(handoff["presentation_ready"])
             self.assertIn("NO_USABLE_SOURCE", handoff["blockers"])
-            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.RESEARCH_BLOCKED)
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.WAITING_HUMAN)
 
             with self.assertRaises(ResearchHandoffNotReady):
                 orch.presentation_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
-            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.RESEARCH_BLOCKED)
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.WAITING_HUMAN)
 
             date = ArtifactManager.today()
             daily_json, _ = orch.daily_report(date, live=False)
