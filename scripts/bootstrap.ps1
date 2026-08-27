@@ -208,8 +208,12 @@ function Deploy-Repository {
     }
 
     Invoke-NativeChecked -File $script:GitExe -Arguments @('-C',$InstallDir,'fetch','--prune','origin',$RepoRef) -Description 'git fetch'
-    $resolved = (& $script:GitExe -C $InstallDir rev-parse FETCH_HEAD | Select-Object -First 1).Trim()
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolved)) { Stop-Deploy 'Unable to resolve fetched Git commit' }
+    $resolvedOutput = & $script:GitExe -C $InstallDir rev-parse FETCH_HEAD
+    $revParseExit = $LASTEXITCODE
+    if ($revParseExit -ne 0) { Stop-Deploy "git rev-parse FETCH_HEAD failed with exit code $revParseExit" }
+    $resolved = [string]($resolvedOutput | Select-Object -First 1)
+    $resolved = $resolved.Trim()
+    if ([string]::IsNullOrWhiteSpace($resolved)) { Stop-Deploy 'Unable to resolve fetched Git commit' }
     Invoke-NativeChecked -File $script:GitExe -Arguments @('-C',$InstallDir,'checkout','--detach',$resolved) -Description 'git checkout'
     Invoke-NativeChecked -File $script:GitExe -Arguments @('-C',$InstallDir,'clean','-fdx','-e','config/local.json','-e','data/') -Description 'git clean'
     Write-Log "Repository deployed at commit $resolved"
@@ -324,7 +328,10 @@ function Verify-Install {
         $env:THREE_AGENT_CONFIG = $oldConfig
     }
 
-    $commit = (& $script:GitExe -C $InstallDir rev-parse HEAD | Select-Object -First 1).Trim()
+    $commitOutput = & $script:GitExe -C $InstallDir rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { Stop-Deploy 'Unable to read installed Git commit' }
+    $commit = [string]($commitOutput | Select-Object -First 1)
+    $commit = $commit.Trim()
     Write-Log 'FINAL PASS: Windows 3Agent deployment is ready'
     Write-Log "Commit: $commit"
     Write-Log "Install: $InstallDir"
