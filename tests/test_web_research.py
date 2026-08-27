@@ -108,7 +108,7 @@ class WebResearchTests(unittest.TestCase):
             self.assertEqual(handoff["blockers"], [])
             self.assertEqual(handoff["key_facts"][0]["fact_id"], "F001")
             self.assertNotIn("extracted_text", handoff["sources"][0], "handoff must stay compact")
-            self.assertEqual(store.get_task(task.task_id).status, TaskStatus.RESEARCH_READY)
+            self.assertEqual(store.get_task(task.task_id).status, TaskStatus.RESEARCH_COMPLETED)
             self.assertIn("Presentation ready: **True**", markdown)
             self.assertIn("[S1]", markdown)
             self.assertIn("https://example.com/source", markdown)
