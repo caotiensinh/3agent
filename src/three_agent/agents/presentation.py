@@ -29,7 +29,7 @@ class PresentationAgent(BaseAgent):
         handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
         if handoff.get("presentation_ready") is not True:
             blockers = handoff.get("blockers") or ["UNKNOWN_RESEARCH_BLOCKER"]
-            store.set_status(task_id, TaskStatus.RESEARCH_BLOCKED)
+            store.set_status(task_id, TaskStatus.WAITING_HUMAN)
             store.record_activity(
                 task_id,
                 self.agent_id,
