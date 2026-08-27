@@ -10,13 +10,23 @@ from .models import Task, TaskStatus
 TZ = ZoneInfo("Asia/Tokyo")
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """Connection that closes its database handle after a ``with`` scope."""
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class TaskStore:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
 
