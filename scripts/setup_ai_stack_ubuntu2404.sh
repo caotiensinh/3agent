@@ -226,15 +226,18 @@ verify_stack() {
   log "Running 3Agent smoke test."
   as_user /usr/local/bin/3agent smoke
 
-  log "Running live local-model inference."
+  log "Running live local-model inference with Qwen thinking disabled for deterministic validation."
   local payload response
   payload="$(jq -nc --arg model "$MODEL" \
-    '{model:$model,prompt:"Reply with only the word READY.",stream:false,options:{num_predict:16}}')"
+    '{model:$model,prompt:"Reply with only the word READY.",stream:false,think:false,options:{num_predict:64}}')"
   response="$(curl -fsS --max-time 300 \
     -H 'Content-Type: application/json' \
     -d "$payload" \
     http://127.0.0.1:11434/api/generate)"
-  jq -e '.response | strings | length > 0' <<<"$response" >/dev/null || die "Ollama live generation failed"
+  if ! jq -e '(.response // "") | strings | length > 0' <<<"$response" >/dev/null; then
+    warn "Ollama validation payload: $(jq -c '{response,thinking,done,done_reason}' <<<"$response" 2>/dev/null || printf '%s' "$response")"
+    die "Ollama live generation failed"
+  fi
 
   local ps_json
   ps_json="$(curl -fsS http://127.0.0.1:11434/api/ps)"
