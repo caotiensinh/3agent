@@ -5,6 +5,7 @@ from pathlib import Path
 
 from three_agent.agents.research import ResearchAgent
 from three_agent.artifacts import ArtifactManager
+from three_agent.models import TaskStatus
 from three_agent.store import TaskStore
 from three_agent.web_research import DuckDuckGoSearchProvider, WebResearchClient
 
@@ -47,11 +48,13 @@ class FakeLLM:
             return {
                 "verified_facts": [
                     {"claim": "The source describes evidence-backed research.", "source_ids": ["S1"]},
+                    {"claim": "The source describes evidence-backed research.", "source_ids": ["S1"]},
                     {"claim": "This uncited claim must be rejected.", "source_ids": ["S9"]},
                 ],
                 "inferences": [
                     {"claim": "The design emphasizes source lineage.", "source_ids": ["S1"]}
                 ],
+                "conflicts": [],
                 "unresolved": ["Production performance is not established."],
                 "conclusion": "The collected source supports the scoped capability.",
                 "recommended_next_actions": ["Collect additional independent sources."],
@@ -74,7 +77,7 @@ class WebResearchTests(unittest.TestCase):
         self.assertEqual(sources[0].title, "Example Evidence")
         self.assertIn("evidence-backed research", sources[0].extracted_text)
 
-    def test_live_research_preserves_source_lineage_and_rejects_uncited_claim(self):
+    def test_live_research_cleans_data_and_creates_presentation_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             profiles = root / "profiles"
@@ -90,14 +93,23 @@ class WebResearchTests(unittest.TestCase):
             client = WebResearchClient(gateway, DuckDuckGoSearchProvider(gateway))
             agent = ResearchAgent(profiles, FakeLLM(), client)
 
-            json_path, md_path = agent.run(task.task_id, store, artifacts, live=True)
+            json_path, md_path, handoff_path = agent.run(task.task_id, store, artifacts, live=True)
             payload = json.loads(json_path.read_text(encoding="utf-8"))
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
             markdown = md_path.read_text(encoding="utf-8")
 
-            self.assertEqual(payload["status"], "researched_with_sources")
+            self.assertEqual(payload["status"], "researched_cleaned_and_verified")
             self.assertEqual(payload["sources"][0]["source_id"], "S1")
+            self.assertEqual(len(payload["verified_facts"]), 1, "duplicate facts must be removed")
             self.assertEqual(payload["verified_facts"][0]["source_ids"], ["S1"])
+            self.assertEqual(payload["verified_facts"][0]["confidence"], "medium")
             self.assertTrue(any("Uncited model claim rejected" in item for item in payload["unresolved_items"]))
+            self.assertTrue(handoff["presentation_ready"])
+            self.assertEqual(handoff["blockers"], [])
+            self.assertEqual(handoff["key_facts"][0]["fact_id"], "F001")
+            self.assertNotIn("extracted_text", handoff["sources"][0], "handoff must stay compact")
+            self.assertEqual(store.get_task(task.task_id).status, TaskStatus.RESEARCH_READY)
+            self.assertIn("Presentation ready: **True**", markdown)
             self.assertIn("[S1]", markdown)
             self.assertIn("https://example.com/source", markdown)
 
