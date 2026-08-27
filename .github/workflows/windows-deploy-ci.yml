@@ -7,6 +7,7 @@ on:
       - 'scripts/bootstrap.ps1'
       - 'scripts/test_bootstrap_windows_contract.ps1'
       - '.github/workflows/windows-deploy-ci.yml'
+      - '.gitattributes'
       - 'pyproject.toml'
       - 'config/test.example.json'
       - 'README.md'
@@ -16,6 +17,7 @@ on:
       - 'scripts/bootstrap.ps1'
       - 'scripts/test_bootstrap_windows_contract.ps1'
       - '.github/workflows/windows-deploy-ci.yml'
+      - '.gitattributes'
       - 'pyproject.toml'
       - 'config/test.example.json'
       - 'README.md'
@@ -69,6 +71,11 @@ jobs:
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
           $scriptText = Invoke-RestMethod -Uri $url
           & ([ScriptBlock]::Create($scriptText))
+          if (-not $?) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+          # GitHub's PowerShell wrapper exits with a stale native LASTEXITCODE even
+          # when the script block completed successfully. Normalize only after the
+          # exception-aware bootstrap check above.
+          $global:LASTEXITCODE = 0
       - name: Verify installed command and exact GitHub lineage
         shell: powershell
         env:
@@ -82,6 +89,7 @@ jobs:
           if (-not (Test-Path (Join-Path $install 'config\local.json'))) { throw 'config/local.json missing' }
           $installed = (& git -C $install rev-parse HEAD | Select-Object -First 1).Trim()
           if ($installed -ne $env:EXPECTED_HEAD) { throw "Installed SHA $installed does not match $env:EXPECTED_HEAD" }
+          $global:LASTEXITCODE = 0
       - name: Re-run remotely and preserve configuration
         shell: powershell
         env:
@@ -98,5 +106,7 @@ jobs:
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
           $scriptText = Invoke-RestMethod -Uri $url
           & ([ScriptBlock]::Create($scriptText))
+          if (-not $?) { throw 'Downloaded bootstrap failed during idempotency re-run' }
           $after = (Get-FileHash -Algorithm SHA256 $config).Hash
           if ($before -ne $after) { throw 'Existing local config was modified during re-deploy' }
+          $global:LASTEXITCODE = 0
