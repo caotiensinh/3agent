@@ -119,7 +119,7 @@ Blocking codes include:
 - `NO_VERIFIED_FACT`
 - `CRITICAL_SOURCE_CONFLICT`
 
-When blocked, the task state becomes `RESEARCH_BLOCKED`. When passed, it becomes `RESEARCH_READY`.
+For compatibility with the existing task state machine, a passed gate leaves the task at `RESEARCH_COMPLETED`; a blocked gate moves the task to `WAITING_HUMAN`. The authoritative downstream permission is always the `presentation_ready` field in the handoff.
 
 ## Source preference
 
