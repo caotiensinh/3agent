@@ -1,0 +1,1 @@
+Use `scripts/setup_ai_stack_ubuntu2404.sh` on the designated test PC when NVIDIA driver 590+ and both RTX 5090 GPUs are already healthy. This path intentionally leaves the NVIDIA driver and kernel unchanged.
