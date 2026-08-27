@@ -92,6 +92,9 @@ class WebResearchTests(unittest.TestCase):
             gateway = FakeGateway()
             client = WebResearchClient(gateway, DuckDuckGoSearchProvider(gateway))
             agent = ResearchAgent(profiles, FakeLLM(), client)
+            # This isolated unit test validates research cleaning and lineage only.
+            # The repository skill loader has its own fail-closed security tests.
+            agent.skill_names = ()
 
             json_path, md_path, handoff_path = agent.run(task.task_id, store, artifacts, live=True)
             payload = json.loads(json_path.read_text(encoding="utf-8"))
