@@ -42,7 +42,7 @@ def _safe_audit_url(url: str) -> str:
         if ":" in host and not host.startswith("["):
             host = f"[{host}]"
         port = f":{parsed.port}" if parsed.port else ""
-        path = parsed.path or "/"
+        path = redact_sensitive_text(parsed.path or "/")
         return f"{parsed.scheme.lower()}://{host}{port}{path}"
     except Exception:
         return "<invalid-url>"
@@ -87,24 +87,43 @@ class InternetGateway:
         self.test_mode_full_access = test_mode_full_access
         self._opener = build_opener(_NoRedirect())
 
-    def _record(self, agent_id: str, task_id: str | None, url: str, allowed: bool, reason: str = "") -> None:
+    def _record(
+        self,
+        agent_id: str,
+        task_id: str | None,
+        url: str,
+        allowed: bool,
+        reason: str = "",
+        action: str = "http_get",
+    ) -> None:
         _audit(
             self.config.audit_log,
             {
                 "timestamp": datetime.now(TZ).isoformat(),
                 "agent_id": agent_id,
                 "task_id": task_id,
-                "action": "http_get",
+                "action": action,
                 "url": _safe_audit_url(url),
                 "allowed": allowed,
                 "reason": redact_sensitive_text(reason)[:500],
             },
         )
 
-    def get(self, agent_id: str, task_id: str | None, url: str, timeout: int = 30) -> bytes:
+    def _request(
+        self,
+        agent_id: str,
+        task_id: str | None,
+        url: str,
+        *,
+        timeout: int,
+        method: str,
+        body: bytes | None,
+        headers: dict[str, str] | None,
+        action: str,
+    ) -> bytes:
         policy_allowed = self.config.enabled and self.test_mode_full_access and self.config.allow_all
         if not policy_allowed:
-            self._record(agent_id, task_id, url, False, "gateway_policy_denied")
+            self._record(agent_id, task_id, url, False, "gateway_policy_denied", action)
             raise PermissionError("Outbound Internet is not permitted by current gateway policy")
 
         current = url
@@ -112,34 +131,68 @@ class InternetGateway:
             try:
                 _validate_public_url(current)
             except Exception as exc:
-                self._record(agent_id, task_id, current, False, str(exc))
+                self._record(agent_id, task_id, current, False, str(exc), action)
                 raise
 
-            req = Request(current, headers={"User-Agent": "3Agent-TestHarness/0.2"})
+            req_headers = {"User-Agent": "3Agent-TestHarness/0.3"}
+            req_headers.update(headers or {})
+            req = Request(current, data=body, headers=req_headers, method=method)
             try:
                 response = self._opener.open(req, timeout=timeout)
             except HTTPError as exc:
                 if 300 <= exc.code < 400 and exc.headers.get("Location"):
                     if redirect_count >= _MAX_REDIRECTS:
-                        self._record(agent_id, task_id, current, False, "redirect_limit_exceeded")
+                        self._record(agent_id, task_id, current, False, "redirect_limit_exceeded", action)
                         raise OutboundSecurityError("Outbound redirect limit exceeded") from exc
                     next_url = urljoin(current, exc.headers["Location"])
-                    self._record(agent_id, task_id, current, True, f"redirect_{exc.code}")
+                    self._record(agent_id, task_id, current, True, f"redirect_{exc.code}", action)
                     exc.close()
                     current = next_url
                     continue
-                self._record(agent_id, task_id, current, True, f"http_error_{exc.code}")
+                self._record(agent_id, task_id, current, True, f"http_error_{exc.code}", action)
                 raise
 
             with response:
                 data = response.read(_MAX_RESPONSE_BYTES + 1)
             if len(data) > _MAX_RESPONSE_BYTES:
-                self._record(agent_id, task_id, current, False, "response_too_large")
+                self._record(agent_id, task_id, current, False, "response_too_large", action)
                 raise OutboundSecurityError("Outbound response exceeds 8 MiB safety limit")
-            self._record(agent_id, task_id, current, True)
+            self._record(agent_id, task_id, current, True, action=action)
             return data
 
         raise OutboundSecurityError("Outbound redirect processing failed closed")
+
+    def get(self, agent_id: str, task_id: str | None, url: str, timeout: int = 30) -> bytes:
+        return self._request(
+            agent_id,
+            task_id,
+            url,
+            timeout=timeout,
+            method="GET",
+            body=None,
+            headers=None,
+            action="http_get",
+        )
+
+    def post_json(
+        self,
+        agent_id: str,
+        task_id: str | None,
+        url: str,
+        payload: dict,
+        timeout: int = 30,
+    ) -> bytes:
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return self._request(
+            agent_id,
+            task_id,
+            url,
+            timeout=timeout,
+            method="POST",
+            body=body,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            action="http_post",
+        )
 
 
 class ExecutionGateway:
