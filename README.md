@@ -41,24 +41,54 @@ The initial configuration intentionally supports **TEST_MODE_FULL_ACCESS=true**.
 
 This is a **test-workstation policy only**. It is not production authorization.
 
-## Ubuntu 24.04.4 + dual RTX 5090: one-command deployment
+## Recommended setup: NVIDIA driver already installed
 
-On the target PC, run this as the normal sudo-capable user:
+For the designated Ubuntu 24.04.x test PC with a healthy **NVIDIA 590+ driver and 2× RTX 5090 already installed**, use the application-only installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_ai_stack_ubuntu2404.sh | bash
+```
+
+This installer **does not install, replace, remove, reload or upgrade the NVIDIA driver or kernel**. It verifies the existing GPU stack and then completes the application environment:
+
+- base Python/Git/SQLite tooling
+- Ollama installation/update
+- dual-RTX5090 GPU allow-list using GPU UUIDs
+- 64K Ollama context, Flash Attention and q8 K/V cache
+- local model pull (`qwen3:30b` by default)
+- repository clone/update
+- Python virtual environment
+- `three-agent` package installation
+- `config/local.json`
+- global `3agent` command
+- regression tests, harness smoke and live GPU-backed model inference
+
+Override the model without editing the script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_ai_stack_ubuntu2404.sh \
+  | THREE_AGENT_MODEL='<model>' bash
+```
+
+After it reports `FINAL PASS`, the normal entry points are:
+
+```bash
+3agent smoke
+3agent task-create --title "Test task" --request "Research the requested topic."
+3agent task-list
+```
+
+See `docs/AI_STACK_SETUP.md`.
+
+## Full bootstrap when the NVIDIA driver is not prepared
+
+The repository still contains the earlier full workstation bootstrap:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/install_ubuntu_2404_rtx5090.sh | bash
 ```
 
-This checks Ubuntu 24.04.4, preserves a healthy NVIDIA driver, verifies at least two RTX 5090 GPUs, installs/configures Ollama, deploys the Python harness, pulls the configured model, installs the `3agent` command and runs a live verification.
-
-Default model: `qwen3:30b`. Override it with:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/install_ubuntu_2404_rtx5090.sh \
-  | THREE_AGENT_MODEL='<model>' bash
-```
-
-Full deployment documentation: `docs/DEPLOY_UBUNTU_2404_RTX5090.md`.
+For the current designated test PC, prefer `setup_ai_stack_ubuntu2404.sh` because the NVIDIA 590 driver is already installed and should remain outside application deployment authority.
 
 ## Manual quick start
 
@@ -93,10 +123,9 @@ three-agent daily-report --live
 ## CI
 
 - `harness-ci` validates the Python harness.
-- `installer-ci` checks Bash syntax, installer contracts, ShellCheck and regression tests on GitHub-hosted Ubuntu 24.04.
-- `deploy-ubuntu-2404-rtx5090` can deploy to a registered self-hosted test PC labeled `rtx5090` after an explicit `DEPLOY` workflow-dispatch confirmation.
-
-Hosted GitHub runners do not contain RTX 5090 GPUs; real GPU acceptance is therefore executed on the target PC by `scripts/verify_deployment.sh` or the self-hosted deployment workflow.
+- `installer-ci` validates both deployment scripts with Bash contract tests and ShellCheck, then reruns the Python regression suite.
+- `deploy-ubuntu-2404-rtx5090` deploys the application-only AI stack to a registered self-hosted PC labeled `rtx5090` after explicit `DEPLOY` confirmation.
+- Real dual-GPU acceptance is performed on the target PC because GitHub-hosted runners do not contain RTX 5090 GPUs.
 
 ## Repository policy
 
@@ -110,4 +139,5 @@ See:
 - `docs/ARCHITECTURE.md` — technical architecture and data flow.
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
-- `docs/DEPLOY_UBUNTU_2404_RTX5090.md` — one-command GPU workstation deployment.
+- `docs/AI_STACK_SETUP.md` — application-only installation for a PC with a prepared NVIDIA stack.
+- `docs/DEPLOY_UBUNTU_2404_RTX5090.md` — full workstation bootstrap.
