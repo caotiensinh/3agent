@@ -10,6 +10,40 @@ The project coordinates three AI roles around a shared task/evidence model:
 
 The initial target is a test PC with **2× NVIDIA RTX 5090, 32 GB RAM, Intel Core Ultra 7**. AI inference is local-first. Cloud LLM APIs are not required.
 
+## Preferred setup for the prepared RTX 5090 workstation
+
+If NVIDIA driver 590+ is already installed and `nvidia-smi` sees both RTX 5090 GPUs, use the application-only setup path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_ai_stack_ubuntu2404.sh | bash
+```
+
+This path intentionally does **not** install, remove, switch or reload the NVIDIA driver, does not upgrade the kernel, and does not reboot the PC. It installs the remaining AI application stack: Ollama, local model, Python environment, 3Agent harness, configuration and validation.
+
+The default model is `qwen3:30b`. Qwen3 supports Ollama thinking mode; deterministic installer/structured-agent calls use non-thinking mode unless an agent explicitly requests reasoning output.
+
+See `docs/AI_STACK_SETUP.md` and `docs/OLLAMA_QWEN3_VALIDATION_NOTE.md`.
+
+## Current development focus
+
+The first production-capable logical agent is **Research Agent / 調査・情報収集AI**. V1 is being implemented as:
+
+```text
+Task
+  -> local LLM search plan
+  -> Search Provider
+  -> Internet Gateway
+  -> source fetch/extraction
+  -> evidence store
+  -> local LLM evidence-bounded synthesis
+  -> research_result.json + research_result.md
+```
+
+The V1 contract and acceptance criteria are in:
+
+- `docs/RESEARCH_AGENT_IMPLEMENTATION_PLAN.md`
+- `docs/RESEARCH_AGENT_V1_ACCEPTANCE.md`
+
 ## Core design
 
 ```text
@@ -40,55 +74,6 @@ All auditable output-> JSON / Markdown / PPTX/PDF later -> GitHub
 The initial configuration intentionally supports **TEST_MODE_FULL_ACCESS=true**. In test mode, agents may be granted local filesystem, shell, Git, GitHub and outbound network capabilities. External access still flows through a single application gateway so requests can be logged and later restricted without redesigning the agents.
 
 This is a **test-workstation policy only**. It is not production authorization.
-
-## Recommended setup: NVIDIA driver already installed
-
-For the designated Ubuntu 24.04.x test PC with a healthy **NVIDIA 590+ driver and 2× RTX 5090 already installed**, use the application-only installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_ai_stack_ubuntu2404.sh | bash
-```
-
-This installer **does not install, replace, remove, reload or upgrade the NVIDIA driver or kernel**. It verifies the existing GPU stack and then completes the application environment:
-
-- base Python/Git/SQLite tooling
-- Ollama installation/update
-- dual-RTX5090 GPU allow-list using GPU UUIDs
-- 64K Ollama context, Flash Attention and q8 K/V cache
-- local model pull (`qwen3:30b` by default)
-- repository clone/update
-- Python virtual environment
-- `three-agent` package installation
-- `config/local.json`
-- global `3agent` command
-- regression tests, harness smoke and live GPU-backed model inference
-
-Override the model without editing the script:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_ai_stack_ubuntu2404.sh \
-  | THREE_AGENT_MODEL='<model>' bash
-```
-
-After it reports `FINAL PASS`, the normal entry points are:
-
-```bash
-3agent smoke
-3agent task-create --title "Test task" --request "Research the requested topic."
-3agent task-list
-```
-
-See `docs/AI_STACK_SETUP.md`.
-
-## Full bootstrap when the NVIDIA driver is not prepared
-
-The repository still contains the earlier full workstation bootstrap:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/install_ubuntu_2404_rtx5090.sh | bash
-```
-
-For the current designated test PC, prefer `setup_ai_stack_ubuntu2404.sh` because the NVIDIA 590 driver is already installed and should remain outside application deployment authority.
 
 ## Manual quick start
 
@@ -123,9 +108,10 @@ three-agent daily-report --live
 ## CI
 
 - `harness-ci` validates the Python harness.
-- `installer-ci` validates both deployment scripts with Bash contract tests and ShellCheck, then reruns the Python regression suite.
-- `deploy-ubuntu-2404-rtx5090` deploys the application-only AI stack to a registered self-hosted PC labeled `rtx5090` after explicit `DEPLOY` confirmation.
-- Real dual-GPU acceptance is performed on the target PC because GitHub-hosted runners do not contain RTX 5090 GPUs.
+- `installer-ci` checks Bash syntax, installer contracts, ShellCheck and regression tests on GitHub-hosted Ubuntu 24.04.
+- `deploy-ubuntu-2404-rtx5090` can deploy to a registered self-hosted test PC labeled `rtx5090` after an explicit `DEPLOY` workflow-dispatch confirmation.
+
+Hosted GitHub runners do not contain RTX 5090 GPUs; real GPU acceptance is therefore executed on the target PC.
 
 ## Repository policy
 
@@ -139,5 +125,4 @@ See:
 - `docs/ARCHITECTURE.md` — technical architecture and data flow.
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
-- `docs/AI_STACK_SETUP.md` — application-only installation for a PC with a prepared NVIDIA stack.
-- `docs/DEPLOY_UBUNTU_2404_RTX5090.md` — full workstation bootstrap.
+- `docs/AI_STACK_SETUP.md` — preferred setup when driver 590+ is already installed.
