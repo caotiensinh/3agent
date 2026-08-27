@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from three_agent.agents.presentation import ResearchHandoffNotReady
 from three_agent.artifacts import ArtifactManager
 from three_agent.config import AppConfig, GatewayConfig, LLMConfig
 from three_agent.models import TaskStatus
@@ -28,27 +29,60 @@ class HarnessTests(unittest.TestCase):
             raw={},
         )
 
-    def test_task_and_dry_run_pipeline(self):
+    def test_dry_research_is_blocked_from_presentation(self):
         with tempfile.TemporaryDirectory() as tmp:
             orch = Orchestrator(self.make_config(Path(tmp)))
             orch.initialize()
             task = orch.store.create_task("Test", "Test request")
             self.assertEqual(task.status, TaskStatus.NEW)
 
-            research_json, _ = orch.research_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
+            research_json, _, handoff_path = orch.research_agent.run(
+                task.task_id, orch.store, orch.artifacts, live=False
+            )
             research = json.loads(research_json.read_text(encoding="utf-8"))
+            handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
             self.assertEqual(research["status"], "dry_run_not_researched")
-            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.RESEARCH_COMPLETED)
+            self.assertFalse(handoff["presentation_ready"])
+            self.assertIn("NO_USABLE_SOURCE", handoff["blockers"])
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.RESEARCH_BLOCKED)
 
-            presentation_json, _ = orch.presentation_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
-            presentation = json.loads(presentation_json.read_text(encoding="utf-8"))
-            self.assertEqual(presentation["source_research_artifact"], str(research_json))
-            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.PRESENTATION_COMPLETED)
+            with self.assertRaises(ResearchHandoffNotReady):
+                orch.presentation_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.RESEARCH_BLOCKED)
 
             date = ArtifactManager.today()
             daily_json, _ = orch.daily_report(date, live=False)
             daily = json.loads(daily_json.read_text(encoding="utf-8"))
             self.assertGreaterEqual(daily["activity_count"], 1)
+
+    def test_presentation_accepts_only_ready_handoff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            orch = Orchestrator(self.make_config(Path(tmp)))
+            orch.initialize()
+            task = orch.store.create_task("Ready", "Ready request")
+            handoff = {
+                "schema_version": "1.0",
+                "task_id": task.task_id,
+                "presentation_ready": True,
+                "blockers": [],
+                "key_facts": [
+                    {"fact_id": "F001", "claim": "Verified fact", "source_ids": ["S1"], "confidence": "medium"}
+                ],
+                "inferences": [],
+                "conflicts": [],
+                "unresolved_items": [],
+                "conclusion": "Verified conclusion",
+                "recommended_next_actions": [],
+                "sources": [
+                    {"source_id": "S1", "title": "Source", "url": "https://example.com", "fetch_status": "ok"}
+                ],
+                "quality_metrics": {"usable_source_count": 1, "verified_fact_count": 1},
+            }
+            handoff_path = orch.artifacts.write_research_handoff(task.task_id, handoff)
+            presentation_json, _ = orch.presentation_agent.run(task.task_id, orch.store, orch.artifacts, live=False)
+            presentation = json.loads(presentation_json.read_text(encoding="utf-8"))
+            self.assertEqual(presentation["source_research_handoff"], str(handoff_path))
+            self.assertEqual(orch.store.get_task(task.task_id).status, TaskStatus.PRESENTATION_COMPLETED)
 
     def test_task_ids_increment(self):
         with tempfile.TemporaryDirectory() as tmp:
