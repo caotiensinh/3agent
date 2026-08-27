@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
 from typing import Iterable
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from .gateways import InternetGateway
 
@@ -35,6 +35,28 @@ def _clean_space(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value)).strip()
 
 
+def _canonical_url(value: str) -> str:
+    parsed = urlparse(value)
+    filtered_query = []
+    for part in parsed.query.split("&"):
+        if not part:
+            continue
+        key = part.split("=", 1)[0].casefold()
+        if key.startswith("utm_") or key in {"fbclid", "gclid", "mc_cid", "mc_eid"}:
+            continue
+        filtered_query.append(part)
+    return urlunparse(
+        (
+            parsed.scheme.casefold(),
+            parsed.netloc.casefold(),
+            parsed.path or "/",
+            parsed.params,
+            "&".join(filtered_query),
+            "",
+        )
+    )
+
+
 def _normalize_result_url(value: str) -> str:
     url = html.unescape(value).strip()
     if url.startswith("//"):
@@ -43,7 +65,9 @@ def _normalize_result_url(value: str) -> str:
     if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
         target = parse_qs(parsed.query).get("uddg", [""])[0]
         if target:
-            return target
+            url = target
+    if url.startswith(("http://", "https://")):
+        return _canonical_url(url)
     return url
 
 
@@ -98,7 +122,20 @@ class DuckDuckGoHTMLParser(HTMLParser):
 
 
 class VisibleTextParser(HTMLParser):
-    SKIP_TAGS = {"script", "style", "noscript", "svg", "canvas", "template"}
+    SKIP_TAGS = {
+        "script",
+        "style",
+        "noscript",
+        "svg",
+        "canvas",
+        "template",
+        "nav",
+        "footer",
+        "aside",
+        "form",
+        "button",
+        "iframe",
+    }
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -136,7 +173,15 @@ class VisibleTextParser(HTMLParser):
 
     @property
     def text(self) -> str:
-        return _clean_space(" ".join(self._text_parts))
+        unique_parts: list[str] = []
+        seen: set[str] = set()
+        for part in self._text_parts:
+            key = part.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_parts.append(part)
+        return _clean_space(" ".join(unique_parts))
 
 
 class DuckDuckGoSearchProvider:
@@ -151,10 +196,11 @@ class DuckDuckGoSearchProvider:
         unique: list[SearchResult] = []
         seen: set[str] = set()
         for result in parser.results:
-            if result.url in seen:
+            canonical = _canonical_url(result.url)
+            if canonical in seen:
                 continue
-            seen.add(result.url)
-            unique.append(result)
+            seen.add(canonical)
+            unique.append(SearchResult(result.title, canonical, result.snippet))
             if len(unique) >= max_results:
                 break
         return unique
@@ -189,10 +235,11 @@ class WebResearchClient:
                 errors.append(f"search_failed query={query!r}: {exc}")
                 continue
             for result in found:
-                if result.url in seen:
+                canonical = _canonical_url(result.url)
+                if canonical in seen:
                     continue
-                seen.add(result.url)
-                results.append(result)
+                seen.add(canonical)
+                results.append(SearchResult(result.title, canonical, result.snippet))
                 if len(results) >= max_unique_results:
                     return results, errors
         return results, errors
