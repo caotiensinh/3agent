@@ -23,7 +23,7 @@ mkdir -p "$CONFIG_DIR" "$SYSTEMD_DIR"
 chmod 700 "$CONFIG_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  WEB_TOKEN="$($ROOT/.venv/bin/python - <<'PY'
+  WEB_TOKEN="$("$ROOT/.venv/bin/python" - <<'PY'
 import secrets
 print(secrets.token_urlsafe(32))
 PY
