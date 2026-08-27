@@ -1,0 +1,45 @@
+name: deploy-ubuntu-2404-rtx5090
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to authorize the test-PC deployment'
+        required: true
+        default: ''
+      model:
+        description: 'Ollama model to install'
+        required: true
+        default: 'qwen3:30b'
+      auto_reboot:
+        description: 'Allow automatic reboot if NVIDIA driver installation requires it'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-rtx5090-test-pc
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ inputs.confirm == 'DEPLOY' }}
+    runs-on: [self-hosted, Linux, X64, rtx5090]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy 3Agent
+        env:
+          THREE_AGENT_MODEL: ${{ inputs.model }}
+          THREE_AGENT_AUTO_REBOOT: ${{ inputs.auto_reboot && '1' || '0' }}
+          THREE_AGENT_REPO_REF: main
+          THREE_AGENT_STRICT_POINT_RELEASE: '1'
+        run: bash scripts/install_ubuntu_2404_rtx5090.sh
+      - name: Final verification
+        if: ${{ success() }}
+        env:
+          THREE_AGENT_MODEL: ${{ inputs.model }}
+        run: bash scripts/verify_deployment.sh "$THREE_AGENT_MODEL"

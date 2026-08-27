@@ -41,7 +41,26 @@ The initial configuration intentionally supports **TEST_MODE_FULL_ACCESS=true**.
 
 This is a **test-workstation policy only**. It is not production authorization.
 
-## Quick start
+## Ubuntu 24.04.4 + dual RTX 5090: one-command deployment
+
+On the target PC, run this as the normal sudo-capable user:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/install_ubuntu_2404_rtx5090.sh | bash
+```
+
+This checks Ubuntu 24.04.4, preserves a healthy NVIDIA driver, verifies at least two RTX 5090 GPUs, installs/configures Ollama, deploys the Python harness, pulls the configured model, installs the `3agent` command and runs a live verification.
+
+Default model: `qwen3:30b`. Override it with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/install_ubuntu_2404_rtx5090.sh \
+  | THREE_AGENT_MODEL='<model>' bash
+```
+
+Full deployment documentation: `docs/DEPLOY_UBUNTU_2404_RTX5090.md`.
+
+## Manual quick start
 
 ```bash
 python3 -m venv .venv
@@ -71,6 +90,14 @@ three-agent presentation TASK-YYYYMMDD-0001 --live
 three-agent daily-report --live
 ```
 
+## CI
+
+- `harness-ci` validates the Python harness.
+- `installer-ci` checks Bash syntax, installer contracts, ShellCheck and regression tests on GitHub-hosted Ubuntu 24.04.
+- `deploy-ubuntu-2404-rtx5090` can deploy to a registered self-hosted test PC labeled `rtx5090` after an explicit `DEPLOY` workflow-dispatch confirmation.
+
+Hosted GitHub runners do not contain RTX 5090 GPUs; real GPU acceptance is therefore executed on the target PC by `scripts/verify_deployment.sh` or the self-hosted deployment workflow.
+
 ## Repository policy
 
 `data/tasks.db` and transient runtime files stay local and are ignored by Git. Human-readable evidence and generated artifacts are designed to be versioned in GitHub.
@@ -83,3 +110,4 @@ See:
 - `docs/ARCHITECTURE.md` — technical architecture and data flow.
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
+- `docs/DEPLOY_UBUNTU_2404_RTX5090.md` — one-command GPU workstation deployment.
