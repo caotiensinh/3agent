@@ -10,6 +10,7 @@ from ..models import TaskStatus
 from ..store import TaskStore
 
 TZ = ZoneInfo("Asia/Tokyo")
+HANDOFF_SCHEMA_VERSION = "1.0"
 
 
 class ResearchHandoffNotReady(RuntimeError):
@@ -20,6 +21,17 @@ class PresentationAgent(BaseAgent):
     agent_id = "presentation"
     profile_file = "agent_presentation.md"
 
+    def _block(self, task_id: str, store: TaskStore, reason: str) -> None:
+        store.set_status(task_id, TaskStatus.WAITING_HUMAN)
+        store.record_activity(
+            task_id,
+            self.agent_id,
+            "presentation_blocked_by_research_gate",
+            "blocked",
+            reason,
+        )
+        raise ResearchHandoffNotReady(reason)
+
     def run(self, task_id: str, store: TaskStore, artifacts: ArtifactManager, live: bool = False):
         task = store.get_task(task_id)
         handoff_path = artifacts.research_handoff_path(task_id)
@@ -27,19 +39,20 @@ class PresentationAgent(BaseAgent):
             raise FileNotFoundError(f"Research handoff not found: {handoff_path}")
 
         handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        if handoff.get("task_id") != task_id:
+            self._block(task_id, store, "HANDOFF_TASK_ID_MISMATCH")
+        if handoff.get("schema_version") != HANDOFF_SCHEMA_VERSION:
+            self._block(task_id, store, "UNSUPPORTED_HANDOFF_SCHEMA")
         if handoff.get("presentation_ready") is not True:
             blockers = handoff.get("blockers") or ["UNKNOWN_RESEARCH_BLOCKER"]
-            store.set_status(task_id, TaskStatus.WAITING_HUMAN)
-            store.record_activity(
+            self._block(
                 task_id,
-                self.agent_id,
-                "presentation_blocked_by_research_gate",
-                "blocked",
-                ",".join(str(item) for item in blockers),
+                store,
+                "Research handoff is not presentation-ready; blockers="
+                + ",".join(str(item) for item in blockers),
             )
-            raise ResearchHandoffNotReady(
-                "Research handoff is not presentation-ready; blockers=" + ",".join(str(item) for item in blockers)
-            )
+        if not isinstance(handoff.get("key_facts"), list) or not handoff["key_facts"]:
+            self._block(task_id, store, "HANDOFF_HAS_NO_KEY_FACTS")
 
         store.set_status(task_id, TaskStatus.PRESENTATION_CREATING)
         store.record_activity(task_id, self.agent_id, "presentation_started", "ok", f"live={live}")
