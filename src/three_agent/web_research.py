@@ -4,7 +4,7 @@ import html
 import re
 from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
-from typing import Iterable
+from typing import Iterable, Protocol
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from .gateways import InternetGateway
@@ -32,6 +32,19 @@ class ResearchSource:
         return asdict(self)
 
 
+class SearchProvider(Protocol):
+    name: str
+
+    def search(
+        self,
+        agent_id: str,
+        task_id: str,
+        query: str,
+        max_results: int = 5,
+    ) -> list[SearchResult]:
+        ...
+
+
 def _clean_space(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(value)).strip()
 
@@ -43,7 +56,13 @@ def _canonical_url(value: str) -> str:
         if not part:
             continue
         key = part.split("=", 1)[0].casefold()
-        if key.startswith("utm_") or key in {"fbclid", "gclid", "mc_cid", "mc_eid"}:
+        if key.startswith("utm_") or key in {
+            "fbclid",
+            "gclid",
+            "mc_cid",
+            "mc_eid",
+            "msclkid",
+        }:
             continue
         filtered_query.append(part)
     return urlunparse(
@@ -72,7 +91,27 @@ def _normalize_result_url(value: str) -> str:
     return url
 
 
+def _dedupe_results(
+    results: Iterable[SearchResult],
+    max_results: int,
+) -> list[SearchResult]:
+    unique: list[SearchResult] = []
+    seen: set[str] = set()
+    for result in results:
+        canonical = _canonical_url(result.url)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        unique.append(SearchResult(result.title, canonical, result.snippet))
+        if len(unique) >= max_results:
+            break
+    return unique
+
+
 class DuckDuckGoHTMLParser(HTMLParser):
+    TITLE_CLASSES = {"result__a", "result-link"}
+    SNIPPET_CLASSES = {"result__snippet", "result-snippet"}
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.results: list[SearchResult] = []
@@ -90,11 +129,11 @@ class DuckDuckGoHTMLParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         classes = self._classes(attrs)
         attr_map = dict(attrs)
-        if tag == "a" and "result__a" in classes:
+        if tag == "a" and classes.intersection(self.TITLE_CLASSES):
             self._capture_title = True
             self._title_parts = []
             self._pending_url = _normalize_result_url(attr_map.get("href") or "")
-        elif "result__snippet" in classes:
+        elif classes.intersection(self.SNIPPET_CLASSES):
             self._capture_snippet = True
             self._snippet_parts = []
 
@@ -113,13 +152,73 @@ class DuckDuckGoHTMLParser(HTMLParser):
             self._pending_url = ""
             if title and url.startswith(("http://", "https://")):
                 self.results.append(SearchResult(title=title, url=url))
-        if self._capture_snippet and tag in {"a", "div", "span"}:
+        if self._capture_snippet and tag in {"a", "div", "span", "td"}:
             snippet = _clean_space(" ".join(self._snippet_parts))
             self._capture_snippet = False
             self._snippet_parts = []
             if snippet and self.results:
                 last = self.results[-1]
                 self.results[-1] = SearchResult(last.title, last.url, snippet)
+
+
+class BingHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list[SearchResult] = []
+        self._in_algo = 0
+        self._in_h2 = 0
+        self._capture_title = False
+        self._capture_snippet = False
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
+        self._pending_url = ""
+
+    @staticmethod
+    def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+        raw = dict(attrs).get("class") or ""
+        return set(raw.split())
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        classes = self._classes(attrs)
+        attr_map = dict(attrs)
+        if tag == "li" and "b_algo" in classes:
+            self._in_algo += 1
+        if self._in_algo and tag == "h2":
+            self._in_h2 += 1
+        if self._in_algo and self._in_h2 and tag == "a" and not self._capture_title:
+            self._capture_title = True
+            self._title_parts = []
+            self._pending_url = _normalize_result_url(attr_map.get("href") or "")
+        if self._in_algo and tag == "p" and self.results:
+            self._capture_snippet = True
+            self._snippet_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_title:
+            self._title_parts.append(data)
+        if self._capture_snippet:
+            self._snippet_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._capture_title:
+            title = _clean_space(" ".join(self._title_parts))
+            url = self._pending_url
+            self._capture_title = False
+            self._title_parts = []
+            self._pending_url = ""
+            if title and url.startswith(("http://", "https://")):
+                self.results.append(SearchResult(title=title, url=url))
+        if tag == "p" and self._capture_snippet:
+            snippet = _clean_space(" ".join(self._snippet_parts))
+            self._capture_snippet = False
+            self._snippet_parts = []
+            if snippet and self.results:
+                last = self.results[-1]
+                self.results[-1] = SearchResult(last.title, last.url, snippet)
+        if tag == "h2" and self._in_h2:
+            self._in_h2 -= 1
+        if tag == "li" and self._in_algo:
+            self._in_algo -= 1
 
 
 class VisibleTextParser(HTMLParser):
@@ -186,32 +285,89 @@ class VisibleTextParser(HTMLParser):
 
 
 class DuckDuckGoSearchProvider:
-    def __init__(self, gateway: InternetGateway):
+    def __init__(
+        self,
+        gateway: InternetGateway,
+        *,
+        endpoint: str = "https://html.duckduckgo.com/html/",
+        name: str = "duckduckgo-html",
+    ):
         self.gateway = gateway
+        self.endpoint = endpoint
+        self.name = name
 
-    def search(self, agent_id: str, task_id: str, query: str, max_results: int = 5) -> list[SearchResult]:
+    def search(
+        self,
+        agent_id: str,
+        task_id: str,
+        query: str,
+        max_results: int = 5,
+    ) -> list[SearchResult]:
         safe_query = sanitize_research_query(query)
-        url = "https://html.duckduckgo.com/html/?" + urlencode({"q": safe_query})
+        url = self.endpoint + "?" + urlencode({"q": safe_query})
         raw = self.gateway.get(agent_id, task_id, url, timeout=30)
         parser = DuckDuckGoHTMLParser()
         parser.feed(raw.decode("utf-8", errors="replace"))
-        unique: list[SearchResult] = []
-        seen: set[str] = set()
-        for result in parser.results:
-            canonical = _canonical_url(result.url)
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-            unique.append(SearchResult(result.title, canonical, result.snippet))
-            if len(unique) >= max_results:
-                break
-        return unique
+        return _dedupe_results(parser.results, max_results)
+
+
+class BingSearchProvider:
+    name = "bing-html"
+
+    def __init__(self, gateway: InternetGateway):
+        self.gateway = gateway
+
+    def search(
+        self,
+        agent_id: str,
+        task_id: str,
+        query: str,
+        max_results: int = 5,
+    ) -> list[SearchResult]:
+        safe_query = sanitize_research_query(query)
+        url = "https://www.bing.com/search?" + urlencode(
+            {"q": safe_query, "count": max_results}
+        )
+        raw = self.gateway.get(agent_id, task_id, url, timeout=30)
+        parser = BingHTMLParser()
+        parser.feed(raw.decode("utf-8", errors="replace"))
+        return _dedupe_results(parser.results, max_results)
 
 
 class WebResearchClient:
-    def __init__(self, gateway: InternetGateway, search_provider: DuckDuckGoSearchProvider | None = None):
+    def __init__(
+        self,
+        gateway: InternetGateway,
+        search_provider: SearchProvider | None = None,
+        *,
+        search_providers: Iterable[SearchProvider] | None = None,
+    ):
         self.gateway = gateway
-        self.search_provider = search_provider or DuckDuckGoSearchProvider(gateway)
+        if search_provider is not None and search_providers is not None:
+            raise ValueError("Use search_provider or search_providers, not both")
+        if search_provider is not None:
+            providers = [search_provider]
+        elif search_providers is not None:
+            providers = list(search_providers)
+        else:
+            providers = [
+                DuckDuckGoSearchProvider(gateway),
+                DuckDuckGoSearchProvider(
+                    gateway,
+                    endpoint="https://lite.duckduckgo.com/lite/",
+                    name="duckduckgo-lite",
+                ),
+                BingSearchProvider(gateway),
+            ]
+        if not providers:
+            raise ValueError("At least one search provider is required")
+        self.search_providers = providers
+        self.search_provider = providers[0]
+
+    @staticmethod
+    def _provider_name(provider: SearchProvider) -> str:
+        value = getattr(provider, "name", "")
+        return str(value or provider.__class__.__name__)
 
     def search_many(
         self,
@@ -223,29 +379,43 @@ class WebResearchClient:
         max_unique_results: int = 8,
     ) -> tuple[list[SearchResult], list[str]]:
         results: list[SearchResult] = []
-        errors: list[str] = []
+        diagnostics: list[str] = []
         seen: set[str] = set()
         for query in queries:
-            try:
-                found = self.search_provider.search(
-                    agent_id,
-                    task_id,
-                    query,
-                    max_results=max_results_per_query,
-                )
-            except Exception as exc:
-                safe_query = sanitize_research_query(query)
-                errors.append(f"search_failed query={safe_query!r}: {exc}")
-                continue
-            for result in found:
+            safe_query = sanitize_research_query(query)
+            found_for_query: list[SearchResult] = []
+            for provider in self.search_providers:
+                provider_name = self._provider_name(provider)
+                try:
+                    found = provider.search(
+                        agent_id,
+                        task_id,
+                        safe_query,
+                        max_results=max_results_per_query,
+                    )
+                except Exception as exc:
+                    diagnostics.append(
+                        f"search_failed provider={provider_name} query={safe_query!r}: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    continue
+                if not found:
+                    diagnostics.append(
+                        f"search_empty provider={provider_name} query={safe_query!r}"
+                    )
+                    continue
+                found_for_query = found
+                break
+
+            for result in found_for_query:
                 canonical = _canonical_url(result.url)
                 if canonical in seen:
                     continue
                 seen.add(canonical)
                 results.append(SearchResult(result.title, canonical, result.snippet))
                 if len(results) >= max_unique_results:
-                    return results, errors
-        return results, errors
+                    return results, diagnostics
+        return results, diagnostics
 
     def fetch_sources(
         self,
@@ -285,7 +455,7 @@ class WebResearchClient:
                         search_snippet=result.snippet,
                         extracted_text="",
                         fetch_status="failed",
-                        error=str(exc),
+                        error=f"{type(exc).__name__}: {exc}",
                     )
                 )
         return sources

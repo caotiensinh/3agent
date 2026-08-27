@@ -122,8 +122,29 @@ TASK_STATUS="$(jq -r '.task_status' "$RESULT_JSON")"
 TASK_ID="$(jq -r '.task_id' "$RESULT_JSON")"
 MANIFEST="$(jq -r '.manifest_path' "$RESULT_JSON")"
 
+collect_blocked_research_evidence() {
+  local research_json handoff
+  research_json="$(find "$ROOT/data/research" -type f -name "${TASK_ID}.json" -print | sort | tail -n1)"
+  handoff="$(find "$ROOT/data/research" -type f -name "${TASK_ID}_handoff.json" -print | sort | tail -n1)"
+
+  if [[ -f "$research_json" ]]; then
+    cp "$research_json" "$EVIDENCE_DIR/research.json"
+    log "Research diagnostics:"
+    jq '{status, search_queries, search_errors, sources: [.sources[]? | {source_id,title,url,fetch_status,error}]}' "$research_json" || true
+  fi
+  if [[ -f "$handoff" ]]; then
+    cp "$handoff" "$EVIDENCE_DIR/research-handoff.json"
+    log "Research gate:"
+    jq '{presentation_ready, blockers, quality_metrics}' "$handoff" || true
+  fi
+  if [[ -f "$MANIFEST" ]]; then
+    cp "$MANIFEST" "$EVIDENCE_DIR/workflow-manifest.json"
+  fi
+}
+
 if [[ "$RC" -eq 2 || "$STATUS" == "blocked" ]]; then
   log "BLOCKED: Agent 1 quality gate did not authorize downstream presentation."
+  collect_blocked_research_evidence
   jq . "$RESULT_JSON"
   printf '[3Agent-E2E][BLOCKED] Evidence: %s\n' "$EVIDENCE_DIR" >&2
   exit 2

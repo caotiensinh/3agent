@@ -11,5 +11,8 @@ grep -Fq 'workflow-run/v1' scripts/run_e2e_acceptance.sh
 grep -Fq 'FINAL PASS: 3Agent live E2E workflow completed.' scripts/run_e2e_acceptance.sh
 grep -Fq 'RTX 5090' scripts/run_e2e_acceptance.sh
 grep -Fq 'Driver/kernel mutation is not permitted' scripts/run_e2e_acceptance.sh
+grep -Fq 'collect_blocked_research_evidence' scripts/run_e2e_acceptance.sh
+grep -Fq 'search_errors' scripts/run_e2e_acceptance.sh
+grep -Fq 'research-handoff.json' scripts/run_e2e_acceptance.sh
 
 echo "e2e acceptance contract PASS"

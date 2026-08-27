@@ -19,6 +19,15 @@ SEARCH_HTML = b"""
 </body></html>
 """
 
+BING_SEARCH_HTML = b"""
+<html><body><ol>
+<li class="b_algo">
+  <h2><a href="https://example.com/source">Fallback primary source</a></h2>
+  <div class="b_caption"><p>Fallback source snippet for testing.</p></div>
+</li>
+</ol></body></html>
+"""
+
 SOURCE_HTML = b"""
 <html><head><title>Example Evidence</title><style>.x{display:none}</style></head>
 <body><main><h1>Verified Evidence</h1><p>The system supports evidence-backed research.</p></main></body></html>
@@ -30,6 +39,24 @@ class FakeGateway:
         del agent_id, task_id, timeout
         if "duckduckgo.com/html" in url:
             return SEARCH_HTML
+        if url == "https://example.com/source":
+            return SOURCE_HTML
+        raise RuntimeError(f"unexpected URL: {url}")
+
+
+class FallbackGateway:
+    def __init__(self):
+        self.urls = []
+
+    def get(self, agent_id, task_id, url, timeout=30):
+        del agent_id, task_id, timeout
+        self.urls.append(url)
+        if "html.duckduckgo.com/html/" in url:
+            return b"<html><body>No result markup</body></html>"
+        if "lite.duckduckgo.com/lite/" in url:
+            return b"<html><body>No result markup</body></html>"
+        if "www.bing.com/search" in url:
+            return BING_SEARCH_HTML
         if url == "https://example.com/source":
             return SOURCE_HTML
         raise RuntimeError(f"unexpected URL: {url}")
@@ -77,6 +104,22 @@ class WebResearchTests(unittest.TestCase):
         self.assertEqual(sources[0].title, "Example Evidence")
         self.assertIn("evidence-backed research", sources[0].extracted_text)
 
+    def test_search_falls_back_when_duckduckgo_returns_zero_results(self):
+        gateway = FallbackGateway()
+        client = WebResearchClient(gateway)
+        results, diagnostics = client.search_many(
+            "research", "TASK-FALLBACK", ["ollama rtx 5090 support"]
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].url, "https://example.com/source")
+        self.assertTrue(any("search_empty provider=duckduckgo-html" in item for item in diagnostics))
+        self.assertTrue(any("search_empty provider=duckduckgo-lite" in item for item in diagnostics))
+        self.assertTrue(any("www.bing.com/search" in url for url in gateway.urls))
+
+        sources = client.fetch_sources("research", "TASK-FALLBACK", results)
+        self.assertEqual(sources[0].fetch_status, "ok")
+
     def test_live_research_cleans_data_and_creates_presentation_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -92,8 +135,6 @@ class WebResearchTests(unittest.TestCase):
             gateway = FakeGateway()
             client = WebResearchClient(gateway, DuckDuckGoSearchProvider(gateway))
             agent = ResearchAgent(profiles, FakeLLM(), client)
-            # This isolated unit test validates research cleaning and lineage only.
-            # The repository skill loader has its own fail-closed security tests.
             agent.skill_names = ()
 
             json_path, md_path, handoff_path = agent.run(task.task_id, store, artifacts, live=True)
