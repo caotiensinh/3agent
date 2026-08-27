@@ -27,7 +27,7 @@
       "enabled": true,
       "agent_ids": ["daily_report"],
       "instruction_only": true,
-      "sha256": "f9cf3e41dc865fce83f403216d61c7addb6c8b8e82a349cf85ecece9a8132700",
+      "sha256": "f9cf3e41dc865fce83f403216d61c7addc6c8b8e82a349cf85ecece9a8132700",
       "review": "docs/PUBLIC_SKILL_SECURITY_REVIEW.md"
     }
   }
