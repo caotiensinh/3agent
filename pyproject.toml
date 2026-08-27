@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "three-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local-first three-agent R&D workflow harness"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 three-agent = "three_agent.cli:main"
+three-agent-chat = "three_agent.chat_gateway:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
