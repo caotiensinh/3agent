@@ -48,6 +48,12 @@ class DailyReportAgentTests(unittest.TestCase):
         artifacts = ArtifactManager(root / "data")
         return store, artifacts
 
+    @staticmethod
+    def make_agent(root: Path, llm):
+        agent = DailyReportAgent(root, llm)
+        agent.skill_names = ()
+        return agent
+
     def test_deterministic_report_collects_tasks_artifacts_blockers_and_is_regeneration_stable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -58,7 +64,7 @@ class DailyReportAgentTests(unittest.TestCase):
             store.record_artifact(task.task_id, "research", "research_json", "data/research/result.json")
 
             date = ArtifactManager.today()
-            agent = DailyReportAgent(root, DummyLLM())
+            agent = self.make_agent(root, DummyLLM())
             json_path, md_path = agent.run(date, store, artifacts, live=False)
             first = json.loads(json_path.read_text(encoding="utf-8"))
 
@@ -85,7 +91,7 @@ class DailyReportAgentTests(unittest.TestCase):
             store, artifacts = self.make_store(root)
             task = store.create_task("Evidence task", "Do evidence work")
             date = ArtifactManager.today()
-            agent = DailyReportAgent(root, FakeDailyLLM(task.task_id))
+            agent = self.make_agent(root, FakeDailyLLM(task.task_id))
 
             json_path, _ = agent.run(date, store, artifacts, live=True)
             payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -103,7 +109,7 @@ class DailyReportAgentTests(unittest.TestCase):
             store, artifacts = self.make_store(root)
             store.create_task("Fallback task", "Fallback request")
             date = ArtifactManager.today()
-            agent = DailyReportAgent(root, FailingLLM())
+            agent = self.make_agent(root, FailingLLM())
 
             json_path, _ = agent.run(date, store, artifacts, live=True)
             payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -115,7 +121,7 @@ class DailyReportAgentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store, artifacts = self.make_store(root)
-            agent = DailyReportAgent(root, DummyLLM())
+            agent = self.make_agent(root, DummyLLM())
             json_path, md_path = agent.run("2000-01-01", store, artifacts, live=False)
             payload = json.loads(json_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["status"], "no_activity")
