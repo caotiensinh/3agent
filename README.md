@@ -26,7 +26,7 @@ See `docs/AI_STACK_SETUP.md` and `docs/OLLAMA_QWEN3_VALIDATION_NOTE.md`.
 
 ## Research Agent V1
 
-The first production-capable logical agent is **Research Agent / 調査・情報収集AI**. V1 is implemented as:
+Research Agent V1 is implemented as:
 
 ```text
 Task
@@ -41,10 +41,42 @@ Task
 
 A model claim without a valid collected source ID cannot enter `verified_facts` or `inferences`; it is rejected into unresolved state. Search/fetch failures are retained in the artifact instead of being silently hidden.
 
-The V1 contract and acceptance criteria are in:
+## Presentation Agent V1
 
-- `docs/RESEARCH_AGENT_IMPLEMENTATION_PLAN.md`
-- `docs/RESEARCH_AGENT_V1_ACCEPTANCE.md`
+Presentation Agent is now an evidence-bounded rendering pipeline rather than a free-form slide prompt:
+
+```text
+latest Agent 1 research JSON
+        -> Evidence Gate + research SHA-256
+        -> F1/F2/... verified-fact catalog
+        -> I1/I2/... inference catalog
+        -> local LLM chooses slide order + claim IDs
+        -> deterministic validator
+        -> exact Agent 1 claim text materialization
+        -> deterministic source/limitation appendices
+        -> JSON/Markdown + PPTX (+ optional PDF)
+        -> presentation-qa/v1
+```
+
+The LLM does **not** supply visible factual body text. It selects evidence IDs; deterministic code retrieves the exact Agent 1 claim and source IDs. Recommendations created by Agent 2 remain visibly classified as proposals.
+
+Example Japanese internal deck:
+
+```bash
+3agent presentation TASK-YYYYMMDD-0001   --live   --audience "部長・R&Dチーム"   --purpose "技術選定の判断"   --language ja   --slides 6   --format pptx
+```
+
+Outputs are written under:
+
+```text
+data/presentations/YYYY-MM-DD/
+  TASK-ID.json
+  TASK-ID.md
+  TASK-ID.pptx
+  TASK-ID.pdf   # only when PDF is requested and LibreOffice is available
+```
+
+See `docs/PRESENTATION_AGENT_SPEC.md` and `docs/PRESENTATION_AGENT_ACCEPTANCE.md`.
 
 ## Core design
 
@@ -68,7 +100,7 @@ Research Agent      Presentation Agent    Daily Report Agent
 
 All external access -> Application Internet Gateway -> Internet / GitHub
 All state           -> SQLite (local runtime)
-All auditable output-> JSON / Markdown / PPTX/PDF later -> GitHub
+All auditable output-> JSON / Markdown / PPTX/PDF -> GitHub when curated
 ```
 
 ## Test-machine authority
@@ -88,29 +120,20 @@ three-agent init
 three-agent smoke
 ```
 
-Create a task:
+Create and execute a full task:
 
 ```bash
-three-agent task-create \
-  --title "AI camera traffic analytics" \
-  --request "Research AI-camera traffic analytics for an internal R&D review."
-```
+TASK_ID="$(three-agent task-create   --title "AI camera traffic analytics"   --request "Research AI-camera traffic analytics for an internal R&D review.")"
 
-Run with the local model:
-
-```bash
-export THREE_AGENT_CONFIG=config/local.json
-export LOCAL_LLM_MODEL=<installed-model-name>
-three-agent task-list
-three-agent research TASK-YYYYMMDD-0001 --live
-three-agent presentation TASK-YYYYMMDD-0001 --live
+three-agent research "$TASK_ID" --live
+three-agent presentation "$TASK_ID" --live --language ja --format pptx
 three-agent daily-report --live
 ```
 
 ## CI
 
-- `harness-ci` validates the Python harness.
-- `installer-ci` checks Bash syntax, installer contracts, ShellCheck and regression tests on GitHub-hosted Ubuntu 24.04.
+- `harness-ci` installs project dependencies and validates Python 3.11/3.12, including PPTX renderer tests.
+- `installer-ci` checks Bash syntax, installer contracts, ShellCheck and the complete harness regression suite on GitHub-hosted Ubuntu 24.04.
 - `deploy-ubuntu-2404-rtx5090` can deploy to a registered self-hosted test PC labeled `rtx5090` after an explicit `DEPLOY` workflow-dispatch confirmation.
 
 Hosted GitHub runners do not contain RTX 5090 GPUs; real GPU acceptance is therefore executed on the target PC.
@@ -126,5 +149,6 @@ See:
 - `docs/SPEC.md` — detailed product specification.
 - `docs/ARCHITECTURE.md` — technical architecture and data flow.
 - `docs/HARNESS.md` — harness contracts and CLI lifecycle.
+- `docs/PRESENTATION_AGENT_SPEC.md` — Agent 2 evidence and rendering contract.
 - `docs/TEST_MODE_SECURITY.md` — full-access test-mode boundary.
 - `docs/AI_STACK_SETUP.md` — preferred setup when driver 590+ is already installed.

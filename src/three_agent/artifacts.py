@@ -25,6 +25,18 @@ class ArtifactManager:
         md_path.write_text(markdown.rstrip() + "\n", encoding="utf-8")
         return json_path, md_path
 
+    def find_latest_task_artifact(self, category: str, task_id: str, suffix: str = ".json") -> Path | None:
+        base = self.root / category
+        if not base.exists():
+            return None
+        candidates = list(base.glob(f"*/{task_id}{suffix}"))
+        direct = base / f"{task_id}{suffix}"
+        if direct.exists():
+            candidates.append(direct)
+        if not candidates:
+            return None
+        return max(candidates, key=lambda path: (path.stat().st_mtime_ns, str(path)))
+
     def write_research_handoff(self, task_id: str, payload: dict) -> Path:
         folder = self.root / "research" / self.today()
         folder.mkdir(parents=True, exist_ok=True)

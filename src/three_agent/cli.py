@@ -28,6 +28,16 @@ def build_parser() -> argparse.ArgumentParser:
     presentation = sub.add_parser("presentation")
     presentation.add_argument("task_id")
     presentation.add_argument("--live", action="store_true")
+    presentation.add_argument("--audience", default="R&D internal")
+    presentation.add_argument("--purpose", default="inform")
+    presentation.add_argument("--language", choices=("ja", "en", "vi"), default="ja")
+    presentation.add_argument("--slides", type=int, default=6, help="Target content slide budget including a title slide; appendices may be added")
+    presentation.add_argument("--format", choices=("source", "pptx", "pdf", "all"), default="pptx")
+    presentation.add_argument(
+        "--allow-incomplete-research",
+        action="store_true",
+        help="Permit a presentation scaffold from incomplete research; factual evidence remains bounded by available claim IDs",
+    )
 
     daily = sub.add_parser("daily-report")
     daily.add_argument("--date")
@@ -55,13 +65,27 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(task.__dict__ | {"status": task.status.value}, ensure_ascii=False, indent=2))
     elif args.command == "research":
         paths = orchestrator.research_agent.run(args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live)
-        print("\n".join(str(p) for p in paths))
+        print("\n".join(str(path) for path in paths))
     elif args.command == "presentation":
-        paths = orchestrator.presentation_agent.run(args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live)
-        print("\n".join(str(p) for p in paths))
+        paths = orchestrator.presentation_agent.run(
+            args.task_id,
+            orchestrator.store,
+            orchestrator.artifacts,
+            live=args.live,
+            audience=args.audience,
+            purpose=args.purpose,
+            language=args.language,
+            slide_count=args.slides,
+            output_format=args.format,
+            allow_incomplete_research=args.allow_incomplete_research,
+        )
+        print("\n".join(str(path) for path in paths))
+        presentation = json.loads(paths[0].read_text(encoding="utf-8"))
+        for artifact_path in presentation.get("generated_artifacts", {}).values():
+            print(artifact_path)
     elif args.command == "daily-report":
         paths = orchestrator.daily_report(args.date, live=args.live)
-        print("\n".join(str(p) for p in paths))
+        print("\n".join(str(path) for path in paths))
     return 0
 
 
