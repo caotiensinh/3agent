@@ -57,12 +57,15 @@ jobs:
       - name: Resolve deployment ref
         id: deploy_ref
         shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ -n "${GITHUB_HEAD_REF:-}" ]]; then
             printf 'ref=%s\n' "$GITHUB_HEAD_REF" >> "$GITHUB_OUTPUT"
           else
             printf 'ref=%s\n' "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           fi
+          printf 'expected_head=%s\n' "$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
       - name: One-command bootstrap from GitHub
         shell: bash
         env:
@@ -74,14 +77,12 @@ jobs:
         run: bash scripts/bootstrap.sh
       - name: Verify installed command and source lineage
         shell: bash
-        env:
-          THREE_AGENT_CONFIG: ${{ runner.temp }}/three-agent-install/config/local.json
         run: |
           "${{ runner.temp }}/three-agent-bin/3agent" smoke
           test -x "${{ runner.temp }}/three-agent-bin/3agent-update"
           test -f "${{ runner.temp }}/three-agent-install/config/local.json"
-          test "$(git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD)" = "$(git rev-parse HEAD)" || {
-            echo "Installed commit does not match PR/head commit" >&2
+          test "$(git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD)" = "${{ steps.deploy_ref.outputs.expected_head }}" || {
+            echo "Installed commit does not match expected source head" >&2
             exit 1
           }
       - name: Re-run bootstrap idempotently and preserve config
