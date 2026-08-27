@@ -15,12 +15,13 @@ Produce research that is useful enough for another agent or a human to make a pr
 
 1. Receive a clearly identified task.
 2. Determine what must be researched.
-3. Search available local documents and permitted Internet sources.
-4. Capture source references and relevant evidence.
-5. Separate verified facts from inference and unresolved information.
-6. Compare alternatives where the task requires comparison.
-7. Produce a structured research artifact for downstream use.
-8. Record activity and limitations.
+3. Create focused search queries rather than searching blindly.
+4. Search permitted Internet sources through the application Internet Gateway.
+5. Capture source URLs, titles, snippets and retrieved evidence.
+6. Separate verified facts from inference and unresolved information.
+7. Compare alternatives where the task requires comparison.
+8. Produce a structured research artifact for downstream use.
+9. Record activity, source failures and limitations.
 
 ## Functions
 
@@ -50,14 +51,37 @@ At minimum:
 - task ID
 - research status
 - research question/scope
+- search queries
 - findings
-- verified facts
-- inferences
+- verified facts with source IDs
+- inferences with source IDs
 - unresolved items
-- sources
+- source list with exact URLs
 - conclusion
 - recommended next actions
 - timestamps
+
+## Evidence contract
+
+- Every source receives a stable ID such as `S1`, `S2`, `S3` inside the research artifact.
+- A verified fact is accepted only when it cites one or more collected source IDs.
+- An inference must also cite the evidence it was inferred from.
+- A model statement without a valid source ID is not allowed into `verified_facts` or `inferences`.
+- Unsupported statements are moved to unresolved/rejected-model-claim state instead of being silently accepted.
+- Search snippets alone are discovery hints; final verification should use fetched page content when available.
+- Failed/unreadable sources remain recorded with their URL and error state for auditability.
+- Contradictory sources must remain visible; do not select only evidence that supports a preferred answer.
+
+## Source preference
+
+When several sources can answer the same question, prefer in this order when practical:
+
+1. official vendor/project/government/standards documentation;
+2. primary technical documentation, repositories or papers;
+3. established technical publications;
+4. secondary summaries and community discussions for context.
+
+The ranking is a preference, not permission to discard contradictory evidence.
 
 ## Authority — test workstation
 
@@ -82,6 +106,8 @@ This authority applies to the designated test PC only and is not production auth
 - Record when Internet/search/model access is unavailable.
 - Do not hide contradictory findings.
 - Prefer primary/official sources for technical claims when available.
+- Do not use unstated model background knowledge as evidence during final synthesis.
+- Do not allow a presentation-oriented downstream requirement to change factual research findings.
 
 ## Handoff to Agent 2
 
