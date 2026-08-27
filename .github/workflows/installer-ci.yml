@@ -4,22 +4,25 @@ on:
   push:
     branches: [main]
     paths:
-      - 'scripts/install_ubuntu_2404_rtx5090.sh'
-      - 'scripts/setup_ai_stack_ubuntu2404.sh'
-      - 'scripts/verify_deployment.sh'
-      - 'scripts/test_installer_contract.sh'
-      - 'scripts/test_ai_stack_contract.sh'
-      - '.github/workflows/installer-ci.yml'
-      - '.github/workflows/deploy-rtx5090.yml'
-      - 'docs/DEPLOY_UBUNTU_2404_RTX5090.md'
-      - 'docs/AI_STACK_SETUP.md'
+      - 'scripts/**'
+      - '.github/workflows/**'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'tests/**'
+      - 'profiles/**'
+      - 'docs/**'
+      - 'skills/**'
       - 'README.md'
   pull_request:
     paths:
       - 'scripts/**'
       - '.github/workflows/**'
-      - 'docs/DEPLOY_UBUNTU_2404_RTX5090.md'
-      - 'docs/AI_STACK_SETUP.md'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'tests/**'
+      - 'profiles/**'
+      - 'docs/**'
+      - 'skills/**'
       - 'README.md'
   workflow_dispatch:
 
@@ -53,6 +56,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install project dependencies
+        run: python -m pip install -e .
       - name: Existing harness tests
         run: bash scripts/test.sh
       - name: Harness smoke

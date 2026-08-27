@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from three_agent.agents.base import BaseAgent
 from three_agent.skills import ApprovedSkillLoader, SkillSecurityError
 
 
@@ -126,6 +127,19 @@ class ApprovedSkillLoaderTests(unittest.TestCase):
         self.assertEqual(len(loader.load_for_agent("research", ["research-evidence-synthesis", "research-data-quality"])), 2)
         self.assertEqual(len(loader.load_for_agent("presentation", ["presentation-evidence-boundary"])), 1)
         self.assertEqual(len(loader.load_for_agent("daily_report", ["daily-report-evidence"])), 1)
+
+    def test_base_agent_uses_base_profile_when_registry_is_absent(self):
+        class TestResearchAgent(BaseAgent):
+            agent_id = "research"
+            profile_file = "agent_research.md"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir()
+            (profiles / "agent_research.md").write_text("BASE PROFILE\n", encoding="utf-8")
+            agent = TestResearchAgent(profiles, object())
+            self.assertEqual(agent.profile(), "BASE PROFILE")
 
 
 if __name__ == "__main__":
