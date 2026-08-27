@@ -28,6 +28,15 @@ class BaseAgent:
         names = self.skill_names if self.skill_names is not None else _DEFAULT_AGENT_SKILLS.get(self.agent_id, ())
         if not names:
             return base
+
+        # A missing registry means no reviewed local skills are available in this
+        # environment. This follows the loader's `no-registry-no-skills` policy
+        # and is important for isolated test fixtures. Once a registry exists,
+        # approval, agent scope, instruction-only policy and SHA-256 integrity
+        # remain strict hard gates inside ApprovedSkillLoader.
+        if not self.skill_loader.registry_path.exists():
+            return base
+
         blocks = self.skill_loader.load_for_agent(self.agent_id, names)
         if not blocks:
             return base
