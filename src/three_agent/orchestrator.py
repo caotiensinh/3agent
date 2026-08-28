@@ -7,6 +7,7 @@ from .agents import DailyReportAgent, PresentationAgent, ResearchAgent
 from .artifacts import ArtifactManager
 from .config import AppConfig
 from .gateways import ExecutionGateway, InternetGateway
+from .knowledge_gateway import KnowledgeGateway
 from .llm import OllamaClient
 from .store import TaskStore
 from .web_research import WebResearchClient
@@ -24,7 +25,13 @@ class Orchestrator:
         self.internet_gateway = InternetGateway(config.internet_gateway, config.test_mode_full_access)
         self.execution_gateway = ExecutionGateway(config.execution_gateway, config.test_mode_full_access)
         self.web_research = WebResearchClient(self.internet_gateway)
-        self.research_agent = ResearchAgent(config.profile_root, self.llm, self.web_research)
+        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.research_agent = ResearchAgent(
+            config.profile_root,
+            self.llm,
+            self.web_research,
+            self.knowledge_gateway,
+        )
         self.presentation_agent = PresentationAgent(config.profile_root, self.llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.llm)
         self.workflow = WorkflowRunner(
@@ -43,6 +50,8 @@ class Orchestrator:
             "activity",
             "daily_reports",
             "workflow_runs",
+            "reports",
+            "uploads",
         ):
             (self.config.artifact_root / category).mkdir(parents=True, exist_ok=True)
 
@@ -56,6 +65,8 @@ class Orchestrator:
             "llm_base_url": self.config.llm.base_url,
             "llm_model_configured": bool(self.config.llm.model),
             "research_web_enabled": self.config.internet_gateway.enabled,
+            "knowledge_gateway_enabled": True,
+            "upload_gateway_enabled": True,
             "e2e_workflow_enabled": True,
         }
 
