@@ -10,6 +10,7 @@ from .config import AppConfig, legacy_model_policy
 from .gateways import ExecutionGateway, InternetGateway
 from .knowledge_gateway import KnowledgeGateway
 from .llm import AdaptiveOllamaClient, OllamaClient
+from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .store import TaskStore
 from .web_research import WebResearchClient
 from .workflow import WorkflowRunner
@@ -29,11 +30,38 @@ class Orchestrator:
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
+        self.resource_manager = None
+        if policy.enabled and policy.resource_control_enabled:
+            self.resource_manager = ResourceBudgetManager(
+                config.llm.base_url,
+                ResourceBudgetConfig(
+                    enabled=True,
+                    max_vram_percent=policy.max_vram_percent,
+                    max_ram_percent=policy.max_ram_percent,
+                    max_gpu_util_percent=policy.max_gpu_util_percent,
+                    max_gpu_power_percent=policy.max_gpu_power_percent,
+                    max_gpu_temp_c=policy.max_gpu_temp_c,
+                    model_size_safety_factor=policy.model_size_safety_factor,
+                    serialize_generation=policy.serialize_generation,
+                    reservation_ttl_seconds=policy.reservation_ttl_seconds,
+                ),
+            )
+
         if policy.enabled:
-            research_primary = OllamaClient(replace(config.llm, model=policy.research_model))
-            presentation_primary = OllamaClient(replace(config.llm, model=policy.presentation_model))
-            report_primary = OllamaClient(replace(config.llm, model=policy.report_model))
-            deep = OllamaClient(replace(config.llm, model=policy.deep_model)) if policy.deep_model else None
+            research_primary = OllamaClient(
+                replace(config.llm, model=policy.research_model), self.resource_manager
+            )
+            presentation_primary = OllamaClient(
+                replace(config.llm, model=policy.presentation_model), self.resource_manager
+            )
+            report_primary = OllamaClient(
+                replace(config.llm, model=policy.report_model), self.resource_manager
+            )
+            deep = (
+                OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager)
+                if policy.deep_model
+                else None
+            )
             self.research_llm = AdaptiveOllamaClient(
                 research_primary,
                 deep=deep,
@@ -54,6 +82,13 @@ class Orchestrator:
                 deep_escalation=False,
                 role="daily_report",
             )
+            if self.resource_manager is not None:
+                # Workflow stage cleanup must not evict models that still fit in
+                # the dynamic residency budget. Ollama may keep multiple models
+                # warm; every new load is re-admitted against live resources.
+                self.research_llm.budget_managed_residency = True
+                self.presentation_llm.budget_managed_residency = True
+                self.report_llm.budget_managed_residency = True
         else:
             shared = OllamaClient(config.llm)
             self.research_llm = shared
@@ -107,6 +142,14 @@ class Orchestrator:
             "report_model": policy.report_model if policy.enabled else self.config.llm.model,
             "deep_model": policy.deep_model if policy.enabled else self.config.llm.model,
             "deep_escalation": bool(policy.enabled and policy.deep_escalation),
+            "resource_control_enabled": bool(policy.enabled and policy.resource_control_enabled),
+            "max_vram_percent": policy.max_vram_percent,
+            "max_ram_percent": policy.max_ram_percent,
+            "max_gpu_util_percent": policy.max_gpu_util_percent,
+            "max_gpu_power_percent": policy.max_gpu_power_percent,
+            "max_gpu_temp_c": policy.max_gpu_temp_c,
+            "serialize_generation": policy.serialize_generation,
+            "fixed_model_count_limit": False,
             "research_web_enabled": self.config.internet_gateway.enabled,
             "knowledge_gateway_enabled": True,
             "upload_gateway_enabled": True,
