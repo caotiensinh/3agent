@@ -10,6 +10,8 @@ on:
       - '.gitattributes'
       - 'pyproject.toml'
       - 'config/test.example.json'
+      - 'src/**'
+      - 'tests/**'
       - 'README.md'
       - 'docs/WINDOWS_DEPLOY.md'
   pull_request:
@@ -20,6 +22,8 @@ on:
       - '.gitattributes'
       - 'pyproject.toml'
       - 'config/test.example.json'
+      - 'src/**'
+      - 'tests/**'
       - 'README.md'
       - 'docs/WINDOWS_DEPLOY.md'
   workflow_dispatch:
@@ -72,9 +76,6 @@ jobs:
           $scriptText = Invoke-RestMethod -Uri $url
           & ([ScriptBlock]::Create($scriptText))
           if (-not $?) { throw 'Downloaded bootstrap reported a PowerShell failure' }
-          # GitHub's PowerShell wrapper exits with a stale native LASTEXITCODE even
-          # when the script block completed successfully. Normalize only after the
-          # exception-aware bootstrap check above.
           $global:LASTEXITCODE = 0
       - name: Verify installed command and exact GitHub lineage
         shell: powershell

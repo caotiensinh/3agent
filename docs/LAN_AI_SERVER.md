@@ -114,17 +114,10 @@ Health:
 curl http://<AI-SERVER-LAN-IP>:8787/api/health
 ```
 
-Update source/application later:
+To update the server later, re-run the same one-command setup. It fetches the current GitHub code, refreshes the application environment and restarts the LAN chat service while preserving the local access-key/config file:
 
 ```bash
-3agent-update
-```
-
-Then reinstall/restart LAN chat configuration if needed:
-
-```bash
-cd ~/3agent
-bash scripts/install_chat_gateway.sh
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_lan_ai_server.sh | bash
 ```
 
 ## Windows bootstrap
