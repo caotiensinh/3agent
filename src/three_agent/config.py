@@ -33,6 +33,7 @@ class ModelPolicyConfig:
     max_gpu_power_percent: float = 95.0
     max_gpu_temp_c: float = 85.0
     model_size_safety_factor: float = 1.15
+    model_ram_overhead_factor: float = 0.15
     serialize_generation: bool = True
     reservation_ttl_seconds: int = 900
 
@@ -160,6 +161,17 @@ def load_config(path: str | None = None) -> AppConfig:
         model_size_safety_factor=max(
             1.0,
             _float_env("THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR", resource_raw.get("model_size_safety_factor"), 1.15),
+        ),
+        model_ram_overhead_factor=min(
+            1.0,
+            max(
+                0.0,
+                _float_env(
+                    "THREE_AGENT_MODEL_RAM_OVERHEAD_FACTOR",
+                    resource_raw.get("model_ram_overhead_factor"),
+                    0.15,
+                ),
+            ),
         ),
         serialize_generation=_bool_env(
             "THREE_AGENT_SERIALIZE_GENERATION",
