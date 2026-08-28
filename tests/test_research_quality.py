@@ -69,6 +69,28 @@ class ResearchQualityTests(unittest.TestCase):
         self.assertIn("CRITICAL_SOURCE_CONFLICT", handoff["blockers"])
         self.assertNotIn("extracted_text", handoff["sources"][0])
 
+    def test_handoff_blocks_invalid_structured_synthesis(self):
+        research = {
+            "task_id": "TASK-2",
+            "objective": "Verify",
+            "sources": [
+                {"source_id": "S1", "title": "A", "url": "https://a", "fetch_status": "ok", "extracted_text": "A"}
+            ],
+            "verified_facts": [],
+            "inferences": [],
+            "conflicts": [],
+            "unresolved_items": ["Structured synthesis failed."],
+            "conclusion": "Blocked safely.",
+            "recommended_next_actions": [],
+            "synthesis_error": "LocalLLMError: invalid JSON",
+            "generated_at": "2026-08-28T00:00:00+09:00",
+        }
+        handoff = build_handoff(research)
+        self.assertFalse(handoff["presentation_ready"])
+        self.assertIn("SYNTHESIS_INVALID_STRUCTURED_OUTPUT", handoff["blockers"])
+        self.assertIn("NO_VERIFIED_FACT", handoff["blockers"])
+        self.assertTrue(handoff["quality_metrics"]["structured_synthesis_error"])
+
 
 if __name__ == "__main__":
     unittest.main()
