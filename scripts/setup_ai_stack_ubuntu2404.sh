@@ -14,8 +14,13 @@ REQUIRED_GPU_COUNT="${THREE_AGENT_REQUIRED_RTX5090_COUNT:-2}"
 MIN_DRIVER_MAJOR="${THREE_AGENT_MIN_DRIVER_MAJOR:-590}"
 OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-65536}"
 OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-2m}"
-OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
+MAX_VRAM_PERCENT="${THREE_AGENT_MAX_VRAM_PERCENT:-90}"
+MAX_RAM_PERCENT="${THREE_AGENT_MAX_RAM_PERCENT:-90}"
+MAX_GPU_UTIL_PERCENT="${THREE_AGENT_MAX_GPU_UTIL_PERCENT:-95}"
+MAX_GPU_POWER_PERCENT="${THREE_AGENT_MAX_GPU_POWER_PERCENT:-95}"
+MAX_GPU_TEMP_C="${THREE_AGENT_MAX_GPU_TEMP_C:-85}"
+MODEL_SIZE_SAFETY_FACTOR="${THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR:-1.15}"
 LOG_DIR="${THREE_AGENT_LOG_DIR:-/var/log/3agent}"
 LOG_FILE="${LOG_DIR}/ai-stack-setup.log"
 SELF_TEST=0
@@ -31,13 +36,20 @@ log() { printf '[3Agent] %s\n' "$*"; }
 warn() { printf '[3Agent][WARN] %s\n' "$*" >&2; }
 die() { printf '[3Agent][ERROR] %s\n' "$*" >&2; exit 1; }
 
+is_percent() {
+  awk -v value="$1" 'BEGIN { exit !(value+0 >= 1 && value+0 <= 100) }'
+}
+
 if [[ "$SELF_TEST" == "1" ]]; then
   [[ "$REPO_URL" == https://github.com/*/*.git ]] || die "Invalid repository URL"
   [[ "$REQUIRED_GPU_COUNT" =~ ^[0-9]+$ ]] || die "GPU count must be numeric"
   [[ "$MIN_DRIVER_MAJOR" =~ ^[0-9]+$ ]] || die "driver major must be numeric"
   [[ "$OLLAMA_CONTEXT_LENGTH" =~ ^[0-9]+$ ]] || die "context length must be numeric"
-  [[ "$OLLAMA_MAX_LOADED_MODELS" =~ ^[0-9]+$ ]] || die "max loaded models must be numeric"
   [[ "$OLLAMA_NUM_PARALLEL" =~ ^[0-9]+$ ]] || die "parallel count must be numeric"
+  is_percent "$MAX_VRAM_PERCENT" || die "MAX_VRAM_PERCENT must be 1..100"
+  is_percent "$MAX_RAM_PERCENT" || die "MAX_RAM_PERCENT must be 1..100"
+  is_percent "$MAX_GPU_UTIL_PERCENT" || die "MAX_GPU_UTIL_PERCENT must be 1..100"
+  is_percent "$MAX_GPU_POWER_PERCENT" || die "MAX_GPU_POWER_PERCENT must be 1..100"
   [[ -n "$FAST_MODEL" && -n "$RESEARCH_MODEL" && -n "$PRESENTATION_MODEL" && -n "$REPORT_MODEL" ]] || die "model pool contains an empty required model"
   log "AI stack installer self-test PASS"
   exit 0
@@ -151,7 +163,6 @@ Environment="OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH}"
 Environment="OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}"
 Environment="OLLAMA_FLASH_ATTENTION=1"
 Environment="OLLAMA_KV_CACHE_TYPE=q8_0"
-Environment="OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}"
 Environment="OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL}"
 EOF
   as_root mkdir -p /etc/systemd/system/ollama.service.d
@@ -202,6 +213,12 @@ deploy_repository() {
     --arg report "$REPORT_MODEL" \
     --arg deep "$DEEP_MODEL" \
     --arg keep_alive "$OLLAMA_KEEP_ALIVE" \
+    --argjson max_vram "$MAX_VRAM_PERCENT" \
+    --argjson max_ram "$MAX_RAM_PERCENT" \
+    --argjson max_util "$MAX_GPU_UTIL_PERCENT" \
+    --argjson max_power "$MAX_GPU_POWER_PERCENT" \
+    --argjson max_temp "$MAX_GPU_TEMP_C" \
+    --argjson size_factor "$MODEL_SIZE_SAFETY_FACTOR" \
     '.test_mode_full_access = true
      | .llm.provider = "ollama"
      | .llm.base_url = "http://127.0.0.1:11434"
@@ -215,7 +232,18 @@ deploy_repository() {
          report_model: $report,
          deep_model: $deep,
          deep_escalation: true,
-         deep_prompt_chars: 14000
+         deep_prompt_chars: 14000,
+         resource_control: {
+           enabled: true,
+           max_vram_percent: $max_vram,
+           max_ram_percent: $max_ram,
+           max_gpu_util_percent: $max_util,
+           max_gpu_power_percent: $max_power,
+           max_gpu_temp_c: $max_temp,
+           model_size_safety_factor: $size_factor,
+           serialize_generation: true,
+           reservation_ttl_seconds: 900
+         }
        }' \
     "${INSTALL_DIR}/config/test.example.json" >"$tmp_config"
   as_root install -o "$TARGET_USER" -g "$(id -gn "$TARGET_USER")" -m 0644 "$tmp_config" "${INSTALL_DIR}/config/local.json"
@@ -261,7 +289,7 @@ pull_models() {
     fi
   done
 
-  log "Pulling on-demand model pool sequentially (${#unique[@]} unique models)."
+  log "Pulling model pool sequentially (${#unique[@]} unique models)."
   for model in "${unique[@]}"; do
     log "Pulling model: $model"
     as_user ollama pull "$model"
@@ -276,7 +304,9 @@ verify_stack() {
   local smoke
   smoke="$(as_user /usr/local/bin/3agent smoke)"
   printf '%s\n' "$smoke"
-  grep -q 'model_policy_enabled' <<<"$smoke" || die "Smoke output does not expose model policy"
+  grep -q '"resource_control_enabled": true' <<<"$smoke" || die "Dynamic resource control is not enabled"
+  grep -q '"fixed_model_count_limit": false' <<<"$smoke" || die "Fixed model-count limit must be disabled"
+  grep -q '"max_vram_percent"' <<<"$smoke" || die "VRAM budget is not exposed"
 
   log "Running live local-model inference with research model."
   local payload response
@@ -299,17 +329,20 @@ verify_stack() {
   log "Loaded model state:"
   as_user ollama ps || true
   log "GPU state:"
-  nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used,utilization.gpu \
+  nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used,utilization.gpu,temperature.gpu,power.draw,power.limit \
     --format=csv,noheader
 
-  log "FINAL PASS: 3Agent AI stack is ready with model-on-demand routing."
+  log "FINAL PASS: 3Agent AI stack is ready with dynamic resource-aware model admission."
   log "Project: ${INSTALL_DIR}"
   log "Fast model: ${FAST_MODEL}"
   log "Research model: ${RESEARCH_MODEL}"
   log "Presentation model: ${PRESENTATION_MODEL}"
   log "Report model: ${REPORT_MODEL}"
   log "Deep escalation model: ${DEEP_MODEL}"
-  log "Ollama max loaded models: ${OLLAMA_MAX_LOADED_MODELS}"
+  log "VRAM/RAM budgets: ${MAX_VRAM_PERCENT}% / ${MAX_RAM_PERCENT}%"
+  log "GPU utilization/power guard: ${MAX_GPU_UTIL_PERCENT}% / ${MAX_GPU_POWER_PERCENT}%"
+  log "GPU temperature guard: ${MAX_GPU_TEMP_C}C"
+  log "Fixed loaded-model count: disabled"
   log "Command: 3agent"
   log "Log: ${LOG_FILE}"
 }
