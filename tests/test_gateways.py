@@ -1,3 +1,4 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,7 @@ class GatewayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / "exec.jsonl"
             gateway = ExecutionGateway(GatewayConfig(True, True, log), test_mode_full_access=True)
-            result = gateway.run("research", "TASK-X", ["python3", "-c", "print('ok')"])
+            result = gateway.run("research", "TASK-X", [sys.executable, "-c", "print('ok')"])
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stdout.strip(), "ok")
             self.assertTrue(log.exists())
@@ -21,7 +22,7 @@ class GatewayTests(unittest.TestCase):
             log = Path(tmp) / "exec.jsonl"
             gateway = ExecutionGateway(GatewayConfig(True, True, log), test_mode_full_access=False)
             with self.assertRaises(PermissionError):
-                gateway.run("research", None, ["python3", "-c", "print('no')"])
+                gateway.run("research", None, [sys.executable, "-c", "print('no')"])
 
 
 if __name__ == "__main__":
