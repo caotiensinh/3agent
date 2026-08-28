@@ -1,7 +1,12 @@
 import unittest
 from types import SimpleNamespace
 
-from three_agent.llm import LocalLLMError, OllamaClient, _extract_json_object
+from three_agent.llm import (
+    AdaptiveOllamaClient,
+    LocalLLMError,
+    OllamaClient,
+    _extract_json_object,
+)
 
 
 class LLMTests(unittest.TestCase):
@@ -26,6 +31,7 @@ class LLMTests(unittest.TestCase):
                         model="qwen-test",
                         base_url="http://127.0.0.1:11434",
                         timeout_seconds=10,
+                        keep_alive="2m",
                     )
                 )
                 self.calls = []
@@ -52,6 +58,7 @@ class LLMTests(unittest.TestCase):
                         model="qwen-test",
                         base_url="http://127.0.0.1:11434",
                         timeout_seconds=10,
+                        keep_alive="2m",
                     )
                 )
                 self.calls = 0
@@ -64,6 +71,80 @@ class LLMTests(unittest.TestCase):
         with self.assertRaisesRegex(LocalLLMError, "automatic repair retry also failed"):
             client.generate_json("system", "user")
         self.assertEqual(client.calls, 2)
+
+    def test_adaptive_client_uses_primary_for_normal_prompt(self):
+        class Fake:
+            def __init__(self, name):
+                self.config = SimpleNamespace(model=name)
+                self.calls = 0
+
+            def generate(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                return self.config.model
+
+            def unload(self):
+                return None
+
+        primary = Fake("research-30b")
+        deep = Fake("deep-32b")
+        client = AdaptiveOllamaClient(
+            primary,
+            deep=deep,
+            deep_prompt_chars=100,
+            role="research",
+        )
+        self.assertEqual(client.generate("s", "short prompt"), "research-30b")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(deep.calls, 0)
+
+    def test_adaptive_client_prefers_deep_for_large_research_prompt(self):
+        class Fake:
+            def __init__(self, name):
+                self.config = SimpleNamespace(model=name)
+                self.calls = 0
+
+            def generate_json(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                return {"model": self.config.model}
+
+            def unload(self):
+                return None
+
+        primary = Fake("research-30b")
+        deep = Fake("deep-32b")
+        client = AdaptiveOllamaClient(
+            primary,
+            deep=deep,
+            deep_prompt_chars=2000,
+            role="research",
+        )
+        result = client.generate_json("s", "x" * 2500)
+        self.assertEqual(result["model"], "deep-32b")
+        self.assertEqual(primary.calls, 0)
+        self.assertEqual(deep.calls, 1)
+
+    def test_adaptive_client_escalates_after_primary_failure(self):
+        class Fake:
+            def __init__(self, name, fail=False):
+                self.config = SimpleNamespace(model=name)
+                self.fail = fail
+                self.calls = 0
+
+            def generate(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                if self.fail:
+                    raise LocalLLMError("primary failed")
+                return self.config.model
+
+            def unload(self):
+                return None
+
+        primary = Fake("presentation-14b", fail=True)
+        deep = Fake("deep-32b")
+        client = AdaptiveOllamaClient(primary, deep=deep, role="presentation")
+        self.assertEqual(client.generate("s", "normal"), "deep-32b")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(deep.calls, 1)
 
 
 if __name__ == "__main__":
