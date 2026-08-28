@@ -112,6 +112,27 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["business_stage"], "task_completed")
             self.assertIsNone(manifest["error"])
 
+    def test_live_success_unloads_each_agent_model_in_stage_order(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner, _, calls, _ = self.make_runner(Path(tmp))
+            lifecycle: list[str] = []
+
+            class LifecycleLLM:
+                def __init__(self, role: str):
+                    self.role = role
+
+                def unload(self):
+                    lifecycle.append(self.role)
+
+            runner.research_agent.llm = LifecycleLLM("research")
+            runner.presentation_agent.llm = LifecycleLLM("presentation")
+            runner.daily_agent.llm = LifecycleLLM("daily")
+
+            result = runner.create_and_run("Lifecycle", "Sequential model lifecycle", live=True)
+            self.assertEqual(result.status, "completed")
+            self.assertEqual(calls, ["research", "presentation", "daily"])
+            self.assertEqual(lifecycle, ["research", "presentation", "daily"])
+
     def test_research_gate_blocks_presentation_but_daily_still_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner, store, calls, daily = self.make_runner(Path(tmp), research_mode="blocked")
