@@ -26,6 +26,15 @@ class ModelPolicyConfig:
     deep_model: str
     deep_escalation: bool
     deep_prompt_chars: int
+    resource_control_enabled: bool = True
+    max_vram_percent: float = 90.0
+    max_ram_percent: float = 90.0
+    max_gpu_util_percent: float = 95.0
+    max_gpu_power_percent: float = 95.0
+    max_gpu_temp_c: float = 85.0
+    model_size_safety_factor: float = 1.15
+    serialize_generation: bool = True
+    reservation_ttl_seconds: int = 900
 
 
 @dataclass(frozen=True)
@@ -57,6 +66,18 @@ def _model_env(name: str, configured: str, fallback: str) -> str:
     return os.getenv(name, configured or fallback).strip()
 
 
+def _float_env(name: str, configured: Any, fallback: float) -> float:
+    raw = os.getenv(name, str(configured if configured is not None else fallback)).strip()
+    return float(raw)
+
+
+def _bool_env(name: str, configured: Any, fallback: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(configured if configured is not None else fallback)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def legacy_model_policy(llm: LLMConfig) -> ModelPolicyConfig:
     """Single-model compatibility policy for older configs/test fixtures."""
     return ModelPolicyConfig(
@@ -68,6 +89,7 @@ def legacy_model_policy(llm: LLMConfig) -> ModelPolicyConfig:
         deep_model=llm.model,
         deep_escalation=False,
         deep_prompt_chars=14000,
+        resource_control_enabled=False,
     )
 
 
@@ -78,6 +100,7 @@ def load_config(path: str | None = None) -> AppConfig:
     llm_raw = data.get("llm", {})
     base_model = os.getenv("LOCAL_LLM_MODEL", llm_raw.get("model", "")).strip()
     policy_raw = data.get("model_policy", {})
+    resource_raw = policy_raw.get("resource_control", {})
     internet_raw = data.get("internet_gateway", {})
     execution_raw = data.get("execution_gateway", {})
 
@@ -109,6 +132,44 @@ def load_config(path: str | None = None) -> AppConfig:
         deep_model=deep_model,
         deep_escalation=bool(policy_raw.get("deep_escalation", True)),
         deep_prompt_chars=max(2000, int(policy_raw.get("deep_prompt_chars", 14000))),
+        resource_control_enabled=_bool_env(
+            "THREE_AGENT_RESOURCE_CONTROL",
+            resource_raw.get("enabled"),
+            True,
+        ),
+        max_vram_percent=min(
+            95.0,
+            max(50.0, _float_env("THREE_AGENT_MAX_VRAM_PERCENT", resource_raw.get("max_vram_percent"), 90.0)),
+        ),
+        max_ram_percent=min(
+            95.0,
+            max(50.0, _float_env("THREE_AGENT_MAX_RAM_PERCENT", resource_raw.get("max_ram_percent"), 90.0)),
+        ),
+        max_gpu_util_percent=min(
+            100.0,
+            max(50.0, _float_env("THREE_AGENT_MAX_GPU_UTIL_PERCENT", resource_raw.get("max_gpu_util_percent"), 95.0)),
+        ),
+        max_gpu_power_percent=min(
+            100.0,
+            max(50.0, _float_env("THREE_AGENT_MAX_GPU_POWER_PERCENT", resource_raw.get("max_gpu_power_percent"), 95.0)),
+        ),
+        max_gpu_temp_c=max(
+            60.0,
+            _float_env("THREE_AGENT_MAX_GPU_TEMP_C", resource_raw.get("max_gpu_temp_c"), 85.0),
+        ),
+        model_size_safety_factor=max(
+            1.0,
+            _float_env("THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR", resource_raw.get("model_size_safety_factor"), 1.15),
+        ),
+        serialize_generation=_bool_env(
+            "THREE_AGENT_SERIALIZE_GENERATION",
+            resource_raw.get("serialize_generation"),
+            True,
+        ),
+        reservation_ttl_seconds=max(
+            30,
+            int(resource_raw.get("reservation_ttl_seconds", 900)),
+        ),
     )
 
     return AppConfig(
