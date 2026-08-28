@@ -28,6 +28,7 @@
       "max_gpu_power_percent": 95,
       "max_gpu_temp_c": 85,
       "model_size_safety_factor": 1.15,
+      "model_ram_overhead_factor": 0.15,
       "serialize_generation": true,
       "reservation_ttl_seconds": 900
     }
