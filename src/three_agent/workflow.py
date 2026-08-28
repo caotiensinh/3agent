@@ -40,6 +40,10 @@ class WorkflowRunner:
     Agent 2 is never called unless Agent 1 leaves the task in
     RESEARCH_COMPLETED. Agent 3 is attempted for every outcome so blocked and
     failed work is still represented in the daily evidence trail.
+
+    Model lifecycle is sequential as well: after a live agent stage finishes,
+    its model client is asked to unload before the next role starts. Cleanup is
+    best-effort and can never convert a successful stage into a failure.
     """
 
     def __init__(
@@ -62,6 +66,18 @@ class WorkflowRunner:
         for pattern in _SECRET_PATTERNS:
             text = pattern.sub(lambda m: f"{m.group(1)}<redacted>", text)
         return text
+
+    @staticmethod
+    def _release_agent_model(agent: Any, *, live: bool) -> None:
+        if not live:
+            return
+        llm = getattr(agent, "llm", None)
+        unload = getattr(llm, "unload", None)
+        if callable(unload):
+            try:
+                unload()
+            except Exception:
+                return
 
     def _write_manifest(self, payload: dict[str, Any]) -> Path:
         folder = self.artifacts.root / "workflow_runs" / self.artifacts.today()
@@ -129,12 +145,15 @@ class WorkflowRunner:
         )
 
         try:
-            paths = self.research_agent.run(
-                task_id, self.store, self.artifacts, live=live
-            )
-            research_paths = [str(path) for path in paths]
-            task = self.store.get_task(task_id)
+            try:
+                paths = self.research_agent.run(
+                    task_id, self.store, self.artifacts, live=live
+                )
+                research_paths = [str(path) for path in paths]
+            finally:
+                self._release_agent_model(self.research_agent, live=live)
 
+            task = self.store.get_task(task_id)
             if task.status != TaskStatus.RESEARCH_COMPLETED:
                 outcome = "blocked"
                 stage = "research_gate"
@@ -147,18 +166,22 @@ class WorkflowRunner:
                 )
             else:
                 stage = "presentation"
-                paths = self.presentation_agent.run(
-                    task_id,
-                    self.store,
-                    self.artifacts,
-                    live=live,
-                    audience=audience,
-                    purpose=purpose,
-                    language=language,
-                    slide_count=slide_count,
-                    output_format=output_format,
-                )
-                presentation_paths = [str(path) for path in paths]
+                try:
+                    paths = self.presentation_agent.run(
+                        task_id,
+                        self.store,
+                        self.artifacts,
+                        live=live,
+                        audience=audience,
+                        purpose=purpose,
+                        language=language,
+                        slide_count=slide_count,
+                        output_format=output_format,
+                    )
+                    presentation_paths = [str(path) for path in paths]
+                finally:
+                    self._release_agent_model(self.presentation_agent, live=live)
+
                 task = self.store.get_task(task_id)
                 if task.status != TaskStatus.PRESENTATION_COMPLETED:
                     raise RuntimeError(
@@ -188,15 +211,17 @@ class WorkflowRunner:
                 f"stage={stage} {error}",
             )
 
-        # Agent 3 is outside the stage try/except on purpose. It observes the
-        # final Agent 1/2 state, including blocked and failed outcomes.
         business_stage = stage
         try:
             stage = "daily_report"
-            paths = self.daily_agent.run(
-                target_date, self.store, self.artifacts, live=live
-            )
-            daily_paths = [str(path) for path in paths]
+            try:
+                paths = self.daily_agent.run(
+                    target_date, self.store, self.artifacts, live=live
+                )
+                daily_paths = [str(path) for path in paths]
+            finally:
+                self._release_agent_model(self.daily_agent, live=live)
+
             self.store.record_activity(
                 task_id,
                 "workflow",
