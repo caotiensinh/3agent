@@ -4,18 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "three-agent"
-version = "0.3.1"
+version = "0.4.0"
 description = "Local-first three-agent R&D workflow harness"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "python-docx>=1.1.2,<2",
   "python-pptx>=1.0.2,<2",
+  "reportlab>=4.2,<5",
   "tzdata>=2024.1",
 ]
 
 [project.scripts]
 three-agent = "three_agent.cli:main"
-three-agent-chat = "three_agent.chat_gateway_v2:main"
+three-agent-chat = "three_agent.chat_gateway_v3:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
