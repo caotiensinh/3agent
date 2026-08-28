@@ -16,7 +16,9 @@ grep -q '/usr/local/bin/3agent' "$SCRIPT"
 grep -q 'api/generate' "$SCRIPT"
 grep -q 'think:false' "$SCRIPT"
 grep -q 'num_predict:64' "$SCRIPT"
+# shellcheck disable=SC2016 # literal installer contract, not shell expansion
 grep -q 'OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-2m}"' "$SCRIPT"
+# shellcheck disable=SC2016 # literal installer contract, not shell expansion
 grep -q 'OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"' "$SCRIPT"
 grep -q 'THREE_AGENT_FAST_MODEL' "$SCRIPT"
 grep -q 'THREE_AGENT_RESEARCH_MODEL' "$SCRIPT"
