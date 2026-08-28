@@ -13,7 +13,7 @@ grep -Fq '/api/health' "$SCRIPT"
 grep -Fq 'systemctl --user is-active --quiet 3agent-chat.service' "$SCRIPT"
 grep -Fq 'Client PCs:' "$SCRIPT"
 grep -Fq 'Do NOT install Python, Ollama, models or 3Agent.' "$SCRIPT"
-grep -Fq 'ufw allow from "$LAN_CIDR" to "$LAN_HOST" port "$PORT" proto tcp' "$SCRIPT"
+grep -Fq "ufw allow from \"\$LAN_CIDR\" to \"\$LAN_HOST\" port \"\$PORT\" proto tcp" "$SCRIPT"
 grep -Fq 'LAN server must not bind a wildcard address' "$SCRIPT"
 
 if grep -Eq 'ufw allow ([0-9]+/tcp|[0-9]+)' "$SCRIPT"; then
