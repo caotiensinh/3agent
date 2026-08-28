@@ -25,6 +25,7 @@ class ResourceBudgetConfig:
     max_gpu_power_percent: float = 95.0
     max_gpu_temp_c: float = 85.0
     model_size_safety_factor: float = 1.15
+    model_ram_overhead_factor: float = 0.15
     serialize_generation: bool = True
     reservation_ttl_seconds: int = 900
 
@@ -54,10 +55,11 @@ class AdmissionDecision:
 class ResourceBudgetManager:
     """Cross-process admission control for local Ollama models.
 
-    Model residency is not limited by a fixed count. Admission is based on the
-    projected memory footprint and live GPU/RAM health. A short reservation is
-    recorded before a model starts loading so concurrent requests cannot both
-    pass the same stale memory check.
+    Model residency is not limited by a fixed count. Admission uses live GPU/RAM
+    health plus conservative reservations. VRAM reserves the full estimated model
+    footprint. Host RAM reserves only a configurable loading/runtime overhead,
+    because GPU-offloaded Ollama models are not assumed to mirror their complete
+    weights in system RAM.
     """
 
     def __init__(
@@ -88,6 +90,7 @@ class ResourceBudgetManager:
     def _file_lock(self, path: Path) -> Iterator[None]:
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a+", encoding="utf-8")
+        used_thread_lock = False
         try:
             try:
                 import fcntl  # Linux/Unix; target AI server is Ubuntu.
@@ -95,15 +98,18 @@ class ResourceBudgetManager:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             except (ImportError, OSError):
                 self._thread_lock.acquire()
+                used_thread_lock = True
             yield
         finally:
-            try:
-                import fcntl
+            if used_thread_lock:
+                self._thread_lock.release()
+            else:
+                try:
+                    import fcntl
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            except (ImportError, OSError):
-                if self._thread_lock._is_owned():  # type: ignore[attr-defined]
-                    self._thread_lock.release()
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
             handle.close()
 
     def _ollama_json(self, path: str) -> dict[str, Any]:
@@ -214,6 +220,10 @@ class ResourceBudgetManager:
             f"Cannot estimate memory for model {model}; model metadata is unavailable"
         )
 
+    def _ram_overhead_bytes(self, model_bytes: int) -> int:
+        factor = max(0.0, min(1.0, float(self.config.model_ram_overhead_factor)))
+        return int(max(0, model_bytes) * factor)
+
     def _read_reservations(self) -> dict[str, dict[str, Any]]:
         if not self.state_path.exists():
             return {}
@@ -245,7 +255,12 @@ class ResourceBudgetManager:
         tmp.write_text(json.dumps(reservations, sort_keys=True), encoding="utf-8")
         tmp.replace(self.state_path)
 
-    def _decision(self, model: str, snapshot: ResourceSnapshot, reservations: dict[str, dict[str, Any]]) -> AdmissionDecision:
+    def _decision(
+        self,
+        model: str,
+        snapshot: ResourceSnapshot,
+        reservations: dict[str, dict[str, Any]],
+    ) -> AdmissionDecision:
         vram_limit = self._clamp_percent(self.config.max_vram_percent, high=95.0)
         ram_limit = self._clamp_percent(self.config.max_ram_percent, high=95.0)
         util_limit = self._clamp_percent(self.config.max_gpu_util_percent, high=100.0)
@@ -268,7 +283,11 @@ class ResourceBudgetManager:
             if name not in snapshot.loaded_models
         )
         projected_gpu = max(snapshot.gpu_used_bytes, loaded_bytes) + reserved_bytes + candidate_bytes
-        projected_ram = snapshot.ram_used_bytes + candidate_bytes
+        projected_ram = (
+            snapshot.ram_used_bytes
+            + self._ram_overhead_bytes(reserved_bytes)
+            + self._ram_overhead_bytes(candidate_bytes)
+        )
         projected_vram_percent = (projected_gpu / max(1, snapshot.gpu_total_bytes)) * 100.0
         projected_ram_percent = (projected_ram / max(1, snapshot.ram_total_bytes)) * 100.0
 
