@@ -38,6 +38,7 @@ jobs:
         run: |
           bash scripts/test_installer_contract.sh
           bash scripts/test_ai_stack_contract.sh
+          bash scripts/test_model_pool_contract.sh
           bash scripts/test_e2e_acceptance_contract.sh
           bash scripts/test_chat_gateway_contract.sh
           bash scripts/test_lan_ai_server_contract.sh
@@ -48,6 +49,7 @@ jobs:
           shellcheck \
             scripts/install_ubuntu_2404_rtx5090.sh \
             scripts/setup_ai_stack_ubuntu2404.sh \
+            scripts/enable_model_pool.sh \
             scripts/setup_lan_ai_server.sh \
             scripts/verify_deployment.sh \
             scripts/run_e2e_acceptance.sh \
@@ -55,6 +57,7 @@ jobs:
             scripts/configure_telegram.sh \
             scripts/test_installer_contract.sh \
             scripts/test_ai_stack_contract.sh \
+            scripts/test_model_pool_contract.sh \
             scripts/test_e2e_acceptance_contract.sh \
             scripts/test_chat_gateway_contract.sh \
             scripts/test_lan_ai_server_contract.sh
