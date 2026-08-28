@@ -166,18 +166,11 @@ class KnowledgeGateway:
         if len(data) > MAX_UPLOAD_BYTES:
             raise UploadSecurityError("Upload exceeds 16 MiB per-file limit")
 
-        upload_id = uuid.uuid4().hex[:16]
-        folder = self._folder(upload_id)
-        folder.mkdir(parents=True, exist_ok=False)
-        self._chmod(folder, 0o700)
-        original = folder / f"original{extension}"
-        original.write_bytes(data)
-        self._chmod(original, 0o600)
-
+        # Validate and parse entirely in memory first. Rejected uploads leave no
+        # original bytes behind in the persistent upload area.
         documents: list[dict] = []
         images: list[dict] = []
         warnings: list[str] = []
-
         if extension in TEXT_EXTENSIONS:
             text = _decode_text(data)
             if not text:
@@ -207,6 +200,14 @@ class KnowledgeGateway:
             warnings.extend(zip_warnings)
             if not documents and not images:
                 raise UploadSecurityError("ZIP contains no supported readable document or image")
+
+        upload_id = uuid.uuid4().hex[:16]
+        folder = self._folder(upload_id)
+        folder.mkdir(parents=True, exist_ok=False)
+        self._chmod(folder, 0o700)
+        original = folder / f"original{extension}"
+        original.write_bytes(data)
+        self._chmod(original, 0o600)
 
         extracted_dir = folder / "extracted"
         extracted_dir.mkdir(exist_ok=True)
