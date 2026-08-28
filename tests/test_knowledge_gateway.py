@@ -71,6 +71,14 @@ class KnowledgeGatewayTests(unittest.TestCase):
             with self.assertRaises(UploadSecurityError):
                 gateway.ingest_upload("bad.zip", data.getvalue())
             self.assertFalse((Path(tmp) / "escape.txt").exists())
+            self.assertEqual(list(gateway.root.iterdir()), [])
+
+    def test_invalid_image_is_rejected_before_persistence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = self.gateway(Path(tmp))
+            with self.assertRaises(UploadSecurityError):
+                gateway.ingest_upload("fake.png", b"not a png")
+            self.assertEqual(list(gateway.root.iterdir()), [])
 
     def test_zip_accepts_supported_docs_and_skips_binary(self):
         with tempfile.TemporaryDirectory() as tmp:
