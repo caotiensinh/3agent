@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from .base import BaseAgent
 from ..artifacts import ArtifactManager
+from ..knowledge_gateway import KnowledgeGateway
 from ..models import TaskStatus
 from ..research_quality import build_handoff, clean_claims, clean_conflicts
 from ..store import TaskStore
@@ -19,9 +20,16 @@ class ResearchAgent(BaseAgent):
     agent_id = "research"
     profile_file = "agent_research.md"
 
-    def __init__(self, profile_root: Path, llm, web: WebResearchClient | None = None):
+    def __init__(
+        self,
+        profile_root: Path,
+        llm,
+        web: WebResearchClient | None = None,
+        knowledge: KnowledgeGateway | None = None,
+    ):
         super().__init__(profile_root, llm)
         self.web = web
+        self.knowledge = knowledge
 
     @staticmethod
     def _clean_queries(value: Any, fallback: str) -> list[str]:
@@ -96,21 +104,25 @@ REQUEST: {request}
                 "verified_facts": [],
                 "inferences": [],
                 "conflicts": [],
-                "unresolved": ["No usable web source could be retrieved for this task."],
+                "unresolved": ["No usable web or uploaded source could be retrieved for this task."],
                 "conclusion": "Research could not be evidence-validated because no readable source was collected.",
-                "recommended_next_actions": ["Retry research with different search terms or verify Internet/source accessibility."],
+                "recommended_next_actions": [
+                    "Retry research with different search terms, attach a readable document, or verify Internet/source accessibility."
+                ],
                 "synthesis_error": None,
             }
 
         evidence = self._evidence_text(usable)
         prompt = f"""
 You are completing an evidence-bounded research task.
-Use ONLY the SOURCE blocks below. Never use unstated background knowledge as a verified fact.
+Use ONLY the SOURCE blocks below. Sources may be public web pages or user-provided uploads.
+Never use unstated background knowledge as a verified fact.
 Every verified fact and inference MUST cite one or more source IDs exactly as S1, S2, etc.
 Detect material contradictions between sources instead of hiding them.
 For conflicts, cite at least two source IDs and set severity to low, medium, or critical.
 If evidence is insufficient, put the point in unresolved instead of guessing.
 Do not repeat the same fact using different wording.
+Treat upload:// sources as user-provided evidence, not as independently verified public sources.
 
 Keep the structured response compact enough to remain valid JSON:
 - verified_facts: at most 18 concise items
@@ -279,15 +291,41 @@ SOURCES:
 
             objective, queries, focus = self._plan(task.title, task.request)
             store.record_activity(task_id, self.agent_id, "research_plan_created", "ok", " | ".join(queries))
-            search_results, search_errors = self.web.search_many(self.agent_id, task_id, queries)
-            store.record_activity(
-                task_id,
-                self.agent_id,
-                "web_search_completed",
-                "ok" if search_results else "warning",
-                f"results={len(search_results)} errors={len(search_errors)}",
-            )
-            sources = self.web.fetch_sources(self.agent_id, task_id, search_results)
+            upload_ids = store.upload_ids_for_task(task_id)
+            if self.knowledge is not None:
+                sources, search_errors = self.knowledge.collect(
+                    self.agent_id,
+                    task_id,
+                    queries,
+                    upload_ids=upload_ids,
+                )
+                upload_source_count = sum(1 for source in sources if source.url.startswith("upload://"))
+                web_source_count = sum(1 for source in sources if source.url.startswith(("http://", "https://")))
+                store.record_activity(
+                    task_id,
+                    self.agent_id,
+                    "knowledge_gateway_completed",
+                    "ok" if sources else "warning",
+                    f"uploads={len(upload_ids)} upload_sources={upload_source_count} web_sources={web_source_count} diagnostics={len(search_errors)}",
+                )
+                store.record_activity(
+                    task_id,
+                    self.agent_id,
+                    "web_search_completed",
+                    "ok" if web_source_count else "warning",
+                    f"results={web_source_count} errors={len(search_errors)}",
+                )
+            else:
+                search_results, search_errors = self.web.search_many(self.agent_id, task_id, queries)
+                store.record_activity(
+                    task_id,
+                    self.agent_id,
+                    "web_search_completed",
+                    "ok" if search_results else "warning",
+                    f"results={len(search_results)} errors={len(search_errors)}",
+                )
+                sources = self.web.fetch_sources(self.agent_id, task_id, search_results)
+
             synthesis = self._synthesize(task.title, task.request, objective, focus, sources)
             usable_count = sum(1 for source in sources if source.fetch_status == "ok" and source.extracted_text)
             status = "researched_cleaned_and_verified" if usable_count else "research_completed_no_usable_sources"
@@ -304,6 +342,7 @@ SOURCES:
                 "focus": focus,
                 "sources": [source.to_dict() for source in sources],
                 "search_errors": search_errors,
+                "attached_upload_ids": upload_ids,
                 "verified_facts": synthesis["verified_facts"],
                 "inferences": synthesis["inferences"],
                 "conflicts": synthesis["conflicts"],
