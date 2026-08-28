@@ -19,7 +19,18 @@
     "report_model": "",
     "deep_model": "",
     "deep_escalation": true,
-    "deep_prompt_chars": 14000
+    "deep_prompt_chars": 14000,
+    "resource_control": {
+      "enabled": true,
+      "max_vram_percent": 90,
+      "max_ram_percent": 90,
+      "max_gpu_util_percent": 95,
+      "max_gpu_power_percent": 95,
+      "max_gpu_temp_c": 85,
+      "model_size_safety_factor": 1.15,
+      "serialize_generation": true,
+      "reservation_ttl_seconds": 900
+    }
   },
   "internet_gateway": {
     "enabled": true,
