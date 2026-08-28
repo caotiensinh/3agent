@@ -8,7 +8,18 @@
     "provider": "ollama",
     "base_url": "http://127.0.0.1:11434",
     "model": "",
-    "timeout_seconds": 1200
+    "timeout_seconds": 1200,
+    "keep_alive": "2m"
+  },
+  "model_policy": {
+    "enabled": false,
+    "fast_model": "",
+    "research_model": "",
+    "presentation_model": "",
+    "report_model": "",
+    "deep_model": "",
+    "deep_escalation": true,
+    "deep_prompt_chars": 14000
   },
   "internet_gateway": {
     "enabled": true,
