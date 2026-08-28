@@ -41,9 +41,10 @@ class WorkflowRunner:
     RESEARCH_COMPLETED. Agent 3 is attempted for every outcome so blocked and
     failed work is still represented in the daily evidence trail.
 
-    Model lifecycle is sequential as well: after a live agent stage finishes,
-    its model client is asked to unload before the next role starts. Cleanup is
-    best-effort and can never convert a successful stage into a failure.
+    Legacy/non-budgeted clients are unloaded between live stages. When dynamic
+    resource admission is enabled, models may remain resident across stages and
+    every subsequent model load is checked against the live VRAM/RAM/thermal
+    budget instead of enforcing a fixed resident-model count.
     """
 
     def __init__(
@@ -72,6 +73,8 @@ class WorkflowRunner:
         if not live:
             return
         llm = getattr(agent, "llm", None)
+        if bool(getattr(llm, "budget_managed_residency", False)):
+            return
         unload = getattr(llm, "unload", None)
         if callable(unload):
             try:
@@ -264,27 +267,27 @@ class WorkflowRunner:
                 "slide_count": slide_count,
                 "output_format": output_format,
             },
-            "artifacts": {
-                "research": research_paths,
-                "presentation": presentation_paths,
-                "daily_report": daily_paths,
-            },
+            "research_artifacts": research_paths,
+            "presentation_artifacts": presentation_paths,
+            "daily_report_artifacts": daily_paths,
             "error": error,
             "started_at": started_at,
-            "finished_at": datetime.now(TZ).isoformat(),
+            "completed_at": datetime.now(TZ).isoformat(),
         }
         manifest_path = self._write_manifest(manifest)
         self.store.record_artifact(
-            task_id, "workflow", "workflow_manifest", str(manifest_path)
+            task_id,
+            "workflow",
+            "workflow_manifest_json",
+            str(manifest_path),
         )
         self.store.record_activity(
             task_id,
             "workflow",
             "workflow_finished",
             "ok" if outcome == "completed" else outcome,
-            f"outcome={outcome} task_status={final_task.status.value} manifest={manifest_path}",
+            f"stage={business_stage} manifest={manifest_path}",
         )
-
         return WorkflowRunResult(
             task_id=task_id,
             status=outcome,
@@ -296,7 +299,3 @@ class WorkflowRunner:
             error=error,
             manifest_path=str(manifest_path),
         )
-
-    @staticmethod
-    def result_dict(result: WorkflowRunResult) -> dict[str, Any]:
-        return asdict(result)
