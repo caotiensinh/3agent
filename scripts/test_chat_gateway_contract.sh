@@ -16,14 +16,18 @@ grep -Fq 'journalctl --user -u 3agent-chat.service -n 80' scripts/install_chat_g
 grep -Fq 'private_ipv4' scripts/install_chat_gateway.sh
 grep -Fq 'THREE_AGENT_WEB_HOST must be a private non-loopback IPv4 address' scripts/install_chat_gateway.sh
 
-# Capability-/namespace-heavy directives are intentionally forbidden in this
-# per-user service. They can fail before ExecStart with status=218/CAPABILITIES
-# on Ubuntu hosts where unprivileged user namespaces/capability operations are restricted.
-! grep -Eq '^[[:space:]]*ProtectKernelModules=' scripts/install_chat_gateway.sh
-! grep -Eq '^[[:space:]]*ProtectKernelTunables=' scripts/install_chat_gateway.sh
-! grep -Eq '^[[:space:]]*ProtectControlGroups=' scripts/install_chat_gateway.sh
-! grep -Eq '^[[:space:]]*ProtectSystem=' scripts/install_chat_gateway.sh
-! grep -Eq '^[[:space:]]*(AmbientCapabilities|CapabilityBoundingSet)=' scripts/install_chat_gateway.sh
+for forbidden in \
+  '^[[:space:]]*ProtectKernelModules=' \
+  '^[[:space:]]*ProtectKernelTunables=' \
+  '^[[:space:]]*ProtectControlGroups=' \
+  '^[[:space:]]*ProtectSystem=' \
+  '^[[:space:]]*(AmbientCapabilities|CapabilityBoundingSet)='
+do
+  if grep -Eq "$forbidden" scripts/install_chat_gateway.sh; then
+    echo "forbidden user-service directive matched: $forbidden" >&2
+    exit 1
+  fi
+done
 
 grep -Fq 'THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS' scripts/configure_telegram.sh
 grep -Fq 'read -r -s' scripts/configure_telegram.sh
