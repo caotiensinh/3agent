@@ -250,7 +250,7 @@ pull_models() {
   for model in "${requested[@]}"; do
     [[ -n "$model" ]] || continue
     seen=0
-    for existing in "${unique[@]:-}"; do
+    for existing in "${unique[@]}"; do
       if [[ "$existing" == "$model" ]]; then
         seen=1
         break
