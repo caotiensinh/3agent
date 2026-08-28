@@ -4,12 +4,17 @@ set -Eeuo pipefail
 REPO_URL="${THREE_AGENT_REPO_URL:-https://github.com/caotiensinh/3agent.git}"
 REPO_REF="${THREE_AGENT_REPO_REF:-main}"
 MODEL="${THREE_AGENT_MODEL:-qwen3:30b}"
+FAST_MODEL="${THREE_AGENT_FAST_MODEL:-qwen3:14b}"
+RESEARCH_MODEL="${THREE_AGENT_RESEARCH_MODEL:-$MODEL}"
+PRESENTATION_MODEL="${THREE_AGENT_PRESENTATION_MODEL:-$FAST_MODEL}"
+REPORT_MODEL="${THREE_AGENT_REPORT_MODEL:-$FAST_MODEL}"
+DEEP_MODEL="${THREE_AGENT_DEEP_MODEL:-deepseek-r1:32b}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-}"
 REQUIRED_GPU_COUNT="${THREE_AGENT_REQUIRED_RTX5090_COUNT:-2}"
 MIN_DRIVER_MAJOR="${THREE_AGENT_MIN_DRIVER_MAJOR:-590}"
 OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-65536}"
-OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-20m}"
-OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-2}"
+OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-2m}"
+OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 LOG_DIR="${THREE_AGENT_LOG_DIR:-/var/log/3agent}"
 LOG_FILE="${LOG_DIR}/ai-stack-setup.log"
@@ -33,6 +38,7 @@ if [[ "$SELF_TEST" == "1" ]]; then
   [[ "$OLLAMA_CONTEXT_LENGTH" =~ ^[0-9]+$ ]] || die "context length must be numeric"
   [[ "$OLLAMA_MAX_LOADED_MODELS" =~ ^[0-9]+$ ]] || die "max loaded models must be numeric"
   [[ "$OLLAMA_NUM_PARALLEL" =~ ^[0-9]+$ ]] || die "parallel count must be numeric"
+  [[ -n "$FAST_MODEL" && -n "$RESEARCH_MODEL" && -n "$PRESENTATION_MODEL" && -n "$REPORT_MODEL" ]] || die "model pool contains an empty required model"
   log "AI stack installer self-test PASS"
   exit 0
 fi
@@ -188,11 +194,29 @@ deploy_repository() {
 
   local tmp_config
   tmp_config="$(mktemp)"
-  jq --arg model "$MODEL" \
+  jq \
+    --arg model "$MODEL" \
+    --arg fast "$FAST_MODEL" \
+    --arg research "$RESEARCH_MODEL" \
+    --arg presentation "$PRESENTATION_MODEL" \
+    --arg report "$REPORT_MODEL" \
+    --arg deep "$DEEP_MODEL" \
+    --arg keep_alive "$OLLAMA_KEEP_ALIVE" \
     '.test_mode_full_access = true
      | .llm.provider = "ollama"
      | .llm.base_url = "http://127.0.0.1:11434"
-     | .llm.model = $model' \
+     | .llm.model = $model
+     | .llm.keep_alive = $keep_alive
+     | .model_policy = {
+         enabled: true,
+         fast_model: $fast,
+         research_model: $research,
+         presentation_model: $presentation,
+         report_model: $report,
+         deep_model: $deep,
+         deep_escalation: true,
+         deep_prompt_chars: 14000
+       }' \
     "${INSTALL_DIR}/config/test.example.json" >"$tmp_config"
   as_root install -o "$TARGET_USER" -g "$(id -gn "$TARGET_USER")" -m 0644 "$tmp_config" "${INSTALL_DIR}/config/local.json"
   rm -f "$tmp_config"
@@ -206,7 +230,6 @@ install_command() {
 set -euo pipefail
 cd $(printf '%q' "$INSTALL_DIR")
 export THREE_AGENT_CONFIG=$(printf '%q' "${INSTALL_DIR}/config/local.json")
-export LOCAL_LLM_MODEL=$(printf '%q' "$MODEL")
 exec $(printf '%q' "${INSTALL_DIR}/.venv/bin/three-agent") "\$@"
 EOF
   as_root install -m 0755 "$tmp" /usr/local/bin/3agent
@@ -214,9 +237,35 @@ EOF
   log "Installed command: /usr/local/bin/3agent"
 }
 
-pull_model() {
-  log "Pulling local AI model: ${MODEL}"
-  as_user ollama pull "$MODEL"
+pull_models() {
+  local -a requested=(
+    "$FAST_MODEL"
+    "$RESEARCH_MODEL"
+    "$PRESENTATION_MODEL"
+    "$REPORT_MODEL"
+    "$DEEP_MODEL"
+  )
+  local -a unique=()
+  local model seen existing
+  for model in "${requested[@]}"; do
+    [[ -n "$model" ]] || continue
+    seen=0
+    for existing in "${unique[@]:-}"; do
+      if [[ "$existing" == "$model" ]]; then
+        seen=1
+        break
+      fi
+    done
+    if [[ "$seen" == "0" ]]; then
+      unique+=("$model")
+    fi
+  done
+
+  log "Pulling on-demand model pool sequentially (${#unique[@]} unique models)."
+  for model in "${unique[@]}"; do
+    log "Pulling model: $model"
+    as_user ollama pull "$model"
+  done
 }
 
 verify_stack() {
@@ -224,12 +273,15 @@ verify_stack() {
   as_user env PYTHONPATH="${INSTALL_DIR}/src" bash "${INSTALL_DIR}/scripts/test.sh"
 
   log "Running 3Agent smoke test."
-  as_user /usr/local/bin/3agent smoke
+  local smoke
+  smoke="$(as_user /usr/local/bin/3agent smoke)"
+  printf '%s\n' "$smoke"
+  grep -q 'model_policy_enabled' <<<"$smoke" || die "Smoke output does not expose model policy"
 
-  log "Running live local-model inference with Qwen thinking disabled for deterministic validation."
+  log "Running live local-model inference with research model."
   local payload response
-  payload="$(jq -nc --arg model "$MODEL" \
-    '{model:$model,prompt:"Reply with only the word READY.",stream:false,think:false,options:{num_predict:64}}')"
+  payload="$(jq -nc --arg model "$RESEARCH_MODEL" \
+    '{model:$model,prompt:"Reply with only the word READY.",stream:false,think:false,keep_alive:"2m",options:{num_predict:64}}')"
   response="$(curl -fsS --max-time 300 \
     -H 'Content-Type: application/json' \
     -d "$payload" \
@@ -250,16 +302,20 @@ verify_stack() {
   nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used,utilization.gpu \
     --format=csv,noheader
 
-  log "FINAL PASS: 3Agent AI stack is ready."
+  log "FINAL PASS: 3Agent AI stack is ready with model-on-demand routing."
   log "Project: ${INSTALL_DIR}"
-  log "Model: ${MODEL}"
+  log "Fast model: ${FAST_MODEL}"
+  log "Research model: ${RESEARCH_MODEL}"
+  log "Presentation model: ${PRESENTATION_MODEL}"
+  log "Report model: ${REPORT_MODEL}"
+  log "Deep escalation model: ${DEEP_MODEL}"
+  log "Ollama max loaded models: ${OLLAMA_MAX_LOADED_MODELS}"
   log "Command: 3agent"
   log "Log: ${LOG_FILE}"
 }
 
 main() {
   setup_log
-  log "Starting application-only 3Agent setup. NVIDIA driver/kernel mutation is disabled by design."
   check_os
   install_base_packages
   check_existing_gpu_stack
@@ -267,7 +323,7 @@ main() {
   configure_ollama
   deploy_repository
   install_command
-  pull_model
+  pull_models
   verify_stack
 }
 
