@@ -8,6 +8,12 @@ REPORT_MODEL="${THREE_AGENT_REPORT_MODEL:-$FAST_MODEL}"
 DEEP_MODEL="${THREE_AGENT_DEEP_MODEL:-deepseek-r1:32b}"
 KEEP_ALIVE="${THREE_AGENT_MODEL_KEEP_ALIVE:-2m}"
 DEEP_PROMPT_CHARS="${THREE_AGENT_DEEP_PROMPT_CHARS:-14000}"
+MAX_VRAM_PERCENT="${THREE_AGENT_MAX_VRAM_PERCENT:-90}"
+MAX_RAM_PERCENT="${THREE_AGENT_MAX_RAM_PERCENT:-90}"
+MAX_GPU_UTIL_PERCENT="${THREE_AGENT_MAX_GPU_UTIL_PERCENT:-95}"
+MAX_GPU_POWER_PERCENT="${THREE_AGENT_MAX_GPU_POWER_PERCENT:-95}"
+MAX_GPU_TEMP_C="${THREE_AGENT_MAX_GPU_TEMP_C:-85}"
+MODEL_SIZE_SAFETY_FACTOR="${THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR:-1.15}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-$HOME/3agent}"
 CONFIG_FILE="${THREE_AGENT_CONFIG:-$INSTALL_DIR/config/local.json}"
 OLLAMA_DROPIN="/etc/systemd/system/ollama.service.d/zz-3agent-model-pool.conf"
@@ -31,6 +37,10 @@ log() { printf '[3Agent-ModelPool] %s\n' "$*"; }
 warn() { printf '[3Agent-ModelPool][WARN] %s\n' "$*" >&2; }
 die() { printf '[3Agent-ModelPool][ERROR] %s\n' "$*" >&2; exit 1; }
 
+is_percent() {
+  awk -v value="$1" 'BEGIN { exit !(value+0 >= 1 && value+0 <= 100) }'
+}
+
 validate_settings() {
   [[ -n "$FAST_MODEL" ]] || die "FAST_MODEL is empty"
   [[ -n "$RESEARCH_MODEL" ]] || die "RESEARCH_MODEL is empty"
@@ -38,6 +48,10 @@ validate_settings() {
   [[ -n "$REPORT_MODEL" ]] || die "REPORT_MODEL is empty"
   [[ "$DEEP_PROMPT_CHARS" =~ ^[0-9]+$ ]] || die "DEEP_PROMPT_CHARS must be numeric"
   (( DEEP_PROMPT_CHARS >= 2000 )) || die "DEEP_PROMPT_CHARS must be >= 2000"
+  is_percent "$MAX_VRAM_PERCENT" || die "MAX_VRAM_PERCENT must be 1..100"
+  is_percent "$MAX_RAM_PERCENT" || die "MAX_RAM_PERCENT must be 1..100"
+  is_percent "$MAX_GPU_UTIL_PERCENT" || die "MAX_GPU_UTIL_PERCENT must be 1..100"
+  is_percent "$MAX_GPU_POWER_PERCENT" || die "MAX_GPU_POWER_PERCENT must be 1..100"
 }
 
 if [[ "$SELF_TEST" == "1" ]]; then
@@ -153,6 +167,12 @@ update_local_config() {
     --arg deep "$DEEP_MODEL" \
     --arg keep_alive "$KEEP_ALIVE" \
     --argjson threshold "$DEEP_PROMPT_CHARS" \
+    --argjson max_vram "$MAX_VRAM_PERCENT" \
+    --argjson max_ram "$MAX_RAM_PERCENT" \
+    --argjson max_util "$MAX_GPU_UTIL_PERCENT" \
+    --argjson max_power "$MAX_GPU_POWER_PERCENT" \
+    --argjson max_temp "$MAX_GPU_TEMP_C" \
+    --argjson size_factor "$MODEL_SIZE_SAFETY_FACTOR" \
     '.llm.keep_alive = $keep_alive
      | .model_policy = {
          enabled: true,
@@ -162,10 +182,21 @@ update_local_config() {
          report_model: $report,
          deep_model: $deep,
          deep_escalation: true,
-         deep_prompt_chars: $threshold
+         deep_prompt_chars: $threshold,
+         resource_control: {
+           enabled: true,
+           max_vram_percent: $max_vram,
+           max_ram_percent: $max_ram,
+           max_gpu_util_percent: $max_util,
+           max_gpu_power_percent: $max_power,
+           max_gpu_temp_c: $max_temp,
+           model_size_safety_factor: $size_factor,
+           serialize_generation: true,
+           reservation_ttl_seconds: 900
+         }
        }' \
     "$CONFIG_FILE" >"$tmp"
-  jq -e '.model_policy.enabled == true' "$tmp" >/dev/null || die "Generated config failed validation"
+  jq -e '.model_policy.resource_control.enabled == true' "$tmp" >/dev/null || die "Generated resource config failed validation"
   install -m 0644 "$tmp" "$CONFIG_FILE"
   rm -f "$tmp"
   CONFIG_CHANGED=1
@@ -183,7 +214,6 @@ configure_ollama_lifecycle() {
   cat >"$tmp" <<EOF
 [Service]
 Environment="OLLAMA_KEEP_ALIVE=${KEEP_ALIVE}"
-Environment="OLLAMA_MAX_LOADED_MODELS=1"
 Environment="OLLAMA_NUM_PARALLEL=1"
 EOF
   sudo mkdir -p /etc/systemd/system/ollama.service.d
@@ -194,7 +224,7 @@ EOF
   sudo systemctl restart ollama
   for _ in {1..60}; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-      log "Ollama lifecycle policy PASS: MAX_LOADED_MODELS=1, KEEP_ALIVE=$KEEP_ALIVE"
+      log "Ollama lifecycle PASS: no fixed loaded-model cap; KEEP_ALIVE=$KEEP_ALIVE"
       return 0
     fi
     sleep 1
@@ -207,42 +237,77 @@ update_package() {
   "$INSTALL_DIR/.venv/bin/python" -m pip install -e "$INSTALL_DIR"
 }
 
-verify_model_sequentially() {
-  local model payload response ps_json loaded_count unload_payload
-  for model in "${MODELS[@]}"; do
-    log "Live-check model: $model"
-    payload="$(jq -nc --arg model "$model" '{model:$model,prompt:"Reply with only READY.",stream:false,think:false,keep_alive:"2m",options:{num_predict:32}}')"
-    response="$(curl -fsS --max-time 600 -H 'Content-Type: application/json' -d "$payload" http://127.0.0.1:11434/api/generate)"
-    jq -e '(.response // "") | strings | length > 0' <<<"$response" >/dev/null || die "Model inference failed: $model"
-
-    ps_json="$(curl -fsS http://127.0.0.1:11434/api/ps)"
-    loaded_count="$(jq '.models | length' <<<"$ps_json")"
-    (( loaded_count <= 1 )) || die "Resource policy violated: $loaded_count models are loaded simultaneously"
-    jq -e --arg model "$model" '.models | length == 1 and .[0].name == $model' <<<"$ps_json" >/dev/null \
-      || warn "Ollama model name differs from requested tag; continuing because only one model is resident"
-
-    unload_payload="$(jq -nc --arg model "$model" '{model:$model,prompt:"",stream:false,keep_alive:0}')"
-    curl -fsS --max-time 120 -H 'Content-Type: application/json' -d "$unload_payload" http://127.0.0.1:11434/api/generate >/dev/null
-    sleep 1
-    ps_json="$(curl -fsS http://127.0.0.1:11434/api/ps)"
-    jq -e '.models | length == 0' <<<"$ps_json" >/dev/null || die "Model did not unload cleanly after test: $model"
-    log "Model PASS + unload PASS: $model"
-  done
-}
-
 verify_application() {
   log "Running full project regression tests."
   PYTHONPATH="$INSTALL_DIR/src" "$INSTALL_DIR/.venv/bin/python" -m unittest discover -s "$INSTALL_DIR/tests" -v
 
-  log "Checking role model policy."
+  log "Checking dynamic resource policy."
   local smoke
   smoke="$(THREE_AGENT_CONFIG="$CONFIG_FILE" "$INSTALL_DIR/.venv/bin/three-agent" smoke)"
   printf '%s\n' "$smoke"
   grep -q '"model_policy_enabled": true' <<<"$smoke" || die "3Agent model policy is not enabled"
+  grep -q '"resource_control_enabled": true' <<<"$smoke" || die "Resource control is not enabled"
+  grep -q '"fixed_model_count_limit": false' <<<"$smoke" || die "Fixed model-count limit is still active"
   grep -Fq "$RESEARCH_MODEL" <<<"$smoke" || die "Research model is not active in config"
   grep -Fq "$PRESENTATION_MODEL" <<<"$smoke" || die "Presentation model is not active in config"
   grep -Fq "$REPORT_MODEL" <<<"$smoke" || die "Report model is not active in config"
   grep -Fq "$DEEP_MODEL" <<<"$smoke" || die "Deep model is not active in config"
+}
+
+admission_check() {
+  local model="$1"
+  THREE_AGENT_CONFIG="$CONFIG_FILE" MODEL_TO_CHECK="$model" PYTHONPATH="$INSTALL_DIR/src" \
+    "$INSTALL_DIR/.venv/bin/python" - <<'PY'
+import os
+from three_agent.config import load_config
+from three_agent.orchestrator import Orchestrator
+from three_agent.resource_budget import ResourceAdmissionError
+
+config = load_config(os.environ["THREE_AGENT_CONFIG"])
+manager = Orchestrator(config).resource_manager
+if manager is None:
+    raise SystemExit("resource manager is not enabled")
+model = os.environ["MODEL_TO_CHECK"]
+try:
+    with manager.admit(model) as decision:
+        print(
+            f"ADMIT model={model} projected_vram={decision.projected_vram_percent:.1f}% "
+            f"projected_ram={decision.projected_ram_percent:.1f}%"
+        )
+except ResourceAdmissionError as exc:
+    print(f"DENY model={model} reason={exc}")
+    raise SystemExit(42)
+PY
+}
+
+verify_models_under_budget() {
+  local model payload response ps_json total_vram used_vram projected_percent admitted=0 denied=0
+  total_vram="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | awk '{sum += $1} END {print int(sum)}')"
+  (( total_vram > 0 )) || die "Unable to determine total GPU VRAM"
+
+  for model in "${MODELS[@]}"; do
+    log "Pre-calculating resource admission for: $model"
+    if ! admission_check "$model"; then
+      warn "Model safely denied by current resource budget: $model"
+      denied=$((denied + 1))
+      continue
+    fi
+
+    payload="$(jq -nc --arg model "$model" --arg keep "$KEEP_ALIVE" '{model:$model,prompt:"Reply with only READY.",stream:false,think:false,keep_alive:$keep,options:{num_predict:32}}')"
+    response="$(curl -fsS --max-time 600 -H 'Content-Type: application/json' -d "$payload" http://127.0.0.1:11434/api/generate)"
+    jq -e '(.response // "") | strings | length > 0' <<<"$response" >/dev/null || die "Model inference failed: $model"
+    admitted=$((admitted + 1))
+
+    ps_json="$(curl -fsS http://127.0.0.1:11434/api/ps)"
+    used_vram="$(jq '[.models[].size_vram] | add // 0' <<<"$ps_json")"
+    projected_percent="$(awk -v bytes="$used_vram" -v mib="$total_vram" 'BEGIN { printf "%.2f", (bytes / (mib * 1024 * 1024)) * 100 }')"
+    awk -v used="$projected_percent" -v limit="$MAX_VRAM_PERCENT" 'BEGIN { exit !(used <= limit) }' \
+      || die "Actual resident model VRAM ${projected_percent}% exceeded configured ${MAX_VRAM_PERCENT}%"
+    log "Resident set PASS after $model: $(jq '.models | length' <<<"$ps_json") model(s), VRAM=${projected_percent}%"
+  done
+
+  (( admitted > 0 )) || die "No model could be admitted under the configured resource budget"
+  log "Dynamic admission verification PASS: admitted=$admitted safely_denied=$denied"
 }
 
 restart_chat() {
@@ -257,24 +322,26 @@ restart_chat() {
 }
 
 main() {
-  log "Starting safe model-pool upgrade. NVIDIA driver/kernel will not be modified."
+  log "Starting safe dynamic model-pool upgrade. NVIDIA driver/kernel will not be modified."
   check_gpu
   check_ollama
   pull_models_sequentially
   update_local_config
   configure_ollama_lifecycle
   update_package
-  verify_model_sequentially
   verify_application
+  verify_models_under_budget
   restart_chat
 
   UPGRADE_COMPLETE=1
   trap - ERR
-  log "FINAL PASS: model-on-demand upgrade completed."
+  log "FINAL PASS: dynamic resource-aware model pool completed."
   log "Fast/Presentation/Report: $FAST_MODEL / $PRESENTATION_MODEL / $REPORT_MODEL"
   log "Research: $RESEARCH_MODEL"
   log "Deep escalation: $DEEP_MODEL"
-  log "VRAM policy: max 1 loaded model; explicit unload between workflow stages"
+  log "VRAM/RAM budget: ${MAX_VRAM_PERCENT}% / ${MAX_RAM_PERCENT}%"
+  log "GPU util/power/temp guards: ${MAX_GPU_UTIL_PERCENT}% / ${MAX_GPU_POWER_PERCENT}% / ${MAX_GPU_TEMP_C}C"
+  log "Resident model count: dynamic; no fixed one-model cap"
 }
 
 main "$@"
