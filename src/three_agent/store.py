@@ -60,6 +60,13 @@ class TaskStore:
                     path TEXT NOT NULL,
                     metadata TEXT NOT NULL DEFAULT '{}'
                 );
+                CREATE TABLE IF NOT EXISTS task_uploads (
+                    task_id TEXT NOT NULL,
+                    upload_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(task_id, upload_id),
+                    FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+                );
                 """
             )
 
@@ -125,6 +132,24 @@ class TaskStore:
         with self.connect() as conn:
             conn.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?", (status.value, now, task_id))
         return self.get_task(task_id)
+
+    def attach_uploads(self, task_id: str, upload_ids: list[str]) -> None:
+        if not upload_ids:
+            return
+        now = datetime.now(TZ).isoformat()
+        with self.connect() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO task_uploads(task_id,upload_id,created_at) VALUES(?,?,?)",
+                [(task_id, upload_id, now) for upload_id in upload_ids],
+            )
+
+    def upload_ids_for_task(self, task_id: str) -> list[str]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT upload_id FROM task_uploads WHERE task_id = ? ORDER BY created_at, upload_id",
+                (task_id,),
+            ).fetchall()
+        return [str(row["upload_id"]) for row in rows]
 
     def record_activity(self, task_id: str | None, agent_id: str, action: str, status: str, details: str = "") -> None:
         with self.connect() as conn:
