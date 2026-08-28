@@ -19,6 +19,10 @@ grep -q 'Resource policy violated' "$SCRIPT"
 grep -q 'models | length == 0' "$SCRIPT"
 grep -q 'unittest discover' "$SCRIPT"
 grep -q '3agent-chat.service' "$SCRIPT"
+grep -q 'trap rollback ERR' "$SCRIPT"
+grep -q 'Restored config' "$SCRIPT"
+grep -q 'Removed newly-created Ollama lifecycle drop-in' "$SCRIPT"
+grep -q 'UPGRADE_COMPLETE=1' "$SCRIPT"
 
 if grep -Eq 'ubuntu-drivers|nvidia-driver-[0-9]|apt(-get)?[^#\n]*install[^#\n]*nvidia|(^|[[:space:]])reboot([[:space:]]|$)|rmmod[[:space:]]+nvidia|modprobe[[:space:]]+nvidia' "$SCRIPT"; then
   echo "Model-pool upgrade must not mutate NVIDIA driver/kernel state" >&2
