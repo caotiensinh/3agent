@@ -43,10 +43,10 @@ class AppConfig:
     artifact_root: Path
     profile_root: Path
     llm: LLMConfig
-    model_policy: ModelPolicyConfig
     internet_gateway: GatewayConfig
     execution_gateway: GatewayConfig
     raw: dict[str, Any]
+    model_policy: ModelPolicyConfig | None = None
 
 
 def _expand(path: str) -> Path:
@@ -55,6 +55,20 @@ def _expand(path: str) -> Path:
 
 def _model_env(name: str, configured: str, fallback: str) -> str:
     return os.getenv(name, configured or fallback).strip()
+
+
+def legacy_model_policy(llm: LLMConfig) -> ModelPolicyConfig:
+    """Single-model compatibility policy for older configs/test fixtures."""
+    return ModelPolicyConfig(
+        enabled=False,
+        fast_model=llm.model,
+        research_model=llm.model,
+        presentation_model=llm.model,
+        report_model=llm.model,
+        deep_model=llm.model,
+        deep_escalation=False,
+        deep_prompt_chars=14000,
+    )
 
 
 def load_config(path: str | None = None) -> AppConfig:
@@ -79,29 +93,31 @@ def load_config(path: str | None = None) -> AppConfig:
     )
     deep_model = _model_env("THREE_AGENT_DEEP_MODEL", str(policy_raw.get("deep_model", "")), research_model)
 
+    llm = LLMConfig(
+        provider=llm_raw.get("provider", "ollama"),
+        base_url=llm_raw.get("base_url", "http://127.0.0.1:11434").rstrip("/"),
+        model=base_model,
+        timeout_seconds=int(llm_raw.get("timeout_seconds", 1200)),
+        keep_alive=os.getenv("THREE_AGENT_MODEL_KEEP_ALIVE", str(llm_raw.get("keep_alive", "2m"))),
+    )
+    policy = ModelPolicyConfig(
+        enabled=bool(policy_raw.get("enabled", False)),
+        fast_model=fast_model,
+        research_model=research_model,
+        presentation_model=presentation_model,
+        report_model=report_model,
+        deep_model=deep_model,
+        deep_escalation=bool(policy_raw.get("deep_escalation", True)),
+        deep_prompt_chars=max(2000, int(policy_raw.get("deep_prompt_chars", 14000))),
+    )
+
     return AppConfig(
         environment=data.get("environment", "test"),
         test_mode_full_access=bool(data.get("test_mode_full_access", False)),
         database_path=_expand(data.get("database_path", "data/tasks.db")),
         artifact_root=_expand(data.get("artifact_root", "data")),
         profile_root=_expand(data.get("profile_root", "profiles")),
-        llm=LLMConfig(
-            provider=llm_raw.get("provider", "ollama"),
-            base_url=llm_raw.get("base_url", "http://127.0.0.1:11434").rstrip("/"),
-            model=base_model,
-            timeout_seconds=int(llm_raw.get("timeout_seconds", 1200)),
-            keep_alive=os.getenv("THREE_AGENT_MODEL_KEEP_ALIVE", str(llm_raw.get("keep_alive", "2m"))),
-        ),
-        model_policy=ModelPolicyConfig(
-            enabled=bool(policy_raw.get("enabled", False)),
-            fast_model=fast_model,
-            research_model=research_model,
-            presentation_model=presentation_model,
-            report_model=report_model,
-            deep_model=deep_model,
-            deep_escalation=bool(policy_raw.get("deep_escalation", True)),
-            deep_prompt_chars=max(2000, int(policy_raw.get("deep_prompt_chars", 14000))),
-        ),
+        llm=llm,
         internet_gateway=GatewayConfig(
             enabled=bool(internet_raw.get("enabled", True)),
             allow_all=bool(internet_raw.get("allow_all_outbound_in_test", False)),
@@ -113,4 +129,5 @@ def load_config(path: str | None = None) -> AppConfig:
             audit_log=_expand(execution_raw.get("audit_log", "data/activity/execution.jsonl")),
         ),
         raw=data,
+        model_policy=policy,
     )
