@@ -14,6 +14,7 @@ MAX_GPU_UTIL_PERCENT="${THREE_AGENT_MAX_GPU_UTIL_PERCENT:-95}"
 MAX_GPU_POWER_PERCENT="${THREE_AGENT_MAX_GPU_POWER_PERCENT:-95}"
 MAX_GPU_TEMP_C="${THREE_AGENT_MAX_GPU_TEMP_C:-85}"
 MODEL_SIZE_SAFETY_FACTOR="${THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR:-1.15}"
+MODEL_RAM_OVERHEAD_FACTOR="${THREE_AGENT_MODEL_RAM_OVERHEAD_FACTOR:-0.15}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-$HOME/3agent}"
 CONFIG_FILE="${THREE_AGENT_CONFIG:-$INSTALL_DIR/config/local.json}"
 OLLAMA_DROPIN="/etc/systemd/system/ollama.service.d/zz-3agent-model-pool.conf"
@@ -41,6 +42,10 @@ is_percent() {
   awk -v value="$1" 'BEGIN { exit !(value+0 >= 1 && value+0 <= 100) }'
 }
 
+is_ratio() {
+  awk -v value="$1" 'BEGIN { exit !(value+0 >= 0 && value+0 <= 1) }'
+}
+
 validate_settings() {
   [[ -n "$FAST_MODEL" ]] || die "FAST_MODEL is empty"
   [[ -n "$RESEARCH_MODEL" ]] || die "RESEARCH_MODEL is empty"
@@ -52,6 +57,7 @@ validate_settings() {
   is_percent "$MAX_RAM_PERCENT" || die "MAX_RAM_PERCENT must be 1..100"
   is_percent "$MAX_GPU_UTIL_PERCENT" || die "MAX_GPU_UTIL_PERCENT must be 1..100"
   is_percent "$MAX_GPU_POWER_PERCENT" || die "MAX_GPU_POWER_PERCENT must be 1..100"
+  is_ratio "$MODEL_RAM_OVERHEAD_FACTOR" || die "MODEL_RAM_OVERHEAD_FACTOR must be 0..1"
 }
 
 if [[ "$SELF_TEST" == "1" ]]; then
@@ -173,6 +179,7 @@ update_local_config() {
     --argjson max_power "$MAX_GPU_POWER_PERCENT" \
     --argjson max_temp "$MAX_GPU_TEMP_C" \
     --argjson size_factor "$MODEL_SIZE_SAFETY_FACTOR" \
+    --argjson ram_factor "$MODEL_RAM_OVERHEAD_FACTOR" \
     '.llm.keep_alive = $keep_alive
      | .model_policy = {
          enabled: true,
@@ -191,6 +198,7 @@ update_local_config() {
            max_gpu_power_percent: $max_power,
            max_gpu_temp_c: $max_temp,
            model_size_safety_factor: $size_factor,
+           model_ram_overhead_factor: $ram_factor,
            serialize_generation: true,
            reservation_ttl_seconds: 900
          }
@@ -204,7 +212,7 @@ update_local_config() {
 }
 
 configure_ollama_lifecycle() {
-  local tmp timestamp
+  local tmp timestamp environment
   timestamp="$(date +%Y%m%d-%H%M%S)"
   if sudo test -f "$OLLAMA_DROPIN"; then
     DROPIN_BACKUP="${TMPDIR:-/tmp}/3agent-ollama-model-pool.${timestamp}.conf"
@@ -215,6 +223,7 @@ configure_ollama_lifecycle() {
 [Service]
 Environment="OLLAMA_KEEP_ALIVE=${KEEP_ALIVE}"
 Environment="OLLAMA_NUM_PARALLEL=1"
+UnsetEnvironment=OLLAMA_MAX_LOADED_MODELS
 EOF
   sudo mkdir -p /etc/systemd/system/ollama.service.d
   sudo install -m 0644 "$tmp" "$OLLAMA_DROPIN"
@@ -224,7 +233,11 @@ EOF
   sudo systemctl restart ollama
   for _ in {1..60}; do
     if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
-      log "Ollama lifecycle PASS: no fixed loaded-model cap; KEEP_ALIVE=$KEEP_ALIVE"
+      environment="$(systemctl show ollama --property=Environment --value)"
+      if grep -q 'OLLAMA_MAX_LOADED_MODELS=' <<<"$environment"; then
+        die "Legacy OLLAMA_MAX_LOADED_MODELS is still active after restart"
+      fi
+      log "Ollama lifecycle PASS: legacy fixed model cap cleared; KEEP_ALIVE=$KEEP_ALIVE"
       return 0
     fi
     sleep 1
