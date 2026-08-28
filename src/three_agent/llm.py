@@ -54,6 +54,7 @@ class OllamaClient:
             "prompt": f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}",
             "stream": False,
             "think": think,
+            "keep_alive": self.config.keep_alive,
             "options": {"num_predict": num_predict},
         }
         if json_mode:
@@ -70,7 +71,7 @@ class OllamaClient:
             with urlopen(req, timeout=self.config.timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
-            raise LocalLLMError(f"Local LLM request failed: {exc}") from exc
+            raise LocalLLMError(f"Local LLM request failed for model {self.config.model}: {exc}") from exc
         if not isinstance(payload, dict):
             raise LocalLLMError("Local LLM returned an invalid payload")
         return payload
@@ -95,8 +96,6 @@ class OllamaClient:
         *,
         num_predict: int,
     ) -> dict[str, Any]:
-        # Keep the retry bounded even if a model emitted an unexpectedly huge blob.
-        # The repair model is local; no candidate content is sent to an external API.
         candidate = malformed_text[:32000]
         truncated = len(malformed_text) > len(candidate)
         repair_system = (
@@ -162,13 +161,99 @@ class OllamaClient:
             return _extract_json_object(text)
         except LocalLLMError as first_error:
             try:
-                return self._repair_json(
-                    text,
-                    first_error,
-                    num_predict=num_predict,
-                )
+                return self._repair_json(text, first_error, num_predict=num_predict)
             except Exception as repair_error:
                 raise LocalLLMError(
                     "Local LLM returned invalid JSON and the automatic repair retry also failed: "
                     f"first={first_error}; repair={repair_error}"
                 ) from repair_error
+
+    def unload(self) -> None:
+        """Ask Ollama to release this model from VRAM without generating output."""
+        if not self.config.model:
+            return
+        body = json.dumps(
+            {"model": self.config.model, "prompt": "", "stream": False, "keep_alive": 0},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = Request(
+            f"{self.config.base_url}/api/generate",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=min(self.config.timeout_seconds, 60)) as response:
+                response.read()
+        except Exception:
+            # Lifecycle cleanup must never turn a completed agent stage into a failure.
+            return
+
+
+class AdaptiveOllamaClient:
+    """Role-scoped model-on-demand client with bounded deep-model escalation.
+
+    Only one model is called for a normal request. The deep model is used either
+    for a large research prompt or as a retry after the primary model fails.
+    It never fans out to multiple models concurrently.
+    """
+
+    def __init__(
+        self,
+        primary: OllamaClient,
+        *,
+        deep: OllamaClient | None = None,
+        deep_escalation: bool = True,
+        deep_prompt_chars: int = 14000,
+        role: str = "general",
+    ):
+        self.primary = primary
+        self.deep = deep
+        self.deep_escalation = deep_escalation
+        self.deep_prompt_chars = max(2000, deep_prompt_chars)
+        self.role = role
+        self.config = primary.config
+
+    def _deep_is_distinct(self) -> bool:
+        return bool(
+            self.deep
+            and self.deep.config.model
+            and self.deep.config.model != self.primary.config.model
+        )
+
+    def _prefer_deep(self, user_prompt: str) -> bool:
+        return (
+            self.role == "research"
+            and self.deep_escalation
+            and self._deep_is_distinct()
+            and len(user_prompt) >= self.deep_prompt_chars
+        )
+
+    def _call(self, method: str, system_prompt: str, user_prompt: str, **kwargs):
+        primary_method = getattr(self.primary, method)
+        deep_method = getattr(self.deep, method) if self.deep else None
+
+        if self._prefer_deep(user_prompt) and deep_method is not None:
+            try:
+                return deep_method(system_prompt, user_prompt, **kwargs)
+            except LocalLLMError:
+                # A missing/unavailable deep model must not break a healthy primary lane.
+                return primary_method(system_prompt, user_prompt, **kwargs)
+
+        try:
+            return primary_method(system_prompt, user_prompt, **kwargs)
+        except LocalLLMError:
+            if self.deep_escalation and self._deep_is_distinct() and deep_method is not None:
+                return deep_method(system_prompt, user_prompt, **kwargs)
+            raise
+
+    def generate(self, system_prompt: str, user_prompt: str, **kwargs) -> str:
+        return self._call("generate", system_prompt, user_prompt, **kwargs)
+
+    def generate_json(self, system_prompt: str, user_prompt: str, **kwargs) -> dict[str, Any]:
+        return self._call("generate_json", system_prompt, user_prompt, **kwargs)
+
+    def unload(self) -> None:
+        self.primary.unload()
+        if self._deep_is_distinct() and self.deep is not None:
+            self.deep.unload()
