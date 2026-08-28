@@ -38,6 +38,49 @@ class PresentationAgent(BaseAgent):
     def _sha256(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    @staticmethod
+    def _drop_empty_model_slides(raw_plan: dict) -> tuple[dict, list[int]]:
+        """Drop model-created non-title slides that contain no visible content.
+
+        This is a deterministic structural recovery only. It never invents or moves
+        evidence. Invalid objects, unknown claim references, duplicate titles and
+        other contract violations remain for normalize_plan() to reject.
+        """
+        if not isinstance(raw_plan, dict):
+            return raw_plan, []
+        raw_slides = raw_plan.get("slides")
+        if not isinstance(raw_slides, list):
+            return raw_plan, []
+
+        cleaned: list[object] = []
+        dropped: list[int] = []
+        for index, slide in enumerate(raw_slides, start=1):
+            if not isinstance(slide, dict):
+                cleaned.append(slide)
+                continue
+            kind = str(slide.get("kind", "content")).strip().lower()
+            if kind == "title":
+                cleaned.append(slide)
+                continue
+
+            has_visible_content = False
+            for key in ("claim_refs", "proposal_points", "context_points"):
+                value = slide.get(key)
+                if isinstance(value, list) and any(str(item).strip() for item in value):
+                    has_visible_content = True
+                    break
+
+            if not has_visible_content:
+                dropped.append(index)
+                continue
+            cleaned.append(slide)
+
+        if not dropped:
+            return raw_plan, []
+        sanitized = dict(raw_plan)
+        sanitized["slides"] = cleaned
+        return sanitized, dropped
+
     def _block(self, task_id: str, store: TaskStore, reason: str) -> None:
         store.set_status(task_id, TaskStatus.WAITING_HUMAN)
         store.record_activity(
@@ -142,13 +185,14 @@ Rules:
 1. Use at most {options.slide_count} planned slides. Source/limitation appendices are added later.
 2. At most 4 claim_refs per slide and 6 visible content items total.
 3. Normally place a title slide first.
-4. Prefer verified facts over inferences.
-5. Never promote an inference to fact.
-6. Never invent numbers, dates, products, capabilities, prices, customers, risks, or source URLs.
-7. New research belongs back in Agent 1, not in this deck.
-8. Audience: {options.audience!r}
-9. Purpose: {options.purpose!r}
-10. Output language: {options.language!r}
+4. Every non-title slide MUST contain at least one visible item in claim_refs, proposal_points, or context_points. Never emit placeholder or empty slides.
+5. Prefer verified facts over inferences.
+6. Never promote an inference to fact.
+7. Never invent numbers, dates, products, capabilities, prices, customers, risks, or source URLs.
+8. New research belongs back in Agent 1, not in this deck.
+9. Audience: {options.audience!r}
+10. Purpose: {options.purpose!r}
+11. Output language: {options.language!r}
 
 TASK TITLE: {task_title}
 TASK REQUEST: {task_request}
@@ -239,9 +283,22 @@ EVIDENCE_CATALOG:
                     think=False,
                     num_predict=4096,
                 )
+                raw_plan, dropped_empty_slides = self._drop_empty_model_slides(raw_plan)
                 plan, qa = normalize_plan(
                     raw_plan, catalog, options, task.title
                 )
+                if dropped_empty_slides:
+                    qa.setdefault("warnings", []).append(
+                        "Dropped empty model-planned non-title slides before validation: "
+                        + ", ".join(str(index) for index in dropped_empty_slides)
+                    )
+                    store.record_activity(
+                        task_id,
+                        self.agent_id,
+                        "presentation_empty_slides_dropped",
+                        "warning",
+                        "raw_slide_indexes=" + ",".join(str(index) for index in dropped_empty_slides),
+                    )
                 status = "model_planned_evidence_validated"
             else:
                 plan = build_dry_run_plan(
