@@ -13,6 +13,19 @@ class LLMConfig:
     base_url: str
     model: str
     timeout_seconds: int
+    keep_alive: str = "2m"
+
+
+@dataclass(frozen=True)
+class ModelPolicyConfig:
+    enabled: bool
+    fast_model: str
+    research_model: str
+    presentation_model: str
+    report_model: str
+    deep_model: str
+    deep_escalation: bool
+    deep_prompt_chars: int
 
 
 @dataclass(frozen=True)
@@ -30,6 +43,7 @@ class AppConfig:
     artifact_root: Path
     profile_root: Path
     llm: LLMConfig
+    model_policy: ModelPolicyConfig
     internet_gateway: GatewayConfig
     execution_gateway: GatewayConfig
     raw: dict[str, Any]
@@ -39,14 +53,31 @@ def _expand(path: str) -> Path:
     return Path(os.path.expandvars(os.path.expanduser(path)))
 
 
+def _model_env(name: str, configured: str, fallback: str) -> str:
+    return os.getenv(name, configured or fallback).strip()
+
+
 def load_config(path: str | None = None) -> AppConfig:
     config_path = Path(path or os.getenv("THREE_AGENT_CONFIG", "config/test.example.json"))
     data = json.loads(config_path.read_text(encoding="utf-8"))
 
-    model = os.getenv("LOCAL_LLM_MODEL", data.get("llm", {}).get("model", ""))
     llm_raw = data.get("llm", {})
+    base_model = os.getenv("LOCAL_LLM_MODEL", llm_raw.get("model", "")).strip()
+    policy_raw = data.get("model_policy", {})
     internet_raw = data.get("internet_gateway", {})
     execution_raw = data.get("execution_gateway", {})
+
+    fast_model = _model_env("THREE_AGENT_FAST_MODEL", str(policy_raw.get("fast_model", "")), base_model)
+    research_model = _model_env(
+        "THREE_AGENT_RESEARCH_MODEL", str(policy_raw.get("research_model", "")), base_model
+    )
+    presentation_model = _model_env(
+        "THREE_AGENT_PRESENTATION_MODEL", str(policy_raw.get("presentation_model", "")), fast_model or base_model
+    )
+    report_model = _model_env(
+        "THREE_AGENT_REPORT_MODEL", str(policy_raw.get("report_model", "")), fast_model or base_model
+    )
+    deep_model = _model_env("THREE_AGENT_DEEP_MODEL", str(policy_raw.get("deep_model", "")), research_model)
 
     return AppConfig(
         environment=data.get("environment", "test"),
@@ -57,8 +88,19 @@ def load_config(path: str | None = None) -> AppConfig:
         llm=LLMConfig(
             provider=llm_raw.get("provider", "ollama"),
             base_url=llm_raw.get("base_url", "http://127.0.0.1:11434").rstrip("/"),
-            model=model,
+            model=base_model,
             timeout_seconds=int(llm_raw.get("timeout_seconds", 1200)),
+            keep_alive=os.getenv("THREE_AGENT_MODEL_KEEP_ALIVE", str(llm_raw.get("keep_alive", "2m"))),
+        ),
+        model_policy=ModelPolicyConfig(
+            enabled=bool(policy_raw.get("enabled", False)),
+            fast_model=fast_model,
+            research_model=research_model,
+            presentation_model=presentation_model,
+            report_model=report_model,
+            deep_model=deep_model,
+            deep_escalation=bool(policy_raw.get("deep_escalation", True)),
+            deep_prompt_chars=max(2000, int(policy_raw.get("deep_prompt_chars", 14000))),
         ),
         internet_gateway=GatewayConfig(
             enabled=bool(internet_raw.get("enabled", True)),
