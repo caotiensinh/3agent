@@ -6,6 +6,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from .config import LLMConfig
+from .resource_budget import ResourceAdmissionError, ResourceBudgetManager
 
 
 class LocalLLMError(RuntimeError):
@@ -34,8 +35,9 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 
 class OllamaClient:
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, resource_manager: ResourceBudgetManager | None = None):
         self.config = config
+        self.resource_manager = resource_manager
 
     def _request(
         self,
@@ -67,14 +69,24 @@ class OllamaClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
+
+        def execute() -> dict[str, Any]:
+            try:
+                with urlopen(req, timeout=self.config.timeout_seconds) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            except Exception as exc:
+                raise LocalLLMError(f"Local LLM request failed for model {self.config.model}: {exc}") from exc
+            if not isinstance(payload, dict):
+                raise LocalLLMError("Local LLM returned an invalid payload")
+            return payload
+
+        if self.resource_manager is None:
+            return execute()
         try:
-            with urlopen(req, timeout=self.config.timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except Exception as exc:
-            raise LocalLLMError(f"Local LLM request failed for model {self.config.model}: {exc}") from exc
-        if not isinstance(payload, dict):
-            raise LocalLLMError("Local LLM returned an invalid payload")
-        return payload
+            with self.resource_manager.admit(self.config.model):
+                return execute()
+        except ResourceAdmissionError:
+            raise
 
     @staticmethod
     def _response_text(payload: dict[str, Any], *, structured: bool = False) -> str:
@@ -191,11 +203,11 @@ class OllamaClient:
 
 
 class AdaptiveOllamaClient:
-    """Role-scoped model-on-demand client with bounded deep-model escalation.
+    """Role-scoped model client with bounded deep-model escalation.
 
-    Only one model is called for a normal request. The deep model is used either
-    for a large research prompt or as a retry after the primary model fails.
-    It never fans out to multiple models concurrently.
+    ResourceAdmissionError is deliberately not treated as an LLM failure: when
+    the resource manager says a candidate would exceed the safe budget, the
+    router must not retry with a larger model and make resource pressure worse.
     """
 
     def __init__(
@@ -236,12 +248,17 @@ class AdaptiveOllamaClient:
         if self._prefer_deep(user_prompt) and deep_method is not None:
             try:
                 return deep_method(system_prompt, user_prompt, **kwargs)
+            except ResourceAdmissionError:
+                # A deep model that cannot fit may fall back to the smaller primary.
+                return primary_method(system_prompt, user_prompt, **kwargs)
             except LocalLLMError:
-                # A missing/unavailable deep model must not break a healthy primary lane.
                 return primary_method(system_prompt, user_prompt, **kwargs)
 
         try:
             return primary_method(system_prompt, user_prompt, **kwargs)
+        except ResourceAdmissionError:
+            # Never escalate a resource-budget denial to a potentially larger model.
+            raise
         except LocalLLMError:
             if self.deep_escalation and self._deep_is_distinct() and deep_method is not None:
                 return deep_method(system_prompt, user_prompt, **kwargs)
@@ -254,6 +271,8 @@ class AdaptiveOllamaClient:
         return self._call("generate_json", system_prompt, user_prompt, **kwargs)
 
     def unload(self) -> None:
+        # Explicit unload remains available to workflow stages, but it is no
+        # longer required after every stage. Residency is governed by budget.
         self.primary.unload()
         if self._deep_is_distinct() and self.deep is not None:
             self.deep.unload()
