@@ -177,7 +177,7 @@ configure_ollama_lifecycle() {
   timestamp="$(date +%Y%m%d-%H%M%S)"
   if sudo test -f "$OLLAMA_DROPIN"; then
     DROPIN_BACKUP="${TMPDIR:-/tmp}/3agent-ollama-model-pool.${timestamp}.conf"
-    sudo cat "$OLLAMA_DROPIN" >"$DROPIN_BACKUP"
+    sudo cp -a "$OLLAMA_DROPIN" "$DROPIN_BACKUP"
   fi
   tmp="$(mktemp)"
   cat >"$tmp" <<EOF
