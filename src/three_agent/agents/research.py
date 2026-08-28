@@ -99,6 +99,7 @@ REQUEST: {request}
                 "unresolved": ["No usable web source could be retrieved for this task."],
                 "conclusion": "Research could not be evidence-validated because no readable source was collected.",
                 "recommended_next_actions": ["Retry research with different search terms or verify Internet/source accessibility."],
+                "synthesis_error": None,
             }
 
         evidence = self._evidence_text(usable)
@@ -110,6 +111,16 @@ Detect material contradictions between sources instead of hiding them.
 For conflicts, cite at least two source IDs and set severity to low, medium, or critical.
 If evidence is insufficient, put the point in unresolved instead of guessing.
 Do not repeat the same fact using different wording.
+
+Keep the structured response compact enough to remain valid JSON:
+- verified_facts: at most 18 concise items
+- inferences: at most 6 concise items
+- conflicts: at most 6 items
+- unresolved: at most 10 items
+- recommended_next_actions: at most 8 items
+- each claim/description: preferably <= 320 characters
+- conclusion: preferably <= 1200 characters
+Do not sacrifice source IDs or factual precision to meet these limits.
 
 Return JSON only with this structure:
 {{
@@ -129,7 +140,25 @@ FOCUS: {focus}
 SOURCES:
 {evidence}
 """.strip()
-        result = self.llm.generate_json(self.profile(), prompt, think=False, num_predict=4096)
+        try:
+            result = self.llm.generate_json(self.profile(), prompt, think=False, num_predict=5120)
+        except Exception as exc:
+            error = " ".join(f"{type(exc).__name__}: {exc}".split())[:1000]
+            return {
+                "verified_facts": [],
+                "inferences": [],
+                "conflicts": [],
+                "unresolved": [
+                    "Structured synthesis could not be validated after the local JSON repair retry.",
+                    error,
+                ],
+                "conclusion": "Sources were collected, but Agent 1 could not produce a structurally valid evidence synthesis. Downstream presentation is blocked rather than using unvalidated output.",
+                "recommended_next_actions": [
+                    "Retry the task; if the condition repeats, inspect the local LLM response and reduce or chunk the evidence set."
+                ],
+                "synthesis_error": error,
+            }
+
         valid_ids = {source.source_id for source in usable}
         verified, rejected_verified = clean_claims(result.get("verified_facts"), valid_ids)
         inferences, rejected_inferences = clean_claims(result.get("inferences"), valid_ids)
@@ -151,6 +180,7 @@ SOURCES:
             "unresolved": unresolved_clean,
             "conclusion": " ".join(conclusion.split()),
             "recommended_next_actions": actions_clean,
+            "synthesis_error": None,
         }
 
     @staticmethod
@@ -240,6 +270,7 @@ SOURCES:
                 "unresolved_items": ["Dry-run only; no evidence was collected."],
                 "conclusion": "Dry-run scaffold only. No research, web search, or factual verification was performed.",
                 "recommended_next_actions": [],
+                "synthesis_error": None,
                 "generated_at": timestamp,
             }
         else:
@@ -260,6 +291,8 @@ SOURCES:
             synthesis = self._synthesize(task.title, task.request, objective, focus, sources)
             usable_count = sum(1 for source in sources if source.fetch_status == "ok" and source.extracted_text)
             status = "researched_cleaned_and_verified" if usable_count else "research_completed_no_usable_sources"
+            if synthesis.get("synthesis_error"):
+                status = "research_synthesis_structured_output_blocked"
             payload = {
                 "task_id": task.task_id,
                 "agent_id": self.agent_id,
@@ -277,6 +310,7 @@ SOURCES:
                 "unresolved_items": synthesis["unresolved"],
                 "conclusion": synthesis["conclusion"],
                 "recommended_next_actions": synthesis["recommended_next_actions"],
+                "synthesis_error": synthesis.get("synthesis_error"),
                 "generated_at": timestamp,
             }
 
