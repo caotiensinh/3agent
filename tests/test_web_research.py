@@ -71,6 +71,19 @@ class FakeLLM:
                 "queries": ["evidence backed research example"],
                 "focus": ["capability"],
             }
+        if "source suitability gate" in user_prompt:
+            return {
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "relevance": "high",
+                        "scope_match": True,
+                        "time_match": None,
+                        "authority": "primary",
+                        "reason": "The source directly describes the requested capability.",
+                    }
+                ]
+            }
         if "evidence-bounded research task" in user_prompt:
             return {
                 "verified_facts": [
@@ -144,6 +157,8 @@ class WebResearchTests(unittest.TestCase):
 
             self.assertEqual(payload["status"], "researched_cleaned_and_verified")
             self.assertEqual(payload["sources"][0]["source_id"], "S1")
+            self.assertEqual(payload["source_assessments"][0]["relevance"], "high")
+            self.assertEqual(payload["rejected_sources"], [])
             self.assertEqual(len(payload["verified_facts"]), 1, "duplicate facts must be removed")
             self.assertEqual(payload["verified_facts"][0]["source_ids"], ["S1"])
             self.assertEqual(payload["verified_facts"][0]["confidence"], "medium")
