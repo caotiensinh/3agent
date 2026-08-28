@@ -8,9 +8,46 @@ SYSTEMD_DIR="$HOME/.config/systemd/user"
 SERVICE_FILE="$SYSTEMD_DIR/3agent-chat.service"
 PORT="${THREE_AGENT_WEB_PORT:-8787}"
 MODEL="${THREE_AGENT_MODEL:-qwen3:30b}"
+HOST="${THREE_AGENT_WEB_HOST:-}"
 
 log() { printf '[3Agent-Chat-Setup] %s\n' "$*"; }
 fail() { printf '[3Agent-Chat-Setup][ERROR] %s\n' "$*" >&2; exit 1; }
+
+private_ipv4() {
+  "$ROOT/.venv/bin/python" - "$1" <<'PY'
+import ipaddress
+import sys
+value = (sys.argv[1] if len(sys.argv) > 1 else "").strip()
+try:
+    address = ipaddress.ip_address(value)
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if address.version == 4 and address.is_private and not address.is_loopback else 1)
+PY
+}
+
+detect_lan_host() {
+  local candidate=""
+  if command -v ip >/dev/null 2>&1; then
+    candidate="$(
+      ip -4 route get 1.1.1.1 2>/dev/null \
+        | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}'
+    )"
+    if [[ -n "$candidate" ]] && private_ipv4 "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  while read -r candidate; do
+    if [[ -n "$candidate" ]] && private_ipv4 "$candidate"; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(hostname -I 2>/dev/null | tr ' ' '\n')
+
+  return 1
+}
 
 [[ -d "$ROOT/.git" ]] || fail "Repository not found: $ROOT"
 [[ -x "$ROOT/.venv/bin/python" ]] || fail "Python environment missing: $ROOT/.venv"
@@ -18,6 +55,12 @@ fail() { printf '[3Agent-Chat-Setup][ERROR] %s\n' "$*" >&2; exit 1; }
 cd "$ROOT"
 "$ROOT/.venv/bin/python" -m pip install -e . >/dev/null
 [[ -x "$ROOT/.venv/bin/three-agent-chat" ]] || fail "three-agent-chat command was not installed"
+
+if [[ -z "$HOST" ]]; then
+  HOST="$(detect_lan_host || true)"
+fi
+[[ -n "$HOST" ]] || fail "Unable to detect a private LAN IPv4 address. Set THREE_AGENT_WEB_HOST explicitly."
+private_ipv4 "$HOST" || fail "THREE_AGENT_WEB_HOST must be a private non-loopback IPv4 address for LAN mode"
 
 mkdir -p "$CONFIG_DIR" "$SYSTEMD_DIR"
 chmod 700 "$CONFIG_DIR"
@@ -32,7 +75,7 @@ PY
 THREE_AGENT_CONFIG=$ROOT/config/local.json
 LOCAL_LLM_MODEL=$MODEL
 THREE_AGENT_WEB_ACCESS_TOKEN=$WEB_TOKEN
-THREE_AGENT_WEB_HOST=0.0.0.0
+THREE_AGENT_WEB_HOST=$HOST
 THREE_AGENT_WEB_PORT=$PORT
 THREE_AGENT_CHAT_LANGUAGE=ja
 THREE_AGENT_TELEGRAM_BOT_TOKEN=
@@ -42,13 +85,23 @@ EOF
   log "Created local secret/config file: $ENV_FILE"
 else
   chmod 600 "$ENV_FILE"
-  log "Preserving existing local secret/config file: $ENV_FILE"
+  if grep -q '^THREE_AGENT_WEB_HOST=' "$ENV_FILE"; then
+    sed -i "s/^THREE_AGENT_WEB_HOST=.*/THREE_AGENT_WEB_HOST=$HOST/" "$ENV_FILE"
+  else
+    printf 'THREE_AGENT_WEB_HOST=%s\n' "$HOST" >>"$ENV_FILE"
+  fi
+  if grep -q '^THREE_AGENT_WEB_PORT=' "$ENV_FILE"; then
+    sed -i "s/^THREE_AGENT_WEB_PORT=.*/THREE_AGENT_WEB_PORT=$PORT/" "$ENV_FILE"
+  else
+    printf 'THREE_AGENT_WEB_PORT=%s\n' "$PORT" >>"$ENV_FILE"
+  fi
+  log "Preserving existing local secret/config file while refreshing LAN bind settings: $ENV_FILE"
 fi
 
 cat >"$SERVICE_FILE" <<EOF
 [Unit]
 Description=3Agent LAN Chat and Telegram Gateway
-After=network-online.target ollama.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -77,21 +130,22 @@ fi
 
 systemctl --user daemon-reload
 systemctl --user enable --now 3agent-chat.service
+systemctl --user restart 3agent-chat.service
 sleep 2
 systemctl --user is-active --quiet 3agent-chat.service || {
   systemctl --user status 3agent-chat.service --no-pager || true
   fail "3agent-chat service did not become active"
 }
 
-LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 WEB_TOKEN="$(awk -F= '$1=="THREE_AGENT_WEB_ACCESS_TOKEN" {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE")"
 
 echo
 echo "=========================================="
 echo "       3Agent LAN Chat is READY"
 echo "=========================================="
-printf 'URL:        http://%s:%s/\n' "${LAN_IP:-<LAN-IP>}" "$PORT"
+printf 'URL:        http://%s:%s/\n' "$HOST" "$PORT"
 printf 'Access key: %s\n' "$WEB_TOKEN"
+printf 'Bind:       %s:%s (private LAN IPv4 only)\n' "$HOST" "$PORT"
 printf 'Service:    systemctl --user status 3agent-chat.service\n'
 printf 'Logs:       journalctl --user -u 3agent-chat.service -f\n'
 echo
