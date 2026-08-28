@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from .agents import DailyReportAgent, PresentationAgent, ResearchAgent
 from .artifacts import ArtifactManager
-from .config import AppConfig
+from .config import AppConfig, legacy_model_policy
 from .gateways import ExecutionGateway, InternetGateway
 from .knowledge_gateway import KnowledgeGateway
 from .llm import AdaptiveOllamaClient, OllamaClient
@@ -27,7 +27,8 @@ class Orchestrator:
         self.web_research = WebResearchClient(self.internet_gateway)
         self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
 
-        policy = config.model_policy
+        policy = config.model_policy or legacy_model_policy(config.llm)
+        self.model_policy = policy
         if policy.enabled:
             research_primary = OllamaClient(replace(config.llm, model=policy.research_model))
             presentation_primary = OllamaClient(replace(config.llm, model=policy.presentation_model))
@@ -59,7 +60,6 @@ class Orchestrator:
             self.presentation_llm = shared
             self.report_llm = shared
 
-        # Backward-compatible handle for callers/tests that inspect orchestrator.llm.
         self.llm = self.research_llm
         self.research_agent = ResearchAgent(
             config.profile_root,
@@ -92,7 +92,7 @@ class Orchestrator:
 
     def smoke(self) -> dict:
         self.initialize()
-        policy = self.config.model_policy
+        policy = self.model_policy
         return {
             "database": str(self.config.database_path),
             "artifact_root": str(self.config.artifact_root),
