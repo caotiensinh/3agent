@@ -111,30 +111,44 @@ EnvironmentFile=$ENV_FILE
 ExecStart=$ROOT/.venv/bin/three-agent-chat
 Restart=on-failure
 RestartSec=5
+
+# User-service-safe hardening. Do not add ProtectKernelModules=,
+# ProtectKernelTunables=, ProtectControlGroups= or ProtectSystem=strict here:
+# those options may require namespace/capability operations unavailable to a
+# per-user systemd manager and can make Ubuntu exit with 218/CAPABILITIES.
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
 LockPersonality=true
 RestrictSUIDSGID=true
+UMask=0077
 
 [Install]
 WantedBy=default.target
 EOF
+
+if command -v systemd-analyze >/dev/null 2>&1; then
+  systemd-analyze --user verify "$SERVICE_FILE" >/dev/null \
+    || fail "systemd rejected the generated user service. Run: systemd-analyze --user verify $SERVICE_FILE"
+fi
 
 if command -v loginctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
   sudo loginctl enable-linger "$USER" >/dev/null
 fi
 
 systemctl --user daemon-reload
-systemctl --user enable --now 3agent-chat.service
+systemctl --user enable 3agent-chat.service >/dev/null
+systemctl --user reset-failed 3agent-chat.service >/dev/null 2>&1 || true
 systemctl --user restart 3agent-chat.service
 sleep 2
 systemctl --user is-active --quiet 3agent-chat.service || {
+  exec_status="$(systemctl --user show 3agent-chat.service -p ExecMainStatus --value 2>/dev/null || true)"
+  result="$(systemctl --user show 3agent-chat.service -p Result --value 2>/dev/null || true)"
   systemctl --user status 3agent-chat.service --no-pager || true
-  fail "3agent-chat service did not become active"
+  journalctl --user -u 3agent-chat.service -n 80 --no-pager || true
+  if [[ "$exec_status" == "218" ]]; then
+    printf '%s\n' "[3Agent-Chat-Setup][DIAG] systemd reported 218/CAPABILITIES; the generated unit intentionally avoids capability-requiring sandbox directives." >&2
+  fi
+  fail "3agent-chat service did not become active (result=${result:-unknown}, ExecMainStatus=${exec_status:-unknown})"
 }
 
 WEB_TOKEN="$(awk -F= '$1=="THREE_AGENT_WEB_ACCESS_TOKEN" {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE")"
