@@ -10,7 +10,15 @@ KEEP_ALIVE="${THREE_AGENT_MODEL_KEEP_ALIVE:-2m}"
 DEEP_PROMPT_CHARS="${THREE_AGENT_DEEP_PROMPT_CHARS:-14000}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-$HOME/3agent}"
 CONFIG_FILE="${THREE_AGENT_CONFIG:-$INSTALL_DIR/config/local.json}"
+OLLAMA_DROPIN="/etc/systemd/system/ollama.service.d/zz-3agent-model-pool.conf"
 SELF_TEST=0
+CONFIG_BACKUP=""
+DROPIN_BACKUP=""
+CONFIG_CHANGED=0
+DROPIN_CHANGED=0
+UPGRADE_COMPLETE=0
+
+declare -a MODELS=()
 
 for arg in "$@"; do
   case "$arg" in
@@ -37,6 +45,36 @@ if [[ "$SELF_TEST" == "1" ]]; then
   log "Model-pool upgrader self-test PASS"
   exit 0
 fi
+
+rollback() {
+  local original_rc="$?"
+  if [[ "$UPGRADE_COMPLETE" == "1" ]]; then
+    return 0
+  fi
+  set +e
+  warn "Upgrade failed; restoring pre-upgrade runtime configuration."
+  if [[ "$CONFIG_CHANGED" == "1" && -n "$CONFIG_BACKUP" && -f "$CONFIG_BACKUP" ]]; then
+    cp -a "$CONFIG_BACKUP" "$CONFIG_FILE"
+    warn "Restored config: $CONFIG_FILE"
+  fi
+  if [[ "$DROPIN_CHANGED" == "1" ]]; then
+    if [[ -n "$DROPIN_BACKUP" && -f "$DROPIN_BACKUP" ]]; then
+      sudo cp -a "$DROPIN_BACKUP" "$OLLAMA_DROPIN"
+      warn "Restored previous Ollama lifecycle drop-in."
+    else
+      sudo rm -f "$OLLAMA_DROPIN"
+      warn "Removed newly-created Ollama lifecycle drop-in."
+    fi
+    sudo systemctl daemon-reload
+    sudo systemctl restart ollama
+  fi
+  if systemctl --user list-unit-files 3agent-chat.service --no-legend 2>/dev/null | grep -q '^3agent-chat.service'; then
+    systemctl --user restart 3agent-chat.service >/dev/null 2>&1 || true
+  fi
+  warn "Rollback finished. Downloaded Ollama model files are intentionally retained because they are inert disk data."
+  exit "$original_rc"
+}
+trap rollback ERR
 
 validate_settings
 [[ -d "$INSTALL_DIR/.git" ]] || die "3Agent checkout not found: $INSTALL_DIR"
@@ -103,9 +141,9 @@ pull_models_sequentially() {
 }
 
 update_local_config() {
-  local backup tmp
-  backup="${CONFIG_FILE}.before-model-pool.$(date +%Y%m%d-%H%M%S)"
-  cp -a "$CONFIG_FILE" "$backup"
+  local tmp
+  CONFIG_BACKUP="${CONFIG_FILE}.before-model-pool.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$CONFIG_FILE" "$CONFIG_BACKUP"
   tmp="$(mktemp)"
   jq \
     --arg fast "$FAST_MODEL" \
@@ -130,11 +168,17 @@ update_local_config() {
   jq -e '.model_policy.enabled == true' "$tmp" >/dev/null || die "Generated config failed validation"
   install -m 0644 "$tmp" "$CONFIG_FILE"
   rm -f "$tmp"
-  log "Config updated; backup: $backup"
+  CONFIG_CHANGED=1
+  log "Config updated; backup: $CONFIG_BACKUP"
 }
 
 configure_ollama_lifecycle() {
-  local tmp
+  local tmp timestamp
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  if sudo test -f "$OLLAMA_DROPIN"; then
+    DROPIN_BACKUP="${TMPDIR:-/tmp}/3agent-ollama-model-pool.${timestamp}.conf"
+    sudo cat "$OLLAMA_DROPIN" >"$DROPIN_BACKUP"
+  fi
   tmp="$(mktemp)"
   cat >"$tmp" <<EOF
 [Service]
@@ -143,8 +187,9 @@ Environment="OLLAMA_MAX_LOADED_MODELS=1"
 Environment="OLLAMA_NUM_PARALLEL=1"
 EOF
   sudo mkdir -p /etc/systemd/system/ollama.service.d
-  sudo install -m 0644 "$tmp" /etc/systemd/system/ollama.service.d/zz-3agent-model-pool.conf
+  sudo install -m 0644 "$tmp" "$OLLAMA_DROPIN"
   rm -f "$tmp"
+  DROPIN_CHANGED=1
   sudo systemctl daemon-reload
   sudo systemctl restart ollama
   for _ in {1..60}; do
@@ -223,6 +268,8 @@ main() {
   verify_application
   restart_chat
 
+  UPGRADE_COMPLETE=1
+  trap - ERR
   log "FINAL PASS: model-on-demand upgrade completed."
   log "Fast/Presentation/Report: $FAST_MODEL / $PRESENTATION_MODEL / $REPORT_MODEL"
   log "Research: $RESEARCH_MODEL"
