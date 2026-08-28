@@ -7,6 +7,7 @@ from three_agent.llm import (
     OllamaClient,
     _extract_json_object,
 )
+from three_agent.resource_budget import ResourceAdmissionError
 
 
 class LLMTests(unittest.TestCase):
@@ -145,6 +146,59 @@ class LLMTests(unittest.TestCase):
         self.assertEqual(client.generate("s", "normal"), "deep-32b")
         self.assertEqual(primary.calls, 1)
         self.assertEqual(deep.calls, 1)
+
+    def test_resource_denial_does_not_escalate_to_larger_model(self):
+        class Fake:
+            def __init__(self, name, deny=False):
+                self.config = SimpleNamespace(model=name)
+                self.deny = deny
+                self.calls = 0
+
+            def generate(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                if self.deny:
+                    raise ResourceAdmissionError("budget denied")
+                return self.config.model
+
+            def unload(self):
+                return None
+
+        primary = Fake("presentation-14b", deny=True)
+        deep = Fake("deep-32b")
+        client = AdaptiveOllamaClient(primary, deep=deep, role="presentation")
+        with self.assertRaises(ResourceAdmissionError):
+            client.generate("s", "normal")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(deep.calls, 0)
+
+    def test_deep_resource_denial_falls_back_to_primary(self):
+        class Fake:
+            def __init__(self, name, deny=False):
+                self.config = SimpleNamespace(model=name)
+                self.deny = deny
+                self.calls = 0
+
+            def generate_json(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                if self.deny:
+                    raise ResourceAdmissionError("budget denied")
+                return {"model": self.config.model}
+
+            def unload(self):
+                return None
+
+        primary = Fake("research-30b")
+        deep = Fake("deep-32b", deny=True)
+        client = AdaptiveOllamaClient(
+            primary,
+            deep=deep,
+            deep_prompt_chars=2000,
+            role="research",
+        )
+        result = client.generate_json("s", "x" * 2500)
+        self.assertEqual(result["model"], "research-30b")
+        self.assertEqual(deep.calls, 1)
+        self.assertEqual(primary.calls, 1)
 
 
 if __name__ == "__main__":
