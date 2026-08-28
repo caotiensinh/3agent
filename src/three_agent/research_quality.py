@@ -188,6 +188,14 @@ def build_handoff(research: dict) -> dict:
             }
         )
 
+    conclusion = _clean_text(research.get("conclusion"))
+    if constraint_gaps:
+        conclusion = (
+            "The collected evidence does not fully satisfy the request's core requirements: "
+            + ", ".join(constraint_gaps)
+            + ". Unsupported details remain unresolved and must not be treated as verified."
+        )
+
     return {
         "schema_version": "1.0",
         "task_id": research.get("task_id"),
@@ -200,7 +208,7 @@ def build_handoff(research: dict) -> dict:
         "conflicts": conflicts,
         "unresolved_items": list(research.get("unresolved_items") or []),
         "constraint_gaps": constraint_gaps,
-        "conclusion": research.get("conclusion", ""),
+        "conclusion": conclusion,
         "recommended_next_actions": list(research.get("recommended_next_actions") or []),
         "sources": source_refs(sources),
         "source_assessments": list(research.get("source_assessments") or []),
