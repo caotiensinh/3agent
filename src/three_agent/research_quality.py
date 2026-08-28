@@ -137,6 +137,8 @@ def build_handoff(research: dict) -> dict:
     blockers: list[str] = []
     if not usable_sources:
         blockers.append("NO_USABLE_SOURCE")
+    if research.get("synthesis_error"):
+        blockers.append("SYNTHESIS_INVALID_STRUCTURED_OUTPUT")
     if not verified:
         blockers.append("NO_VERIFIED_FACT")
     if critical_conflicts:
@@ -177,6 +179,7 @@ def build_handoff(research: dict) -> dict:
             "conflict_count": len(conflicts),
             "critical_conflict_count": len(critical_conflicts),
             "unresolved_count": len(research.get("unresolved_items") or []),
+            "structured_synthesis_error": bool(research.get("synthesis_error")),
         },
         "generated_at": research.get("generated_at"),
     }
