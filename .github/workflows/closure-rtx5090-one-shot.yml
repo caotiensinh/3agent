@@ -9,12 +9,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: workspace-closure-rtx5090-303749d5
+  group: workspace-closure-selfhosted-probe-303749d5
   cancel-in-progress: false
 
 jobs:
   collect:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted]
     timeout-minutes: 300
     env:
       CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
@@ -35,10 +35,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Verify exact source boundary
+      - name: Verify Linux x64 execution host and exact source boundary
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$(uname -s)" = "Linux"
+          case "$(uname -m)" in x86_64|amd64) ;; *) exit 3 ;; esac
           test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
           test -z "$(git -C candidate status --porcelain --untracked-files=no)"
 
