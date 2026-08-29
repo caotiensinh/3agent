@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .daily_report_schemas import DAILY_REPORT_SCHEMA_ID, DAILY_REPORT_SCHEMA_V1
+from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_ID, PRESENTATION_PLAN_SCHEMA_V1
 from .research_schemas import (
     RESEARCH_PLAN_SCHEMA_ID,
     RESEARCH_PLAN_SCHEMA_V1,
@@ -34,14 +36,26 @@ _RESEARCH_ROUTES: tuple[tuple[str, dict[str, Any], str], ...] = (
     ),
 )
 
+_AGENT_SINGLE_ROUTES: dict[str, tuple[str, dict[str, Any], str]] = {
+    "presentation": (
+        "Plan an evidence-bounded professional presentation.",
+        PRESENTATION_PLAN_SCHEMA_V1,
+        PRESENTATION_PLAN_SCHEMA_ID,
+    ),
+    "daily_report": (
+        "Create a concise Japanese R&D daily report using ONLY the JSON evidence below.",
+        DAILY_REPORT_SCHEMA_V1,
+        DAILY_REPORT_SCHEMA_ID,
+    ),
+}
+
 
 class StructuredOutputPolicyClient:
     """Deterministic schema policy wrapper around the configured local LLM client.
 
     The agent owns *what* operation it is performing; this harness layer owns the
-    structural contract. Research is fail-closed: every structured generation path
-    currently present in ResearchAgent must match one registered schema route.
-    Other agents remain pass-through until their D2 checklist item is implemented.
+    structural contract. Once an agent enters a D2 schema-governed phase, every
+    structured generation path for that agent must match a registered route.
     """
 
     def __init__(self, client: Any, *, agent_id: str):
@@ -51,13 +65,24 @@ class StructuredOutputPolicyClient:
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
 
-    def _research_schema(self, user_prompt: str) -> tuple[dict[str, Any], str]:
-        for marker, schema, schema_id in _RESEARCH_ROUTES:
-            if marker in user_prompt:
-                return schema, schema_id
-        raise StructuredOutputPolicyError(
-            "Research structured-output call has no registered schema route"
-        )
+    def _schema_route(self, user_prompt: str) -> tuple[dict[str, Any], str] | None:
+        if self.agent_id == "research":
+            for marker, schema, schema_id in _RESEARCH_ROUTES:
+                if marker in user_prompt:
+                    return schema, schema_id
+            raise StructuredOutputPolicyError(
+                "Research structured-output call has no registered schema route"
+            )
+
+        route = _AGENT_SINGLE_ROUTES.get(self.agent_id)
+        if route is None:
+            return None
+        marker, schema, schema_id = route
+        if marker not in user_prompt:
+            raise StructuredOutputPolicyError(
+                f"{self.agent_id} structured-output call has no registered schema route"
+            )
+        return schema, schema_id
 
     def generate_json(
         self,
@@ -65,8 +90,9 @@ class StructuredOutputPolicyClient:
         user_prompt: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        if self.agent_id == "research":
-            schema, schema_id = self._research_schema(user_prompt)
+        route = self._schema_route(user_prompt)
+        if route is not None:
+            schema, schema_id = route
             kwargs = dict(kwargs)
             kwargs["schema"] = schema
             kwargs["schema_id"] = schema_id
