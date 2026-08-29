@@ -20,21 +20,245 @@ from .chat_gateway import (
     _parse_request_controls,
 )
 from .chat_gateway_v2 import ProgressApplication, ProgressJob
-from .chat_gateway_v3 import HTML_V3, HumanReportChatService, HumanReportHTTPHandler
-from .config import load_config
+from .chat_gateway_v3 import HumanReportChatService, HumanReportHTTPHandler
+from .config import AppConfig, load_config
 from .human_report import create_human_report
 from .knowledge_gateway import MAX_UPLOAD_BYTES, MAX_UPLOADS_PER_TASK, UploadSecurityError
 from .models import TaskStatus
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text
+from .workspace_frontend import WORKSPACE_HTML
 
 MAX_UPLOAD_REQUEST_BYTES = 24 * 1024 * 1024
+REQUEST_MODES = frozenset({"chat", "web_search", "deep_research"})
+EFFORT_LEVELS = frozenset({"standard", "high"})
+HTML_V4 = WORKSPACE_HTML
+
+
+def workspace_ui_capabilities(config: AppConfig) -> dict[str, Any]:
+    """Return UI capabilities without granting runtime authority.
+
+    A feature is enabled only when a real local/runtime path exists and trusted
+    configuration authorizes it. The frontend must not infer capabilities from
+    decorative controls.
+    """
+
+    internet = config.internet_gateway
+    mode = str(config.confidentiality_mode or "").strip().lower()
+    web_enabled = bool(
+        internet.enabled
+        and internet.public_search_enabled
+        and mode in {"public", "public-research"}
+    )
+    github_raw = config.raw.get("github") if isinstance(config.raw, dict) else {}
+    github_configured = bool(
+        isinstance(github_raw, dict) and github_raw.get("enabled", False)
+    )
+
+    return {
+        "schema_version": "workspace-chat-capabilities/v1",
+        "product_name": config.product_name or "WorkSpace",
+        "environment": config.environment,
+        "confidentiality_mode": config.confidentiality_mode,
+        "limits": {
+            "max_upload_bytes": MAX_UPLOAD_BYTES,
+            "max_uploads_per_task": MAX_UPLOADS_PER_TASK,
+            "max_message_chars": 12000,
+        },
+        "features": {
+            "upload": {
+                "enabled": True,
+                "state_label": "Ready",
+                "reason": "",
+            },
+            "library": {
+                "enabled": True,
+                "state_label": "Ready",
+                "reason": "",
+            },
+            "deep_research": {
+                "enabled": True,
+                "state_label": "Ready",
+                "reason": (
+                    "Uses the existing evidence-bounded WorkSpace workflow. "
+                    "It does not grant extra network, model, or tool authority."
+                ),
+            },
+            "web_search": {
+                "enabled": web_enabled,
+                "state_label": "Policy off" if not web_enabled else "Ready",
+                "reason": (
+                    ""
+                    if web_enabled
+                    else "Public web search is disabled by the active WorkSpace policy."
+                ),
+            },
+            "image_generation": {
+                "enabled": False,
+                "state_label": "Not configured",
+                "reason": (
+                    "Local image generation is not configured. WorkSpace will not "
+                    "send confidential prompts to an external image service."
+                ),
+            },
+            "voice_input": {
+                "enabled": False,
+                "state_label": "Not configured",
+                "reason": (
+                    "Local speech-to-text is not configured. WorkSpace will not use "
+                    "browser/cloud speech recognition for confidential audio."
+                ),
+            },
+            "github": {
+                "enabled": False,
+                "state_label": "Operator only",
+                "reason": (
+                    "GitHub is configured for operator/deployment use only; the web "
+                    "chat has no repository mutation authority."
+                    if github_configured
+                    else "GitHub runtime access is not enabled for WorkSpace web chat."
+                ),
+            },
+        },
+    }
+
+
+def _validate_request_options(
+    request_mode: Any,
+    effort: Any,
+    config: AppConfig,
+) -> tuple[str, str]:
+    mode = str(request_mode or "chat").strip().lower()
+    level = str(effort or "high").strip().lower()
+    if mode not in REQUEST_MODES:
+        raise ValueError("Unsupported WorkSpace request mode")
+    if level not in EFFORT_LEVELS:
+        raise ValueError("Unsupported WorkSpace effort level")
+    if mode == "web_search" and not workspace_ui_capabilities(config)["features"][
+        "web_search"
+    ]["enabled"]:
+        raise ValueError("Web search is disabled by the active WorkSpace policy")
+    return mode, level
+
+
+def _request_purpose(mode: str, effort: str) -> str:
+    if mode == "web_search":
+        base = (
+            "answer the user request with evidence; prefer policy-authorized public-web "
+            "evidence where available"
+        )
+    elif mode == "deep_research":
+        base = (
+            "perform thorough evidence-bounded research and answer the user request; "
+            "preserve unresolved items instead of inventing evidence"
+        )
+    else:
+        base = "answer the user request with evidence"
+
+    if effort == "high":
+        return base + "; use thorough analysis within existing deterministic budgets"
+    return base + "; use standard analysis within existing deterministic budgets"
+
+
+def _owned_upload_manifest(gateway: Any, upload_id: str, sender: str) -> dict[str, Any]:
+    folder = Path(gateway.root) / upload_id
+    manifest = folder / "manifest.json"
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise UploadSecurityError(f"Upload metadata is unavailable: {upload_id}") from exc
+    if not isinstance(payload, dict) or str(payload.get("upload_id") or "") != upload_id:
+        raise UploadSecurityError(f"Upload metadata is invalid: {upload_id}")
+    if str(payload.get("sender") or "") != sender:
+        raise UploadSecurityError("Upload is not owned by this LAN client")
+    return payload
+
+
+def _validate_owned_uploads(
+    gateway: Any,
+    upload_ids: list[str],
+    sender: str,
+) -> list[str]:
+    validated = gateway.validate_upload_ids(upload_ids)
+    for upload_id in validated:
+        _owned_upload_manifest(gateway, upload_id, sender)
+    return validated
+
+
+def _recent_uploads(
+    gateway: Any,
+    sender: str,
+    *,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """List metadata-only uploads owned by one LAN client.
+
+    Raw text, raw image bytes, filesystem paths, sender identity, and extracted
+    content are never returned by this endpoint.
+    """
+
+    maximum = max(1, min(100, int(limit)))
+    rows: list[tuple[float, dict[str, Any]]] = []
+    root = Path(gateway.root)
+    if not root.is_dir():
+        return []
+
+    for manifest in root.glob("*/manifest.json"):
+        upload_id = manifest.parent.name
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or str(payload.get("upload_id") or "") != upload_id
+                or str(payload.get("sender") or "") != sender
+            ):
+                continue
+            size = max(0, int(payload.get("size") or 0))
+            name = str(payload.get("name") or upload_id)[:160]
+            documents = payload.get("documents")
+            images = payload.get("images")
+            document_count = len(documents) if isinstance(documents, list) else 0
+            image_count = len(images) if isinstance(images, list) else 0
+            originals = list(manifest.parent.glob("original.*"))
+            suffix = originals[0].suffix.casefold() if originals else ""
+            if suffix == ".zip":
+                kind = "zip"
+            elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+                kind = "image"
+            else:
+                kind = "document"
+            warnings_raw = payload.get("warnings")
+            warnings = (
+                [
+                    redact_sensitive_text(str(item))[:240]
+                    for item in warnings_raw[:8]
+                    if str(item).strip()
+                ]
+                if isinstance(warnings_raw, list)
+                else []
+            )
+            row = {
+                "upload_id": upload_id,
+                "name": name,
+                "size": size,
+                "kind": kind,
+                "document_count": document_count,
+                "image_count": image_count,
+                "warnings": warnings,
+            }
+            rows.append((manifest.stat().st_mtime, row))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    return [row for _, row in rows[:maximum]]
 
 
 class KnowledgeChatService(HumanReportChatService):
     def __init__(self, orchestrator: Orchestrator, default_language: str = "ja") -> None:
         super().__init__(orchestrator, default_language=default_language)
         self._job_uploads: dict[str, list[str]] = {}
+        self._job_options: dict[str, tuple[str, str]] = {}
 
     def submit(
         self,
@@ -44,12 +268,21 @@ class KnowledgeChatService(HumanReportChatService):
         sender: str,
         language: str | None = None,
         upload_ids: list[str] | None = None,
+        request_mode: str = "chat",
+        effort: str = "high",
     ) -> ProgressJob:
         text, chosen_language, output_format = _parse_request_controls(
             message,
             language or self.default_language,
         )
-        validated_uploads = self.orchestrator.knowledge_gateway.validate_upload_ids(upload_ids or [])
+        validated_uploads = self.orchestrator.knowledge_gateway.validate_upload_ids(
+            upload_ids or []
+        )
+        mode, effort_level = _validate_request_options(
+            request_mode,
+            effort,
+            self.orchestrator.config,
+        )
         job = ProgressJob(
             job_id=uuid.uuid4().hex[:16],
             channel=channel,
@@ -58,9 +291,25 @@ class KnowledgeChatService(HumanReportChatService):
             language=chosen_language,
             output_format=output_format,
         )
+        job.stages = [
+            {"id": "research", "label": "Research", "status": "queued", "detail": ""},
+            {
+                "id": "presentation",
+                "label": "Presentation",
+                "status": "queued",
+                "detail": "",
+            },
+            {
+                "id": "daily_report",
+                "label": "Human Report",
+                "status": "queued",
+                "detail": "",
+            },
+        ]
         with self._lock:
             self._jobs[job.job_id] = job
             self._job_uploads[job.job_id] = validated_uploads
+            self._job_options[job.job_id] = (mode, effort_level)
         self._queue.put(job.job_id)
         return ProgressJob(**asdict(job))
 
@@ -71,6 +320,14 @@ class KnowledgeChatService(HumanReportChatService):
         self._update(job_id, status="running")
         task = self.orchestrator.store.create_task(job.message[:96], job.message)
         uploads = list(self._job_uploads.get(job_id, []))
+        mode, effort = self._job_options.get(job_id, ("chat", "high"))
+        self.orchestrator.store.record_activity(
+            task.task_id,
+            "chat_gateway",
+            "workspace_request_options",
+            "ok",
+            f"mode={mode} effort={effort}",
+        )
         if uploads:
             self.orchestrator.store.attach_uploads(task.task_id, uploads)
             self.orchestrator.store.record_activity(
@@ -81,17 +338,20 @@ class KnowledgeChatService(HumanReportChatService):
                 f"count={len(uploads)}",
             )
         self._update(job_id, task_id=task.task_id)
-        self._stage(
-            job_id,
-            "research",
-            "running",
-            "Agent 1 is validating uploaded evidence and searching public web sources.",
-        )
+        if mode == "web_search":
+            stage_detail = (
+                "WorkSpace is validating evidence and using policy-authorized public research."
+            )
+        elif mode == "deep_research":
+            stage_detail = "WorkSpace is performing thorough evidence-bounded research."
+        else:
+            stage_detail = "WorkSpace is validating evidence for this request."
+        self._stage(job_id, "research", "running", stage_detail)
         stop = threading.Event()
         monitor = threading.Thread(
             target=self._monitor,
             args=(job_id, task.task_id, stop),
-            name=f"3agent-stage-{job_id}",
+            name=f"workspace-stage-{job_id}",
             daemon=True,
         )
         monitor.start()
@@ -100,7 +360,7 @@ class KnowledgeChatService(HumanReportChatService):
                 task.task_id,
                 live=True,
                 audience="R&D internal",
-                purpose="answer the user request with evidence",
+                purpose=_request_purpose(mode, effort),
                 language=job.language,
                 slide_count=6,
                 output_format=job.output_format,
@@ -142,9 +402,9 @@ class KnowledgeChatService(HumanReportChatService):
                 )
             else:
                 answer = (
-                    "# 3Agent Report\n\n"
-                    "The workflow did not produce a validated research handoff, so a reader-facing "
-                    "report could not be generated without inventing content.\n"
+                    "# WorkSpace Report\n\n"
+                    "The workflow did not produce a validated research handoff, so a "
+                    "reader-facing report could not be generated without inventing content.\n"
                 )
 
             if report_warnings:
@@ -162,11 +422,21 @@ class KnowledgeChatService(HumanReportChatService):
             if status == "completed":
                 self._stage(job_id, "research", "completed")
                 self._stage(job_id, "presentation", "completed")
-                self._stage(job_id, "daily_report", "completed", "Reader report and audit log are ready.")
+                self._stage(
+                    job_id,
+                    "daily_report",
+                    "completed",
+                    "Reader report and audit log are ready.",
+                )
             elif status == "blocked":
                 self._stage(job_id, "research", "blocked")
                 self._stage(job_id, "presentation", "skipped")
-                self._stage(job_id, "daily_report", "completed", "Blocker report recorded.")
+                self._stage(
+                    job_id,
+                    "daily_report",
+                    "completed",
+                    "Blocker report recorded.",
+                )
             elif status == "failed":
                 current = self.orchestrator.store.get_task(task.task_id)
                 if current.status == TaskStatus.FAILED:
@@ -176,7 +446,12 @@ class KnowledgeChatService(HumanReportChatService):
                     )
                     if running_presentation:
                         self._stage(job_id, "presentation", "failed")
-                self._stage(job_id, "daily_report", "completed", "Failure evidence recorded.")
+                self._stage(
+                    job_id,
+                    "daily_report",
+                    "completed",
+                    "Failure evidence recorded.",
+                )
 
             self._update(
                 job_id,
@@ -197,42 +472,8 @@ class KnowledgeChatService(HumanReportChatService):
             monitor.join(timeout=1)
 
 
-_UPLOAD_CONTROLS = r'''
-<button type="button" id="attachBtn" onclick="document.getElementById('fileInput').click()">＋ Attach</button>
-<input id="fileInput" type="file" multiple hidden accept=".txt,.md,.markdown,.html,.htm,.zip,.png,.jpg,.jpeg,.webp,text/plain,text/markdown,text/html,application/zip,image/png,image/jpeg,image/webp">
-'''
-
-_UPLOAD_LIST = r'''<div id="uploadList" style="display:none;padding:5px 9px 8px;color:var(--muted);font-size:12px"></div>'''
-
-_UPLOAD_SCRIPT = r'''
-<script>
-let selectedFiles=[];
-const fileInputEl=document.getElementById('fileInput'),uploadListEl=document.getElementById('uploadList');
-function renderUploadList(){if(!selectedFiles.length){uploadListEl.style.display='none';uploadListEl.textContent='';return}uploadListEl.style.display='block';uploadListEl.textContent='Attached: '+selectedFiles.map(f=>f.name+' ('+Math.ceil(f.size/1024)+' KB)').join(' · ')}
-fileInputEl.addEventListener('change',()=>{selectedFiles=Array.from(fileInputEl.files||[]).slice(0,8);renderUploadList()});
-function fileBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>{const value=String(reader.result||'');resolve(value.includes(',')?value.split(',',2)[1]:value)};reader.onerror=()=>reject(reader.error||new Error('File read failed'));reader.readAsDataURL(file)})}
-async function uploadOne(file){if(file.size>16*1024*1024)throw new Error(file.name+': maximum upload size is 16 MiB');const data=await fileBase64(file);return api('/api/upload',{method:'POST',body:JSON.stringify({name:file.name,type:file.type||'',data_base64:data})})}
-sendMsg=async function(){const text=input.value.trim();if(!text)return;const fmt=document.getElementById('fmt').value,lang=document.getElementById('lang').value;const files=selectedFiles.slice();const names=files.map(f=>f.name);input.value='';selectedFiles=[];fileInputEl.value='';renderUploadList();add('You',text+(names.length?'\n\nAttached: '+names.join(', '):''),'user');const pending=add('3Agent',files.length?'Uploading and validating files…':'Queued…','',{answer:'',stages:[{label:'Agent 1 · Research',status:'queued'},{label:'Agent 2 · Presentation',status:'queued'},{label:'Agent 3 · Human Report',status:'queued'}],artifacts:[]});try{const uploadIds=[];for(let i=0;i<files.length;i++){pending.querySelector('.bubble').textContent='Uploading '+(i+1)+'/'+files.length+': '+files[i].name;const result=await uploadOne(files[i]);uploadIds.push(result.upload_id)}const d=await api('/api/chat',{method:'POST',body:JSON.stringify({message:text,language:lang,format:fmt,upload_ids:uploadIds})});updateNode(pending,d);poll(d.job_id,pending)}catch(e){pending.querySelector('.bubble').textContent=e.message;pending.classList.add('error')}};
-</script>
-'''
-
-HTML_V4 = HTML_V3.replace(
-    '<span class="hint">Every completed task includes DOCX/PDF reader report</span>',
-    _UPLOAD_CONTROLS + '<span class="hint">Web search + secure uploads · DOCX/PDF report</span>',
-    1,
-).replace(
-    '<div class="row"><textarea id="input"',
-    _UPLOAD_LIST + '<div class="row"><textarea id="input"',
-    1,
-).replace(
-    '</body></html>',
-    _UPLOAD_SCRIPT + '</body></html>',
-    1,
-)
-
-
 class KnowledgeHTTPHandler(HumanReportHTTPHandler):
-    server_version = "3AgentChat/0.4"
+    server_version = "WorkSpaceChat/0.5"
 
     def _read_json_large(self, maximum: int) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or "0")
@@ -257,6 +498,39 @@ class KnowledgeHTTPHandler(HumanReportHTTPHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/api/health":
+            if not self._private_or_reject():
+                return
+            self._json(
+                HTTPStatus.OK,
+                {"status": "ok", "service": "WorkSpace Chat", "version": "0.5"},
+            )
+            return
+        if path in {"/api/capabilities", "/api/uploads"}:
+            if not self._private_or_reject():
+                return
+            if not self._authorized():
+                self._json(
+                    HTTPStatus.UNAUTHORIZED,
+                    {"error": "Authentication required"},
+                )
+                return
+            if path == "/api/capabilities":
+                self._json(
+                    HTTPStatus.OK,
+                    workspace_ui_capabilities(self.app.service.orchestrator.config),
+                )
+            else:
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "uploads": _recent_uploads(
+                            self.app.service.orchestrator.knowledge_gateway,
+                            self.client_address[0],
+                        )
+                    },
+                )
+            return
         super().do_GET()
 
     def do_POST(self) -> None:
@@ -267,7 +541,10 @@ class KnowledgeHTTPHandler(HumanReportHTTPHandler):
         if not self._private_or_reject():
             return
         if not self._authorized():
-            self._json(HTTPStatus.UNAUTHORIZED, {"error": "Authentication required"})
+            self._json(
+                HTTPStatus.UNAUTHORIZED,
+                {"error": "Authentication required"},
+            )
             return
 
         try:
@@ -296,15 +573,30 @@ class KnowledgeHTTPHandler(HumanReportHTTPHandler):
                 return
 
             message = str(payload.get("message") or "")
-            language = str(payload.get("language") or self.app.service.default_language)
+            language = str(
+                payload.get("language") or self.app.service.default_language
+            )
+            if language not in {"ja", "vi", "en"}:
+                raise ValueError("Unsupported response language")
             fmt = str(payload.get("format") or "source")
+            if fmt not in {"source", "pptx", "pdf", "all"}:
+                raise ValueError("Unsupported output format")
+            mode, effort = _validate_request_options(
+                payload.get("mode"),
+                payload.get("effort"),
+                self.app.service.orchestrator.config,
+            )
             raw_uploads = payload.get("upload_ids") or []
             if not isinstance(raw_uploads, list):
                 raise UploadSecurityError("upload_ids must be an array")
             if len(raw_uploads) > MAX_UPLOADS_PER_TASK:
-                raise UploadSecurityError(f"At most {MAX_UPLOADS_PER_TASK} uploads may be attached to one task")
-            upload_ids = self.app.service.orchestrator.knowledge_gateway.validate_upload_ids(
-                [str(item) for item in raw_uploads]
+                raise UploadSecurityError(
+                    f"At most {MAX_UPLOADS_PER_TASK} uploads may be attached to one task"
+                )
+            upload_ids = _validate_owned_uploads(
+                self.app.service.orchestrator.knowledge_gateway,
+                [str(item) for item in raw_uploads],
+                self.client_address[0],
             )
             prefix = "" if fmt == "source" else f"/{fmt} "
             job = self.app.service.submit(
@@ -313,10 +605,15 @@ class KnowledgeHTTPHandler(HumanReportHTTPHandler):
                 sender=self.client_address[0],
                 language=language,
                 upload_ids=upload_ids,
+                request_mode=mode,
+                effort=effort,
             )
             self._json(HTTPStatus.ACCEPTED, job.public_dict())
         except (ValueError, UploadSecurityError) as exc:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": redact_sensitive_text(str(exc))[:800]})
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": redact_sensitive_text(str(exc))[:800]},
+            )
 
 
 def main() -> int:
@@ -332,18 +629,38 @@ def main() -> int:
     sessions = SessionStore(access_token)
     app = ProgressApplication(service, sessions, config.artifact_root)
     telegram_token = os.getenv("THREE_AGENT_TELEGRAM_BOT_TOKEN", "").strip()
-    allowed_ids = _parse_allowed_ids(os.getenv("THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS", ""))
+    allowed_ids = _parse_allowed_ids(
+        os.getenv("THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS", "")
+    )
     if telegram_token:
-        bridge = TelegramBridge(service, orchestrator.internet_gateway, telegram_token, allowed_ids)
-        threading.Thread(target=bridge.run_forever, name="3agent-telegram", daemon=True).start()
-        print(f"[3Agent-Chat] Telegram enabled; authorized users={len(allowed_ids)}.", flush=True)
+        bridge = TelegramBridge(
+            service,
+            orchestrator.internet_gateway,
+            telegram_token,
+            allowed_ids,
+        )
+        threading.Thread(
+            target=bridge.run_forever,
+            name="workspace-telegram",
+            daemon=True,
+        ).start()
+        print(
+            f"[WorkSpace] Telegram enabled; authorized users={len(allowed_ids)}.",
+            flush=True,
+        )
     else:
-        print("[3Agent-Chat] Telegram disabled (no bot token configured).", flush=True)
+        print("[WorkSpace] Telegram disabled (no bot token configured).", flush=True)
     httpd = ThreadingHTTPServer((host, port), KnowledgeHTTPHandler)
     httpd.app = app  # type: ignore[attr-defined]
-    print(f"[3Agent-Chat] LAN UI: {_lan_hint(host, port)}", flush=True)
-    print("[3Agent-Chat] KnowledgeGateway enabled: public-web search + secure txt/md/html/zip/image uploads.", flush=True)
-    print("[3Agent-Chat] Uploaded images are stored/validated but not semantically interpreted without a local vision model.", flush=True)
+    print(f"[WorkSpace] LAN UI: {_lan_hint(host, port)}", flush=True)
+    print(
+        "[WorkSpace] Secure uploads enabled. Public web search remains policy-controlled.",
+        flush=True,
+    )
+    print(
+        "[WorkSpace] Image generation and voice input stay fail-closed until local runtimes are configured.",
+        flush=True,
+    )
     try:
         httpd.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
