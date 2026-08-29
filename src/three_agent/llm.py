@@ -23,6 +23,38 @@ class LocalLLMError(RuntimeError):
     pass
 
 
+_OLLAMA_GRAMMAR_INCOMPATIBLE_LIMIT_KEYS = frozenset(
+    {"minLength", "maxLength", "minItems", "maxItems"}
+)
+
+
+def _ollama_transport_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return an Ollama-grammar-compatible copy of an authoritative schema.
+
+    Hardware evidence on Ollama 0.33.1 shows that the research synthesis schema
+    fails grammar compilation when JSON-Schema string/array length constraints
+    are embedded in the decoder grammar. Those constraints remain authoritative:
+    they are stripped only from the transport copy and are still enforced by
+    ``validate_json_schema_subset`` against the original schema after decoding.
+
+    No required property, type, enum, additionalProperties rule, or nested shape
+    is removed here. The input object is never mutated.
+    """
+
+    def sanitize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: sanitize(item)
+                for key, item in value.items()
+                if key not in _OLLAMA_GRAMMAR_INCOMPATIBLE_LIMIT_KEYS
+            }
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    return sanitize(schema)
+
+
 def _extract_json_object(text: str) -> dict[str, Any]:
     candidate = text.strip()
     if candidate.startswith("```"):
@@ -86,7 +118,8 @@ class OllamaClient:
             "options": {"num_predict": num_predict},
         }
         if json_mode:
-            request_body["format"] = format_schema or DEFAULT_OBJECT_SCHEMA
+            authoritative_schema = format_schema or DEFAULT_OBJECT_SCHEMA
+            request_body["format"] = _ollama_transport_schema(authoritative_schema)
             # Ollama recommends a low temperature for deterministic structured output.
             request_body["options"]["temperature"] = 0
 
