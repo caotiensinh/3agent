@@ -5,6 +5,7 @@ import json
 
 from .config import load_config
 from .inference_scope import inference_scope
+from .metrics_snapshot import MetricsSnapshotService
 from .orchestrator import Orchestrator
 
 
@@ -59,6 +60,19 @@ def build_parser() -> argparse.ArgumentParser:
     daily = sub.add_parser("daily-report")
     daily.add_argument("--date")
     daily.add_argument("--live", action="store_true")
+
+    metrics = sub.add_parser(
+        "metrics",
+        help="Print one unified D3-01..D3-07 metrics snapshot using a single task scope",
+    )
+    metrics_scope = metrics.add_mutually_exclusive_group()
+    metrics_scope.add_argument("--date", help="Limit the snapshot to tasks active on YYYY-MM-DD")
+    metrics_scope.add_argument(
+        "--task-id",
+        dest="task_ids",
+        action="append",
+        help="Limit the snapshot to one task; repeat for multiple task IDs",
+    )
     return parser
 
 
@@ -127,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
         # Daily reports may aggregate many tasks; no single task scope is assigned.
         paths = orchestrator.daily_report(args.date, live=args.live)
         print("\n".join(str(path) for path in paths))
+    elif args.command == "metrics":
+        snapshot = MetricsSnapshotService.from_orchestrator(orchestrator).snapshot(
+            date=args.date,
+            task_ids=args.task_ids,
+        )
+        print(json.dumps(snapshot, ensure_ascii=False, indent=2))
     return 0
 
 
