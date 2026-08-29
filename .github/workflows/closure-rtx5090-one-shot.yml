@@ -86,6 +86,66 @@ jobs:
             >/dev/null
           test -s "$EVIDENCE_ROOT/environment.json"
 
+      - name: Diagnose WorkSpace local model runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          EVIDENCE_ROOT="$EVIDENCE_ROOT" MODEL="$MODEL" CANDIDATE_ROOT="$GITHUB_WORKSPACE/candidate" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from three_agent.config import load_config
+          from three_agent.orchestrator import Orchestrator
+
+          root = Path(os.environ['EVIDENCE_ROOT'])
+          model = os.environ['MODEL']
+          config = load_config(Path(os.environ['CANDIDATE_ROOT']) / 'config/workspace.secure.json')
+          orchestrator = Orchestrator(config)
+          orchestrator.initialize()
+          result = {
+              'schema_version': 'workspace-model-runtime-diagnostic/v1',
+              'model': model,
+              'resource_admission_passed': False,
+              'structured_inference_passed': False,
+              'failure_type': None,
+              'failure_reason_code': None,
+              'raw_prompt_recorded': False,
+              'raw_response_recorded': False,
+          }
+          try:
+              manager = orchestrator.resource_manager
+              if manager is not None:
+                  with manager.admit(model):
+                      result['resource_admission_passed'] = True
+              else:
+                  result['resource_admission_passed'] = True
+              payload = orchestrator.research_llm.generate_json(
+                  'Return only the requested JSON object.',
+                  'Return ok=true.',
+                  schema={
+                      'type': 'object',
+                      'properties': {'ok': {'type': 'boolean'}},
+                      'required': ['ok'],
+                      'additionalProperties': False,
+                  },
+                  schema_id='workspace-model-runtime-diagnostic-v1',
+                  think=False,
+                  num_predict=32,
+                  trust_domain='workspace-benchmark-diagnostic',
+                  template_version='workspace.benchmark.diagnostic.v1',
+              )
+              result['structured_inference_passed'] = payload == {'ok': True}
+              if not result['structured_inference_passed']:
+                  result['failure_type'] = 'SemanticMismatch'
+                  result['failure_reason_code'] = 'STRUCTURED_DIAGNOSTIC_SEMANTIC_MISMATCH'
+          except Exception as exc:
+              result['failure_type'] = type(exc).__name__
+              result['failure_reason_code'] = str(getattr(exc, 'reason_code', None) or type(exc).__name__)[:160]
+          (root / 'model-runtime-diagnostic.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+          if not (result['resource_admission_passed'] and result['structured_inference_passed']):
+              raise SystemExit(3)
+          PY
+
       - name: Execute fixed-task benchmark
         shell: bash
         run: |
@@ -104,8 +164,7 @@ jobs:
             --root "$EVIDENCE_ROOT/benchmark" \
             --repo-root "$GITHUB_WORKSPACE/candidate" \
             --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
-            --output "$EVIDENCE_ROOT/benchmark/verification.json" \
-            >/dev/null
+            --output "$EVIDENCE_ROOT/benchmark/verification.json"
           test -s "$EVIDENCE_ROOT/benchmark/suite.json"
           test -s "$EVIDENCE_ROOT/benchmark/verification.json"
 
@@ -134,6 +193,7 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/model-runtime-diagnostic.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/observation.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/verification.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/suite.json
@@ -147,15 +207,20 @@ jobs:
           set -Eeuo pipefail
           EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           test -s "$EVIDENCE_ROOT/environment.json"
+          test -s "$EVIDENCE_ROOT/model-runtime-diagnostic.json"
           test -s "$EVIDENCE_ROOT/observation.json"
           test -s "$EVIDENCE_ROOT/benchmark/verification.json"
           EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
           import json, os
           root = os.environ['EVIDENCE_ROOT']
+          with open(root + '/model-runtime-diagnostic.json', encoding='utf-8') as f:
+              diagnostic = json.load(f)
           with open(root + '/benchmark/verification.json', encoding='utf-8') as f:
               verification = json.load(f)
           with open(root + '/observation.json', encoding='utf-8') as f:
               observation = json.load(f)
+          assert diagnostic.get('resource_admission_passed') is True, diagnostic
+          assert diagnostic.get('structured_inference_passed') is True, diagnostic
           assert verification.get('passed') is True, verification
           assert observation.get('observation_complete') is True, observation
           PY
