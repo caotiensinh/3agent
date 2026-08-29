@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .benchmark_snapshot import build_benchmark_manifest, write_benchmark_manifest
@@ -10,6 +11,7 @@ from .inference_scope import inference_scope
 from .metrics_snapshot import MetricsSnapshotService
 from .optimization_gate import OptimizationAcceptanceGate, OptimizationGatePolicy
 from .orchestrator import Orchestrator
+from .prefix_reuse import PrefixReusePolicy, PrefixReuseReport, REUSE_REPORT_SCHEMA
 
 
 def _add_presentation_options(parser: argparse.ArgumentParser) -> None:
@@ -103,6 +105,37 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Required reduction in total tokens per verified task (0..100)",
     )
+
+    reuse = sub.add_parser(
+        "reuse-report",
+        help="Measure durable repeated-prefix opportunity without claiming backend cache hits",
+    )
+    reuse.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Representative telemetry window in days (1..365)",
+    )
+    reuse.add_argument(
+        "--min-events",
+        type=int,
+        default=20,
+        help="Minimum valid metadata events before the D4 decision gate can act",
+    )
+    reuse.add_argument(
+        "--reuse-threshold-pct",
+        type=float,
+        default=30.0,
+        help="Planning threshold for repeated-prefix opportunity (0..100; default 30)",
+    )
+    reuse.add_argument(
+        "--telemetry",
+        help="Optional inference telemetry JSONL path; otherwise use configured WorkSpace telemetry",
+    )
+    reuse.add_argument(
+        "--config",
+        help="Optional WorkSpace config used only to resolve the default telemetry path",
+    )
     return parser
 
 
@@ -111,6 +144,16 @@ def _load_json_object(path: str) -> dict:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON file must contain an object: {path}")
     return payload
+
+
+def _reuse_telemetry_path(args: argparse.Namespace) -> Path:
+    if args.telemetry:
+        return Path(args.telemetry).expanduser()
+    configured = os.getenv("WORKSPACE_INFERENCE_TELEMETRY", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    config = load_config(args.config)
+    return config.artifact_root / "activity" / "inference.jsonl"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -129,6 +172,35 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0 if report["accepted"] else 3
+
+    if args.command == "reuse-report":
+        try:
+            threshold = float(args.reuse_threshold_pct)
+            if not 0.0 <= threshold <= 100.0:
+                raise ValueError("reuse-threshold-pct must be between 0 and 100")
+            policy = PrefixReusePolicy(
+                window_days=args.days,
+                min_events=args.min_events,
+                reuse_threshold=threshold / 100.0,
+            )
+            report = PrefixReuseReport(_reuse_telemetry_path(args)).snapshot(
+                policy=policy
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(
+                json.dumps(
+                    {
+                        "schema_version": REUSE_REPORT_SCHEMA,
+                        "completed": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 3
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
 
     orchestrator = Orchestrator(load_config())
     orchestrator.initialize()
