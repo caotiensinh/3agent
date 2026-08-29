@@ -20,10 +20,13 @@ from ..presentation_model import (
     render_markdown,
 )
 from ..presentation_renderer import PptxRenderer, convert_pptx_to_pdf
+from ..runtime_efficiency import sanitize_untrusted_payload
 from ..store import TaskStore
 
 TZ = ZoneInfo("Asia/Tokyo")
 HANDOFF_SCHEMA_VERSION = "1.0"
+HANDOFF_SANITIZER_VERSION = "workspace-handoff-sanitizer/v1"
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 class ResearchHandoffNotReady(PresentationValidationError):
@@ -80,6 +83,53 @@ class PresentationAgent(BaseAgent):
         sanitized = dict(raw_plan)
         sanitized["slides"] = cleaned
         return sanitized, dropped
+
+    @staticmethod
+    def _sanitize_research_boundary(payload: object, *, source: str) -> tuple[dict, dict]:
+        """Sanitize an Agent 1 payload before Agent 2 consumes its semantics.
+
+        Suspicious instructions remain ordinary data. The returned metadata contains
+        only paths, risk levels and signal names; it never contains the raw payload.
+        """
+        sanitized, findings = sanitize_untrusted_payload(payload)
+        if not isinstance(sanitized, dict):
+            raise PresentationValidationError(f"{source.upper()}_PAYLOAD_NOT_OBJECT")
+
+        highest_risk = "low"
+        signal_names: set[str] = set()
+        finding_paths: list[str] = []
+        for finding in findings:
+            risk = str(finding.get("risk", "low"))
+            if _RISK_ORDER.get(risk, 0) > _RISK_ORDER.get(highest_risk, 0):
+                highest_risk = risk
+            finding_paths.append(str(finding.get("path", "$")))
+            for signal in finding.get("signals", []) or []:
+                signal_names.add(str(signal))
+
+        metadata = {
+            "sanitizer_version": HANDOFF_SANITIZER_VERSION,
+            "source": source,
+            "risk": highest_risk,
+            "finding_count": len(findings),
+            "finding_paths": sorted(set(finding_paths)),
+            "signals": sorted(signal_names),
+            "raw_content_logged": False,
+        }
+        return sanitized, metadata
+
+    def _record_research_boundary(
+        self,
+        task_id: str,
+        store: TaskStore,
+        metadata: dict,
+    ) -> None:
+        store.record_activity(
+            task_id,
+            self.agent_id,
+            "research_handoff_sanitized",
+            "warning" if metadata["risk"] != "low" else "ok",
+            json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        )
 
     def _block(self, task_id: str, store: TaskStore, reason: str) -> None:
         store.set_status(task_id, TaskStatus.WAITING_HUMAN)
@@ -229,7 +279,11 @@ EVIDENCE_CATALOG:
         if handoff_path is None:
             self._block(task_id, store, "RESEARCH_HANDOFF_NOT_FOUND")
 
-        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        raw_handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        handoff, handoff_security = self._sanitize_research_boundary(
+            raw_handoff, source="research_handoff"
+        )
+        self._record_research_boundary(task_id, store, handoff_security)
         if handoff.get("task_id") != task_id:
             self._block(task_id, store, "HANDOFF_TASK_ID_MISMATCH")
         if handoff.get("schema_version") != HANDOFF_SCHEMA_VERSION:
@@ -239,8 +293,13 @@ EVIDENCE_CATALOG:
             "research", task_id, suffix=".json"
         )
         research = None
+        research_security = None
         if research_path is not None:
-            research = json.loads(research_path.read_text(encoding="utf-8"))
+            raw_research = json.loads(research_path.read_text(encoding="utf-8"))
+            research, research_security = self._sanitize_research_boundary(
+                raw_research, source="research_artifact"
+            )
+            self._record_research_boundary(task_id, store, research_security)
             try:
                 self._validate_research_handoff_consistency(
                     task_id, research, handoff
@@ -364,6 +423,8 @@ EVIDENCE_CATALOG:
                 "source_research_schema_version": handoff.get("schema_version"),
                 "source_quality_metrics": handoff.get("quality_metrics", {}),
                 "source_blockers": handoff.get("blockers", []),
+                "source_handoff_security": handoff_security,
+                "source_research_security": research_security,
                 "options": asdict(options),
                 "plan": plan,
                 "qa": qa,
