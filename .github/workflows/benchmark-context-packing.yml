@@ -62,7 +62,9 @@ jobs:
           python3 -m pip install --no-deps -e .
           workspace --help >/dev/null
           workspace-benchmark --help >/dev/null
+          workspace-benchmark-canonicalize --help >/dev/null
           workspace-benchmark-readiness --help >/dev/null
+          workspace-benchmark-verify --help >/dev/null
 
       - name: Capture metadata-only benchmark readiness receipt
         shell: bash
@@ -90,8 +92,31 @@ jobs:
             --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE" \
             --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" \
-            --config "$GITHUB_WORKSPACE/config/workspace.secure.json"
+            --config "$GITHUB_WORKSPACE/config/workspace.secure.json" \
+            >/dev/null
           test -s "$BENCH_ROOT/suite.json"
+
+      - name: Canonicalize publishable benchmark paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workspace-benchmark-canonicalize --root "$BENCH_ROOT" >/dev/null
+          test -z "$(grep -F "$RUNNER_TEMP" "$BENCH_ROOT/suite.json" || true)"
+
+      - name: Independently recompute benchmark evidence verdict
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_ref }}
+        run: |
+          set -Eeuo pipefail
+          workspace-benchmark-verify \
+            --source-ref "$EXPECTED_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" \
+            --output "$BENCH_ROOT/verification.json" \
+            >/dev/null
+          test -s "$BENCH_ROOT/verification.json"
 
       - name: Publish metadata-only benchmark evidence
         uses: actions/upload-artifact@v4
@@ -101,6 +126,7 @@ jobs:
           retention-days: 14
           path: |
             ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/verification.json
             ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/suite.json
             ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/*/benchmark.json
             ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/*/isolation.json
