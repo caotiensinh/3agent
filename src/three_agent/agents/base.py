@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ..llm import OllamaClient
 from ..skills import ApprovedSkillLoader
+from ..structured_output_policy import StructuredOutputPolicyClient
 
 
 _DEFAULT_AGENT_SKILLS: dict[str, tuple[str, ...]] = {
@@ -25,7 +26,7 @@ class BaseAgent:
 
     def __init__(self, profile_root: Path, llm: OllamaClient):
         self.profile_root = Path(profile_root)
-        self.llm = llm
+        self.llm = StructuredOutputPolicyClient(llm, agent_id=self.agent_id)
         self.skill_loader = ApprovedSkillLoader(self.profile_root.parent / "skills")
 
     def profile(self) -> str:
