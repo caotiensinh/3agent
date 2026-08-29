@@ -13,6 +13,7 @@ from .task_contract import TaskContractCompiler, TaskContractError
 
 CORPUS_SCHEMA = "workspace-evaluation-corpus/v1"
 REPLAY_SCHEMA = "workspace-evaluation-replay/v1"
+CORPUS_CLASSES = ("golden", "regression", "adversarial_security")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SOURCE_REF_RE = re.compile(r"^[0-9a-f]{40}$")
 _ALLOWED_EXPECTED_KEYS = {
@@ -20,6 +21,8 @@ _ALLOWED_EXPECTED_KEYS = {
     "task_type",
     "sensitivity",
     "risk_level",
+    "allowed_sources",
+    "write_scope",
     "network_scope",
     "allowed_tools",
     "validators",
@@ -29,8 +32,13 @@ _ALLOWED_EXPECTED_KEYS = {
     "initial_model_tier",
     "max_model_tier",
     "escalation_allowed",
+    "model_trusted_local_only",
     "max_retries",
     "max_escalations",
+    "cache_mode",
+    "semantic_cache_allowed",
+    "logging_raw_prompt",
+    "logging_raw_tool_output",
 }
 
 
@@ -67,13 +75,23 @@ class EvaluationCorpus:
     corpus_id: str
     cases: tuple[EvaluationCase, ...]
     source_path: Path
+    declared_corpus_class: str | None = None
+
+    @property
+    def corpus_class(self) -> str:
+        # D7-01 corpora predate the explicit class field. Treat that exact legacy
+        # shape as golden without rewriting its canonical payload/hash.
+        return self.declared_corpus_class or "golden"
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": CORPUS_SCHEMA,
             "corpus_id": self.corpus_id,
             "cases": [case.to_payload() for case in self.cases],
         }
+        if self.declared_corpus_class is not None:
+            payload["corpus_class"] = self.declared_corpus_class
+        return payload
 
     @property
     def sha256(self) -> str:
@@ -88,6 +106,13 @@ class EvaluationCorpus:
         corpus_id = str(payload.get("corpus_id") or "").strip()
         if not _ID_RE.fullmatch(corpus_id):
             raise EvaluationCorpusError("corpus_id must be a compact stable identifier")
+        declared_class = payload.get("corpus_class")
+        if declared_class is not None:
+            declared_class = str(declared_class).strip()
+            if declared_class not in CORPUS_CLASSES:
+                raise EvaluationCorpusError(
+                    f"corpus_class must be one of {list(CORPUS_CLASSES)}"
+                )
         raw_cases = payload.get("cases")
         if not isinstance(raw_cases, list) or not 1 <= len(raw_cases) <= 128:
             raise EvaluationCorpusError("corpus must contain between 1 and 128 cases")
@@ -114,16 +139,22 @@ class EvaluationCorpus:
             if not isinstance(accepted, bool):
                 raise EvaluationCorpusError(f"{case_id} expected.accepted must be boolean")
             cases.append(EvaluationCase(case_id, dict(inputs), dict(expected)))
-        return cls(corpus_id=corpus_id, cases=tuple(cases), source_path=source)
+        return cls(
+            corpus_id=corpus_id,
+            cases=tuple(cases),
+            source_path=source,
+            declared_corpus_class=declared_class,
+        )
 
 
 class EvaluationReplay:
-    """Deterministic control-plane replay with exact golden expectations.
+    """Deterministic control-plane replay with exact versioned expectations.
 
     No model, network, tool gateway, task database or business data is required.
-    It exercises the same TaskContractCompiler and DeterministicRoutePlanner used
-    by production and compares compact policy/routing metadata against a versioned
-    repository-owned golden corpus.
+    D7-03/D7-04 reuse the same production TaskContractCompiler and route planner as
+    the golden lane, while extending checks to capability/write/cache/logging and
+    model-locality boundaries. Rejected security-policy cases are expected results,
+    not replay errors.
     """
 
     def __init__(self, compiler: TaskContractCompiler | None = None):
@@ -132,11 +163,18 @@ class EvaluationReplay:
     @staticmethod
     def _actual(contract) -> dict[str, Any]:
         route = DeterministicRoutePlanner.plan(contract)
+        write_scope: str | list[str]
+        if isinstance(contract.write_scope, tuple):
+            write_scope = list(contract.write_scope)
+        else:
+            write_scope = contract.write_scope
         return {
             "accepted": True,
             "task_type": contract.task_type,
             "sensitivity": contract.sensitivity,
             "risk_level": contract.risk_level,
+            "allowed_sources": list(contract.allowed_sources),
+            "write_scope": write_scope,
             "network_scope": contract.network_scope,
             "allowed_tools": list(contract.allowed_tools),
             "validators": list(contract.validators),
@@ -146,8 +184,13 @@ class EvaluationReplay:
             "initial_model_tier": route.initial_model_tier,
             "max_model_tier": route.max_model_tier,
             "escalation_allowed": route.escalation_allowed,
+            "model_trusted_local_only": contract.model_policy.trusted_local_only,
             "max_retries": contract.execution_budget.max_retries,
             "max_escalations": contract.execution_budget.max_escalations,
+            "cache_mode": contract.cache_policy.mode,
+            "semantic_cache_allowed": contract.cache_policy.semantic_cache_allowed,
+            "logging_raw_prompt": contract.logging_policy.raw_prompt,
+            "logging_raw_tool_output": contract.logging_policy.raw_tool_output,
         }
 
     @staticmethod
@@ -186,6 +229,7 @@ class EvaluationReplay:
         return {
             "schema_version": REPLAY_SCHEMA,
             "corpus_id": corpus.corpus_id,
+            "corpus_class": corpus.corpus_class,
             "corpus_sha256": corpus.sha256,
             "source_ref": source,
             "case_count": len(cases),
@@ -199,7 +243,7 @@ class EvaluationReplay:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="workspace-eval",
-        description="Replay versioned WorkSpace deterministic golden evaluation corpora",
+        description="Replay versioned WorkSpace deterministic evaluation corpora",
     )
     parser.add_argument("--corpus", required=True)
     parser.add_argument("--source-ref", required=True, help="Exact 40-hex Git commit SHA")
