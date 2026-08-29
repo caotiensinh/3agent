@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .models import Task, TaskStatus
@@ -67,6 +70,28 @@ class TaskStore:
                     PRIMARY KEY(task_id, upload_id),
                     FOREIGN KEY(task_id) REFERENCES tasks(task_id)
                 );
+                CREATE TABLE IF NOT EXISTS task_contracts (
+                    task_id TEXT PRIMARY KEY,
+                    schema_version TEXT NOT NULL,
+                    contract_json TEXT NOT NULL,
+                    contract_sha256 TEXT NOT NULL,
+                    bound_at TEXT NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+                );
+                CREATE TABLE IF NOT EXISTS validator_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    validator TEXT NOT NULL,
+                    validator_version TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    reason_code TEXT NOT NULL,
+                    evidence_refs TEXT NOT NULL DEFAULT '[]',
+                    attempt INTEGER NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_validator_results_task
+                    ON validator_results(task_id, validator, id);
                 """
             )
 
@@ -132,6 +157,121 @@ class TaskStore:
         with self.connect() as conn:
             conn.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE task_id = ?", (status.value, now, task_id))
         return self.get_task(task_id)
+
+    @staticmethod
+    def _canonical_json(payload: dict[str, Any]) -> tuple[str, str]:
+        text = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        digest = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return text, digest
+
+    def bind_task_contract(self, task_id: str, contract: dict[str, Any]) -> str:
+        """Bind one immutable TaskContract payload to a task.
+
+        Rebinding the exact same canonical payload is idempotent. A different
+        contract for the same task is rejected so later metrics cannot silently
+        redefine which validators were required after execution began.
+        """
+        self.get_task(task_id)
+        if not isinstance(contract, dict):
+            raise TypeError("contract must be a dictionary")
+        schema_version = str(contract.get("schema_version") or "").strip()
+        if not schema_version:
+            raise ValueError("contract schema_version is required")
+        if str(contract.get("task_id") or "") != task_id:
+            raise ValueError("contract task_id does not match task")
+
+        text, digest = self._canonical_json(contract)
+        now = datetime.now(TZ).isoformat()
+        with self.connect() as conn:
+            existing = conn.execute(
+                "SELECT contract_sha256 FROM task_contracts WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if existing:
+                if str(existing["contract_sha256"]) != digest:
+                    raise ValueError("task contract is immutable once bound")
+                return digest
+            conn.execute(
+                """
+                INSERT INTO task_contracts(
+                    task_id,schema_version,contract_json,contract_sha256,bound_at
+                ) VALUES(?,?,?,?,?)
+                """,
+                (task_id, schema_version, text, digest, now),
+            )
+        self.record_activity(
+            task_id,
+            "validator_bus",
+            "task_contract_bound",
+            "ok",
+            f"schema={schema_version} digest={digest}",
+        )
+        return digest
+
+    def task_contract_for_task(self, task_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT contract_json FROM task_contracts WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload = json.loads(str(row["contract_json"]))
+        return payload if isinstance(payload, dict) else None
+
+    def task_contract_record(self, task_id: str) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT * FROM task_contracts WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+
+    def record_validator_result(
+        self,
+        task_id: str,
+        validator: str,
+        validator_version: str,
+        status: str,
+        reason_code: str,
+        evidence_refs: list[str],
+        attempt: int,
+    ) -> int:
+        self.get_task(task_id)
+        now = datetime.now(TZ).isoformat()
+        refs_json = json.dumps(evidence_refs, ensure_ascii=False, separators=(",", ":"))
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO validator_results(
+                    timestamp,task_id,validator,validator_version,status,
+                    reason_code,evidence_refs,attempt
+                ) VALUES(?,?,?,?,?,?,?,?)
+                """,
+                (
+                    now,
+                    task_id,
+                    validator,
+                    validator_version,
+                    status,
+                    reason_code,
+                    refs_json,
+                    attempt,
+                ),
+            )
+            result_id = int(cursor.lastrowid)
+        return result_id
+
+    def validator_results_for_task(self, task_id: str) -> list[sqlite3.Row]:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT * FROM validator_results WHERE task_id = ? ORDER BY id",
+                (task_id,),
+            ).fetchall()
 
     def attach_uploads(self, task_id: str, upload_ids: list[str]) -> None:
         if not upload_ids:
