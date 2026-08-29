@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from .capability_authority import CapabilityAuthorityDenied
 from .gateways import ExecutionGateway, InternetGateway
-from .inference_scope import current_execution_budget, current_model_authority
+from .inference_scope import (
+    current_capability_authority,
+    current_execution_budget,
+    current_inference_scope,
+    current_model_authority,
+)
 from .llm import AdaptiveOllamaClient, LocalLLMError
 from .model_authority import ModelAuthorityDenied
 from .resource_budget import ResourceAdmissionError
@@ -28,8 +34,32 @@ def _require_model_tier(target_tier: str) -> None:
         authority.require_tier(target_tier)
 
 
+def _require_capability(
+    capability: str,
+    *,
+    task_id: str | None,
+    resource_kind: str,
+    resource_ref: str,
+    effect: str,
+) -> None:
+    authority = current_capability_authority()
+    if authority is None:
+        return
+    scope = current_inference_scope()
+    if scope is None or scope.task_id != authority.task_id:
+        raise CapabilityAuthorityDenied("CAPABILITY_SCOPE_MISSING_OR_INVALID")
+    if task_id is not None and str(task_id).strip() != authority.task_id:
+        raise CapabilityAuthorityDenied("CAPABILITY_TASK_SCOPE_MISMATCH")
+    authority.require(
+        capability,
+        resource_kind=resource_kind,
+        resource_ref=resource_ref,
+        effect=effect,
+    )
+
+
 class MeteredInternetGateway:
-    """Count top-level Internet Gateway invocations without duplicating inner audits."""
+    """Count authorized Internet invocations without duplicating inner audits."""
 
     def __init__(self, inner: InternetGateway, recorder: ResourceEventRecorder):
         self._inner = inner
@@ -48,6 +78,13 @@ class MeteredInternetGateway:
         )
 
     def get(self, agent_id: str, task_id: str | None, url: str, timeout: int = 30) -> bytes:
+        _require_capability(
+            "web_gateway",
+            task_id=task_id,
+            resource_kind="network",
+            resource_ref="public_fetch",
+            effect="network_read",
+        )
         self._record(agent_id, task_id, "internet_get")
         return self._inner.get(agent_id, task_id, url, timeout=timeout)
 
@@ -60,10 +97,24 @@ class MeteredInternetGateway:
         *,
         timeout: int = 30,
     ) -> bytes:
+        _require_capability(
+            "web_gateway",
+            task_id=task_id,
+            resource_kind="network",
+            resource_ref="public_search",
+            effect="network_read",
+        )
         self._record(agent_id, task_id, "internet_search")
         return self._inner.search_get(agent_id, task_id, endpoint, params, timeout=timeout)
 
     def grant_public_fetch(self, agent_id: str, task_id: str | None, url: str) -> str:
+        _require_capability(
+            "web_gateway",
+            task_id=task_id,
+            resource_kind="network",
+            resource_ref="public_fetch_grant",
+            effect="network_read",
+        )
         self._record(agent_id, task_id, "internet_fetch_grant")
         return self._inner.grant_public_fetch(agent_id, task_id, url)
 
@@ -75,6 +126,13 @@ class MeteredInternetGateway:
         *,
         timeout: int = 30,
     ) -> bytes:
+        _require_capability(
+            "web_gateway",
+            task_id=task_id,
+            resource_kind="network",
+            resource_ref="public_fetch_granted",
+            effect="network_read",
+        )
         self._record(agent_id, task_id, "internet_fetch_granted")
         return self._inner.fetch_granted(agent_id, task_id, grant_token, timeout=timeout)
 
@@ -86,11 +144,22 @@ class MeteredInternetGateway:
         payload: dict,
         timeout: int = 30,
     ) -> bytes:
+        _require_capability(
+            "web_gateway",
+            task_id=task_id,
+            resource_kind="network",
+            resource_ref="public_post",
+            effect="network_write",
+        )
         self._record(agent_id, task_id, "internet_post")
         return self._inner.post_json(agent_id, task_id, url, payload, timeout=timeout)
 
 
 class MeteredExecutionGateway:
+    """Execution boundary requiring a logical TaskContract capability when scoped."""
+
+    _WRITE_CAPABILITIES = {"write_staging", "apply_patch"}
+
     def __init__(self, inner: ExecutionGateway, recorder: ResourceEventRecorder):
         self._inner = inner
         self._recorder = recorder
@@ -104,7 +173,26 @@ class MeteredExecutionGateway:
         task_id: str | None,
         argv: list[str],
         cwd: str | None = None,
+        *,
+        capability: str | None = None,
+        resource_ref: str | None = None,
     ):
+        authority = current_capability_authority()
+        if authority is not None:
+            logical = str(capability or "").strip()
+            if not logical:
+                raise CapabilityAuthorityDenied("CAPABILITY_DECLARATION_REQUIRED")
+            effect = "write" if logical in self._WRITE_CAPABILITIES else "execute"
+            reference = str(resource_ref or "").strip()
+            if effect == "write" and not reference:
+                raise CapabilityAuthorityDenied("WRITE_RESOURCE_REQUIRED")
+            _require_capability(
+                logical,
+                task_id=task_id,
+                resource_kind="path" if effect == "write" else "execution",
+                resource_ref=reference or "workspace",
+                effect=effect,
+            )
         self._recorder.record(
             "tool_call",
             task_id=task_id,
