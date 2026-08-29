@@ -37,7 +37,6 @@ jobs:
       WORKSPACE_DEEP_MODEL: ${{ inputs.model }}
       WORKSPACE_MODEL_KEEP_ALIVE: 20m
       WORKSPACE_SERIALIZE_GENERATION: 'true'
-      BENCH_ROOT: ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}
     steps:
       - name: Checkout exact benchmark source
         uses: actions/checkout@v4
@@ -73,6 +72,7 @@ jobs:
           MODEL: ${{ inputs.model }}
         run: |
           set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-benchmark-$GITHUB_RUN_ID"
           mkdir -p "$BENCH_ROOT"
           workspace-benchmark-readiness \
             --source-ref "$EXPECTED_SHA" \
@@ -87,6 +87,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.source_ref }}
         run: |
           set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-benchmark-$GITHUB_RUN_ID"
           workspace-benchmark \
             --source-ref "$EXPECTED_SHA" \
             --root "$BENCH_ROOT" \
@@ -100,6 +101,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-benchmark-$GITHUB_RUN_ID"
           workspace-benchmark-canonicalize --root "$BENCH_ROOT" >/dev/null
           test -z "$(grep -F "$RUNNER_TEMP" "$BENCH_ROOT/suite.json" || true)"
 
@@ -109,6 +111,7 @@ jobs:
           EXPECTED_SHA: ${{ inputs.source_ref }}
         run: |
           set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-benchmark-$GITHUB_RUN_ID"
           workspace-benchmark-verify \
             --source-ref "$EXPECTED_SHA" \
             --root "$BENCH_ROOT" \
