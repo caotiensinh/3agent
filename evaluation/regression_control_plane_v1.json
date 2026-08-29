@@ -1,0 +1,156 @@
+{
+  "schema_version": "workspace-evaluation-corpus/v1",
+  "corpus_id": "workspace-control-plane-regression-v1",
+  "corpus_class": "regression",
+  "cases": [
+    {
+      "case_id": "restricted-sensitive-query-hard-boundary",
+      "inputs": {
+        "task_type": "sensitive_query",
+        "sensitivity": "restricted",
+        "risk_level": "high"
+      },
+      "expected": {
+        "accepted": true,
+        "task_type": "sensitive_query",
+        "sensitivity": "restricted",
+        "risk_level": "high",
+        "network_scope": "internal_only",
+        "allowed_tools": ["search_docs", "query_db_readonly"],
+        "validators": ["policy", "evidence", "human"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true,
+        "model_trusted_local_only": true,
+        "max_retries": 2,
+        "max_escalations": 1,
+        "cache_mode": "deny",
+        "semantic_cache_allowed": false,
+        "logging_raw_prompt": "deny",
+        "logging_raw_tool_output": "deny"
+      }
+    },
+    {
+      "case_id": "secret-analysis-deny-egress-cache-and-raw-logs",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "secret",
+        "risk_level": "critical"
+      },
+      "expected": {
+        "accepted": true,
+        "task_type": "analysis",
+        "sensitivity": "secret",
+        "risk_level": "critical",
+        "network_scope": "deny",
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence", "human"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true,
+        "model_trusted_local_only": true,
+        "max_retries": 2,
+        "max_escalations": 1,
+        "cache_mode": "deny",
+        "semantic_cache_allowed": false,
+        "logging_raw_prompt": "deny",
+        "logging_raw_tool_output": "deny"
+      }
+    },
+    {
+      "case_id": "internal-code-fix-write-scope-and-tools",
+      "inputs": {
+        "task_type": "code_fix",
+        "sensitivity": "internal",
+        "risk_level": "medium",
+        "allowed_sources": ["repo:workspace"],
+        "write_scope": ["repo:staging"]
+      },
+      "expected": {
+        "accepted": true,
+        "task_type": "code_fix",
+        "sensitivity": "internal",
+        "risk_level": "medium",
+        "allowed_sources": ["repo:workspace"],
+        "write_scope": ["repo:staging"],
+        "network_scope": "internal_only",
+        "allowed_tools": ["search_repo", "read_file", "run_linter", "run_tests", "write_staging", "apply_patch"],
+        "validators": ["policy", "syntax", "lint", "unit_test"],
+        "evidence_required": false,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true,
+        "model_trusted_local_only": true,
+        "max_retries": 1,
+        "max_escalations": 1,
+        "cache_mode": "prefix_allowed",
+        "semantic_cache_allowed": false,
+        "logging_raw_prompt": "redacted",
+        "logging_raw_tool_output": "redacted"
+      }
+    },
+    {
+      "case_id": "public-doc-summary-web-stays-public-only",
+      "inputs": {
+        "task_type": "doc_summary",
+        "sensitivity": "public",
+        "risk_level": "low",
+        "public_web": true
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "allowlisted_egress",
+        "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+        "validators": ["policy", "evidence"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SMALL_FIRST",
+        "initial_model_tier": "small",
+        "max_model_tier": "specialist",
+        "escalation_allowed": true,
+        "model_trusted_local_only": false,
+        "max_retries": 2,
+        "max_escalations": 1,
+        "cache_mode": "prefix_allowed",
+        "semantic_cache_allowed": false,
+        "logging_raw_prompt": "deny",
+        "logging_raw_tool_output": "redacted"
+      }
+    },
+    {
+      "case_id": "confidential-retrieval-model-small-first",
+      "inputs": {
+        "task_type": "retrieval",
+        "sensitivity": "confidential",
+        "risk_level": "low"
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "deny",
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SMALL_FIRST",
+        "initial_model_tier": "small",
+        "max_model_tier": "specialist",
+        "escalation_allowed": true,
+        "model_trusted_local_only": true,
+        "max_retries": 1,
+        "max_escalations": 1,
+        "cache_mode": "exact_only",
+        "semantic_cache_allowed": false,
+        "logging_raw_prompt": "deny",
+        "logging_raw_tool_output": "redacted"
+      }
+    }
+  ]
+}
