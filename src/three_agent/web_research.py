@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Iterable, Protocol
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from .gateways import InternetGateway
 from .privacy import sanitize_research_query
+from .runtime_efficiency import sanitize_untrusted_payload
+
+_RETRIEVAL_SANITIZER_VERSION = "workspace-retrieval-sanitizer/v1"
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,13 @@ class SearchResult:
 
 @dataclass(frozen=True)
 class ResearchSource:
+    """Textual research evidence classified as untrusted before Agent 1 consumes it.
+
+    Provenance fields (source_id/url/fetch_status) are supplied by trusted code paths.
+    Human/web/document/tool text is normalized and risk-classified as data only. Risk
+    metadata can inform validators/auditing but never grants model/tool authority.
+    """
+
     source_id: str
     title: str
     url: str
@@ -27,9 +38,80 @@ class ResearchSource:
     extracted_text: str
     fetch_status: str
     error: str = ""
+    trust: str = ""
+    risk_level: str = "low"
+    sanitizer_version: str = _RETRIEVAL_SANITIZER_VERSION
+    sanitization_findings: tuple[dict, ...] = ()
+
+    def __post_init__(self) -> None:
+        textual_payload = {
+            "title": self.title,
+            "search_snippet": self.search_snippet,
+            "extracted_text": self.extracted_text,
+            "error": self.error,
+        }
+        sanitized, findings = sanitize_untrusted_payload(textual_payload)
+
+        object.__setattr__(self, "title", str(sanitized["title"]))
+        object.__setattr__(self, "search_snippet", str(sanitized["search_snippet"]))
+        object.__setattr__(self, "extracted_text", str(sanitized["extracted_text"]))
+        object.__setattr__(self, "error", str(sanitized["error"]))
+
+        compact_findings: list[dict] = []
+        seen: set[tuple[str, str, tuple[str, ...]]] = set()
+        for finding in (*self.sanitization_findings, *findings):
+            path = str(finding.get("path", ""))
+            risk = str(finding.get("risk", "low"))
+            raw_signals = finding.get("signals", [])
+            signals = tuple(
+                str(signal) for signal in raw_signals
+            ) if isinstance(raw_signals, (list, tuple)) else ()
+            key = (path, risk, signals)
+            if key in seen:
+                continue
+            seen.add(key)
+            compact_findings.append(
+                {"path": path, "risk": risk, "signals": list(signals)}
+            )
+        object.__setattr__(self, "sanitization_findings", tuple(compact_findings))
+
+        inferred_trust = (
+            "untrusted_upload" if self.url.startswith("upload://") else "untrusted_external"
+        )
+        object.__setattr__(self, "trust", str(self.trust or inferred_trust))
+
+        highest = str(self.risk_level or "low")
+        if highest not in _RISK_ORDER:
+            highest = "low"
+        for finding in compact_findings:
+            candidate = str(finding.get("risk", "low"))
+            if _RISK_ORDER.get(candidate, 0) > _RISK_ORDER[highest]:
+                highest = candidate
+        object.__setattr__(self, "risk_level", highest)
+        object.__setattr__(
+            self,
+            "sanitizer_version",
+            str(self.sanitizer_version or _RETRIEVAL_SANITIZER_VERSION),
+        )
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return {
+            "source_id": self.source_id,
+            "title": self.title,
+            "url": self.url,
+            "search_snippet": self.search_snippet,
+            "extracted_text": self.extracted_text,
+            "fetch_status": self.fetch_status,
+            "error": self.error,
+            "trust": self.trust,
+            "sanitization": {
+                "sanitizer_version": self.sanitizer_version,
+                "risk_level": self.risk_level,
+                "finding_count": len(self.sanitization_findings),
+                "findings": [dict(item) for item in self.sanitization_findings],
+                "raw_content_logged": False,
+            },
+        }
 
 
 class SearchProvider(Protocol):
