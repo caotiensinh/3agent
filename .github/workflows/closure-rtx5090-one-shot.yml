@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: workspace-closure-rtx5090-34654bd8
+  group: workspace-closure-rtx5090-303749d5
   cancel-in-progress: false
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 300
     env:
-      CANDIDATE_SHA: 34654bd8950671cb0eca47dd53996943cfce17e0
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
       MODEL: qwen3:30b
       WORKSPACE_FAST_MODEL: qwen3:30b
       WORKSPACE_RESEARCH_MODEL: qwen3:30b
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout exact main candidate
         uses: actions/checkout@v4
         with:
-          ref: 34654bd8950671cb0eca47dd53996943cfce17e0
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
           path: candidate
           persist-credentials: false
           fetch-depth: 1
