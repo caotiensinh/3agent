@@ -19,11 +19,7 @@ from .metered_runtime import (
 )
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .resource_events import ResourceEventRecorder
-from .runtime_validation import (
-    RuntimeValidatorBridge,
-    WorkflowDailyValidationProxy,
-    WorkflowResearchValidationProxy,
-)
+from .runtime_validation import RuntimeValidatorBridge
 from .store import TaskStore
 from .web_research import WebResearchClient
 from .workflow import WorkflowRunner
@@ -32,6 +28,39 @@ TZ = ZoneInfo("Asia/Tokyo")
 
 
 class Orchestrator:
+    @staticmethod
+    def _runtime_validator_policy(config: AppConfig) -> tuple[str, bool]:
+        """Resolve validator trust policy from trusted local configuration only."""
+        mode = str(config.confidentiality_mode or "").strip().lower()
+        if mode == "public-research":
+            if config.environment != "public-research-zone":
+                raise ValueError(
+                    "public-research confidentiality mode requires public-research-zone"
+                )
+            return mode, bool(
+                config.internet_gateway.enabled
+                and config.internet_gateway.public_search_enabled
+            )
+
+        if mode not in {
+            "development-test",
+            "public",
+            "internal",
+            "confidential",
+            "restricted",
+            "secret",
+        }:
+            raise ValueError(f"unsupported confidentiality_mode: {mode or '<empty>'}")
+        if mode != "public" and config.internet_gateway.public_search_enabled:
+            raise ValueError(
+                "non-public workflow cannot enable public Internet research"
+            )
+        return mode, bool(
+            mode == "public"
+            and config.internet_gateway.enabled
+            and config.internet_gateway.public_search_enabled
+        )
+
     def __init__(self, config: AppConfig):
         self.config = config
         self.store = TaskStore(config.database_path)
@@ -182,27 +211,20 @@ class Orchestrator:
         )
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
+        validator_mode, validator_public_web = self._runtime_validator_policy(config)
         self.runtime_validator_bridge = RuntimeValidatorBridge(
             self.store,
             self.artifacts,
-            confidentiality_mode=config.confidentiality_mode,
-            public_web=bool(
-                config.internet_gateway.enabled
-                and config.internet_gateway.public_search_enabled
-            ),
+            confidentiality_mode=validator_mode,
+            public_web=validator_public_web,
         )
         self.workflow = WorkflowRunner(
             self.store,
             self.artifacts,
-            WorkflowResearchValidationProxy(
-                self.research_agent,
-                self.runtime_validator_bridge,
-            ),
+            self.research_agent,
             self.presentation_agent,
-            WorkflowDailyValidationProxy(
-                self.daily_agent,
-                self.runtime_validator_bridge,
-            ),
+            self.daily_agent,
+            validator_bridge=self.runtime_validator_bridge,
         )
 
     def initialize(self) -> None:
@@ -258,7 +280,8 @@ class Orchestrator:
             "upload_gateway_enabled": True,
             "e2e_workflow_enabled": True,
             "runtime_validator_bridge_enabled": True,
-            "runtime_validator_contract": "policy+evidence+integration_test",
+            "runtime_validator_contract": "policy+evidence+schema",
+            "runtime_validator_public_web": self.runtime_validator_bridge.public_web,
             "structured_output_mode": "ollama_native_json_schema",
             "inference_telemetry": self.inference_telemetry_path,
             "inference_telemetry_raw_prompt": False,

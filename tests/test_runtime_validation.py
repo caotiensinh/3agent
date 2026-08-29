@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,12 +7,9 @@ from pathlib import Path
 from three_agent.artifacts import ArtifactManager
 from three_agent.handoff_security import build_handoff_security_metadata
 from three_agent.models import TaskStatus
-from three_agent.runtime_validation import (
-    RuntimeValidatorBridge,
-    WorkflowDailyValidationProxy,
-    WorkflowResearchValidationProxy,
-)
+from three_agent.runtime_validation import RuntimeValidationError, RuntimeValidatorBridge
 from three_agent.store import TaskStore
+from three_agent.task_contract import TaskContractCompiler
 from three_agent.workflow import WorkflowRunner
 
 
@@ -19,22 +18,26 @@ class FakeResearchAgent:
         self.mode = mode
 
     @staticmethod
-    def _handoff(task_id: str) -> dict:
+    def _handoff(task_id: str, *, ready: bool = True) -> dict:
         payload = {
             "schema_version": "1.0",
             "task_id": task_id,
             "agent_id": "research",
-            "presentation_ready": True,
-            "blockers": [],
+            "presentation_ready": ready,
+            "blockers": [] if ready else ["NO_VERIFIED_FACT"],
             "objective": "Test objective",
-            "key_facts": [
-                {
-                    "fact_id": "F001",
-                    "claim": "Verified fact",
-                    "source_ids": ["S1"],
-                    "confidence": "medium",
-                }
-            ],
+            "key_facts": (
+                [
+                    {
+                        "fact_id": "F001",
+                        "claim": "Verified fact",
+                        "source_ids": ["S1"],
+                        "confidence": "medium",
+                    }
+                ]
+                if ready
+                else []
+            ),
             "inferences": [],
             "conflicts": [],
             "unresolved_items": [],
@@ -51,9 +54,9 @@ class FakeResearchAgent:
             ],
             "source_assessments": [],
             "quality_metrics": {
-                "usable_source_count": 1,
-                "verified_fact_count": 1,
-                "evidence_coverage": 1.0,
+                "usable_source_count": 1 if ready else 0,
+                "verified_fact_count": 1 if ready else 0,
+                "evidence_coverage": 1.0 if ready else 0.0,
             },
             "generated_at": "2026-08-29T00:00:00+09:00",
         }
@@ -74,10 +77,19 @@ class FakeResearchAgent:
     def run(self, task_id, store, artifacts, live=False):
         del live
         if self.mode == "error":
-            raise RuntimeError("research provider failed")
+            raise RuntimeError("research provider failed token=RESEARCH_SECRET")
         if self.mode == "blocked":
+            handoff = self._handoff(task_id, ready=False)
+            handoff_path = artifacts.write_research_handoff(task_id, handoff)
             store.set_status(task_id, TaskStatus.WAITING_HUMAN)
-            return ()
+            return (handoff_path,)
+        if self.mode == "status_only":
+            folder = artifacts.root / "fake"
+            folder.mkdir(parents=True, exist_ok=True)
+            handoff_path = folder / f"{task_id}_handoff.json"
+            handoff_path.write_text("{}\n", encoding="utf-8")
+            store.set_status(task_id, TaskStatus.RESEARCH_COMPLETED)
+            return (handoff_path,)
 
         handoff = self._handoff(task_id)
         if self.mode == "tampered":
@@ -88,18 +100,41 @@ class FakeResearchAgent:
 
 
 class FakePresentationAgent:
-    def __init__(self, fail: bool = False):
-        self.fail = fail
+    def __init__(self, mode: str = "valid"):
+        self.mode = mode
 
     def run(self, task_id, store, artifacts, **kwargs):
         del kwargs
-        if self.fail:
+        if self.mode == "error":
             store.set_status(task_id, TaskStatus.FAILED)
-            raise RuntimeError("presentation failed")
+            raise RuntimeError("presentation failed password=DECK_SECRET")
+
+        handoff_path = artifacts.find_latest_task_artifact(
+            "research", task_id, suffix="_handoff.json"
+        )
+        handoff_hash = hashlib.sha256(handoff_path.read_bytes()).hexdigest()
+        valid = self.mode != "invalid"
         payload = {
             "schema_version": "presentation-artifact/v1",
             "task_id": task_id,
-            "status": "validated",
+            "agent_id": "presentation",
+            "status": "model_planned_evidence_validated",
+            "source_research_handoff_sha256": f"sha256:{handoff_hash}",
+            "plan": {
+                "schema_version": "presentation-plan/v1",
+                "title": "Fixture deck",
+                "subtitle": "",
+                "audience": "R&D internal",
+                "purpose": "inform",
+                "language": "ja",
+                "slides": [],
+            },
+            "qa": {
+                "schema_version": "presentation-qa/v1",
+                "status": "pass" if valid else "failed",
+                "errors": [] if valid else ["fixture failure"],
+                "visible_facts_source_bounded": valid,
+            },
         }
         json_path, md_path = artifacts.write_task_artifact(
             "presentations",
@@ -118,7 +153,7 @@ class FakeDailyAgent:
     def run(self, date, store, artifacts, live=False):
         del store, live
         if self.fail:
-            raise RuntimeError("daily failed")
+            raise RuntimeError("daily failed api_key=DAILY_SECRET")
         return artifacts.write_daily_report(
             date,
             {"schema_version": "daily-report/v1"},
@@ -132,8 +167,10 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
         root: Path,
         *,
         research_mode: str = "ready",
-        presentation_fail: bool = False,
+        presentation_mode: str = "valid",
         daily_fail: bool = False,
+        confidentiality_mode: str = "confidential",
+        public_web: bool = False,
     ):
         store = TaskStore(root / "tasks.db")
         store.initialize()
@@ -141,25 +178,20 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
         bridge = RuntimeValidatorBridge(
             store,
             artifacts,
-            confidentiality_mode="confidential",
-            public_web=False,
+            confidentiality_mode=confidentiality_mode,
+            public_web=public_web,
         )
         runner = WorkflowRunner(
             store,
             artifacts,
-            WorkflowResearchValidationProxy(
-                FakeResearchAgent(research_mode),
-                bridge,
-            ),
-            FakePresentationAgent(presentation_fail),
-            WorkflowDailyValidationProxy(
-                FakeDailyAgent(daily_fail),
-                bridge,
-            ),
+            FakeResearchAgent(research_mode),
+            FakePresentationAgent(presentation_mode),
+            FakeDailyAgent(daily_fail),
+            validator_bridge=bridge,
         )
         return runner, store, bridge
 
-    def test_successful_workflow_is_verified_on_first_pass(self):
+    def test_successful_workflow_is_verified_before_done_on_first_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner, store, bridge = self.make_stack(Path(tmp))
             result = runner.create_and_run(
@@ -170,18 +202,20 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
             )
 
             self.assertEqual(result.status, "completed")
-            state = bridge.ledger.evaluate(result.task_id)
+            self.assertEqual(store.get_task(result.task_id).status, TaskStatus.DONE)
+            state = bridge.evaluate(result.task_id)
             self.assertTrue(state.verified)
             self.assertTrue(state.first_pass_verified)
             self.assertEqual(
                 set(state.required_validators),
-                {"policy", "evidence", "integration_test"},
+                {"policy", "evidence", "schema"},
             )
             self.assertEqual(
                 set(state.passed_validators),
-                {"policy", "evidence", "integration_test"},
+                {"policy", "evidence", "schema"},
             )
-            self.assertEqual(store.get_task(result.task_id).status, TaskStatus.DONE)
+            manifest = json.loads(Path(result.manifest_path).read_text(encoding="utf-8"))
+            self.assertTrue(manifest["verification"]["verified"])
 
     def test_tampered_handoff_fails_evidence_and_never_reaches_presentation(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -197,13 +231,22 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
             )
 
             self.assertEqual(result.status, "failed")
-            state = bridge.ledger.evaluate(result.task_id)
+            state = bridge.evaluate(result.task_id)
             self.assertFalse(state.verified)
             self.assertIn("evidence", state.failed_validators)
+            self.assertIn("schema", state.missing_validators)
             rows = bridge.ledger.export_results(result.task_id)
-            reasons = [row["reason_code"] for row in rows]
-            self.assertIn("EVIDENCE_HANDOFF_INTEGRITY_FAIL", reasons)
-            self.assertIn("WORKFLOW_TASK_NOT_DONE", reasons)
+            evidence_rows = [row for row in rows if row["validator"] == "evidence"]
+            self.assertEqual(
+                evidence_rows[-1]["reason_code"],
+                "EVIDENCE_HANDOFF_INTEGRITY_FAIL",
+            )
+            self.assertTrue(
+                all(
+                    ref.startswith("sha256:")
+                    for ref in evidence_rows[-1]["evidence_refs"]
+                )
+            )
             self.assertIsNone(
                 bridge.artifacts.find_latest_task_artifact(
                     "presentations",
@@ -212,7 +255,7 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
                 )
             )
 
-    def test_blocked_research_is_not_verified_but_remains_blocked(self):
+    def test_blocked_research_is_not_verified_and_remains_blocked(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner, store, bridge = self.make_stack(
                 Path(tmp),
@@ -230,34 +273,48 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
                 store.get_task(result.task_id).status,
                 TaskStatus.WAITING_HUMAN,
             )
-            state = bridge.ledger.evaluate(result.task_id)
+            state = bridge.evaluate(result.task_id)
             self.assertFalse(state.verified)
             self.assertIn("evidence", state.failed_validators)
-            self.assertIn("integration_test", state.failed_validators)
+            self.assertIn("schema", state.missing_validators)
 
-    def test_daily_failure_prevents_integration_pass(self):
+    def test_status_alone_cannot_manufacture_evidence_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
             runner, store, bridge = self.make_stack(
                 Path(tmp),
-                daily_fail=True,
+                research_mode="status_only",
             )
             result = runner.create_and_run(
-                "Daily failure",
-                "Core stages succeed but report fails",
+                "Status only",
+                "Do not trust stage status",
                 live=False,
                 output_format="source",
             )
 
             self.assertEqual(result.status, "failed")
             self.assertEqual(store.get_task(result.task_id).status, TaskStatus.FAILED)
-            state = bridge.ledger.evaluate(result.task_id)
+            state = bridge.evaluate(result.task_id)
             self.assertFalse(state.verified)
-            self.assertIn("integration_test", state.failed_validators)
-            rows = bridge.ledger.export_results(result.task_id)
-            self.assertIn(
-                "WORKFLOW_DAILY_FAILED",
-                [row["reason_code"] for row in rows],
+            self.assertIn("evidence", state.failed_validators)
+
+    def test_presentation_completed_status_cannot_override_invalid_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner, store, bridge = self.make_stack(
+                Path(tmp),
+                presentation_mode="invalid",
             )
+            result = runner.create_and_run(
+                "Invalid presentation",
+                "Reject invalid deterministic QA",
+                live=False,
+                output_format="source",
+            )
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(store.get_task(result.task_id).status, TaskStatus.FAILED)
+            state = bridge.evaluate(result.task_id)
+            self.assertFalse(state.verified)
+            self.assertIn("schema", state.failed_validators)
 
     def test_retry_can_verify_but_cannot_rewrite_first_pass(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,7 +331,7 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
             )
             self.assertEqual(first.status, "failed")
 
-            runner.research_agent._agent.mode = "ready"
+            runner.research_agent.mode = "ready"
             second = runner.run_task(
                 task.task_id,
                 live=False,
@@ -282,7 +339,7 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
             )
             self.assertEqual(second.status, "completed")
 
-            state = bridge.ledger.evaluate(task.task_id)
+            state = bridge.evaluate(task.task_id)
             self.assertTrue(state.verified)
             self.assertFalse(state.first_pass_verified)
             rows = bridge.ledger.export_results(task.task_id)
@@ -293,24 +350,49 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
             ]
             self.assertEqual(evidence_attempts, [1, 2])
 
+    def test_daily_failure_does_not_mint_or_revoke_task_validator_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runner, store, bridge = self.make_stack(
+                Path(tmp),
+                daily_fail=True,
+            )
+            result = runner.create_and_run(
+                "Daily failure",
+                "Core task verifies but date-wide report fails",
+                live=False,
+                output_format="source",
+            )
+
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(store.get_task(result.task_id).status, TaskStatus.FAILED)
+            self.assertIn("api_key=<redacted>", result.error or "")
+            self.assertNotIn("DAILY_SECRET", result.error or "")
+            state = bridge.evaluate(result.task_id)
+            self.assertTrue(state.verified)
+            self.assertEqual(
+                set(state.passed_validators),
+                {"policy", "evidence", "schema"},
+            )
+
     def test_public_research_contract_is_explicitly_public_and_allowlisted(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            store = TaskStore(root / "tasks.db")
-            store.initialize()
-            artifacts = ArtifactManager(root / "data")
-            task = store.create_task("Public", "Public web research")
-            bridge = RuntimeValidatorBridge(
-                store,
-                artifacts,
+            runner, store, bridge = self.make_stack(
+                root,
                 confidentiality_mode="public-research",
                 public_web=True,
             )
+            del runner
+            task = store.create_task("Public", "Public web research")
             bridge.begin(task.task_id)
             contract = store.task_contract_for_task(task.task_id)
             self.assertEqual(contract["sensitivity"], "public")
             self.assertEqual(contract["network_scope"], "allowlisted_egress")
             self.assertIn("web_gateway", contract["allowed_tools"])
+            self.assertEqual(
+                set(contract["validators"]),
+                {"policy", "evidence", "schema"},
+            )
 
     def test_confidential_mode_rejects_public_web_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -328,6 +410,48 @@ class RuntimeValidatorBridgeTests(unittest.TestCase):
                     confidentiality_mode="confidential",
                     public_web=True,
                 )
+
+    def test_conflicting_prebound_contract_fails_closed_and_stays_immutable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = TaskStore(root / "tasks.db")
+            store.initialize()
+            artifacts = ArtifactManager(root / "data")
+            task = store.create_task("Immutable", "Reject contract mutation")
+            old_contract = TaskContractCompiler().compile(
+                task_id=task.task_id,
+                task_type="general",
+                sensitivity="internal",
+            )
+            old_digest = RuntimeValidatorBridge(
+                store,
+                artifacts,
+                confidentiality_mode="internal",
+                public_web=False,
+            ).ledger.bind_contract(old_contract)
+
+            bridge = RuntimeValidatorBridge(
+                store,
+                artifacts,
+                confidentiality_mode="confidential",
+                public_web=False,
+            )
+            with self.assertRaisesRegex(
+                RuntimeValidationError,
+                "TASK_CONTRACT_BIND_FAILED",
+            ):
+                bridge.begin(task.task_id)
+
+            record = store.task_contract_record(task.task_id)
+            self.assertEqual(record["contract_sha256"], old_digest)
+            rows = bridge.ledger.export_results(task.task_id)
+            policy = [row for row in rows if row["validator"] == "policy"]
+            self.assertEqual(policy[-1]["status"], "failed")
+            self.assertEqual(
+                policy[-1]["reason_code"],
+                "POLICY_CONTRACT_BIND_MISMATCH",
+            )
+            self.assertEqual(policy[-1]["evidence_refs"], [])
 
 
 if __name__ == "__main__":

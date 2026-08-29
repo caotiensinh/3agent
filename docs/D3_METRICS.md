@@ -26,15 +26,17 @@ A task is verified only when it has an immutable TaskContract binding and every 
 
 ### Runtime Validator Bridge
 
-Production `workflow-run` execution binds an immutable workflow TaskContract before Research starts. The runtime bridge requires these validator classes:
+Production `workflow-run` execution binds an immutable workflow TaskContract before Research starts. The task-specific runtime contract requires these validator classes:
 
 - `policy`: deterministic TaskContract compilation/binding succeeded for the active confidentiality/public-web zone;
-- `evidence`: the Research handoff integrity envelope is valid, task/source/target lineage matches, the handoff is presentation-ready, blockers are empty and at least one key fact survived deterministic evidence gates;
-- `integration_test`: the workflow reached `DONE`, the evidence validator is passing, the presentation artifact exists and the triggered Daily Report produced real files.
+- `evidence`: the Research handoff integrity envelope is valid, task/source/target lineage matches, and the deterministic evidence/readiness gate passes;
+- `schema`: the Presentation artifact has exact Research-handoff SHA-256 lineage and deterministic plan/QA validation passes.
 
-The bridge records compact reason codes, attempt numbers and metadata-only references. It does not store prompts, source bodies, model responses or secrets in the Validator Ledger.
+`WorkflowRunner` calls `ValidatorLedger.evaluate(task_id)` after Presentation validation and writes `TaskStatus.DONE` only when the required validator set is fully passing. A stage status cannot manufacture validator PASS.
 
-A Research, Presentation or Daily Report failure therefore cannot be converted into verified success merely because a task status or model message says that work completed.
+The bridge records compact reason codes, per-validator attempt numbers and metadata-only SHA-256 references. It does not store prompts, source bodies, model responses, tool output, credentials or business content in the Validator Ledger.
+
+The Daily Report stage is date-wide reporting, not a task-specific validator. Its success or failure cannot mint, revoke or rewrite the Research → Presentation validator history.
 
 Standalone stage commands such as `workspace research` remain outside the end-to-end workflow contract unless an explicit workflow contract is bound. Such tasks stay visible as unbound in D3 rather than being silently promoted.
 
@@ -46,7 +48,7 @@ first-pass verified tasks / attempted tasks
 
 A later retry may make a task finally verified, but it cannot rewrite first-pass history. This separates recovery effectiveness from initial execution quality.
 
-Validator attempts are monotonically numbered per task and validator. A failed first evidence/integration attempt followed by a passing retry can make the task finally verified, but `first_pass_verified_success_rate` remains unchanged for that task.
+Validator attempts are monotonically numbered per task and validator. A failed first evidence/schema attempt followed by a passing retry can make the task finally verified, but `first_pass_verified_success_rate` remains unchanged for that task.
 
 ## D3-03 — Tokens per Verified Task
 
