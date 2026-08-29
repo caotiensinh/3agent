@@ -1,0 +1,93 @@
+name: benchmark-context-packing
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type BENCHMARK to authorize local fixed-task execution'
+        required: true
+        default: ''
+      source_ref:
+        description: 'Exact 40-hex WorkSpace commit SHA to benchmark'
+        required: true
+        default: ''
+      model:
+        description: 'Preinstalled local Ollama model used for every benchmark role'
+        required: true
+        default: 'qwen3:30b'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-context-packing-benchmark
+  cancel-in-progress: false
+
+jobs:
+  fixed-task-benchmark:
+    if: ${{ inputs.confirm == 'BENCHMARK' }}
+    runs-on: [self-hosted, Linux, X64, rtx5090]
+    timeout-minutes: 240
+    env:
+      WORKSPACE_CONFIG: config/workspace.secure.json
+      WORKSPACE_FAST_MODEL: ${{ inputs.model }}
+      WORKSPACE_RESEARCH_MODEL: ${{ inputs.model }}
+      WORKSPACE_PRESENTATION_MODEL: ${{ inputs.model }}
+      WORKSPACE_REPORT_MODEL: ${{ inputs.model }}
+      WORKSPACE_DEEP_MODEL: ${{ inputs.model }}
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - name: Checkout exact benchmark source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact lineage and local GPU/model
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_ref }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          nvidia-smi
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -ge 2
+          ollama show "$MODEL" >/dev/null
+
+      - name: Install exact WorkSpace source without network dependency resolution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --no-deps -e .
+          workspace --help >/dev/null
+          workspace-benchmark --help >/dev/null
+
+      - name: Run isolated fixed-task benchmark
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_ref }}
+          BENCH_ROOT: ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}
+        run: |
+          set -Eeuo pipefail
+          workspace-benchmark \
+            --source-ref "$EXPECTED_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" \
+            --config "$GITHUB_WORKSPACE/config/workspace.secure.json"
+          test -s "$BENCH_ROOT/suite.json"
+
+      - name: Publish metadata-only benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-packing-benchmark-${{ inputs.source_ref }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/suite.json
+            ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/*/benchmark.json
+            ${{ runner.temp }}/workspace-benchmark-${{ github.run_id }}/*/isolation.json

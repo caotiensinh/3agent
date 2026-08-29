@@ -1,0 +1,63 @@
+{
+  "schema_version": "workspace-benchmark-taskset/v1",
+  "task_set_id": "workspace-reasoning-core-v1",
+  "tasks": [
+    {
+      "case_id": "constraint-first-doctrine",
+      "title": "WorkSpace constraint-first reasoning doctrine",
+      "request": "Using only the attached documents, explain the WorkSpace constraint-first reasoning doctrine for an internal architecture review. Distinguish production defaults from benchmark-gated experiments, explain why deterministic controls come before probabilistic inference, and show how evidence and correctness gates constrain optimization. Do not use web research or outside knowledge.",
+      "fixtures": [
+        "AGENTS.md",
+        "docs/WORKSPACE_EFFICIENT_REASONING_DOCTRINE_V1.md",
+        "docs/research/01_PICOLM_PHILOSOPHY.md",
+        "docs/research/02_WORKSPACE_EFFICIENT_REASONING_V2.md",
+        "docs/research/03_WORKSPACE_EFFICIENT_REASONING_V2_FACT_CHECKED.md",
+        "docs/research/04_WORKSPACE_EFFICIENCY_PLAYBOOK_V3.md",
+        "docs/D3_METRICS.md",
+        "docs/WORKSPACE_SECURITY_ARCHITECTURE.md"
+      ],
+      "audience": "WorkSpace architecture review",
+      "purpose": "explain and evaluate",
+      "language": "en",
+      "slide_count": 6
+    },
+    {
+      "case_id": "confidential-trust-boundaries",
+      "title": "WorkSpace confidential trust boundaries",
+      "request": "Using only the attached documents, explain the WorkSpace local-first confidentiality architecture and its trust boundaries. Show how public knowledge may move inward through validation while confidential information has no automatic outward path, and identify the deterministic fail-closed controls that prevent external content or model output from granting authority. Do not use web research or outside knowledge.",
+      "fixtures": [
+        "AGENTS.md",
+        "docs/WORKSPACE_SECURITY_ARCHITECTURE.md",
+        "docs/WORKSPACE_PUBLIC_RESEARCH_ZONE.md",
+        "docs/WORKSPACE_PUBLIC_KNOWLEDGE_PLANE.md",
+        "docs/WORKSPACE_EFFICIENT_REASONING_DOCTRINE_V1.md",
+        "docs/research/03_WORKSPACE_EFFICIENT_REASONING_V2_FACT_CHECKED.md",
+        "docs/research/04_WORKSPACE_EFFICIENCY_PLAYBOOK_V3.md",
+        "docs/SPEC.md"
+      ],
+      "audience": "WorkSpace security architecture review",
+      "purpose": "explain security boundaries",
+      "language": "en",
+      "slide_count": 6
+    },
+    {
+      "case_id": "verified-optimization-gate",
+      "title": "WorkSpace verified optimization promotion gate",
+      "request": "Using only the attached documents, explain how WorkSpace decides whether a context-packing optimization is eligible for promotion. Connect authoritative runtime validators, Verified Task Success, First-Pass Verified Success, Evidence Coverage, context precision and recall proxies, lineage, and benchmark isolation. Make clear that smaller context budgets must not be promoted when verified quality regresses. Do not use web research or outside knowledge.",
+      "fixtures": [
+        "AGENTS.md",
+        "docs/D3_METRICS.md",
+        "docs/BENCHMARK_ISOLATION.md",
+        "docs/EFFICIENT_REASONING_V2_V3_IMPLEMENTATION.md",
+        "docs/research/05_MASTER_IMPLEMENTATION_CHECKLIST.md",
+        "docs/research/04_WORKSPACE_EFFICIENCY_PLAYBOOK_V3.md",
+        "docs/research/03_WORKSPACE_EFFICIENT_REASONING_V2_FACT_CHECKED.md",
+        "docs/WORKSPACE_EFFICIENT_REASONING_DOCTRINE_V1.md"
+      ],
+      "audience": "WorkSpace optimization review",
+      "purpose": "evaluate promotion readiness",
+      "language": "en",
+      "slide_count": 6
+    }
+  ]
+}
