@@ -112,6 +112,16 @@ workspace task-list
 workspace workflow-run --title "..." --request "..."
 ```
 
+Unified D3 metrics:
+
+```bash
+workspace metrics
+workspace metrics --date 2026-08-29
+workspace metrics --task-id TASK-20260829-0001 --task-id TASK-20260829-0002
+```
+
+The metrics snapshot uses one exact task scope across Verified Task Success, first-pass success, token/resource cost, Evidence Coverage and the Context Precision/Recall proxies. See `docs/D3_METRICS.md` for formulas and limitations.
+
 High-assurance wrappers:
 
 ```bash
