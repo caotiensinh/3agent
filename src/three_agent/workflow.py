@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .artifacts import ArtifactManager
 from .execution_budget import TaskExecutionBudgetState
 from .inference_scope import inference_scope
+from .model_authority import TaskModelAuthority
 from .models import TaskStatus
 from .runtime_validation import RuntimeValidatorBridge
 from .store import TaskStore
@@ -41,9 +42,10 @@ class WorkflowRunner:
     """Run Research -> Presentation -> Daily Report as one auditable workflow.
 
     Production construction supplies RuntimeValidatorBridge. In that path the
-    TaskContract and its persistent execution budget are bound before Research,
-    deterministic Research and Presentation validators are recorded, and DONE is
-    impossible until ValidatorLedger.evaluate reports verified=True.
+    TaskContract, persistent execution budget and immutable model-authority
+    envelope are bound before Research. The same authority envelope is carried
+    through Research and Presentation, so changing model tier cannot expand
+    source/tool/network/write authority. DONE still requires verified validators.
     """
 
     def __init__(
@@ -155,6 +157,7 @@ class WorkflowRunner:
         bridge_bound = False
         verification = None
         execution_budget: TaskExecutionBudgetState | None = None
+        model_authority: TaskModelAuthority | None = None
         handoff_path: Path | None = None
         presentation_path: Path | None = None
 
@@ -171,6 +174,7 @@ class WorkflowRunner:
                 attempt = self.validator_bridge.begin(task_id)
                 bridge_bound = True
                 execution_budget = attempt.execution_budget
+                model_authority = attempt.model_authority
                 self.store.record_activity(
                     task_id,
                     "workflow",
@@ -186,6 +190,7 @@ class WorkflowRunner:
                     agent_id="research",
                     stage="research",
                     execution_budget=execution_budget,
+                    model_authority=model_authority,
                 ):
                     paths = self.research_agent.run(
                         task_id, self.store, self.artifacts, live=live
@@ -254,6 +259,7 @@ class WorkflowRunner:
                         agent_id="presentation",
                         stage="presentation",
                         execution_budget=execution_budget,
+                        model_authority=model_authority,
                     ):
                         paths = self.presentation_agent.run(
                             task_id,
@@ -357,8 +363,8 @@ class WorkflowRunner:
         try:
             stage = "daily_report"
             try:
-                # Daily Report is date-wide and not part of the task-specific
-                # retry/escalation budget or task validator contract.
+                # Daily Report is date-wide and outside the task-specific execution
+                # budget/model-authority envelope and task validator contract.
                 paths = self.daily_agent.run(
                     target_date, self.store, self.artifacts, live=live
                 )
@@ -416,6 +422,9 @@ class WorkflowRunner:
             ),
             "execution_budget": (
                 execution_budget.snapshot() if execution_budget is not None else None
+            ),
+            "model_authority": (
+                model_authority.metadata() if model_authority is not None else None
             ),
             "error": error,
             "started_at": started_at,
