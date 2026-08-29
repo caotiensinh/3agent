@@ -3,6 +3,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .handoff_security import build_handoff_security_metadata
+from .runtime_efficiency import sanitize_untrusted_payload
+
 
 _CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
 
@@ -196,7 +199,7 @@ def build_handoff(research: dict) -> dict:
             + ". Unsupported details remain unresolved and must not be treated as verified."
         )
 
-    return {
+    handoff = {
         "schema_version": "1.0",
         "task_id": research.get("task_id"),
         "agent_id": "research",
@@ -229,6 +232,39 @@ def build_handoff(research: dict) -> dict:
         },
         "generated_at": research.get("generated_at"),
     }
+
+    sanitized_handoff, handoff_findings = sanitize_untrusted_payload(handoff)
+    if not isinstance(sanitized_handoff, dict):
+        raise ValueError("research handoff must remain an object after sanitization")
+
+    source_findings: list[dict[str, Any]] = []
+    provenance_refs: list[str] = []
+    for source in sources:
+        sid = str(source.get("source_id") or "")
+        url = str(source.get("url") or "")
+        if sid:
+            provenance_refs.append(sid)
+        if url:
+            provenance_refs.append(url)
+        sanitization = source.get("sanitization")
+        if isinstance(sanitization, dict):
+            findings = sanitization.get("findings")
+            if isinstance(findings, list):
+                source_findings.extend(item for item in findings if isinstance(item, dict))
+
+    security = build_handoff_security_metadata(
+        sanitized_handoff,
+        [*source_findings, *handoff_findings],
+        source_agent="research",
+        source_type="research_handoff",
+        target_agent="presentation",
+        task_id=str(research.get("task_id") or ""),
+        trust_domain="workspace-local-derived-from-untrusted",
+        sanitizer_version="workspace-handoff-sanitizer/v1",
+        provenance_refs=provenance_refs,
+    )
+    sanitized_handoff["security"] = security.to_dict()
+    return sanitized_handoff
 
 
 def confidence_at_least(value: str, threshold: str) -> bool:
