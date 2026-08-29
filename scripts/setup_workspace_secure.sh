@@ -72,11 +72,16 @@ as_root env WORKSPACE_INSTALL_DIR="$INSTALL_DIR" \
   WORKSPACE_VENV="${INSTALL_DIR}/.venv" \
   bash "${INSTALL_DIR}/scripts/install_workspace_secure_boundary.sh"
 
+as_root env WORKSPACE_INSTALL_DIR="$INSTALL_DIR" \
+  WORKSPACE_VENV="${INSTALL_DIR}/.venv" \
+  bash "${INSTALL_DIR}/scripts/install_workspace_knowledge_plane.sh"
+
 log "Running confidential-mode smoke test under the network-blocked Core identity."
 workspace-secure smoke
 
 log "FINAL PASS: WorkSpace secure-local runtime installed."
 log "Use: workspace-secure <command>"
-log "Public search remains disabled by default."
+log "Public research remains isolated from the Confidential Core."
+log "Fresh public knowledge enters only through workspace-knowledge-export -> operator approval -> workspace-knowledge-import."
 log "Source SHA: ${EXACT_HEAD}"
 log "Bootstrap log: ${LOG_FILE}"

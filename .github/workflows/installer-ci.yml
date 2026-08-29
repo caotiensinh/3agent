@@ -47,6 +47,7 @@ jobs:
           bash scripts/test_chat_gateway_contract.sh
           bash scripts/test_lan_ai_server_contract.sh
           bash scripts/test_workspace_security_contract.sh
+          bash scripts/test_workspace_knowledge_contract.sh
       - name: ShellCheck
         run: |
           sudo apt-get update -y
@@ -61,6 +62,7 @@ jobs:
             scripts/install_chat_gateway.sh \
             scripts/configure_telegram.sh \
             scripts/install_workspace_secure_boundary.sh \
+            scripts/install_workspace_knowledge_plane.sh \
             scripts/setup_workspace_secure.sh \
             scripts/test_installer_contract.sh \
             scripts/test_ai_stack_contract.sh \
@@ -68,7 +70,8 @@ jobs:
             scripts/test_e2e_acceptance_contract.sh \
             scripts/test_chat_gateway_contract.sh \
             scripts/test_lan_ai_server_contract.sh \
-            scripts/test_workspace_security_contract.sh
+            scripts/test_workspace_security_contract.sh \
+            scripts/test_workspace_knowledge_contract.sh
 
   harness-regression:
     runs-on: ubuntu-24.04
