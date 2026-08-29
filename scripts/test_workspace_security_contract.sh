@@ -40,7 +40,7 @@ if grep -Eq 'usermod .*CORE_USER.*IPC_GROUP' scripts/install_workspace_secure_bo
   exit 1
 fi
 grep -Fq 'InaccessiblePaths=/var/lib/workspace /var/lib/workspace-public' scripts/install_workspace_secure_boundary.sh
-grep -Fq -- '--allow-uid ${PUBLIC_UID}' scripts/install_workspace_secure_boundary.sh
+grep -Fq -- "--allow-uid \${PUBLIC_UID}" scripts/install_workspace_secure_boundary.sh
 grep -Fq "meta skuid \${CORE_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq "meta skuid \${PUBLIC_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq '127.0.0.1 tcp dport 11434-11436 accept' scripts/install_workspace_secure_boundary.sh
