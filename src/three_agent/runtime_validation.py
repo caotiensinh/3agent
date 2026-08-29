@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from contextvars import ContextVar
-from dataclasses import replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 from .artifacts import ArtifactManager
 from .handoff_security import (
@@ -12,6 +12,8 @@ from .handoff_security import (
     verify_handoff_security_metadata,
 )
 from .models import TaskStatus
+from .presentation_model import handoff_is_presentable
+from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
 from .store import TaskStore
 from .task_contract import TaskContractCompiler
 from .validator_ledger import TaskVerificationState, ValidatorLedger
@@ -21,19 +23,19 @@ class RuntimeValidationError(RuntimeError):
     """A deterministic runtime validation gate rejected the workflow."""
 
 
-_ACTIVE_WORKFLOW_TASK: ContextVar[str | None] = ContextVar(
-    "workspace_active_validated_workflow_task",
-    default=None,
-)
+@dataclass(frozen=True)
+class RuntimeValidationAttempt:
+    contract_sha256: str
 
 
 class RuntimeValidatorBridge:
-    """Bind workflow execution to TaskContract/Validator Ledger evidence.
+    """Bind production workflow gates to the authoritative Validator Ledger.
 
-    This bridge grants no runtime authority. It observes deterministic workflow
-    outputs and records metadata-only validator results so D3 verified-success
-    metrics reflect real production execution rather than TaskStatus or model
-    self-reports.
+    The bridge never asks a model whether work passed. It consumes deterministic
+    contract policy, typed Research handoff integrity/readiness, Presentation
+    lineage/QA artifacts, and compact hashes only. Raw prompts, source bodies,
+    tool output, credentials and business content are never copied into the
+    Validator Ledger.
     """
 
     def __init__(
@@ -74,6 +76,17 @@ class RuntimeValidatorBridge:
             )
         return mapping[mode]
 
+    @staticmethod
+    def _artifact_ref(path: Path) -> str:
+        return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+    @staticmethod
+    def _load_json_object(path: Path) -> dict:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("artifact must contain one JSON object")
+        return payload
+
     def _next_attempt(self, task_id: str, validator: str) -> int:
         attempts = [
             int(row["attempt"])
@@ -87,282 +100,259 @@ class RuntimeValidatorBridge:
         task_id: str,
         validator: str,
         *,
-        status: str,
+        passed: bool,
         reason_code: str,
         evidence_refs: Iterable[str] = (),
         validator_version: str,
-    ) -> int:
-        return self.ledger.record(
+    ) -> None:
+        self.ledger.record(
             task_id,
             validator,
-            status=status,
+            status="passed" if passed else "failed",
             reason_code=reason_code,
             evidence_refs=evidence_refs,
             validator_version=validator_version,
             attempt=self._next_attempt(task_id, validator),
         )
 
-    def begin(self, task_id: str) -> TaskVerificationState:
+    def begin(self, task_id: str) -> RuntimeValidationAttempt:
+        """Compile, immutably bind, and policy-validate the workflow contract."""
         contract = self.compiler.compile(
             task_id=task_id,
             task_type="analysis",
             sensitivity=self.sensitivity,
             risk_level="low",
             public_web=self.public_web,
+            output_schema=PRESENTATION_PLAN_SCHEMA_V1,
         )
-        contract = replace(
-            contract,
-            validators=tuple(
-                dict.fromkeys((*contract.validators, "integration_test"))
-            ),
-            policy_reason_codes=tuple(
-                dict.fromkeys(
-                    (*contract.policy_reason_codes, "WORKFLOW_E2E_VALIDATION")
+        try:
+            digest = self.ledger.bind_contract(contract)
+        except Exception as exc:
+            # Preserve a failed policy event when an immutable contract already
+            # exists. Never replace or mutate the bound contract.
+            if self.store.task_contract_for_task(task_id) is not None:
+                self._record(
+                    task_id,
+                    "policy",
+                    passed=False,
+                    reason_code="POLICY_CONTRACT_BIND_MISMATCH",
+                    validator_version="runtime-policy/v2",
                 )
-            ),
-        ).validate()
-        digest = self.ledger.bind_contract(contract)
+            raise RuntimeValidationError("TASK_CONTRACT_BIND_FAILED") from exc
+
         self._record(
             task_id,
             "policy",
-            status="passed",
+            passed=True,
             reason_code="POLICY_CONTRACT_VALIDATED",
-            evidence_refs=[digest],
-            validator_version="runtime-policy-v1",
+            evidence_refs=(digest,),
+            validator_version="runtime-policy/v2",
         )
-        return self.ledger.evaluate(task_id)
+        return RuntimeValidationAttempt(contract_sha256=digest)
 
-    def record_evidence_failure(
+    def record_research_evidence(
         self,
         task_id: str,
-        reason_code: str,
-    ) -> TaskVerificationState:
-        if self.store.task_contract_for_task(task_id) is None:
-            return self.ledger.evaluate(task_id)
-        self._record(
-            task_id,
-            "evidence",
-            status="failed",
-            reason_code=reason_code,
-            validator_version="research-evidence-v1",
-        )
-        return self.ledger.evaluate(task_id)
-
-    def validate_research_evidence(self, task_id: str) -> TaskVerificationState:
-        handoff_path = self.artifacts.find_latest_task_artifact(
-            "research",
-            task_id,
-            suffix="_handoff.json",
-        )
+        *,
+        handoff_path: Path | None = None,
+        task_status: TaskStatus | None = None,
+    ) -> bool:
+        """Record Research evidence outcome from the typed handoff artifact."""
         if handoff_path is None:
-            self.record_evidence_failure(task_id, "EVIDENCE_HANDOFF_MISSING")
-            raise RuntimeValidationError("EVIDENCE_HANDOFF_MISSING")
+            handoff_path = self.artifacts.find_latest_task_artifact(
+                "research", task_id, suffix="_handoff.json"
+            )
+        if handoff_path is None or not handoff_path.is_file():
+            self._record(
+                task_id,
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_HANDOFF_MISSING",
+                validator_version="research-evidence/v2",
+            )
+            return False
+
+        ref = self._artifact_ref(handoff_path)
+        try:
+            handoff = self._load_json_object(handoff_path)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            self._record(
+                task_id,
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_HANDOFF_INVALID",
+                evidence_refs=(ref,),
+                validator_version="research-evidence/v2",
+            )
+            return False
+
+        if str(handoff.get("task_id") or "") != task_id:
+            self._record(
+                task_id,
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_HANDOFF_TASK_MISMATCH",
+                evidence_refs=(ref,),
+                validator_version="research-evidence/v2",
+            )
+            return False
 
         try:
-            payload = json.loads(handoff_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, UnicodeError) as exc:
-            self.record_evidence_failure(task_id, "EVIDENCE_HANDOFF_INVALID")
-            raise RuntimeValidationError("EVIDENCE_HANDOFF_INVALID") from exc
-        if not isinstance(payload, dict):
-            self.record_evidence_failure(task_id, "EVIDENCE_HANDOFF_INVALID")
-            raise RuntimeValidationError("EVIDENCE_HANDOFF_INVALID")
-
-        try:
-            security = verify_handoff_security_metadata(
-                payload,
+            verify_handoff_security_metadata(
+                handoff,
                 expected_source_agent="research",
                 expected_target_agent="presentation",
                 expected_task_id=task_id,
             )
-        except HandoffSecurityValidationError as exc:
-            self.record_evidence_failure(
+        except (HandoffSecurityValidationError, TypeError, ValueError):
+            self._record(
                 task_id,
-                "EVIDENCE_HANDOFF_INTEGRITY_FAIL",
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_HANDOFF_INTEGRITY_FAIL",
+                evidence_refs=(ref,),
+                validator_version="research-evidence/v2",
             )
-            raise RuntimeValidationError(
-                "EVIDENCE_HANDOFF_INTEGRITY_FAIL"
-            ) from exc
+            return False
 
-        blockers = payload.get("blockers")
-        key_facts = payload.get("key_facts")
-        if (
-            payload.get("presentation_ready") is not True
-            or not isinstance(blockers, list)
-            or blockers
-            or not isinstance(key_facts, list)
-            or not any(isinstance(item, dict) for item in key_facts)
-        ):
-            self.record_evidence_failure(
+        ready, _ = handoff_is_presentable(handoff)
+        if not ready:
+            self._record(
                 task_id,
-                "EVIDENCE_HANDOFF_NOT_READY",
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_HANDOFF_NOT_READY",
+                evidence_refs=(ref,),
+                validator_version="research-evidence/v2",
             )
-            raise RuntimeValidationError("EVIDENCE_HANDOFF_NOT_READY")
+            return False
 
-        content_hash = str(security.get("content_hash") or "")
-        refs = [content_hash] if content_hash.startswith("sha256:") else []
+        current_status = task_status or self.store.get_task(task_id).status
+        if current_status != TaskStatus.RESEARCH_COMPLETED:
+            self._record(
+                task_id,
+                "evidence",
+                passed=False,
+                reason_code="EVIDENCE_RESEARCH_STAGE_STATE_INVALID",
+                evidence_refs=(ref,),
+                validator_version="research-evidence/v2",
+            )
+            return False
+
         self._record(
             task_id,
             "evidence",
-            status="passed",
+            passed=True,
             reason_code="EVIDENCE_HANDOFF_VERIFIED",
-            evidence_refs=refs,
-            validator_version="research-evidence-v1",
+            evidence_refs=(ref,),
+            validator_version="research-evidence/v2",
         )
-        return self.ledger.evaluate(task_id)
+        return True
 
-    @staticmethod
-    def _paths_exist(paths: Iterable[Any]) -> tuple[bool, int]:
-        count = 0
-        for raw in paths:
-            path = Path(str(raw))
-            if not path.exists() or not path.is_file():
-                return False, count
-            count += 1
-        return count > 0, count
-
-    def finalize(
+    def record_presentation_validation(
         self,
         task_id: str,
         *,
-        daily_success: bool,
-        daily_paths: Iterable[Any] = (),
-    ) -> TaskVerificationState:
-        if self.store.task_contract_for_task(task_id) is None:
-            return self.ledger.evaluate(task_id)
+        presentation_path: Path | None = None,
+        handoff_path: Path | None = None,
+        task_status: TaskStatus | None = None,
+    ) -> bool:
+        """Record deterministic Presentation schema/semantic/lineage validation."""
+        if presentation_path is None:
+            presentation_path = self.artifacts.find_latest_task_artifact(
+                "presentations", task_id, suffix=".json"
+            )
+        if presentation_path is None or not presentation_path.is_file():
+            self._record(
+                task_id,
+                "schema",
+                passed=False,
+                reason_code="PRESENTATION_ARTIFACT_MISSING",
+                validator_version="presentation-validation/v2",
+            )
+            return False
 
-        task = self.store.get_task(task_id)
-        pre = self.ledger.evaluate(task_id)
-        presentation_path = self.artifacts.find_latest_task_artifact(
-            "presentations",
-            task_id,
-            suffix=".json",
+        presentation_ref = self._artifact_ref(presentation_path)
+        refs: tuple[str, ...] = (presentation_ref,)
+        try:
+            payload = self._load_json_object(presentation_path)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            self._record(
+                task_id,
+                "schema",
+                passed=False,
+                reason_code="PRESENTATION_ARTIFACT_INVALID",
+                evidence_refs=refs,
+                validator_version="presentation-validation/v2",
+            )
+            return False
+
+        if str(payload.get("task_id") or "") != task_id:
+            self._record(
+                task_id,
+                "schema",
+                passed=False,
+                reason_code="PRESENTATION_TASK_MISMATCH",
+                evidence_refs=refs,
+                validator_version="presentation-validation/v2",
+            )
+            return False
+
+        if handoff_path is None:
+            handoff_path = self.artifacts.find_latest_task_artifact(
+                "research", task_id, suffix="_handoff.json"
+            )
+        if handoff_path is None or not handoff_path.is_file():
+            self._record(
+                task_id,
+                "schema",
+                passed=False,
+                reason_code="PRESENTATION_LINEAGE_MISSING",
+                evidence_refs=refs,
+                validator_version="presentation-validation/v2",
+            )
+            return False
+
+        handoff_ref = self._artifact_ref(handoff_path)
+        refs = (presentation_ref, handoff_ref)
+        if str(payload.get("source_research_handoff_sha256") or "") != handoff_ref:
+            self._record(
+                task_id,
+                "schema",
+                passed=False,
+                reason_code="PRESENTATION_LINEAGE_MISMATCH",
+                evidence_refs=refs,
+                validator_version="presentation-validation/v2",
+            )
+            return False
+
+        plan = payload.get("plan")
+        qa = payload.get("qa")
+        current_status = task_status or self.store.get_task(task_id).status
+        qa_status = str(qa.get("status") or "") if isinstance(qa, dict) else ""
+        valid = (
+            isinstance(plan, dict)
+            and plan.get("schema_version") == "presentation-plan/v1"
+            and isinstance(qa, dict)
+            and qa.get("schema_version") == "presentation-qa/v1"
+            and qa_status in {"pass", "dry_run"}
+            and qa.get("errors") == []
+            and qa.get("visible_facts_source_bounded") is True
+            and current_status == TaskStatus.PRESENTATION_COMPLETED
         )
-        daily_ok, daily_count = self._paths_exist(daily_paths)
-
-        reason = "WORKFLOW_E2E_PASS"
-        passed = True
-        if not daily_success:
-            passed = False
-            reason = "WORKFLOW_DAILY_FAILED"
-        elif task.status != TaskStatus.DONE:
-            passed = False
-            reason = "WORKFLOW_TASK_NOT_DONE"
-        elif "evidence" not in pre.passed_validators:
-            passed = False
-            reason = "WORKFLOW_EVIDENCE_NOT_VERIFIED"
-        elif presentation_path is None or not presentation_path.is_file():
-            passed = False
-            reason = "WORKFLOW_PRESENTATION_MISSING"
-        elif not daily_ok:
-            passed = False
-            reason = "WORKFLOW_DAILY_ARTIFACT_MISSING"
-
-        refs: list[str] = []
-        if passed:
-            refs = [
-                f"task:{task_id}",
-                "artifact:research_handoff:1",
-                "artifact:presentation:1",
-                f"artifact:daily_report:{daily_count}",
-            ]
         self._record(
             task_id,
-            "integration_test",
-            status="passed" if passed else "failed",
-            reason_code=reason,
+            "schema",
+            passed=valid,
+            reason_code=(
+                "PRESENTATION_VALIDATION_PASS"
+                if valid
+                else "PRESENTATION_VALIDATION_FAILED"
+            ),
             evidence_refs=refs,
-            validator_version="workflow-e2e-v1",
+            validator_version="presentation-validation/v2",
         )
+        return valid
+
+    def evaluate(self, task_id: str) -> TaskVerificationState:
         return self.ledger.evaluate(task_id)
-
-
-class _DelegatingProxy:
-    def __init__(self, agent: Any, bridge: RuntimeValidatorBridge):
-        self._agent = agent
-        self._bridge = bridge
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._agent, name)
-
-
-class WorkflowResearchValidationProxy(_DelegatingProxy):
-    """Validate/bind the task before research and verify its handoff afterward."""
-
-    def run(
-        self,
-        task_id: str,
-        store: TaskStore,
-        artifacts: ArtifactManager,
-        live: bool = False,
-    ):
-        _ACTIVE_WORKFLOW_TASK.set(task_id)
-        self._bridge.begin(task_id)
-        try:
-            result = self._agent.run(
-                task_id,
-                store,
-                artifacts,
-                live=live,
-            )
-        except Exception:
-            self._bridge.record_evidence_failure(
-                task_id,
-                "EVIDENCE_RESEARCH_STAGE_FAILED",
-            )
-            raise
-
-        task = store.get_task(task_id)
-        if task.status != TaskStatus.RESEARCH_COMPLETED:
-            self._bridge.record_evidence_failure(
-                task_id,
-                "EVIDENCE_RESEARCH_NOT_READY",
-            )
-            return result
-
-        self._bridge.validate_research_evidence(task_id)
-        return result
-
-
-class WorkflowDailyValidationProxy(_DelegatingProxy):
-    """Close the integration validator around the date-wide Daily Report stage."""
-
-    def run(
-        self,
-        date: str,
-        store: TaskStore,
-        artifacts: ArtifactManager,
-        live: bool = False,
-    ):
-        task_id = _ACTIVE_WORKFLOW_TASK.get()
-        try:
-            result = self._agent.run(
-                date,
-                store,
-                artifacts,
-                live=live,
-            )
-        except Exception:
-            if task_id:
-                self._bridge.finalize(
-                    task_id,
-                    daily_success=False,
-                    daily_paths=(),
-                )
-            _ACTIVE_WORKFLOW_TASK.set(None)
-            raise
-
-        try:
-            if task_id:
-                state = self._bridge.finalize(
-                    task_id,
-                    daily_success=True,
-                    daily_paths=result if isinstance(result, (list, tuple)) else (result,),
-                )
-                task = store.get_task(task_id)
-                if task.status == TaskStatus.DONE and not state.verified:
-                    raise RuntimeValidationError(
-                        "WORKFLOW_VERIFICATION_FAILED"
-                    )
-            return result
-        finally:
-            _ACTIVE_WORKFLOW_TASK.set(None)

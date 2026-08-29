@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from .artifacts import ArtifactManager
 from .inference_scope import inference_scope
 from .models import TaskStatus
+from .runtime_validation import RuntimeValidatorBridge
 from .store import TaskStore
 
 TZ = ZoneInfo("Asia/Tokyo")
@@ -38,14 +39,14 @@ class WorkflowRunResult:
 class WorkflowRunner:
     """Run Research -> Presentation -> Daily Report as one auditable workflow.
 
-    Agent 2 is never called unless Agent 1 leaves the task in
-    RESEARCH_COMPLETED. Agent 3 is attempted for every outcome so blocked and
-    failed work is still represented in the daily evidence trail.
+    Production construction supplies RuntimeValidatorBridge. In that path the
+    TaskContract is bound before Research, deterministic Research and Presentation
+    validators are recorded, and DONE is impossible until ValidatorLedger.evaluate
+    reports verified=True. Stage statuses remain state-machine invariants only;
+    they never substitute for validator evidence.
 
-    Legacy/non-budgeted clients are unloaded between live stages. When dynamic
-    resource admission is enabled, models may remain resident across stages and
-    every subsequent model load is checked against the live VRAM/RAM/thermal
-    budget instead of enforcing a fixed resident-model count.
+    A bridge-less runner is retained only for narrow legacy/unit-test construction
+    that does not participate in Verified Task Success accounting.
     """
 
     def __init__(
@@ -55,12 +56,15 @@ class WorkflowRunner:
         research_agent: Any,
         presentation_agent: Any,
         daily_agent: Any,
+        *,
+        validator_bridge: RuntimeValidatorBridge | None = None,
     ):
         self.store = store
         self.artifacts = artifacts
         self.research_agent = research_agent
         self.presentation_agent = presentation_agent
         self.daily_agent = daily_agent
+        self.validator_bridge = validator_bridge
 
     @staticmethod
     def _safe_error(exc: Exception) -> str:
@@ -82,6 +86,18 @@ class WorkflowRunner:
                 unload()
             except Exception:
                 return
+
+    @staticmethod
+    def _path_with_suffix(paths: list[str], suffix: str) -> Path | None:
+        for raw in paths:
+            path = Path(raw)
+            if path.name.endswith(suffix):
+                return path
+        return None
+
+    @staticmethod
+    def result_dict(result: WorkflowRunResult) -> dict[str, Any]:
+        return asdict(result)
 
     def _write_manifest(self, payload: dict[str, Any]) -> Path:
         folder = self.artifacts.root / "workflow_runs" / self.artifacts.today()
@@ -137,8 +153,12 @@ class WorkflowRunner:
         presentation_paths: list[str] = []
         daily_paths: list[str] = []
         error: str | None = None
-        stage = "research"
+        stage = "contract" if self.validator_bridge is not None else "research"
         outcome = "failed"
+        bridge_bound = False
+        verification = None
+        handoff_path: Path | None = None
+        presentation_path: Path | None = None
 
         self.store.record_activity(
             task_id,
@@ -149,17 +169,67 @@ class WorkflowRunner:
         )
 
         try:
+            if self.validator_bridge is not None:
+                attempt = self.validator_bridge.begin(task_id)
+                bridge_bound = True
+                self.store.record_activity(
+                    task_id,
+                    "workflow",
+                    "runtime_validator_bridge_bound",
+                    "ok",
+                    f"contract={attempt.contract_sha256}",
+                )
+
+            stage = "research"
             try:
                 with inference_scope(task_id, agent_id="research", stage="research"):
                     paths = self.research_agent.run(
                         task_id, self.store, self.artifacts, live=live
                     )
                 research_paths = [str(path) for path in paths]
+            except Exception:
+                if bridge_bound:
+                    handoff_path = self._path_with_suffix(
+                        research_paths, "_handoff.json"
+                    )
+                    self.validator_bridge.record_research_evidence(
+                        task_id,
+                        handoff_path=handoff_path,
+                        task_status=self.store.get_task(task_id).status,
+                    )
+                raise
             finally:
                 self._release_agent_model(self.research_agent, live=live)
 
             task = self.store.get_task(task_id)
-            if task.status != TaskStatus.RESEARCH_COMPLETED:
+            if bridge_bound:
+                handoff_path = self._path_with_suffix(
+                    research_paths, "_handoff.json"
+                )
+                evidence_passed = self.validator_bridge.record_research_evidence(
+                    task_id,
+                    handoff_path=handoff_path,
+                    task_status=task.status,
+                )
+                if not evidence_passed:
+                    stage = "research_gate"
+                    if task.status == TaskStatus.WAITING_HUMAN:
+                        outcome = "blocked"
+                    else:
+                        outcome = "failed"
+                        error = "RuntimeValidationError: RESEARCH_EVIDENCE_VALIDATION_FAILED"
+                        if task.status != TaskStatus.FAILED:
+                            self.store.set_status(task_id, TaskStatus.FAILED)
+                    self.store.record_activity(
+                        task_id,
+                        "workflow",
+                        "presentation_skipped",
+                        "blocked" if outcome == "blocked" else "error",
+                        "required research evidence validator did not pass",
+                    )
+                else:
+                    outcome = "continue"
+            elif task.status != TaskStatus.RESEARCH_COMPLETED:
                 outcome = "blocked"
                 stage = "research_gate"
                 self.store.record_activity(
@@ -170,9 +240,14 @@ class WorkflowRunner:
                     f"research_status={task.status.value}",
                 )
             else:
+                outcome = "continue"
+
+            if outcome == "continue":
                 stage = "presentation"
                 try:
-                    with inference_scope(task_id, agent_id="presentation", stage="presentation"):
+                    with inference_scope(
+                        task_id, agent_id="presentation", stage="presentation"
+                    ):
                         paths = self.presentation_agent.run(
                             task_id,
                             self.store,
@@ -185,6 +260,18 @@ class WorkflowRunner:
                             output_format=output_format,
                         )
                     presentation_paths = [str(path) for path in paths]
+                except Exception:
+                    if bridge_bound:
+                        presentation_path = self._path_with_suffix(
+                            presentation_paths, ".json"
+                        )
+                        self.validator_bridge.record_presentation_validation(
+                            task_id,
+                            presentation_path=presentation_path,
+                            handoff_path=handoff_path,
+                            task_status=self.store.get_task(task_id).status,
+                        )
+                    raise
                 finally:
                     self._release_agent_model(self.presentation_agent, live=live)
 
@@ -193,6 +280,38 @@ class WorkflowRunner:
                     raise RuntimeError(
                         f"Presentation Agent returned without completion: {task.status.value}"
                     )
+
+                if bridge_bound:
+                    presentation_path = self._path_with_suffix(
+                        presentation_paths, ".json"
+                    )
+                    schema_passed = self.validator_bridge.record_presentation_validation(
+                        task_id,
+                        presentation_path=presentation_path,
+                        handoff_path=handoff_path,
+                        task_status=task.status,
+                    )
+                    if not schema_passed:
+                        stage = "validator_gate"
+                        self.store.set_status(task_id, TaskStatus.FAILED)
+                        raise RuntimeError("PRESENTATION_VALIDATION_FAILED")
+
+                    verification = self.validator_bridge.evaluate(task_id)
+                    if not verification.verified:
+                        stage = "validator_gate"
+                        self.store.set_status(task_id, TaskStatus.FAILED)
+                        self.store.record_activity(
+                            task_id,
+                            "workflow",
+                            "runtime_verification_failed",
+                            "error",
+                            (
+                                f"missing={','.join(verification.missing_validators)} "
+                                f"failed={','.join(verification.failed_validators)}"
+                            ),
+                        )
+                        raise RuntimeError("REQUIRED_VALIDATOR_NOT_PASSED")
+
                 self.store.set_status(task_id, TaskStatus.DONE)
                 outcome = "completed"
                 stage = "task_completed"
@@ -201,7 +320,11 @@ class WorkflowRunner:
                     "workflow",
                     "task_workflow_completed",
                     "ok",
-                    "Research and presentation stages completed; task marked DONE.",
+                    (
+                        "Required runtime validators passed; task marked DONE."
+                        if bridge_bound
+                        else "Research and presentation stages completed; task marked DONE."
+                    ),
                 )
         except Exception as exc:
             error = self._safe_error(exc)
@@ -217,12 +340,18 @@ class WorkflowRunner:
                 f"stage={stage} {error}",
             )
 
+        if self.validator_bridge is not None:
+            try:
+                verification = self.validator_bridge.evaluate(task_id)
+            except Exception:
+                verification = None
+
         business_stage = stage
         try:
             stage = "daily_report"
             try:
-                # Daily Report is date-wide and may cover many tasks. Do not falsely
-                # attribute its inference cost to the one workflow task that triggered it.
+                # Daily Report is date-wide and may cover many tasks. It is not a
+                # validator for the task-specific Research -> Presentation contract.
                 paths = self.daily_agent.run(
                     target_date, self.store, self.artifacts, live=live
                 )
@@ -275,6 +404,9 @@ class WorkflowRunner:
             "research_artifacts": research_paths,
             "presentation_artifacts": presentation_paths,
             "daily_report_artifacts": daily_paths,
+            "verification": (
+                verification.to_dict() if verification is not None else None
+            ),
             "error": error,
             "started_at": started_at,
             "completed_at": datetime.now(TZ).isoformat(),
