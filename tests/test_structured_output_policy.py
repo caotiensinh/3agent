@@ -1,5 +1,7 @@
 import unittest
 
+from three_agent.daily_report_schemas import DAILY_REPORT_SCHEMA_ID
+from three_agent.presentation_schemas import PRESENTATION_PLAN_SCHEMA_ID
 from three_agent.research_schemas import (
     RESEARCH_PLAN_SCHEMA_ID,
     RESEARCH_SYNTHESIS_SCHEMA_ID,
@@ -50,15 +52,40 @@ class StructuredOutputPolicyTests(unittest.TestCase):
         self.assertIn("verified_facts", kwargs["schema"]["required"])
         self.assertFalse(kwargs["schema"]["additionalProperties"])
 
-    def test_unknown_research_structured_path_fails_closed(self):
-        client = StructuredOutputPolicyClient(CaptureClient(), agent_id="research")
-        with self.assertRaises(StructuredOutputPolicyError):
-            client.generate_json("system", "Unknown structured research operation")
-
-    def test_other_agents_remain_passthrough_until_their_d2_phase(self):
+    def test_presentation_gets_versioned_plan_schema(self):
         inner = CaptureClient()
         client = StructuredOutputPolicyClient(inner, agent_id="presentation")
-        client.generate_json("system", "presentation prompt", num_predict=10)
+        client.generate_json(
+            "system",
+            "Plan an evidence-bounded professional presentation.\nTASK TITLE: T",
+        )
+        kwargs = inner.calls[-1][2]
+        self.assertEqual(kwargs["schema_id"], PRESENTATION_PLAN_SCHEMA_ID)
+        self.assertIn("slides", kwargs["schema"]["required"])
+        self.assertFalse(kwargs["schema"]["additionalProperties"])
+
+    def test_daily_report_gets_versioned_schema(self):
+        inner = CaptureClient()
+        client = StructuredOutputPolicyClient(inner, agent_id="daily_report")
+        client.generate_json(
+            "system",
+            "Create a concise Japanese R&D daily report using ONLY the JSON evidence below.\nEVIDENCE:{}",
+        )
+        kwargs = inner.calls[-1][2]
+        self.assertEqual(kwargs["schema_id"], DAILY_REPORT_SCHEMA_ID)
+        self.assertIn("work_items", kwargs["schema"]["required"])
+
+    def test_unknown_schema_governed_path_fails_closed(self):
+        for agent_id in ("research", "presentation", "daily_report"):
+            with self.subTest(agent_id=agent_id):
+                client = StructuredOutputPolicyClient(CaptureClient(), agent_id=agent_id)
+                with self.assertRaises(StructuredOutputPolicyError):
+                    client.generate_json("system", "Unknown structured operation")
+
+    def test_unregistered_agent_remains_passthrough(self):
+        inner = CaptureClient()
+        client = StructuredOutputPolicyClient(inner, agent_id="future_agent")
+        client.generate_json("system", "future prompt", num_predict=10)
         kwargs = inner.calls[-1][2]
         self.assertNotIn("schema", kwargs)
         self.assertNotIn("schema_id", kwargs)
