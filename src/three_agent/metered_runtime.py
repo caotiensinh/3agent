@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .capability_authority import CapabilityAuthorityDenied
+from .capability_revocation import TaskCapabilityRevocationStore
 from .failure_taxonomy import DEFAULT_FAILURE_TAXONOMY
 from .gateways import ExecutionGateway, InternetGateway
 from .inference_scope import (
@@ -68,12 +69,24 @@ def _require_capability(
         raise CapabilityAuthorityDenied("CAPABILITY_SCOPE_MISSING_OR_INVALID")
     if task_id is not None and str(task_id).strip() != authority.task_id:
         raise CapabilityAuthorityDenied("CAPABILITY_TASK_SCOPE_MISMATCH")
-    authority.require(
+    decision = authority.require(
         capability,
         resource_kind=resource_kind,
         resource_ref=resource_ref,
         effect=effect,
     )
+
+    # Production scopes carry the bridge-bound persistent execution state. Read
+    # revocation live on every capability call so an operator can narrow an
+    # already-active task without waiting for a new scope/process.
+    state = current_execution_budget()
+    if state is not None:
+        if state.task_id != authority.task_id:
+            raise CapabilityAuthorityDenied("CAPABILITY_TASK_SCOPE_MISMATCH")
+        if TaskCapabilityRevocationStore(state.store).is_revoked(
+            authority.task_id, capability
+        ):
+            raise CapabilityAuthorityDenied("CAPABILITY_REVOKED", decision)
 
 
 class MeteredInternetGateway:
