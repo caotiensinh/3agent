@@ -9,6 +9,10 @@ SECURITY_METADATA_SCHEMA = "workspace-handoff-security/v1"
 _RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
+class HandoffSecurityValidationError(ValueError):
+    """Typed handoff metadata is missing, inconsistent, or tampered."""
+
+
 def _canonical_hash(value: Any) -> str:
     encoded = json.dumps(
         value,
@@ -105,3 +109,49 @@ def build_handoff_security_metadata(
         findings=compact,
         provenance_refs=refs,
     )
+
+
+def verify_handoff_security_metadata(
+    payload: dict[str, Any],
+    *,
+    expected_source_agent: str,
+    expected_target_agent: str,
+    expected_task_id: str,
+) -> dict[str, Any]:
+    """Verify the producer security envelope without trusting embedded content.
+
+    The hash covers the complete handoff before the ``security`` field is attached.
+    Identity expectations are supplied by trusted caller state rather than by model
+    or retrieved text. This verifier never grants authority; it only rejects broken
+    lineage/integrity metadata.
+    """
+    if not isinstance(payload, dict):
+        raise HandoffSecurityValidationError("HANDOFF_PAYLOAD_NOT_OBJECT")
+    raw_security = payload.get("security")
+    if not isinstance(raw_security, dict):
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_METADATA_MISSING")
+    if raw_security.get("schema_version") != SECURITY_METADATA_SCHEMA:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_SCHEMA_UNSUPPORTED")
+    if str(raw_security.get("source_agent") or "") != expected_source_agent:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_SOURCE_AGENT_MISMATCH")
+    if str(raw_security.get("target_agent") or "") != expected_target_agent:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_TARGET_AGENT_MISMATCH")
+    if str(raw_security.get("task_id") or "") != expected_task_id:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_TASK_ID_MISMATCH")
+    if raw_security.get("raw_content_logged") is not False:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_RAW_LOG_POLICY_INVALID")
+
+    hash_target = dict(payload)
+    hash_target.pop("security", None)
+    if str(raw_security.get("content_hash") or "") != _canonical_hash(hash_target):
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_CONTENT_HASH_MISMATCH")
+
+    risk = str(raw_security.get("risk_level") or "")
+    if risk not in _RISK_ORDER:
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_RISK_INVALID")
+    findings = raw_security.get("findings")
+    if not isinstance(findings, list):
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_FINDINGS_INVALID")
+    if int(raw_security.get("finding_count", -1)) != len(findings):
+        raise HandoffSecurityValidationError("HANDOFF_SECURITY_FINDING_COUNT_MISMATCH")
+    return raw_security
