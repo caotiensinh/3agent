@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .benchmark_snapshot import build_benchmark_manifest, write_benchmark_manifest
 from .config import load_config
 from .inference_scope import inference_scope
 from .metrics_snapshot import MetricsSnapshotService
@@ -17,6 +18,17 @@ def _add_presentation_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--language", choices=("ja", "en", "vi"), default="ja")
     parser.add_argument("--slides", type=int, default=6, help="Target narrative slide count before deterministic appendices")
     parser.add_argument("--format", choices=("source", "pptx", "pdf", "all"), default="pptx")
+
+
+def _add_metrics_scope(parser: argparse.ArgumentParser) -> None:
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--date", help="Limit the snapshot to tasks active on YYYY-MM-DD")
+    scope.add_argument(
+        "--task-id",
+        dest="task_ids",
+        action="append",
+        help="Limit the snapshot to one task; repeat for multiple task IDs",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,21 +79,24 @@ def build_parser() -> argparse.ArgumentParser:
         "metrics",
         help="Print one unified D3-01..D3-07 metrics snapshot using a single task scope",
     )
-    metrics_scope = metrics.add_mutually_exclusive_group()
-    metrics_scope.add_argument("--date", help="Limit the snapshot to tasks active on YYYY-MM-DD")
-    metrics_scope.add_argument(
-        "--task-id",
-        dest="task_ids",
-        action="append",
-        help="Limit the snapshot to one task; repeat for multiple task IDs",
+    _add_metrics_scope(metrics)
+
+    capture = sub.add_parser(
+        "metrics-capture",
+        help="Persist a lineage-bound benchmark manifest for one fixed metrics scope",
     )
+    capture.add_argument("--output", required=True)
+    capture.add_argument("--variant-label", required=True)
+    capture.add_argument("--source-ref", required=True, help="Exact 40-hex Git commit SHA")
+    capture.add_argument("--force", action="store_true", help="Overwrite an existing output file")
+    _add_metrics_scope(capture)
 
     compare = sub.add_parser(
         "metrics-compare",
         help="Fail closed if an optimization candidate lowers verified quality or misses its token target",
     )
-    compare.add_argument("--baseline", required=True, help="Baseline workspace-unified-metrics/v1 JSON file")
-    compare.add_argument("--candidate", required=True, help="Candidate workspace-unified-metrics/v1 JSON file")
+    compare.add_argument("--baseline", required=True, help="Unified metrics or benchmark manifest JSON")
+    compare.add_argument("--candidate", required=True, help="Unified metrics or benchmark manifest JSON")
     compare.add_argument(
         "--min-token-reduction-pct",
         type=float,
@@ -175,7 +190,6 @@ def main(argv: list[str] | None = None) -> int:
         for artifact_path in presentation_payload.get("generated_artifacts", {}).values():
             print(artifact_path)
     elif args.command == "daily-report":
-        # Daily reports may aggregate many tasks; no single task scope is assigned.
         paths = orchestrator.daily_report(args.date, live=args.live)
         print("\n".join(str(path) for path in paths))
     elif args.command == "metrics":
@@ -184,6 +198,25 @@ def main(argv: list[str] | None = None) -> int:
             task_ids=args.task_ids,
         )
         print(json.dumps(snapshot, ensure_ascii=False, indent=2))
+    elif args.command == "metrics-capture":
+        try:
+            snapshot = MetricsSnapshotService.from_orchestrator(orchestrator).snapshot(
+                date=args.date,
+                task_ids=args.task_ids,
+            )
+            manifest = build_benchmark_manifest(
+                snapshot,
+                orchestrator.config,
+                variant_label=args.variant_label,
+                source_ref=args.source_ref,
+            )
+            path = write_benchmark_manifest(
+                Path(args.output), manifest, overwrite=args.force
+            )
+        except (OSError, ValueError) as exc:
+            print(json.dumps({"schema_version": "workspace-benchmark-snapshot/v1", "written": False, "error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False, indent=2))
+            return 3
+        print(json.dumps({"schema_version": "workspace-benchmark-snapshot/v1", "written": True, "output": str(path), "lineage": manifest["lineage"]}, ensure_ascii=False, indent=2))
     return 0
 
 

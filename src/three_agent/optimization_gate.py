@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .benchmark_snapshot import unpack_metrics_payload
+
 
 class OptimizationGateError(ValueError):
     """The supplied metrics snapshots cannot be compared safely."""
@@ -21,13 +23,9 @@ class OptimizationGatePolicy:
 class OptimizationAcceptanceGate:
     """Fail closed when an efficiency candidate sacrifices verified quality.
 
-    Both inputs must be `workspace-unified-metrics/v1` snapshots over the same
-    exact task set. The default hard quality floor is no regression in Verified
-    Task Success, First-Pass Verified Success, or Evidence Coverage. A candidate
-    must also satisfy the configured token-reduction target.
-
-    Context precision/recall proxies and resource-event rates are reported as
-    diagnostics rather than promoted to semantic-quality truth.
+    Inputs may be raw `workspace-unified-metrics/v1` snapshots or two validated
+    `workspace-benchmark-snapshot/v1` manifests. Mixed raw/manifest comparisons are
+    rejected so lineage cannot be present on only one side.
     """
 
     SCHEMA = "workspace-unified-metrics/v1"
@@ -129,14 +127,23 @@ class OptimizationAcceptanceGate:
     ) -> dict[str, Any]:
         if not isinstance(baseline, dict) or not isinstance(candidate, dict):
             raise OptimizationGateError("baseline and candidate must be JSON objects")
+        try:
+            baseline_metrics, baseline_lineage = unpack_metrics_payload(baseline)
+            candidate_metrics, candidate_lineage = unpack_metrics_payload(candidate)
+        except ValueError as exc:
+            raise OptimizationGateError(str(exc)) from exc
+        if (baseline_lineage is None) != (candidate_lineage is None):
+            raise OptimizationGateError(
+                "baseline and candidate must both be benchmark manifests or both be raw metrics"
+            )
 
-        baseline_scope = self._scope(baseline)
-        candidate_scope = self._scope(candidate)
+        baseline_scope = self._scope(baseline_metrics)
+        candidate_scope = self._scope(candidate_metrics)
         if baseline_scope != candidate_scope:
             raise OptimizationGateError("baseline and candidate must use the same fixed task set")
 
-        baseline_quality = self._quality_values(baseline)
-        candidate_quality = self._quality_values(candidate)
+        baseline_quality = self._quality_values(baseline_metrics)
+        candidate_quality = self._quality_values(candidate_metrics)
         if baseline_quality["verified_tasks"] <= 0:
             raise OptimizationGateError("baseline must contain at least one verified task")
 
@@ -192,8 +199,8 @@ class OptimizationAcceptanceGate:
         if not evidence_passed:
             failures.append("QUALITY_REGRESSION:evidence_coverage")
 
-        baseline_tokens = self._token_value(baseline)
-        candidate_tokens = self._token_value(candidate)
+        baseline_tokens = self._token_value(baseline_metrics)
+        candidate_tokens = self._token_value(candidate_metrics)
         if baseline_tokens == 0:
             reduction_pct = 0.0 if candidate_tokens == 0 else -100.0
         else:
@@ -209,27 +216,40 @@ class OptimizationAcceptanceGate:
 
         diagnostics = {
             "tool_calls_per_verified_task": self._diagnostic_delta(
-                baseline, candidate, "resource_efficiency", "tool_calls_per_verified_task"
+                baseline_metrics, candidate_metrics, "resource_efficiency", "tool_calls_per_verified_task"
             ),
             "model_retries_per_verified_task": self._diagnostic_delta(
-                baseline, candidate, "resource_efficiency", "model_retries_per_verified_task"
+                baseline_metrics, candidate_metrics, "resource_efficiency", "model_retries_per_verified_task"
             ),
             "model_escalations_per_verified_task": self._diagnostic_delta(
-                baseline, candidate, "resource_efficiency", "model_escalations_per_verified_task"
+                baseline_metrics, candidate_metrics, "resource_efficiency", "model_escalations_per_verified_task"
             ),
             "context_precision_proxy": self._diagnostic_delta(
-                baseline, candidate, "context_precision_proxy", "context_precision_proxy"
+                baseline_metrics, candidate_metrics, "context_precision_proxy", "context_precision_proxy"
             ),
             "context_recall_proxy": self._diagnostic_delta(
-                baseline, candidate, "context_recall_proxy", "context_recall_proxy"
+                baseline_metrics, candidate_metrics, "context_recall_proxy", "context_recall_proxy"
             ),
         }
+
+        lineage_report = None
+        if baseline_lineage is not None and candidate_lineage is not None:
+            lineage_report = {
+                "baseline": baseline_lineage,
+                "candidate": candidate_lineage,
+                "source_changed": baseline_lineage["source_ref"] != candidate_lineage["source_ref"],
+                "configuration_changed": (
+                    baseline_lineage["configuration_sha256"]
+                    != candidate_lineage["configuration_sha256"]
+                ),
+            }
 
         return {
             "schema_version": "workspace-optimization-acceptance/v1",
             "accepted": not failures,
             "fixed_task_count": len(baseline_scope),
             "task_ids": list(baseline_scope),
+            "lineage": lineage_report,
             "policy": {
                 "min_token_reduction_pct": float(self.policy.min_token_reduction_pct),
                 "verified_success_non_regression": True,
