@@ -1,0 +1,158 @@
+name: closure-rtx5090-fast
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-rtx5090-fast.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-closure-rtx5090-fast-303749d5
+  cancel-in-progress: true
+
+jobs:
+  closure:
+    runs-on: [self-hosted]
+    timeout-minutes: 300
+    env:
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
+      MODEL: qwen3:30b
+      WORKSPACE_FAST_MODEL: qwen3:30b
+      WORKSPACE_RESEARCH_MODEL: qwen3:30b
+      WORKSPACE_PRESENTATION_MODEL: qwen3:30b
+      WORKSPACE_REPORT_MODEL: qwen3:30b
+      WORKSPACE_DEEP_MODEL: qwen3:30b
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - name: Checkout exact product candidate at workspace root
+        uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source and hardware
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          test "$(uname -s)" = Linux
+          case "$(uname -m)" in x86_64|amd64) ;; *) exit 3 ;; esac
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -eq 2
+          ollama list | grep -F "$MODEL" >/dev/null
+
+      - name: Create isolated Python environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV_ROOT="$RUNNER_TEMP/workspace-fast-venv-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV_ROOT"
+          echo "$VENV_ROOT/bin" >> "$GITHUB_PATH"
+          echo "WORKSPACE_FAST_VENV=$VENV_ROOT" >> "$GITHUB_ENV"
+
+      - name: Install exact candidate dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -e .
+          workspace-benchmark --help >/dev/null
+          workspace-benchmark-readiness --help >/dev/null
+          workspace-benchmark-canonicalize --help >/dev/null
+          workspace-benchmark-verify --help >/dev/null
+          workspace-eval-efficiency-observe --help >/dev/null
+
+      - name: Capture readiness inside benchmark root
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$RUNNER_TEMP/workspace-fast-closure-$GITHUB_RUN_ID"
+          BENCH="$ROOT/benchmark"
+          mkdir -p "$BENCH"
+          workspace-benchmark-readiness \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --model "$MODEL" \
+            --output "$BENCH/environment.json" \
+            >/dev/null
+          test -s "$BENCH/environment.json"
+
+      - name: Run fixed 48k 40k 32k benchmark
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$RUNNER_TEMP/workspace-fast-closure-$GITHUB_RUN_ID"
+          BENCH="$ROOT/benchmark"
+          workspace-benchmark \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$BENCH" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" \
+            --config "$GITHUB_WORKSPACE/config/workspace.secure.json" \
+            >/dev/null
+          workspace-benchmark-canonicalize --root "$BENCH" >/dev/null
+          workspace-benchmark-verify \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$BENCH" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" \
+            --output "$BENCH/verification.json" \
+            >/dev/null
+          test -s "$BENCH/verification.json"
+
+      - name: Run D7-06 hardware concurrency observation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$RUNNER_TEMP/workspace-fast-closure-$GITHUB_RUN_ID"
+          BENCH="$ROOT/benchmark"
+          workspace-eval-efficiency-observe \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --environment "$BENCH/environment.json" \
+            --model "$MODEL" \
+            --concurrency 4 \
+            --samples 8 \
+            --output "$ROOT/observation.json" \
+            >/dev/null
+          test -s "$ROOT/observation.json"
+
+      - name: Require verified closure receipts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$RUNNER_TEMP/workspace-fast-closure-$GITHUB_RUN_ID"
+          ROOT="$ROOT" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['ROOT'])
+          verification = json.loads((root / 'benchmark/verification.json').read_text(encoding='utf-8'))
+          observation = json.loads((root / 'observation.json').read_text(encoding='utf-8'))
+          assert verification.get('passed') is True, verification
+          assert observation.get('observation_complete') is True, observation
+          print(json.dumps({
+              'benchmark_passed': True,
+              'promotion_eligible': verification.get('promotion_eligible'),
+              'observation_complete': True,
+          }, sort_keys=True))
+          PY
+
+      - name: Publish closure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-fast-closure-${{ env.CANDIDATE_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/benchmark/environment.json
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/benchmark/verification.json
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/benchmark/suite.json
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/benchmark/*/benchmark.json
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/benchmark/*/isolation.json
+            ${{ runner.temp }}/workspace-fast-closure-${{ github.run_id }}/observation.json
