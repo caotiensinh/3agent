@@ -10,6 +10,7 @@ from typing import Any
 
 from .config import AppConfig
 from .evidence_packing import resolve_evidence_packing_policy
+from .metric_registry import validate_metric_registry_payload
 
 BENCHMARK_SCHEMA = "workspace-benchmark-snapshot/v1"
 METRICS_SCHEMA = "workspace-unified-metrics/v1"
@@ -50,16 +51,17 @@ def _task_scope(metrics: dict[str, Any]) -> list[str]:
     return sorted(ids)
 
 
+def _metric_registry_hash(metrics: dict[str, Any]) -> str | None:
+    payload = metrics.get("metric_registry")
+    if payload is None:
+        return None  # legacy unified-metrics/v1 snapshot
+    if not isinstance(payload, dict):
+        raise ValueError("metrics.metric_registry must be an object")
+    return validate_metric_registry_payload(payload)
+
+
 def effective_config_fingerprint(config: AppConfig) -> str:
-    """Hash effective optimization/security controls without serializing raw config.
-
-    `config.raw` is deliberately excluded because it can contain deployment-local
-    values or secrets. The fingerprint uses only resolved typed fields that can
-    affect model routing, resource admission, capability/egress behavior, plus
-    explicitly allowlisted deterministic optimization policy resolved from the
-    WorkSpace runtime environment.
-    """
-
+    """Hash effective optimization/security controls without serializing raw config."""
     internet = config.internet_gateway
     execution = config.execution_gateway
     evidence_packing = resolve_evidence_packing_policy()
@@ -104,6 +106,7 @@ def build_benchmark_manifest(
     if not isinstance(metrics, dict):
         raise ValueError("metrics must be a JSON object")
     task_ids = _task_scope(metrics)
+    registry_hash = _metric_registry_hash(metrics)
     label = str(variant_label or "").strip()
     if not _VARIANT_RE.fullmatch(label):
         raise ValueError(
@@ -116,16 +119,19 @@ def build_benchmark_manifest(
     if not isinstance(timestamp, str) or not timestamp.strip():
         raise ValueError("captured_at must be a non-empty timestamp string")
 
+    lineage = {
+        "variant_label": label,
+        "source_ref": source,
+        "configuration_sha256": effective_config_fingerprint(config),
+        "task_scope_sha256": _canonical_sha256(task_ids),
+        "metrics_sha256": _canonical_sha256(metrics),
+        "captured_at": timestamp,
+    }
+    if registry_hash is not None:
+        lineage["metric_registry_sha256"] = registry_hash
     return {
         "schema_version": BENCHMARK_SCHEMA,
-        "lineage": {
-            "variant_label": label,
-            "source_ref": source,
-            "configuration_sha256": effective_config_fingerprint(config),
-            "task_scope_sha256": _canonical_sha256(task_ids),
-            "metrics_sha256": _canonical_sha256(metrics),
-            "captured_at": timestamp,
-        },
+        "lineage": lineage,
         "metrics": metrics,
     }
 
@@ -134,12 +140,12 @@ def unpack_metrics_payload(
     payload: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Return a validated unified metrics object and optional benchmark lineage."""
-
     if not isinstance(payload, dict):
         raise ValueError("metrics payload must be a JSON object")
     schema = payload.get("schema_version")
     if schema == METRICS_SCHEMA:
         _task_scope(payload)
+        _metric_registry_hash(payload)
         return payload, None
     if schema != BENCHMARK_SCHEMA:
         raise ValueError(
@@ -151,6 +157,7 @@ def unpack_metrics_payload(
     if not isinstance(lineage, dict) or not isinstance(metrics, dict):
         raise ValueError("benchmark manifest requires lineage and metrics objects")
     task_ids = _task_scope(metrics)
+    registry_hash = _metric_registry_hash(metrics)
 
     label = lineage.get("variant_label")
     source_ref = lineage.get("source_ref")
@@ -170,6 +177,12 @@ def unpack_metrics_payload(
         raise ValueError("benchmark lineage metrics_sha256 does not match metrics payload")
     if not isinstance(captured_at, str) or not captured_at.strip():
         raise ValueError("benchmark lineage captured_at is invalid")
+    recorded_registry = lineage.get("metric_registry_sha256")
+    if registry_hash is not None:
+        if recorded_registry != registry_hash:
+            raise ValueError("benchmark lineage metric_registry_sha256 does not match metrics registry")
+    elif recorded_registry is not None:
+        raise ValueError("legacy metrics cannot claim a metric registry fingerprint")
     return metrics, dict(lineage)
 
 
@@ -182,7 +195,6 @@ def write_benchmark_manifest(
     destination = Path(path)
     if destination.exists() and not overwrite:
         raise FileExistsError(f"benchmark output already exists: {destination}")
-    # Validate before persistence.
     unpack_metrics_payload(manifest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + ".tmp")
