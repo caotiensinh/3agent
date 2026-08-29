@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, replace
 from typing import Any, Callable
 
@@ -20,8 +21,10 @@ class OllamaWorkerPool:
     """Route requests to GPU-affined Ollama workers.
 
     Single-GPU workers are preferred for models that fit below the per-GPU VRAM
-    cap. The least-loaded eligible card is selected. The dual worker is reserved
-    for models that cannot safely fit on either single card.
+    cap. AVAILABLE workers are always preferred over BUSY workers. The dual
+    worker is reserved for models that cannot safely fit on either single card.
+    For dual-GPU work, projected VRAM skew must be within the configured balance
+    target before execution starts.
     """
 
     def __init__(
@@ -64,11 +67,10 @@ class OllamaWorkerPool:
 
     @staticmethod
     def _gpu_score(gpu) -> float:
-        # Persistent VRAM pressure weighs more than temporary compute pressure.
         return (gpu.vram_percent * 0.70) + (gpu.util_percent * 0.30)
 
     def _single_candidates(self, model: str) -> list[OllamaWorker]:
-        candidates: list[tuple[float, OllamaWorker]] = []
+        candidates: list[tuple[int, float, OllamaWorker]] = []
         for worker in self.workers:
             manager = self._managers[worker.name]
             try:
@@ -86,13 +88,58 @@ class OllamaWorkerPool:
                 continue
             if gpu.power_percent >= self.resource_config.max_gpu_power_percent:
                 continue
-            candidates.append((self._gpu_score(gpu), worker))
-        candidates.sort(key=lambda item: (item[0], item[1].name))
-        return [worker for _, worker in candidates]
+            busy_rank = 1 if gpu.util_percent >= self.resource_config.max_gpu_util_percent else 0
+            candidates.append((busy_rank, self._gpu_score(gpu), worker))
+        candidates.sort(key=lambda item: (item[0], item[1], item[2].name))
+        return [worker for _, _, worker in candidates]
 
     def route_order(self, model: str) -> tuple[OllamaWorker, ...]:
         singles = self._single_candidates(model)
         return tuple(singles) if singles else (self.dual_worker,)
+
+    def _project_dual_skew(self, model: str) -> float | None:
+        manager = self._managers[self.dual_worker.name]
+        snapshot = manager.snapshot()
+        if len(snapshot.gpus) < 2:
+            return None
+        model_bytes = manager.estimate_model_bytes(model)
+        gpus = list(snapshot.gpus)
+        projected = [float(gpu.used_bytes) for gpu in gpus]
+        totals = [float(gpu.total_bytes) for gpu in gpus]
+        limit = min(90.0, self.resource_config.max_vram_percent) / 100.0
+        remaining = model_bytes
+        chunk = max(64 * 1024 * 1024, remaining // 128 if remaining else 0)
+        while remaining > 0:
+            eligible = [i for i in range(len(gpus)) if projected[i] < totals[i] * limit]
+            if not eligible:
+                return None
+            idx = min(eligible, key=lambda i: projected[i] / max(1.0, totals[i]))
+            capacity = totals[idx] * limit - projected[idx]
+            take = min(float(remaining), float(chunk or remaining), capacity)
+            if take <= 0:
+                return None
+            projected[idx] += take
+            remaining -= int(take)
+        percents = [projected[i] / max(1.0, totals[i]) * 100.0 for i in range(len(gpus))]
+        return max(percents) - min(percents)
+
+    def _wait_for_dual_balance(self, model: str) -> None:
+        deadline = time.monotonic() + max(0.0, self.resource_config.queue_wait_seconds)
+        poll = max(0.05, self.resource_config.queue_poll_seconds)
+        target = max(0.0, self.resource_config.max_balance_skew_percent)
+        while True:
+            try:
+                skew = self._project_dual_skew(model)
+            except Exception as exc:
+                raise ResourceAdmissionError(f"Cannot evaluate dual-GPU balance: {exc}") from exc
+            if skew is not None and skew <= target:
+                return
+            if time.monotonic() >= deadline:
+                detail = "capacity unavailable" if skew is None else f"projected skew {skew:.1f}%"
+                raise ResourceAdmissionError(
+                    f"Dual-GPU balance target <= {target:.1f}% not reached: {detail}"
+                )
+            time.sleep(poll)
 
     def _call(self, method: str, *args, **kwargs):
         errors: list[str] = []
@@ -100,6 +147,8 @@ class OllamaWorkerPool:
         for worker in self.route_order(model):
             client = self._clients[worker.name]
             try:
+                if worker.dual_gpu:
+                    self._wait_for_dual_balance(model)
                 return getattr(client, method)(*args, **kwargs)
             except (ResourceAdmissionError, LocalLLMError) as exc:
                 errors.append(f"{worker.name}: {exc}")

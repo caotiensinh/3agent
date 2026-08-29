@@ -77,7 +77,7 @@ class WorkerPoolTests(unittest.TestCase):
             timeout_seconds=30,
             keep_alive="2m",
         )
-        budget = ResourceBudgetConfig(max_vram_percent=90.0)
+        budget = ResourceBudgetConfig(max_vram_percent=90.0, max_gpu_util_percent=95.0)
 
         def manager_factory(worker):
             if worker.name == "dual":
@@ -117,14 +117,14 @@ class WorkerPoolTests(unittest.TestCase):
         self.assertEqual(pool.route_order("qwen-test")[0].name, "gpu1")
         self.assertEqual(pool.generate("sys", "user"), "gpu1")
 
-    def test_high_compute_does_not_override_much_lower_vram_pressure(self):
+    def test_busy_gpu_is_deprioritized_when_other_gpu_can_fit(self):
         pool = self.make_pool(
             {
                 "gpu0": snapshot(0, used=4, util=96),
                 "gpu1": snapshot(1, used=20, util=10),
             }
         )
-        self.assertEqual(pool.route_order("qwen-test")[0].name, "gpu0")
+        self.assertEqual(pool.route_order("qwen-test")[0].name, "gpu1")
 
     def test_single_gpu_that_would_cross_90_percent_is_excluded(self):
         pool = self.make_pool(
