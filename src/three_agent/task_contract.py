@@ -147,6 +147,11 @@ class TaskContract:
             raise TaskContractError("initial model tier exceeds max tier")
         if not 0.0 <= self.model_policy.confidence_floor <= 1.0:
             raise TaskContractError("confidence_floor must be within [0,1]")
+        if self.model_policy.initial_tier == "none":
+            if self.model_policy.max_tier != "none":
+                raise TaskContractError("NO_LLM tasks require max_tier=none")
+            if self.model_policy.escalation_allowed:
+                raise TaskContractError("NO_LLM tasks cannot allow model escalation")
 
         cb = self.context_budget
         if min(cb.max_input_tokens, cb.reserve_tokens) < 0:
@@ -163,6 +168,8 @@ class TaskContract:
             raise TaskContractError("execution budgets are invalid")
         if eb.max_wall_time_ms < 100:
             raise TaskContractError("max_wall_time_ms must be >= 100")
+        if self.model_policy.initial_tier == "none" and eb.max_escalations != 0:
+            raise TaskContractError("NO_LLM tasks require max_escalations=0")
 
         if self.cache_policy.mode not in {"deny", "exact_only", "prefix_allowed", "kv_allowed"}:
             raise TaskContractError("invalid cache mode")
@@ -198,6 +205,10 @@ class TaskContractCompiler:
     This compiler intentionally uses auditable rules rather than an LLM. A learned
     classifier may later recommend a capability tier, but it cannot weaken these
     security or budget decisions.
+
+    `deterministic_only=True` is deliberately narrow: v1 permits it only for local
+    retrieval. It reduces model authority to `none`; it can never grant extra
+    network/tool/write authority or bypass required evidence validation.
     """
 
     @staticmethod
@@ -216,6 +227,7 @@ class TaskContractCompiler:
         write_scope: str | Iterable[str] = "none",
         public_web: bool = False,
         output_schema: dict | None = None,
+        deterministic_only: bool = False,
     ) -> TaskContract:
         task_type = str(task_type).strip().lower()
         sensitivity = str(sensitivity).strip().lower()
@@ -226,6 +238,13 @@ class TaskContractCompiler:
             raise TaskContractError(f"unsupported sensitivity: {sensitivity}")
         if risk_level not in RISK_LEVELS:
             raise TaskContractError(f"unsupported risk_level: {risk_level}")
+        if deterministic_only:
+            if task_type != "retrieval":
+                raise TaskContractError("NO_LLM v1 is supported only for task_type=retrieval")
+            if public_web:
+                raise TaskContractError("NO_LLM retrieval cannot enable public web egress")
+            if output_schema is not None:
+                raise TaskContractError("NO_LLM retrieval does not accept model output schemas")
 
         reasons: list[str] = [f"SENSITIVITY_{sensitivity.upper()}", f"TASK_{task_type.upper()}"]
         tools = list(allowed_tools or ())
@@ -240,6 +259,12 @@ class TaskContractCompiler:
                 tools = []
             elif task_type == "sensitive_query":
                 tools = ["search_docs", "query_db_readonly"]
+        if deterministic_only:
+            forbidden = set(tools) - {"search_docs", "read_file"}
+            if forbidden:
+                raise TaskContractError(
+                    f"NO_LLM retrieval has unsupported tools: {sorted(forbidden)}"
+                )
 
         # Network/data placement is resolved before capability/model selection.
         network_scope = "deny"
@@ -255,7 +280,10 @@ class TaskContractCompiler:
         elif sensitivity == "internal":
             network_scope = "internal_only"
 
-        if task_type in {"classification"}:
+        if deterministic_only:
+            initial_tier, max_tier = "none", "none"
+            reasons.append("NO_LLM_DETERMINISTIC_LOCAL_RETRIEVAL")
+        elif task_type in {"classification"}:
             initial_tier, max_tier = "small", "specialist"
             reasons.append("SMALL_STRUCTURED_TASK")
         elif task_type in {"doc_summary", "retrieval"}:
@@ -301,7 +329,11 @@ class TaskContractCompiler:
             normalized_write = self._unique(write_scope)
 
         # Hard budgets are conservative v1 defaults and must be tuned by evaluation.
-        if task_type in {"doc_summary", "analysis", "sensitive_query"}:
+        if deterministic_only:
+            context = ContextBudget(12_000, 8_000, 4_000, 1_000)
+            generation = GenerationBudget(1)  # structurally required, unused by NO_LLM
+            execution = ExecutionBudget(4, 6, 0, 0, 120_000)
+        elif task_type in {"doc_summary", "analysis", "sensitive_query"}:
             context = ContextBudget(16_000, 10_000, 4_000, 1_500)
             generation = GenerationBudget(2_000)
             execution = ExecutionBudget(8, 12, 2, 1, 600_000)
@@ -328,7 +360,7 @@ class TaskContractCompiler:
             model_policy=ModelPolicy(
                 initial_tier=initial_tier,
                 max_tier=max_tier,
-                escalation_allowed=True,
+                escalation_allowed=False if deterministic_only else True,
                 confidence_floor=confidence,
                 trusted_local_only=sensitivity != "public",
             ),

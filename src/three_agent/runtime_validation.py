@@ -14,6 +14,7 @@ from .handoff_security import (
 from .models import TaskStatus
 from .presentation_model import handoff_is_presentable
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
+from .route_planner import DeterministicRoutePlanner
 from .store import TaskStore
 from .task_contract import TaskContractCompiler
 from .validator_ledger import TaskVerificationState, ValidatorLedger
@@ -116,7 +117,7 @@ class RuntimeValidatorBridge:
         )
 
     def begin(self, task_id: str) -> RuntimeValidationAttempt:
-        """Compile, immutably bind, and policy-validate the workflow contract."""
+        """Compile, immutably bind, policy-validate, and expose the route decision."""
         contract = self.compiler.compile(
             task_id=task_id,
             task_type="analysis",
@@ -147,6 +148,18 @@ class RuntimeValidatorBridge:
             reason_code="POLICY_CONTRACT_VALIDATED",
             evidence_refs=(digest,),
             validator_version="runtime-policy/v2",
+        )
+        route = DeterministicRoutePlanner.plan(contract)
+        self.store.record_activity(
+            task_id,
+            "route_planner",
+            "route_selected",
+            "ok",
+            (
+                f"route={route.route} reason={route.reason_code} "
+                f"initial={route.initial_model_tier} max={route.max_model_tier} "
+                f"escalation={str(route.escalation_allowed).lower()}"
+            ),
         )
         return RuntimeValidationAttempt(contract_sha256=digest)
 
