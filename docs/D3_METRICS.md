@@ -24,6 +24,20 @@ A task is verified only when it has an immutable TaskContract binding and every 
 
 `TaskStatus.DONE`, workflow strings and model claims are excluded from the definition.
 
+### Runtime Validator Bridge
+
+Production `workflow-run` execution binds an immutable workflow TaskContract before Research starts. The runtime bridge requires these validator classes:
+
+- `policy`: deterministic TaskContract compilation/binding succeeded for the active confidentiality/public-web zone;
+- `evidence`: the Research handoff integrity envelope is valid, task/source/target lineage matches, the handoff is presentation-ready, blockers are empty and at least one key fact survived deterministic evidence gates;
+- `integration_test`: the workflow reached `DONE`, the evidence validator is passing, the presentation artifact exists and the triggered Daily Report produced real files.
+
+The bridge records compact reason codes, attempt numbers and metadata-only references. It does not store prompts, source bodies, model responses or secrets in the Validator Ledger.
+
+A Research, Presentation or Daily Report failure therefore cannot be converted into verified success merely because a task status or model message says that work completed.
+
+Standalone stage commands such as `workspace research` remain outside the end-to-end workflow contract unless an explicit workflow contract is bound. Such tasks stay visible as unbound in D3 rather than being silently promoted.
+
 ## D3-02 — First-Pass Verified Success Rate
 
 ```text
@@ -31,6 +45,8 @@ first-pass verified tasks / attempted tasks
 ```
 
 A later retry may make a task finally verified, but it cannot rewrite first-pass history. This separates recovery effectiveness from initial execution quality.
+
+Validator attempts are monotonically numbered per task and validator. A failed first evidence/integration attempt followed by a passing retry can make the task finally verified, but `first_pass_verified_success_rate` remains unchanged for that task.
 
 ## D3-03 — Tokens per Verified Task
 
@@ -127,3 +143,5 @@ Each section preserves its own schema version and raw accounting counters so das
 ## Security boundary
 
 The D3 layer is metadata/accounting only. It grants no network, shell, file, model, credential or mutation authority. Raw prompts, model responses, retrieved source bodies, tool output and secrets are not required for the unified snapshot.
+
+The Runtime Validator Bridge likewise grants no authority. Its TaskContract is an immutable measurement/validation contract subordinate to WorkSpace deterministic security policy and operator configuration.

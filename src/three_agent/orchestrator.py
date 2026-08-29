@@ -19,6 +19,11 @@ from .metered_runtime import (
 )
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .resource_events import ResourceEventRecorder
+from .runtime_validation import (
+    RuntimeValidatorBridge,
+    WorkflowDailyValidationProxy,
+    WorkflowResearchValidationProxy,
+)
 from .store import TaskStore
 from .web_research import WebResearchClient
 from .workflow import WorkflowRunner
@@ -177,12 +182,27 @@ class Orchestrator:
         )
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
+        self.runtime_validator_bridge = RuntimeValidatorBridge(
+            self.store,
+            self.artifacts,
+            confidentiality_mode=config.confidentiality_mode,
+            public_web=bool(
+                config.internet_gateway.enabled
+                and config.internet_gateway.public_search_enabled
+            ),
+        )
         self.workflow = WorkflowRunner(
             self.store,
             self.artifacts,
-            self.research_agent,
+            WorkflowResearchValidationProxy(
+                self.research_agent,
+                self.runtime_validator_bridge,
+            ),
             self.presentation_agent,
-            self.daily_agent,
+            WorkflowDailyValidationProxy(
+                self.daily_agent,
+                self.runtime_validator_bridge,
+            ),
         )
 
     def initialize(self) -> None:
@@ -237,6 +257,8 @@ class Orchestrator:
             "knowledge_gateway_enabled": True,
             "upload_gateway_enabled": True,
             "e2e_workflow_enabled": True,
+            "runtime_validator_bridge_enabled": True,
+            "runtime_validator_contract": "policy+evidence+integration_test",
             "structured_output_mode": "ollama_native_json_schema",
             "inference_telemetry": self.inference_telemetry_path,
             "inference_telemetry_raw_prompt": False,
