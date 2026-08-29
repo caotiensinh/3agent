@@ -5,6 +5,7 @@
 - `DONE` — implemented and covered by repository evidence/tests.
 - `PARTIAL` — meaningful foundation exists but the doctrine is not fully enforced end-to-end.
 - `TODO` — required next work.
+- `EVIDENCE-PENDING` — implementation/profile is complete, but representative external/hardware evidence has not yet been collected.
 - `BENCHMARK-GATED` — production integration is prohibited until representative benchmark evidence justifies it.
 - `R&D` — isolated experiment only.
 
@@ -44,6 +45,10 @@ A later phase may not become production-critical merely because it is interestin
 
 ## Current closure baseline
 
+Authoritative implementation lineage at this checklist sync starts from main:
+
+`1b4802125a88ff5f58177ee3a07e52b0d653da7d`
+
 The following work packages are complete in the current implementation lineage:
 
 - D1 Handoff Trust Boundaries — `DONE`
@@ -54,7 +59,22 @@ The following work packages are complete in the current implementation lineage:
 - Runtime Validator Bridge — `DONE`
 - Benchmark Isolation v1 — `DONE`
 - Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
-- D4 Durable Prefix Reuse Measurement — `DONE` when its exact-head CI and merge evidence are green
+- D4 Durable Prefix Reuse Measurement — `DONE`
+- D5-01 Structural-first Context Retrieval Trace — `DONE` baseline
+- D5-03 Hard Evidence Budget — `DONE` baseline
+- D5-04 Atomic Provenance / Critical-span Protection — `DONE` baseline
+- D6-01 Deterministic Route Reason Codes — `DONE`
+- D6-02 Verified `NO_LLM` Retrieval — `DONE`
+- D6-03 Persistent Hard Retry/Escalation Budget — `DONE`
+- D6-04 Security Monotonicity — `DONE`
+- D7-01 Versioned Golden Corpus — `DONE`
+- D7-02 Deterministic Replay — `DONE`
+- D7-03 Regression Corpus — `DONE` baseline
+- D7-04 Adversarial/Security Corpus — `DONE` baseline
+- D7-07 Metric Version Registry — `DONE`
+- D7-08 Fail-closed Promotion Pipeline — `DONE` infrastructure
+
+D7-05 edge/large-context and D7-06 efficiency/cache/concurrency profiles and adapters are implemented, but **representative external results are not yet materialized**, so they remain `EVIDENCE-PENDING` rather than being treated as completed evaluation evidence.
 
 The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/32k benchmark result is still pending execution**. No context-budget candidate is promoted by implementation alone.
 
@@ -68,15 +88,15 @@ The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/
 
 ## PICO-02 — Lazy context expansion — `PARTIAL`
 
-Context/Knowledge Plane foundations exist. Remaining proof: map/index/summary first, targeted expansion from unresolved evidence need, explicit budget consumption, and selected-vs-candidate traces.
+Structural map-before-body retrieval is implemented and observable. Remaining proof is benchmark-justified targeted/progressive body expansion from unresolved evidence need without reducing verified recall.
 
 ## PICO-03 — Lazy model/tool acquisition — `PARTIAL`
 
-Model/resource/worker routing and tool gateways exist. Remaining proof: explicit deterministic/no-LLM path where possible and reason-coded residency/tool acquisition.
+Deterministic `NO_LLM` routing and reason-coded model selection exist. Remaining target is a unified capability/tool acquisition authority with explicit typed decisions and revocation/task-end expiry.
 
-## PICO-04 — Deterministic-before-LLM short circuit — `PARTIAL`
+## PICO-04 — Deterministic-before-LLM short circuit — `DONE` baseline
 
-Policy, TaskContract, DLP, schema, resource and validator decisions are deterministic. Remaining work: explicit `NO_LLM` route with fixtures proving simple deterministic tasks invoke zero LLM calls.
+Policy, TaskContract, DLP, schema, resource and validator decisions are deterministic, and the verified local retrieval path proves a real `NO_LLM` task can complete without model invocation or inference telemetry.
 
 ## PICO-05 — Constrained known syntax — `DONE`
 
@@ -108,15 +128,15 @@ Secure/public trust zones, egress broker, privacy/DLP and tests establish confid
 
 ## D0-03 — Capability Broker semantics — `PARTIAL`
 
-Tool/network gateways are a foundation. Remaining target: one typed authorization decision format for task ID + capability + resource + effect metadata, deny-by-default, with revocation/task-end expiry.
+Tool/network gateways are hardened foundations, but one authoritative typed authorization decision format for task ID + capability + resource + effect metadata is still required. Target remains deny-by-default with bounded grants, revocation and task-end expiry.
 
 ## D0-04 — Bounded minimal loop — `PARTIAL`
 
-Bounded behavior exists. Remaining proof: exact TaskContract hard stops across all live paths, typed budget exhaustion, and no hidden budget reset in fallback/reporting paths.
+Task-wide retries/escalations are now persistently and atomically enforced before fallback invocation. Remaining proof is uniform hard-stop enforcement for steps/tool-call/wall-time budgets across every live execution and reporting path.
 
 ## D0-05 — Failure taxonomy — `PARTIAL`
 
-Specific failures exist but no single authoritative registry yet drives all recovery. Policy denial must remain a hard stop; missing evidence, tool timeout and model failure must remain distinct failure families.
+Specific failures exist but no single authoritative registry yet drives all recovery. Policy denial must remain a hard stop; missing evidence, budget exhaustion, tool timeout, resource admission and model failure must remain distinct typed failure families.
 
 ## D0-06 — Validator Bus / Runtime Validator Bridge — `DONE`
 
@@ -267,7 +287,7 @@ Non-empty sandboxes fail closed and process-global optimization knobs are serial
 
 ## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
 
-The repository now owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
+The repository owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
 
 - `legacy_v1 / 48000` baseline;
 - `quality_ranked_v1 / 48000`;
@@ -284,7 +304,7 @@ Implementation readiness does not equal benchmark acceptance. The real hardware 
 
 ## D4-01 — Durable reuse-observation aggregate — `DONE`
 
-The existing metadata-only inference JSONL is reused as the durable cross-process observation log. `workspace reuse-report` deterministically reconstructs repeated-prefix opportunity from model + trust-domain + template + schema + stable-prefix hash rather than trusting the process-local reuse bit. No second database/index is added before measurement proves it necessary.
+The existing metadata-only inference JSONL is reused as the durable cross-process observation log. `workspace reuse-report` deterministically reconstructs repeated-prefix opportunity from model + trust-domain + template + schema + stable-prefix hash rather than trusting the process-local reuse bit.
 
 ## D4-02 — Representative-period report — `DONE`
 
@@ -295,9 +315,9 @@ Default reporting window is 7 days and includes reuse opportunity, distinct/repe
 Starting policy:
 
 - insufficient representative events → collect more metadata;
-- reuse below the configured planning threshold (default 30%) → redesign prompt layout first;
+- reuse below the configured planning threshold → redesign prompt layout first;
 - reuse above threshold but prompt-eval does not dominate measured model duration → continue measurement/optimize elsewhere;
-- reuse above threshold and prompt-eval duration share is at least 50% → a D9 serving/cache **benchmark** is eligible.
+- reuse above threshold and prompt-eval dominates → a D9 serving/cache **benchmark** becomes eligible.
 
 The gate never authorizes a production serving change and never reports repeated-prefix opportunity as a backend cache hit.
 
@@ -305,11 +325,25 @@ The gate never authorizes a production serving change and never reports repeated
 
 # D5 — Context map/rank/deduplicate/hard pack
 
-## D5-01 — Bounded structural first view — `PARTIAL`
-## D5-02 — Rank + deduplicate — `PARTIAL`
-## D5-03 — Hard context packer — `PARTIAL`
-## D5-04 — Critical-span protection — `TODO/PARTIAL`
-## D5-05 — Progressive expansion — `TODO/PARTIAL`
+## D5-01 — Bounded structural first view — `DONE` baseline
+
+The runtime performs one structural map pass before body retrieval and emits bounded metadata-only retrieval traces while preserving the existing deterministic search semantics.
+
+## D5-02 — Rank + deduplicate — `PARTIAL / BENCHMARK-GATED`
+
+Deterministic lexical ranking and exact content deduplication are observable. Near-duplicate/diversity changes remain benchmark-gated because they can reduce recall.
+
+## D5-03 — Hard context packer — `DONE` baseline
+
+The complete rendered output, including separators, is charged to the hard budget and final output cannot exceed it.
+
+## D5-04 — Critical-span protection — `DONE` baseline
+
+Provenance/data-boundary headers are indivisible: preserve whole or skip the source. Body truncation can occur only after the complete protected header fits.
+
+## D5-05 — Progressive expansion — `BENCHMARK-GATED`
+
+Progressive body expansion remains disabled by default. It may not become production behavior until representative D7/benchmark evidence proves no verified-quality or recall regression.
 
 Policy, user constraints, exact citations/source IDs and critical error/code fragments must survive transformations where exactness is required.
 
@@ -317,26 +351,61 @@ Policy, user constraints, exact citations/source IDs and critical error/code fra
 
 # D6 — Small-first deterministic routing and escalation
 
-## D6-01 — Deterministic route reason codes — `PARTIAL`
-## D6-02 — `NO_LLM` route — `TODO`
-## D6-03 — Failure-driven escalation controller — `TODO/PARTIAL`
-## D6-04 — Security monotonicity — `DONE` principle / `TODO` exhaustive proof
+## D6-01 — Deterministic route reason codes — `DONE`
+
+TaskContract model policy is projected into auditable reason-coded `MODEL` or `NO_LLM` decisions without reading raw task content.
+
+## D6-02 — `NO_LLM` route — `DONE`
+
+Verified deterministic local retrieval executes through the real TaskContract/validator path with no model client construction and zero inference telemetry.
+
+## D6-03 — Failure-driven escalation controller — `DONE`
+
+Retry/escalation limits are bound from the immutable TaskContract, persist task-wide in SQLite across stages/restarts, and are atomically reserved before fallback model invocation.
+
+## D6-04 — Security monotonicity — `DONE`
+
+Model-tier changes cannot expand source/tool/network/write/cache/logging authority. Unauthorized stronger-model transitions fail before budget consumption, telemetry or model invocation.
+
 ## D6-05 — Learned router — `BENCHMARK-GATED`
 
-A stronger model must never receive more source/tool/network/write authority than the TaskContract permits.
+A learned router may be evaluated only after the deterministic baseline and D7 evaluation evidence exist. It may recommend a route but cannot grant capability or weaken TaskContract authority.
 
 ---
 
 # D7 — Evaluation lab and promotion gates
 
-## D7-01 — Versioned Golden corpus — `TODO`
-## D7-02 — Replay corpus — `TODO`
-## D7-03 — Regression corpus — `PARTIAL`
-## D7-04 — Adversarial/security corpus — `PARTIAL`
-## D7-05 — Edge/large-context corpus — `TODO`
-## D7-06 — Efficiency/cache/concurrency corpus — `TODO`
-## D7-07 — Metric versioning — `TODO`
-## D7-08 — Promotion pipeline — `TODO`
+## D7-01 — Versioned Golden corpus — `DONE`
+
+Repository-owned deterministic control-plane expectations are versioned and content-addressed.
+
+## D7-02 — Replay corpus — `DONE`
+
+`workspace-eval` replays golden expectations through the production TaskContract compiler and deterministic route planner under exact Git lineage.
+
+## D7-03 — Regression corpus — `DONE` baseline
+
+Versioned regression cases protect production-critical routing, write scope, cache/logging and model-locality behavior.
+
+## D7-04 — Adversarial/security corpus — `DONE` baseline
+
+Versioned reject cases require fail-closed handling for forbidden public-web, NO_LLM scope expansion, web-gateway misuse and unknown tool authority.
+
+## D7-05 — Edge/large-context corpus — `EVIDENCE-PENDING`
+
+Versioned repository profile and strict external-result adapter are implemented. The profile covers protected spans, atomic provenance, many-source pressure, adversarial-near-critical-span and exact source-ID preservation. External holdout labels and real representative results are intentionally not committed.
+
+## D7-06 — Efficiency/cache/concurrency corpus — `EVIDENCE-PENDING`
+
+Versioned repository profile and strict result adapter are implemented for fixed-task quality, structured-output concurrency, measured resource benefit, cache trust-domain isolation, execution-budget concurrency and cache-measurement honesty. Real RTX/concurrency results remain pending.
+
+## D7-07 — Metric versioning — `DONE`
+
+D3-01..D3-07 semantics are bound to `workspace-d3-core-metrics-v1` with a canonical registry fingerprint. New benchmark lineage records the exact metric registry; legacy payloads cannot retroactively claim it.
+
+## D7-08 — Promotion pipeline — `DONE` infrastructure
+
+`workspace-promotion` requires all six mandatory evidence classes, exact baseline/candidate/rollback lineage, current metric registry, security PASS, holdout commitments/attestation where required and no waiver path. Missing D7-05/D7-06/replay evidence intentionally keeps real production promotion blocked.
 
 Security is a hard constraint. Optimizers must not see holdout labels and production changes require regression/adversarial evidence plus rollback lineage.
 
@@ -344,7 +413,7 @@ Security is a hard constraint. Optimizers must not see holdout labels and produc
 
 # D8 — Context compression experiment — `BENCHMARK-GATED`
 
-Prerequisites: D3 + D5 + D7.
+Prerequisites: D3 + D5 + D7 representative evidence.
 
 - D8-01 Context-size distribution measurement
 - D8-02 Protected-span framework
@@ -403,10 +472,12 @@ An item may move to `DONE` only when all applicable evidence exists:
 6. benchmark-gated items include before/after representative measurements;
 7. no new dependency/framework is accepted without evidence that existing code/runtime cannot provide the same outcome more simply.
 
+`EVIDENCE-PENDING` means the implementation/profile portion is complete but condition 6 or an equivalent external/holdout evidence requirement has not yet been satisfied.
+
 # Immediate execution queue
 
 ```text
-Fixed-task benchmark harness + validator gate — DONE
+D7 deterministic/evaluation/promotion infrastructure — DONE
         ↓
 Run real dual-RTX5090 fixed benchmark:
   legacy_v1 / 48000
@@ -414,21 +485,26 @@ Run real dual-RTX5090 fixed benchmark:
   quality_ranked_v1 / 40000
   quality_ranked_v1 / 32000
         ↓
+Materialize representative D7-05 edge/large-context external results
+and D7-06 efficiency/cache/concurrency benchmark results
+        ↓
 Quality acceptance first:
   Verified Task Success must not decrease
   First-Pass Verified Success must not decrease
   Evidence Coverage must not decrease
   exact required-validator success must not decrease
+  critical-span loss must remain zero where applicable
         ↓
 Only then compare tokens/context proxies/latency/retries/escalations/tool calls/resource usage
         ↓
+Close deterministic control-plane debt:
+  D0-03 unified Capability Broker
+  D0-04 remaining step/tool/wall-time hard stops
+  D0-05 authoritative failure taxonomy
+        ↓
 Run D4 representative reuse report on real workload telemetry
         ↓
-D5 context map/rank/dedupe/hard-pack completion
-        ↓
-D6 deterministic NO_LLM + bounded escalation completion
-        ↓
-D7 evaluation/promotion corpus and pipeline
+Evaluate D5-02 near-duplicate/diversity and D5-05 progressive expansion only through D7 gates
 ```
 
-Do not promote 40k/32k context budgets without benchmark evidence. Do not begin D9 unless D4 representative evidence permits its benchmark. Do not begin D8/D10/D11/D12 production integration before their prerequisite gates are satisfied.
+Do not promote 40k/32k context budgets without benchmark evidence. Do not begin D9 production migration unless D4 representative evidence permits its benchmark. Do not begin D8/D10/D11/D12 production integration before their prerequisite gates are satisfied.
