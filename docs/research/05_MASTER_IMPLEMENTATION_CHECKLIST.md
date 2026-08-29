@@ -5,7 +5,7 @@
 - `DONE` — implemented and covered by repository evidence/tests.
 - `PARTIAL` — meaningful foundation exists but the doctrine is not fully enforced end-to-end.
 - `TODO` — required next work.
-- `EVIDENCE-PENDING` — implementation/profile is complete, but representative external/hardware evidence has not yet been collected.
+- `EVIDENCE-PENDING` — implementation/profile exists, but representative external/hardware evidence is not yet materialized.
 - `BENCHMARK-GATED` — production integration is prohibited until representative benchmark evidence justifies it.
 - `R&D` — isolated experiment only.
 
@@ -47,10 +47,14 @@ A later phase may not become production-critical merely because it is interestin
 
 Authoritative implementation lineage at this checklist sync starts from main:
 
-`1b4802125a88ff5f58177ee3a07e52b0d653da7d`
+`704955f8efba430b1a57b661bc5d03b7e92d2d76`
 
-The following work packages are complete in the current implementation lineage:
+The deterministic control plane is now closed at baseline level. The following recent work is merged and regression-protected:
 
+- PICO-03 / D0-03 typed task capability authority + persistent monotonic revocation — `DONE` baseline
+- D0-04 persistent hard execution limits for steps, tool calls, retries, escalations and wall time — `DONE`
+- D0-05 authoritative deterministic failure taxonomy driving current automatic recovery — `DONE`
+- D7-03 regression replay pins the complete immutable execution-budget envelope — `DONE` baseline
 - D1 Handoff Trust Boundaries — `DONE`
 - D2 Structured Output + Semantic Validation — `DONE`
 - D3 Verified Work Metrics foundation — `DONE`
@@ -74,9 +78,9 @@ The following work packages are complete in the current implementation lineage:
 - D7-07 Metric Version Registry — `DONE`
 - D7-08 Fail-closed Promotion Pipeline — `DONE` infrastructure
 
-D7-05 edge/large-context and D7-06 efficiency/cache/concurrency profiles and adapters are implemented, but **representative external results are not yet materialized**, so they remain `EVIDENCE-PENDING` rather than being treated as completed evaluation evidence.
+D7-05 edge/large-context and D7-06 efficiency/cache/concurrency profiles/adapters are implemented, but representative external results are not yet materialized. They remain `EVIDENCE-PENDING`; implementation alone is not evaluation acceptance.
 
-The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/32k benchmark result is still pending execution**. No context-budget candidate is promoted by implementation alone.
+The fixed benchmark harness is implemented, but the real dual-RTX5090 48k/40k/32k comparison remains pending execution. No context-budget candidate is promoted by implementation alone.
 
 ---
 
@@ -86,21 +90,21 @@ The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/
 
 `TaskContract` contains context, generation and execution budgets including input/retrieval/tool-output/output budgets, steps, tool calls, retries, escalations and wall time. Invalid/out-of-range policy fails closed and model output cannot increase authority.
 
-## PICO-02 — Lazy context expansion — `PARTIAL`
+## PICO-02 — Lazy context expansion — `PARTIAL / BENCHMARK-GATED`
 
-Structural map-before-body retrieval is implemented and observable. Remaining proof is benchmark-justified targeted/progressive body expansion from unresolved evidence need without reducing verified recall.
+Structural map-before-body retrieval is implemented and observable. Targeted/progressive body expansion remains disabled until representative evidence proves it does not reduce verified recall, evidence coverage or critical-span preservation.
 
-## PICO-03 — Lazy model/tool acquisition — `PARTIAL`
+## PICO-03 — Lazy model/tool acquisition — `DONE` baseline
 
-Deterministic `NO_LLM` routing and reason-coded model selection exist. Remaining target is a unified capability/tool acquisition authority with explicit typed decisions and revocation/task-end expiry.
+Deterministic `NO_LLM` routing, reason-coded model selection and immutable typed `TaskCapabilityAuthority` are enforced at live tool/network boundaries. Capability checks include task identity, logical capability, resource and effect. Persistent operator revocation is task-scoped, insert-only, survives process restart and takes effect inside an already-active scope before tool budget, telemetry or side effect. There is intentionally no restore/unrevoke path; widening authority requires a new task/contract.
 
 ## PICO-04 — Deterministic-before-LLM short circuit — `DONE` baseline
 
-Policy, TaskContract, DLP, schema, resource and validator decisions are deterministic, and the verified local retrieval path proves a real `NO_LLM` task can complete without model invocation or inference telemetry.
+Policy, TaskContract, DLP, schema, resource and validator decisions are deterministic, and verified local retrieval can complete without model construction or inference telemetry.
 
 ## PICO-05 — Constrained known syntax — `DONE`
 
-Current Ollama structured generation uses native JSON Schema plus deterministic post-validation. Probabilistic JSON repair is prohibited.
+Current structured generation uses native JSON Schema plus deterministic post-validation. Probabilistic JSON repair is prohibited.
 
 ## PICO-06 — Metadata-only inference telemetry — `DONE`
 
@@ -108,7 +112,7 @@ Telemetry records model/schema/template/trust metadata, token counts, timing and
 
 ## PICO-07 — Reuse-before-recompute fingerprint — `DONE` baseline
 
-Stable-prefix fingerprints are recorded metadata-only and D4 reconstructs durable repeated-prefix opportunity across process restarts and representative periods. Reuse identity includes model + trust domain + template + schema + prefix hash. WorkSpace still does not call reuse opportunity a backend cache hit.
+Stable-prefix fingerprints are recorded metadata-only and D4 reconstructs durable repeated-prefix opportunity across process restarts and representative periods. WorkSpace does not call reuse opportunity a backend cache hit.
 
 ## PICO-08 — Verified work per resource — `DONE` baseline
 
@@ -116,7 +120,7 @@ D3 metrics normalize token/tool/retry/escalation/resource accounting by verified
 
 ---
 
-# D0 — Deterministic control-plane completeness
+# D0 — Deterministic control-plane completeness — `DONE` baseline
 
 ## D0-01 — Task Contract compiler/schema — `DONE`
 
@@ -126,40 +130,34 @@ Deterministic compiler validates sensitivity, risk, allowed tools, required vali
 
 Secure/public trust zones, egress broker, privacy/DLP and tests establish confidential-local versus public-research separation.
 
-## D0-03 — Capability Broker semantics — `PARTIAL`
+## D0-03 — Capability Broker semantics — `DONE` baseline
 
-Tool/network gateways are hardened foundations, but one authoritative typed authorization decision format for task ID + capability + resource + effect metadata is still required. Target remains deny-by-default with bounded grants, revocation and task-end expiry.
+One immutable typed authority projects TaskContract capability into task ID + capability + resource + effect decisions. Production gateways deny undeclared/unauthorized capability before side effect. Persistent revocation can only narrow already-bound contract authority and is checked live on every scoped capability call. Task scopes cannot reuse authority belonging to another task.
 
-## D0-04 — Bounded minimal loop — `PARTIAL`
+## D0-04 — Bounded minimal loop — `DONE`
 
-Task-wide retries/escalations are now persistently and atomically enforced before fallback invocation. Remaining proof is uniform hard-stop enforcement for steps/tool-call/wall-time budgets across every live execution and reporting path.
+Task-wide `max_steps`, `max_tool_calls`, `max_retries`, `max_escalations` and `max_wall_time_ms` are persistently bound from the immutable TaskContract. Reservations occur before the corresponding action/fallback side effect. Usage and deadline survive runtime reconstruction/process restart; exhausted dimensions fail closed. D7 regression replay pins the complete execution envelope so future optimization cannot silently widen it.
 
-## D0-05 — Failure taxonomy — `PARTIAL`
+## D0-05 — Failure taxonomy — `DONE`
 
-Specific failures exist but no single authoritative registry yet drives all recovery. Policy denial must remain a hard stop; missing evidence, budget exhaustion, tool timeout, resource admission and model failure must remain distinct typed failure families.
+A versioned deterministic taxonomy distinguishes policy/security/capability/contract denial, missing evidence, validation failure, human gate, budget exhaustion, tool timeout/failure, resource pressure, model failure, invalid model output and unknown failure. Recovery operations are centrally authorized before retry/fallback/escalation budget, telemetry and secondary invocation. Unknown failures hard-stop; missing evidence means collect evidence rather than retry a model; security/policy/capability/budget denials are terminal. Failure metadata never preserves arbitrary raw exception text as a reason code.
 
 ## D0-06 — Validator Bus / Runtime Validator Bridge — `DONE`
 
-Production `WorkflowRunner` binds an immutable TaskContract before Research and records deterministic validator outcomes into `ValidatorLedger`.
+Production execution binds an immutable TaskContract before work and records deterministic validator outcomes into `ValidatorLedger`.
 
-Required Research → Presentation validators are derived from TaskContract and are:
+Required Research → Presentation validators are derived from TaskContract. Core rules:
 
-- `policy`
-- `evidence`
-- `schema`
-
-Rules:
-- no validator PASS is inferred from `TaskStatus.DONE`, `RESEARCH_COMPLETED` or `PRESENTATION_COMPLETED`;
-- model output cannot self-authorize a PASS;
-- Research evidence PASS requires typed handoff integrity, lineage and deterministic readiness/evidence gates;
-- Presentation schema PASS requires deterministic QA plus exact Research-handoff SHA-256 lineage;
-- `ValidatorLedger.evaluate(task_id).verified` must be true before `TaskStatus.DONE` is written;
+- no validator PASS is inferred from task status;
+- model output cannot self-authorize PASS;
+- evidence/schema PASS requires deterministic integrity/lineage checks;
+- `ValidatorLedger.evaluate(task_id).verified` must be true before `DONE`;
 - missing required validator means unverified;
 - failed validator history remains visible;
-- retry may reach final verified success but cannot rewrite First-Pass Verified Success;
-- ledger evidence is metadata-only compact identifiers/hashes/paths.
+- retries may recover final verification but never rewrite First-Pass Verified Success;
+- ledger evidence remains metadata-only.
 
-Daily Report is date-wide reporting and is not allowed to mint or revoke task-specific verification.
+Daily Report is date-wide reporting and cannot mint or revoke task-specific verification.
 
 ---
 
@@ -247,7 +245,7 @@ Verified work, token/resource efficiency, evidence coverage and context proxies 
 
 ## D3-09 — GPU-seconds per Verified Task — `TODO`
 
-Only add when authoritative local GPU-active-time instrumentation exists. Never infer GPU seconds from wall time.
+Only add when authoritative local GPU-active-time instrumentation exists. Never infer GPU seconds from task wall time or model request duration.
 
 ## D3-10 — Metadata privacy boundary — `DONE` baseline
 
@@ -263,29 +261,17 @@ Optimization candidates cannot be promoted when Verified Task Success, First-Pas
 
 ## Evidence Packing Rank v1 — `DONE`
 
-Modes:
-- `legacy_v1`
-- `quality_ranked_v1`
-
-Ranking is deterministic and the default remains `legacy_v1`. Packing mode participates in the effective benchmark fingerprint.
+Modes: `legacy_v1` and `quality_ranked_v1`. Ranking is deterministic and packing mode participates in the effective benchmark fingerprint.
 
 ## Authoritative Packing Receipt v1 — `DONE`
 
-Metadata-only source accounting is authoritative when present; old artifacts retain fail-safe legacy fallback. Partial/tampered receipts fail closed. `WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS` is bounded and participates in the benchmark fingerprint.
+Metadata-only source accounting is authoritative when present; old artifacts retain fail-safe legacy fallback. Partial/tampered receipts fail closed. The synthesis context budget participates in benchmark identity.
 
 ## Benchmark Isolation v1 — `DONE`
 
-Baseline/candidate variants use isolated:
-- task DB;
-- artifacts;
-- inference telemetry;
-- resource telemetry;
-- Internet/execution audit sinks;
-- benchmark sandbox/manifest.
+Baseline/candidate variants use isolated task DB, artifacts, inference telemetry, resource telemetry, Internet/execution audit sinks and benchmark sandbox/manifest. Non-empty sandboxes fail closed and baseline/candidate cannot share task lineage or counters.
 
-Non-empty sandboxes fail closed and process-global optimization knobs are serialized/restored. Baseline and candidate must never share counters or task lineage.
-
-## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE` implementation / evidence pending
 
 The repository owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
 
@@ -294,9 +280,9 @@ The repository owns a versioned local-evidence task set and `workspace-benchmark
 - `quality_ranked_v1 / 40000`;
 - `quality_ranked_v1 / 32000`.
 
-Each variant uses isolated runtime state, exact Git lineage, deterministic fixture corpus identity and the real Runtime Validator Bridge. Candidate efficiency is not evaluated until exact required-validator parity/PASS non-regression and verified-quality gates pass. The self-hosted RTX5090 workflow publishes metadata-only benchmark evidence and does not download a missing model or dependencies during benchmark setup.
+Each variant uses isolated runtime state, exact Git lineage, deterministic fixture corpus identity and the real Runtime Validator Bridge. Candidate efficiency is not evaluated until exact required-validator parity/PASS non-regression and verified-quality gates pass. The RTX5090 workflow requires the preinstalled local model and two RTX5090 GPUs and does not silently download a missing model.
 
-Implementation readiness does not equal benchmark acceptance. The real hardware comparison remains pending until the manual fixed-task benchmark is executed.
+Implementation readiness does not equal benchmark acceptance. Representative hardware evidence remains pending.
 
 ---
 
@@ -304,22 +290,15 @@ Implementation readiness does not equal benchmark acceptance. The real hardware 
 
 ## D4-01 — Durable reuse-observation aggregate — `DONE`
 
-The existing metadata-only inference JSONL is reused as the durable cross-process observation log. `workspace reuse-report` deterministically reconstructs repeated-prefix opportunity from model + trust-domain + template + schema + stable-prefix hash rather than trusting the process-local reuse bit.
+Metadata-only inference JSONL is reused as the durable cross-process observation log. Repeated-prefix opportunity is reconstructed from model + trust-domain + template + schema + stable-prefix hash.
 
 ## D4-02 — Representative-period report — `DONE`
 
-Default reporting window is 7 days and includes reuse opportunity, distinct/repeated prefix counts, prefix-size summary, prompt-eval duration share, model segmentation, opaque trust-domain segmentation and malformed/out-of-window accounting. Raw prompts/responses/tool output/prefix text/hashes and raw trust-domain labels are not emitted.
+Default reporting window is seven days and includes reuse opportunity, distinct/repeated prefix counts, prefix-size summary, prompt-eval duration share, model segmentation, opaque trust-domain segmentation and malformed/out-of-window accounting.
 
 ## D4-03 — Decision gate — `DONE`
 
-Starting policy:
-
-- insufficient representative events → collect more metadata;
-- reuse below the configured planning threshold → redesign prompt layout first;
-- reuse above threshold but prompt-eval does not dominate measured model duration → continue measurement/optimize elsewhere;
-- reuse above threshold and prompt-eval dominates → a D9 serving/cache **benchmark** becomes eligible.
-
-The gate never authorizes a production serving change and never reports repeated-prefix opportunity as a backend cache hit.
+Insufficient events collect more metadata; low reuse points to prompt-layout redesign; high reuse plus prefill dominance makes a D9 serving/cache benchmark eligible. The gate never authorizes production migration or claims an actual backend cache hit.
 
 ---
 
@@ -327,7 +306,7 @@ The gate never authorizes a production serving change and never reports repeated
 
 ## D5-01 — Bounded structural first view — `DONE` baseline
 
-The runtime performs one structural map pass before body retrieval and emits bounded metadata-only retrieval traces while preserving the existing deterministic search semantics.
+The runtime performs one structural map pass before body retrieval and emits bounded metadata-only retrieval traces while preserving deterministic search semantics.
 
 ## D5-02 — Rank + deduplicate — `PARTIAL / BENCHMARK-GATED`
 
@@ -343,9 +322,7 @@ Provenance/data-boundary headers are indivisible: preserve whole or skip the sou
 
 ## D5-05 — Progressive expansion — `BENCHMARK-GATED`
 
-Progressive body expansion remains disabled by default. It may not become production behavior until representative D7/benchmark evidence proves no verified-quality or recall regression.
-
-Policy, user constraints, exact citations/source IDs and critical error/code fragments must survive transformations where exactness is required.
+Progressive body expansion remains disabled by default. It may not become production behavior until representative D7/benchmark evidence proves no verified-quality, evidence-coverage, recall-proxy or critical-span regression.
 
 ---
 
@@ -361,7 +338,7 @@ Verified deterministic local retrieval executes through the real TaskContract/va
 
 ## D6-03 — Failure-driven escalation controller — `DONE`
 
-Retry/escalation limits are bound from the immutable TaskContract, persist task-wide in SQLite across stages/restarts, and are atomically reserved before fallback model invocation.
+Retry/escalation limits are persistent task-wide and atomically reserved before fallback invocation. D0-05 now additionally requires taxonomy authorization before automatic retry/fallback/escalation.
 
 ## D6-04 — Security monotonicity — `DONE`
 
@@ -369,7 +346,7 @@ Model-tier changes cannot expand source/tool/network/write/cache/logging authori
 
 ## D6-05 — Learned router — `BENCHMARK-GATED`
 
-A learned router may be evaluated only after the deterministic baseline and D7 evaluation evidence exist. It may recommend a route but cannot grant capability or weaken TaskContract authority.
+A learned router may be evaluated only after deterministic baseline and representative D7 evidence exist. It may recommend a route but cannot grant capability or weaken TaskContract authority.
 
 ---
 
@@ -385,11 +362,11 @@ Repository-owned deterministic control-plane expectations are versioned and cont
 
 ## D7-03 — Regression corpus — `DONE` baseline
 
-Versioned regression cases protect production-critical routing, write scope, cache/logging and model-locality behavior.
+Versioned regression cases protect production-critical routing, write scope, cache/logging, model locality and the complete TaskContract execution budget: steps, tool calls, retries, escalations and wall time. A future optimization that widens these limits causes a replay mismatch.
 
 ## D7-04 — Adversarial/security corpus — `DONE` baseline
 
-Versioned reject cases require fail-closed handling for forbidden public-web, NO_LLM scope expansion, web-gateway misuse and unknown tool authority.
+Versioned reject cases require fail-closed handling for forbidden public-web, NO_LLM scope expansion, web-gateway misuse and unknown tool authority. Runtime unit/regression tests additionally protect capability revocation and failure-taxonomy invariants.
 
 ## D7-05 — Edge/large-context corpus — `EVIDENCE-PENDING`
 
@@ -405,7 +382,7 @@ D3-01..D3-07 semantics are bound to `workspace-d3-core-metrics-v1` with a canoni
 
 ## D7-08 — Promotion pipeline — `DONE` infrastructure
 
-`workspace-promotion` requires all six mandatory evidence classes, exact baseline/candidate/rollback lineage, current metric registry, security PASS, holdout commitments/attestation where required and no waiver path. Missing D7-05/D7-06/replay evidence intentionally keeps real production promotion blocked.
+`workspace-promotion` requires all mandatory evidence classes, exact baseline/candidate/rollback lineage, current metric registry, security PASS, holdout commitments/attestation where required and no waiver path. Missing D7-05/D7-06/replay evidence intentionally keeps real production promotion blocked.
 
 Security is a hard constraint. Optimizers must not see holdout labels and production changes require regression/adversarial evidence plus rollback lineage.
 
@@ -413,7 +390,7 @@ Security is a hard constraint. Optimizers must not see holdout labels and produc
 
 # D8 — Context compression experiment — `BENCHMARK-GATED`
 
-Prerequisites: D3 + D5 + D7 representative evidence.
+Prerequisites: D3 + D5 + representative D7 evidence.
 
 - D8-01 Context-size distribution measurement
 - D8-02 Protected-span framework
@@ -432,13 +409,13 @@ Prerequisite: D4 proves sufficient reuse/prefill opportunity on representative t
 
 - D9-01 current Ollama vs candidate serving-engine replay benchmark
 - D9-02 same-model/same-quantization quality parity where possible
-- D9-03 TTFT/TPOT/throughput/VRAM/GPU-time
+- D9-03 TTFT/TPOT/throughput/VRAM/authoritative GPU-active-time where available
 - D9-04 structured-output reliability under representative concurrency
 - D9-05 trust-domain prefix-cache isolation
 - D9-06 one primary production server selected by ADR
 - D9-07 external cache layer only when native cache is insufficient and net value is positive
 
-No framework accumulation. One primary stack wins. A D4 `SERVING_CACHE_BENCHMARK_ELIGIBLE` result permits only a benchmark, not production migration.
+No framework accumulation. One primary stack wins. D4 eligibility permits only a benchmark, not production migration.
 
 ---
 
@@ -460,7 +437,7 @@ Prerequisites: stable high-volume repetitive task family + D7 evaluation lab. Au
 
 ---
 
-# Definition of Done for each checklist item
+# Definition of Done
 
 An item may move to `DONE` only when all applicable evidence exists:
 
@@ -469,42 +446,40 @@ An item may move to `DONE` only when all applicable evidence exists:
 3. security invariants PASS;
 4. behavior is observable with metadata-only telemetry where relevant;
 5. docs/config are updated;
-6. benchmark-gated items include before/after representative measurements;
+6. benchmark-gated items include representative before/after measurements;
 7. no new dependency/framework is accepted without evidence that existing code/runtime cannot provide the same outcome more simply.
 
-`EVIDENCE-PENDING` means the implementation/profile portion is complete but condition 6 or an equivalent external/holdout evidence requirement has not yet been satisfied.
+`EVIDENCE-PENDING` means implementation/profile work is complete but representative external, holdout or hardware evidence is still missing.
 
 # Immediate execution queue
 
 ```text
-D7 deterministic/evaluation/promotion infrastructure — DONE
+Deterministic control plane D0 — DONE baseline
         ↓
-Run real dual-RTX5090 fixed benchmark:
+Run real dual-RTX5090 fixed benchmark on one exact source_ref:
   legacy_v1 / 48000
   quality_ranked_v1 / 48000
   quality_ranked_v1 / 40000
   quality_ranked_v1 / 32000
         ↓
 Materialize representative D7-05 edge/large-context external results
-and D7-06 efficiency/cache/concurrency benchmark results
+and D7-06 efficiency/cache/concurrency results
         ↓
-Quality acceptance first:
+Quality/security acceptance first:
   Verified Task Success must not decrease
   First-Pass Verified Success must not decrease
   Evidence Coverage must not decrease
   exact required-validator success must not decrease
   critical-span loss must remain zero where applicable
+  TaskContract execution authority must not widen
         ↓
 Only then compare tokens/context proxies/latency/retries/escalations/tool calls/resource usage
-        ↓
-Close deterministic control-plane debt:
-  D0-03 unified Capability Broker
-  D0-04 remaining step/tool/wall-time hard stops
-  D0-05 authoritative failure taxonomy
         ↓
 Run D4 representative reuse report on real workload telemetry
         ↓
 Evaluate D5-02 near-duplicate/diversity and D5-05 progressive expansion only through D7 gates
+        ↓
+Consider D3-09 only after authoritative GPU-active-time instrumentation exists
 ```
 
-Do not promote 40k/32k context budgets without benchmark evidence. Do not begin D9 production migration unless D4 representative evidence permits its benchmark. Do not begin D8/D10/D11/D12 production integration before their prerequisite gates are satisfied.
+Do not promote 40k/32k context budgets without representative benchmark evidence. Do not begin D9 production migration unless D4 representative evidence permits its benchmark. Do not begin D8/D10/D11/D12 production integration before their prerequisite gates are satisfied.
