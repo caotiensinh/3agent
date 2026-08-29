@@ -1,0 +1,56 @@
+name: closure-ollama-adapter-probe
+
+on:
+  push:
+    branches: [evidence/closure-rtx5090-20260830]
+    paths: ['.github/workflows/closure-ollama-adapter-probe.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted]
+    timeout-minutes: 20
+    env:
+      PRODUCT_SHA: e7a3b6dc9445354774951f035b764b0646425d69
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e7a3b6dc9445354774951f035b764b0646425d69
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Install exact candidate in isolated venv
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
+          VENV="$RUNNER_TEMP/workspace-adapter-probe-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+      - name: Verify synthesis schema through WorkSpace OllamaClient
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -e . >/dev/null
+          python - <<'PY'
+          import json
+          from three_agent.config import LLMConfig
+          from three_agent.llm import OllamaClient
+          from three_agent.research_schemas import RESEARCH_SYNTHESIS_SCHEMA_V1, RESEARCH_SYNTHESIS_SCHEMA_ID
+
+          client=OllamaClient(LLMConfig('ollama','http://127.0.0.1:11434','qwen3:30b',120,'20m'))
+          payload=client.generate_json(
+              'Synthetic hardware compatibility probe. Return valid JSON only.',
+              'Return empty arrays, conclusion "ok", and no actions.',
+              schema=RESEARCH_SYNTHESIS_SCHEMA_V1,
+              schema_id=RESEARCH_SYNTHESIS_SCHEMA_ID,
+              think=False,
+              num_predict=96,
+              trust_domain='workspace-hardware-probe',
+              template_version='workspace.hardware.schema-probe.v1',
+          )
+          required={'verified_facts','inferences','conflicts','unresolved','conclusion','recommended_next_actions'}
+          assert set(payload) == required, payload
+          print(json.dumps({'schema_version':'workspace-ollama-adapter-probe/v1','passed':True,'raw_prompt_logged':False,'raw_response_logged':False},sort_keys=True))
+          PY
