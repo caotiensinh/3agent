@@ -43,9 +43,9 @@ class WorkflowRunner:
 
     Production construction supplies RuntimeValidatorBridge. In that path the
     TaskContract, persistent execution budget and immutable model-authority
-    envelope are bound before Research. The same authority envelope is carried
-    through Research and Presentation, so changing model tier cannot expand
-    source/tool/network/write authority. DONE still requires verified validators.
+    envelope are bound before Research. Research and Presentation each consume
+    one persistent workflow-step reservation before execution. DONE still
+    requires verified validators and an unexpired task deadline.
     """
 
     def __init__(
@@ -185,6 +185,8 @@ class WorkflowRunner:
 
             stage = "research"
             try:
+                if execution_budget is not None:
+                    execution_budget.reserve(steps=1)
                 with inference_scope(
                     task_id,
                     agent_id="research",
@@ -254,6 +256,8 @@ class WorkflowRunner:
             if outcome == "continue":
                 stage = "presentation"
                 try:
+                    if execution_budget is not None:
+                        execution_budget.reserve(steps=1)
                     with inference_scope(
                         task_id,
                         agent_id="presentation",
@@ -309,6 +313,8 @@ class WorkflowRunner:
                         self.store.set_status(task_id, TaskStatus.FAILED)
                         raise RuntimeError("PRESENTATION_VALIDATION_FAILED")
 
+                    if execution_budget is not None:
+                        execution_budget.assert_active()
                     verification = self.validator_bridge.evaluate(task_id)
                     if not verification.verified:
                         stage = "validator_gate"
@@ -325,6 +331,8 @@ class WorkflowRunner:
                         )
                         raise RuntimeError("REQUIRED_VALIDATOR_NOT_PASSED")
 
+                if execution_budget is not None:
+                    execution_budget.assert_active()
                 self.store.set_status(task_id, TaskStatus.DONE)
                 outcome = "completed"
                 stage = "task_completed"

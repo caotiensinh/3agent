@@ -17,6 +17,18 @@ from .resource_events import ResourceEventRecorder
 from .worker_pool import OllamaWorkerPool
 
 
+def _assert_execution_active() -> None:
+    state = current_execution_budget()
+    if state is not None:
+        state.assert_active()
+
+
+def _reserve_tool_call() -> None:
+    state = current_execution_budget()
+    if state is not None:
+        state.reserve(tool_calls=1)
+
+
 def _reserve_model_budget(*, retries: int = 0, escalations: int = 0) -> None:
     state = current_execution_budget()
     if state is not None:
@@ -85,6 +97,7 @@ class MeteredInternetGateway:
             resource_ref="public_fetch",
             effect="network_read",
         )
+        _reserve_tool_call()
         self._record(agent_id, task_id, "internet_get")
         return self._inner.get(agent_id, task_id, url, timeout=timeout)
 
@@ -104,6 +117,7 @@ class MeteredInternetGateway:
             resource_ref="public_search",
             effect="network_read",
         )
+        _reserve_tool_call()
         self._record(agent_id, task_id, "internet_search")
         return self._inner.search_get(agent_id, task_id, endpoint, params, timeout=timeout)
 
@@ -115,6 +129,7 @@ class MeteredInternetGateway:
             resource_ref="public_fetch_grant",
             effect="network_read",
         )
+        _reserve_tool_call()
         self._record(agent_id, task_id, "internet_fetch_grant")
         return self._inner.grant_public_fetch(agent_id, task_id, url)
 
@@ -133,6 +148,7 @@ class MeteredInternetGateway:
             resource_ref="public_fetch_granted",
             effect="network_read",
         )
+        _reserve_tool_call()
         self._record(agent_id, task_id, "internet_fetch_granted")
         return self._inner.fetch_granted(agent_id, task_id, grant_token, timeout=timeout)
 
@@ -151,6 +167,7 @@ class MeteredInternetGateway:
             resource_ref="public_post",
             effect="network_write",
         )
+        _reserve_tool_call()
         self._record(agent_id, task_id, "internet_post")
         return self._inner.post_json(agent_id, task_id, url, payload, timeout=timeout)
 
@@ -193,6 +210,7 @@ class MeteredExecutionGateway:
                 resource_ref=reference or "workspace",
                 effect=effect,
             )
+        _reserve_tool_call()
         self._recorder.record(
             "tool_call",
             task_id=task_id,
@@ -204,13 +222,14 @@ class MeteredExecutionGateway:
 
 
 class MeteredOllamaWorkerPool(OllamaWorkerPool):
-    """Preserve worker routing while enforcing task-wide same-model retry budget."""
+    """Preserve worker routing while enforcing persistent task execution budget."""
 
     def __init__(self, *args, resource_events: ResourceEventRecorder, **kwargs):
         super().__init__(*args, **kwargs)
         self.resource_events = resource_events
 
     def _call(self, method: str, *args, **kwargs):
+        _assert_execution_active()
         errors: list[str] = []
         model = self.config.model
         order = self.route_order(model)
@@ -244,12 +263,7 @@ class MeteredOllamaWorkerPool(OllamaWorkerPool):
 
 
 class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
-    """Adaptive model router with hard budget and monotonic model authority.
-
-    The TaskContract-derived authority envelope remains outside the model. Any
-    planned or failure-driven stronger-model transition must fit the immutable
-    max tier and escalation policy before the stronger model can be invoked.
-    """
+    """Adaptive model router with hard budget and monotonic model authority."""
 
     def __init__(
         self,
@@ -294,13 +308,12 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
         )
 
     def _call(self, method: str, system_prompt: str, user_prompt: str, **kwargs):
+        _assert_execution_active()
         primary_method = getattr(self.primary, method)
         deep_method = getattr(self.deep, method) if self.deep else None
         primary_model = getattr(getattr(self.primary, "config", None), "model", None)
         deep_model = getattr(getattr(self.deep, "config", None), "model", None) if self.deep else None
 
-        # Unscoped/legacy callers retain historical behavior. Production task
-        # scopes must authorize even the primary tier.
         _require_model_tier(self.primary_tier)
 
         if self._prefer_deep(user_prompt) and deep_method is not None:
@@ -334,8 +347,6 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
             raise
         except LocalLLMError:
             if self.deep_escalation and self._deep_is_distinct() and deep_method is not None:
-                # Authority is checked before budget reservation so a forbidden
-                # model transition cannot consume budget or create telemetry.
                 _require_model_tier(self.deep_tier)
                 _reserve_model_budget(retries=1, escalations=1)
                 self._retry(
