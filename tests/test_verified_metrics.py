@@ -79,7 +79,7 @@ class VerifiedWorkMetricTests(unittest.TestCase):
         self.assertEqual(snapshot.verified_tasks, 0)
         self.assertEqual(snapshot.verified_task_success_rate, 0.0)
 
-    def test_missing_and_failed_validator_counts_are_latest-state_only(self):
+    def test_missing_and_failed_validator_counts_are_latest_state_only(self):
         missing, _ = self._bound_analysis_task("Missing evidence")
         self._pass(missing.task_id, "policy")
 
