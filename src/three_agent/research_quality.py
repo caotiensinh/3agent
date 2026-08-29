@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .evidence_packing import PACKING_RECEIPT_SCHEMA
 from .handoff_security import build_handoff_security_metadata
 from .runtime_efficiency import sanitize_untrusted_payload
 
@@ -165,18 +166,7 @@ def source_refs(sources: list[dict]) -> list[dict]:
 
 
 def evidence_claim_accounting(research: dict) -> dict[str, int | float | None]:
-    """Derive D3-05 claim coverage from deterministic Research gate outcomes.
-
-    A material claim requiring evidence is either:
-    - a verified-fact or inference candidate that survived citation/evidence gates; or
-    - a fact/inference candidate explicitly rejected for missing source lineage; or
-    - a verified-fact candidate explicitly rejected by the quantitative evidence gate.
-
-    Conflicts, request constraint gaps, generic unresolved questions and narrative
-    conclusions are excluded from this denominator because the current Research
-    contract does not classify them as material claim candidates. This avoids
-    manufacturing recall/coverage from free-form prose.
-    """
+    """Derive D3-05 claim coverage from deterministic Research gate outcomes."""
     verified = research.get("verified_facts")
     inferences = research.get("inferences")
     unresolved = research.get("unresolved_items")
@@ -207,25 +197,148 @@ def evidence_claim_accounting(research: dict) -> dict[str, int | float | None]:
     }
 
 
+def _non_negative_int(value: Any, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"PACKING_RECEIPT_INVALID_{field.upper()}")
+    return value
+
+
+def _cited_source_ids(research: dict) -> set[str]:
+    cited_ids: set[str] = set()
+    for key in ("verified_facts", "inferences", "conflicts"):
+        items = research.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            source_ids = item.get("source_ids")
+            if not isinstance(source_ids, list):
+                continue
+            cited_ids.update(str(source_id) for source_id in source_ids if isinstance(source_id, str))
+    return cited_ids
+
+
+def _receipt_context_accounting(research: dict) -> dict[str, Any] | None:
+    """Consume authoritative packing metadata when a v1 receipt is present.
+
+    Complete absence means a legacy artifact and is handled by the historical
+    reconstruction path. Partial, inconsistent or tampered receipt metadata fails
+    closed so context-retention metrics cannot silently become optimistic.
+    """
+    raw_assessments = research.get("source_assessments")
+    assessments = raw_assessments if isinstance(raw_assessments, list) else []
+    accepted = [
+        item
+        for item in assessments
+        if isinstance(item, dict)
+        and item.get("relevance") in {"high", "medium"}
+        and item.get("scope_match") is True
+    ]
+    receipt_items = [
+        item for item in accepted if item.get("synthesis_packing_receipt_version") is not None
+    ]
+    if not receipt_items:
+        return None
+    if len(receipt_items) != len(accepted):
+        raise ValueError("PACKING_RECEIPT_INCOMPLETE")
+
+    raw_sources = research.get("sources")
+    sources = raw_sources if isinstance(raw_sources, list) else []
+    source_text_chars = {
+        str(source.get("source_id") or ""): len(str(source.get("extracted_text") or ""))
+        for source in sources
+        if isinstance(source, dict)
+        and source.get("fetch_status") == "ok"
+        and source.get("extracted_text")
+    }
+
+    budget: int | None = None
+    mode: str | None = None
+    seen: set[str] = set()
+    vetted_text_chars = 0
+    supplied_text_chars = 0
+    supplied_source_ids: set[str] = set()
+    cited_source_ids: set[str] = set()
+    cited_text_chars = 0
+    cited = _cited_source_ids(research)
+
+    for item in receipt_items:
+        source_id = str(item.get("source_id") or "")
+        if not source_id or source_id in seen:
+            raise ValueError("PACKING_RECEIPT_SOURCE_ID_INVALID")
+        seen.add(source_id)
+        if item.get("synthesis_packing_receipt_version") != PACKING_RECEIPT_SCHEMA:
+            raise ValueError("PACKING_RECEIPT_SCHEMA_UNSUPPORTED")
+
+        item_budget = _non_negative_int(
+            item.get("synthesis_context_budget_chars"), "context_budget_chars"
+        )
+        item_mode = str(item.get("synthesis_packing_mode") or "")
+        if not item_mode:
+            raise ValueError("PACKING_RECEIPT_MODE_INVALID")
+        if budget is None:
+            budget = item_budget
+        elif budget != item_budget:
+            raise ValueError("PACKING_RECEIPT_BUDGET_MISMATCH")
+        if mode is None:
+            mode = item_mode
+        elif mode != item_mode:
+            raise ValueError("PACKING_RECEIPT_MODE_MISMATCH")
+
+        vetted = _non_negative_int(item.get("synthesis_vetted_text_chars"), "vetted_text_chars")
+        supplied = _non_negative_int(
+            item.get("synthesis_supplied_text_chars"), "supplied_text_chars"
+        )
+        if supplied > vetted:
+            raise ValueError("PACKING_RECEIPT_SUPPLIED_EXCEEDS_VETTED")
+        if source_id not in source_text_chars or source_text_chars[source_id] != vetted:
+            raise ValueError("PACKING_RECEIPT_SOURCE_LENGTH_MISMATCH")
+        supplied_flag = item.get("synthesis_supplied")
+        if not isinstance(supplied_flag, bool) or supplied_flag != (supplied > 0):
+            raise ValueError("PACKING_RECEIPT_SUPPLIED_FLAG_MISMATCH")
+
+        vetted_text_chars += vetted
+        supplied_text_chars += supplied
+        if supplied > 0:
+            supplied_source_ids.add(source_id)
+            if source_id in cited:
+                cited_source_ids.add(source_id)
+                cited_text_chars += supplied
+
+    return {
+        "context_precision_proxy_kind": _CONTEXT_PROXY_KIND,
+        "context_precision_proxy_scope": _CONTEXT_PROXY_SCOPE,
+        "context_recall_proxy_kind": _CONTEXT_RECALL_PROXY_KIND,
+        "context_recall_proxy_scope": _CONTEXT_RECALL_PROXY_SCOPE,
+        "synthesis_context_budget_chars": budget or 0,
+        "synthesis_vetted_source_count": len(receipt_items),
+        "synthesis_supplied_source_count": len(supplied_source_ids),
+        "synthesis_cited_source_count": len(cited_source_ids),
+        "synthesis_vetted_source_text_chars": vetted_text_chars,
+        "synthesis_supplied_source_text_chars": supplied_text_chars,
+        "synthesis_cited_source_text_chars": cited_text_chars,
+        "context_precision_proxy": (
+            round(cited_text_chars / supplied_text_chars, 6)
+            if supplied_text_chars
+            else None
+        ),
+        "context_recall_proxy": (
+            round(supplied_text_chars / vetted_text_chars, 6)
+            if vetted_text_chars
+            else None
+        ),
+        "synthesis_packing_receipt_version": PACKING_RECEIPT_SCHEMA,
+        "synthesis_packing_mode": mode,
+    }
+
+
 def synthesis_context_proxy_accounting(
     research: dict,
     *,
     max_total: int = _SYNTHESIS_CONTEXT_MAX_CHARS,
 ) -> dict[str, Any]:
-    """Measure deterministic source-level D3-06 precision and D3-07 recall proxies.
-
-    Precision proxy:
-      cited supplied source TEXT chars / all supplied source TEXT chars.
-
-    Recall proxy:
-      supplied source TEXT chars / all source TEXT chars that passed the
-      suitability gate before the synthesis context budget was applied.
-
-    The packing loop mirrors ResearchAgent's existing 48k chunk budget. Titles,
-    URLs, separators and prompt scaffolding are excluded from the reported TEXT
-    counters even though their bytes still consume the packing budget. Neither
-    metric is true semantic token/span precision or recall.
-    """
+    """Measure D3-06/D3-07 from receipt, with legacy-artifact fallback only."""
     if not isinstance(max_total, int) or isinstance(max_total, bool) or max_total < 0:
         raise ValueError("max_total must be a non-negative integer")
 
@@ -247,6 +360,11 @@ def synthesis_context_proxy_accounting(
     if research.get("source_assessment_error"):
         return base
 
+    receipt = _receipt_context_accounting(research)
+    if receipt is not None:
+        return receipt
+
+    # Legacy artifact fallback: reconstruct the historical 48k packing behavior.
     raw_sources = research.get("sources")
     raw_assessments = research.get("source_assessments")
     sources = raw_sources if isinstance(raw_sources, list) else []
@@ -258,19 +376,7 @@ def synthesis_context_proxy_accounting(
         and item.get("relevance") in {"high", "medium"}
         and item.get("scope_match") is True
     }
-
-    cited_ids: set[str] = set()
-    for key in ("verified_facts", "inferences", "conflicts"):
-        items = research.get(key)
-        if not isinstance(items, list):
-            continue
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            source_ids = item.get("source_ids")
-            if not isinstance(source_ids, list):
-                continue
-            cited_ids.update(str(source_id) for source_id in source_ids if isinstance(source_id, str))
+    cited_ids = _cited_source_ids(research)
 
     vetted_sources: list[tuple[str, str, str, str]] = []
     vetted_source_ids: set[str] = set()
