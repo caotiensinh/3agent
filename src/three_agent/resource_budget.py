@@ -16,6 +16,10 @@ class ResourceAdmissionError(RuntimeError):
     """Raised when starting a model would violate the configured safety budget."""
 
 
+class ResourceBusyError(ResourceAdmissionError):
+    """Raised when resources stay busy beyond the bounded queue wait."""
+
+
 @dataclass(frozen=True)
 class ResourceBudgetConfig:
     enabled: bool = True
@@ -24,10 +28,28 @@ class ResourceBudgetConfig:
     max_gpu_util_percent: float = 95.0
     max_gpu_power_percent: float = 95.0
     max_gpu_temp_c: float = 85.0
+    max_balance_skew_percent: float = 10.0
+    queue_wait_seconds: float = 120.0
+    queue_poll_seconds: float = 1.0
     model_size_safety_factor: float = 1.15
     model_ram_overhead_factor: float = 0.15
     serialize_generation: bool = True
     reservation_ttl_seconds: int = 900
+
+
+@dataclass(frozen=True)
+class GPUResourceState:
+    index: int
+    uuid: str
+    total_bytes: int
+    used_bytes: int
+    util_percent: float
+    power_percent: float
+    temp_c: float
+
+    @property
+    def vram_percent(self) -> float:
+        return (self.used_bytes / max(1, self.total_bytes)) * 100.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +62,7 @@ class ResourceSnapshot:
     ram_total_bytes: int
     ram_used_bytes: int
     loaded_models: dict[str, int]
+    gpus: tuple[GPUResourceState, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -50,16 +73,23 @@ class AdmissionDecision:
     projected_vram_percent: float
     projected_ram_percent: float
     reason: str = ""
+    selected_gpu_indices: tuple[int, ...] = ()
+    projected_gpu_vram_percent: tuple[float, ...] = ()
+    projected_balance_skew_percent: float = 0.0
+    busy: bool = False
 
 
 class ResourceBudgetManager:
-    """Cross-process admission control for local Ollama models.
+    """Per-component admission control for local Ollama models.
 
-    Model residency is not limited by a fixed count. Admission uses live GPU/RAM
-    health plus conservative reservations. VRAM reserves the full estimated model
-    footprint. Host RAM reserves only a configurable loading/runtime overhead,
-    because GPU-offloaded Ollama models are not assumed to mirror their complete
-    weights in system RAM.
+    Safety is evaluated per physical GPU. A hot/busy GPU no longer poisons the
+    aggregate state of every other GPU. GPU utilization is temporary BUSY
+    pressure and is queued for a bounded period; VRAM, temperature and power are
+    hard per-GPU safety limits.
+
+    Ollama still owns physical model placement inside one server process. This
+    manager validates safe/balanced capacity but does not claim to force
+    per-request GPU affinity. Hard GPU affinity requires separate Ollama workers.
     """
 
     def __init__(
@@ -93,8 +123,7 @@ class ResourceBudgetManager:
         used_thread_lock = False
         try:
             try:
-                import fcntl  # Linux/Unix; target AI server is Ubuntu.
-
+                import fcntl
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             except (ImportError, OSError):
                 self._thread_lock.acquire()
@@ -106,7 +135,6 @@ class ResourceBudgetManager:
             else:
                 try:
                     import fcntl
-
                     fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
                 except (ImportError, OSError):
                     pass
@@ -133,41 +161,44 @@ class ResourceBudgetManager:
             result[name] = max(0, size)
         return result
 
-    def _nvidia_snapshot(self) -> tuple[int, int, float, float, float]:
+    def _nvidia_snapshot(self) -> tuple[GPUResourceState, ...]:
         cmd = [
             "nvidia-smi",
-            "--query-gpu=memory.total,memory.used,utilization.gpu,temperature.gpu,power.draw,power.limit",
+            "--query-gpu=index,uuid,memory.total,memory.used,utilization.gpu,temperature.gpu,power.draw,power.limit",
             "--format=csv,noheader,nounits",
         ]
         completed = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=10)
-        total_mib = used_mib = 0.0
-        max_util = max_temp = max_power_ratio = 0.0
-        rows = 0
+        states: list[GPUResourceState] = []
+        mib = 1024 * 1024
         for line in completed.stdout.splitlines():
             parts = [part.strip() for part in line.split(",")]
-            if len(parts) != 6:
+            if len(parts) != 8:
                 continue
             try:
-                total, used, util, temp, power, limit = [float(value) for value in parts]
+                index = int(parts[0])
+                uuid = parts[1]
+                total = float(parts[2])
+                used = float(parts[3])
+                util = float(parts[4])
+                temp = float(parts[5])
+                power = float(parts[6])
+                limit = float(parts[7])
             except ValueError:
                 continue
-            rows += 1
-            total_mib += total
-            used_mib += used
-            max_util = max(max_util, util)
-            max_temp = max(max_temp, temp)
-            if limit > 0:
-                max_power_ratio = max(max_power_ratio, (power / limit) * 100.0)
-        if rows == 0:
+            states.append(
+                GPUResourceState(
+                    index=index,
+                    uuid=uuid,
+                    total_bytes=int(total * mib),
+                    used_bytes=int(used * mib),
+                    util_percent=util,
+                    power_percent=(power / limit) * 100.0 if limit > 0 else 0.0,
+                    temp_c=temp,
+                )
+            )
+        if not states:
             raise ResourceAdmissionError("Unable to read NVIDIA GPU resource state")
-        mib = 1024 * 1024
-        return (
-            int(total_mib * mib),
-            int(used_mib * mib),
-            max_util,
-            max_power_ratio,
-            max_temp,
-        )
+        return tuple(sorted(states, key=lambda item: item.index))
 
     @staticmethod
     def _ram_snapshot() -> tuple[int, int]:
@@ -187,18 +218,32 @@ class ResourceBudgetManager:
 
     def snapshot(self) -> ResourceSnapshot:
         if self._probe_override is not None:
-            return self._probe_override()
-        gpu_total, gpu_used, gpu_util, gpu_power, gpu_temp = self._nvidia_snapshot()
+            snapshot = self._probe_override()
+            if snapshot.gpus:
+                return snapshot
+            return ResourceSnapshot(
+                gpu_total_bytes=snapshot.gpu_total_bytes,
+                gpu_used_bytes=snapshot.gpu_used_bytes,
+                gpu_util_percent=snapshot.gpu_util_percent,
+                gpu_power_percent=snapshot.gpu_power_percent,
+                gpu_temp_c=snapshot.gpu_temp_c,
+                ram_total_bytes=snapshot.ram_total_bytes,
+                ram_used_bytes=snapshot.ram_used_bytes,
+                loaded_models=snapshot.loaded_models,
+                gpus=(GPUResourceState(0, "aggregate-test-gpu", snapshot.gpu_total_bytes, snapshot.gpu_used_bytes, snapshot.gpu_util_percent, snapshot.gpu_power_percent, snapshot.gpu_temp_c),),
+            )
+        gpus = self._nvidia_snapshot()
         ram_total, ram_used = self._ram_snapshot()
         return ResourceSnapshot(
-            gpu_total_bytes=gpu_total,
-            gpu_used_bytes=gpu_used,
-            gpu_util_percent=gpu_util,
-            gpu_power_percent=gpu_power,
-            gpu_temp_c=gpu_temp,
+            gpu_total_bytes=sum(g.total_bytes for g in gpus),
+            gpu_used_bytes=sum(g.used_bytes for g in gpus),
+            gpu_util_percent=max(g.util_percent for g in gpus),
+            gpu_power_percent=max(g.power_percent for g in gpus),
+            gpu_temp_c=max(g.temp_c for g in gpus),
             ram_total_bytes=ram_total,
             ram_used_bytes=ram_used,
             loaded_models=self._loaded_models(),
+            gpus=gpus,
         )
 
     def estimate_model_bytes(self, model: str) -> int:
@@ -216,9 +261,7 @@ class ResourceBudgetManager:
                     disk_size = 0
                 if disk_size > 0:
                     return int(disk_size * max(1.0, self.config.model_size_safety_factor))
-        raise ResourceAdmissionError(
-            f"Cannot estimate memory for model {model}; model metadata is unavailable"
-        )
+        raise ResourceAdmissionError(f"Cannot estimate memory for model {model}; model metadata is unavailable")
 
     def _ram_overhead_bytes(self, model_bytes: int) -> int:
         factor = max(0.0, min(1.0, float(self.config.model_ram_overhead_factor)))
@@ -240,9 +283,7 @@ class ResourceBudgetManager:
             if not isinstance(item, dict):
                 continue
             try:
-                created = float(item.get("created_at", 0))
-                size = int(item.get("bytes", 0))
-                count = int(item.get("count", 0))
+                created = float(item.get("created_at", 0)); size = int(item.get("bytes", 0)); count = int(item.get("count", 0))
             except (TypeError, ValueError):
                 continue
             if size > 0 and count > 0 and now - created <= ttl:
@@ -255,109 +296,117 @@ class ResourceBudgetManager:
         tmp.write_text(json.dumps(reservations, sort_keys=True), encoding="utf-8")
         tmp.replace(self.state_path)
 
-    def _decision(
-        self,
-        model: str,
-        snapshot: ResourceSnapshot,
-        reservations: dict[str, dict[str, Any]],
-    ) -> AdmissionDecision:
-        vram_limit = self._clamp_percent(self.config.max_vram_percent, high=95.0)
+    def _balanced_projection(self, gpus: tuple[GPUResourceState, ...], candidate_bytes: int, reserved_bytes: int) -> tuple[tuple[float, ...], tuple[int, ...], float] | None:
+        if not gpus:
+            return None
+        limit = self._clamp_percent(self.config.max_vram_percent, high=90.0) / 100.0
+        projected = [float(g.used_bytes) for g in gpus]
+        totals = [float(g.total_bytes) for g in gpus]
+        remaining = max(0, candidate_bytes + reserved_bytes)
+        chunk = max(64 * 1024 * 1024, remaining // 128 if remaining else 0)
+        while remaining > 0:
+            eligible = [i for i in range(len(gpus)) if projected[i] < totals[i] * limit]
+            if not eligible:
+                return None
+            idx = min(eligible, key=lambda i: projected[i] / max(1.0, totals[i]))
+            capacity = max(0.0, totals[idx] * limit - projected[idx])
+            take = min(float(remaining), float(chunk or remaining), capacity)
+            if take <= 0:
+                return None
+            projected[idx] += take
+            remaining -= int(take)
+        percents = tuple((projected[i] / max(1.0, totals[i])) * 100.0 for i in range(len(gpus)))
+        selected = tuple(gpus[i].index for i in range(len(gpus)) if projected[i] > gpus[i].used_bytes)
+        skew = max(percents) - min(percents) if len(percents) > 1 else 0.0
+        return percents, selected, skew
+
+    def _decision(self, model: str, snapshot: ResourceSnapshot, reservations: dict[str, dict[str, Any]]) -> AdmissionDecision:
         ram_limit = self._clamp_percent(self.config.max_ram_percent, high=95.0)
         util_limit = self._clamp_percent(self.config.max_gpu_util_percent, high=100.0)
         power_limit = self._clamp_percent(self.config.max_gpu_power_percent, high=100.0)
+        skew_limit = self._clamp_percent(self.config.max_balance_skew_percent, low=0.0, high=100.0)
+        healthy: list[GPUResourceState] = []
+        busy: list[GPUResourceState] = []
+        rejected: list[str] = []
+        for gpu in snapshot.gpus:
+            if gpu.vram_percent >= min(90.0, self.config.max_vram_percent):
+                rejected.append(f"GPU{gpu.index} VRAM is {gpu.vram_percent:.1f}%"); continue
+            if gpu.power_percent >= power_limit:
+                rejected.append(f"GPU{gpu.index} power is {gpu.power_percent:.1f}% of limit"); continue
+            if gpu.temp_c >= self.config.max_gpu_temp_c:
+                rejected.append(f"GPU{gpu.index} temperature is {gpu.temp_c:.1f}C"); continue
+            healthy.append(gpu)
+            if gpu.util_percent >= util_limit:
+                busy.append(gpu)
+        if not healthy:
+            return AdmissionDecision(False, model, 0, 0.0, 0.0, "; ".join(rejected) or "no healthy GPU is available")
 
-        if snapshot.gpu_util_percent >= util_limit:
-            return AdmissionDecision(False, model, 0, 0.0, 0.0, f"GPU utilization is already {snapshot.gpu_util_percent:.1f}%")
-        if snapshot.gpu_power_percent >= power_limit:
-            return AdmissionDecision(False, model, 0, 0.0, 0.0, f"GPU power is already {snapshot.gpu_power_percent:.1f}% of limit")
-        if snapshot.gpu_temp_c >= self.config.max_gpu_temp_c:
-            return AdmissionDecision(False, model, 0, 0.0, 0.0, f"GPU temperature is already {snapshot.gpu_temp_c:.1f}C")
-
-        loaded_bytes = sum(max(0, value) for value in snapshot.loaded_models.values())
         candidate_loaded = model in snapshot.loaded_models
         candidate_reserved = model in reservations
         candidate_bytes = 0 if (candidate_loaded or candidate_reserved) else self.estimate_model_bytes(model)
-        reserved_bytes = sum(
-            int(item.get("bytes", 0))
-            for name, item in reservations.items()
-            if name not in snapshot.loaded_models
-        )
-        projected_gpu = max(snapshot.gpu_used_bytes, loaded_bytes) + reserved_bytes + candidate_bytes
-        projected_ram = (
-            snapshot.ram_used_bytes
-            + self._ram_overhead_bytes(reserved_bytes)
-            + self._ram_overhead_bytes(candidate_bytes)
-        )
-        projected_vram_percent = (projected_gpu / max(1, snapshot.gpu_total_bytes)) * 100.0
+        reserved_bytes = sum(int(item.get("bytes", 0)) for name, item in reservations.items() if name not in snapshot.loaded_models)
+        projected_ram = snapshot.ram_used_bytes + self._ram_overhead_bytes(reserved_bytes) + self._ram_overhead_bytes(candidate_bytes)
         projected_ram_percent = (projected_ram / max(1, snapshot.ram_total_bytes)) * 100.0
-
-        if projected_vram_percent > vram_limit:
-            return AdmissionDecision(
-                False,
-                model,
-                candidate_bytes,
-                projected_vram_percent,
-                projected_ram_percent,
-                f"projected VRAM {projected_vram_percent:.1f}% exceeds {vram_limit:.1f}% budget",
-            )
         if projected_ram_percent > ram_limit:
-            return AdmissionDecision(
-                False,
-                model,
-                candidate_bytes,
-                projected_vram_percent,
-                projected_ram_percent,
-                f"projected RAM {projected_ram_percent:.1f}% exceeds {ram_limit:.1f}% budget",
-            )
-        return AdmissionDecision(
-            True,
-            model,
-            candidate_bytes,
-            projected_vram_percent,
-            projected_ram_percent,
-        )
+            return AdmissionDecision(False, model, candidate_bytes, 0.0, projected_ram_percent, f"projected RAM {projected_ram_percent:.1f}% exceeds {ram_limit:.1f}% budget")
+
+        projection = self._balanced_projection(tuple(healthy), candidate_bytes, reserved_bytes)
+        if projection is None:
+            detail = ", ".join(f"GPU{g.index}={g.vram_percent:.1f}%" for g in snapshot.gpus)
+            return AdmissionDecision(False, model, candidate_bytes, 0.0, projected_ram_percent, f"per-GPU projected VRAM would exceed 90.0% ({detail})")
+        projected_gpu, selected, skew = projection
+        projected_vram_percent = max(projected_gpu) if projected_gpu else 0.0
+
+        if healthy and len(busy) == len(healthy):
+            detail = ", ".join(f"GPU{g.index}={g.util_percent:.1f}%" for g in healthy)
+            return AdmissionDecision(False, model, candidate_bytes, projected_vram_percent, projected_ram_percent, f"all healthy GPUs are busy ({detail})", selected, projected_gpu, skew, True)
+
+        reason = ""
+        if len(projected_gpu) > 1 and skew > skew_limit:
+            reason = f"projected GPU balance skew {skew:.1f}% exceeds target {skew_limit:.1f}%; allowed because per-GPU safety limits remain satisfied"
+        return AdmissionDecision(True, model, candidate_bytes, projected_vram_percent, projected_ram_percent, reason, selected, projected_gpu, skew, False)
+
+    def _wait_for_decision(self, model: str) -> tuple[AdmissionDecision, ResourceSnapshot]:
+        deadline = time.monotonic() + max(0.0, float(self.config.queue_wait_seconds))
+        poll = max(0.05, float(self.config.queue_poll_seconds))
+        while True:
+            with self._file_lock(self.lock_path):
+                reservations = self._read_reservations(); snapshot = self.snapshot(); decision = self._decision(model, snapshot, reservations)
+            if decision.allowed:
+                return decision, snapshot
+            if not decision.busy:
+                raise ResourceAdmissionError(f"Resource admission denied for {model}: {decision.reason}")
+            if time.monotonic() >= deadline:
+                raise ResourceBusyError(f"Resource admission timed out waiting for {model}: {decision.reason}")
+            time.sleep(poll)
 
     @contextmanager
     def admit(self, model: str) -> Iterator[AdmissionDecision]:
         if not self.config.enabled:
-            yield AdmissionDecision(True, model, 0, 0.0, 0.0)
-            return
-
-        with self._file_lock(self.lock_path):
-            reservations = self._read_reservations()
-            snapshot = self.snapshot()
-            decision = self._decision(model, snapshot, reservations)
-            if not decision.allowed:
-                raise ResourceAdmissionError(f"Resource admission denied for {model}: {decision.reason}")
-            if model not in snapshot.loaded_models:
-                existing = reservations.get(model)
-                if existing:
-                    existing["count"] = int(existing.get("count", 0)) + 1
-                    existing["created_at"] = time.time()
-                else:
-                    reservations[model] = {
-                        "bytes": max(1, decision.estimated_model_bytes),
-                        "count": 1,
-                        "created_at": time.time(),
-                    }
-                self._write_reservations(reservations)
+            yield AdmissionDecision(True, model, 0, 0.0, 0.0); return
 
         generation_lock = self._file_lock(self.generation_lock_path) if self.config.serialize_generation else None
+        if generation_lock is not None:
+            generation_lock.__enter__()
         try:
-            if generation_lock is not None:
-                generation_lock.__enter__()
-            yield decision
-        finally:
-            if generation_lock is not None:
-                generation_lock.__exit__(None, None, None)
+            decision, snapshot = self._wait_for_decision(model)
             with self._file_lock(self.lock_path):
                 reservations = self._read_reservations()
-                existing = reservations.get(model)
+                if model not in snapshot.loaded_models:
+                    existing = reservations.get(model)
+                    if existing:
+                        existing["count"] = int(existing.get("count", 0)) + 1; existing["created_at"] = time.time()
+                    else:
+                        reservations[model] = {"bytes": max(1, decision.estimated_model_bytes), "count": 1, "created_at": time.time()}
+                    self._write_reservations(reservations)
+            yield decision
+        finally:
+            with self._file_lock(self.lock_path):
+                reservations = self._read_reservations(); existing = reservations.get(model)
                 if existing:
                     count = int(existing.get("count", 1)) - 1
-                    if count <= 0:
-                        reservations.pop(model, None)
-                    else:
-                        existing["count"] = count
-                        existing["created_at"] = time.time()
+                    if count <= 0: reservations.pop(model, None)
+                    else: existing["count"] = count; existing["created_at"] = time.time()
                     self._write_reservations(reservations)
+            if generation_lock is not None:
+                generation_lock.__exit__(None, None, None)
