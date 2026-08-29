@@ -19,6 +19,7 @@ class ScopedResearchAgent:
         del live
         scope = current_inference_scope()
         self.observed.append(("research", scope.metadata() if scope else None))
+        artifacts.root.mkdir(parents=True, exist_ok=True)
         path = artifacts.root / f"{task_id}-research.json"
         path.write_text("{}\n", encoding="utf-8")
         store.set_status(task_id, TaskStatus.RESEARCH_COMPLETED)
@@ -33,6 +34,7 @@ class ScopedPresentationAgent:
         del kwargs
         scope = current_inference_scope()
         self.observed.append(("presentation", scope.metadata() if scope else None))
+        artifacts.root.mkdir(parents=True, exist_ok=True)
         path = artifacts.root / f"{task_id}-presentation.json"
         path.write_text("{}\n", encoding="utf-8")
         store.set_status(task_id, TaskStatus.PRESENTATION_COMPLETED)
@@ -47,6 +49,7 @@ class UnscopedDailyAgent:
         del store, live
         scope = current_inference_scope()
         self.observed.append(("daily", scope.metadata() if scope else None))
+        artifacts.root.mkdir(parents=True, exist_ok=True)
         json_path = artifacts.root / f"{date}-daily.json"
         md_path = artifacts.root / f"{date}-daily.md"
         json_path.write_text("{}\n", encoding="utf-8")
