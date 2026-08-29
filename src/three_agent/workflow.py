@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .artifacts import ArtifactManager
+from .inference_scope import inference_scope
 from .models import TaskStatus
 from .store import TaskStore
 
@@ -149,9 +150,10 @@ class WorkflowRunner:
 
         try:
             try:
-                paths = self.research_agent.run(
-                    task_id, self.store, self.artifacts, live=live
-                )
+                with inference_scope(task_id, agent_id="research", stage="research"):
+                    paths = self.research_agent.run(
+                        task_id, self.store, self.artifacts, live=live
+                    )
                 research_paths = [str(path) for path in paths]
             finally:
                 self._release_agent_model(self.research_agent, live=live)
@@ -170,17 +172,18 @@ class WorkflowRunner:
             else:
                 stage = "presentation"
                 try:
-                    paths = self.presentation_agent.run(
-                        task_id,
-                        self.store,
-                        self.artifacts,
-                        live=live,
-                        audience=audience,
-                        purpose=purpose,
-                        language=language,
-                        slide_count=slide_count,
-                        output_format=output_format,
-                    )
+                    with inference_scope(task_id, agent_id="presentation", stage="presentation"):
+                        paths = self.presentation_agent.run(
+                            task_id,
+                            self.store,
+                            self.artifacts,
+                            live=live,
+                            audience=audience,
+                            purpose=purpose,
+                            language=language,
+                            slide_count=slide_count,
+                            output_format=output_format,
+                        )
                     presentation_paths = [str(path) for path in paths]
                 finally:
                     self._release_agent_model(self.presentation_agent, live=live)
@@ -218,6 +221,8 @@ class WorkflowRunner:
         try:
             stage = "daily_report"
             try:
+                # Daily Report is date-wide and may cover many tasks. Do not falsely
+                # attribute its inference cost to the one workflow task that triggered it.
                 paths = self.daily_agent.run(
                     target_date, self.store, self.artifacts, live=live
                 )
