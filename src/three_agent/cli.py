@@ -8,8 +8,10 @@ from pathlib import Path
 
 from .benchmark_snapshot import build_benchmark_manifest, write_benchmark_manifest
 from .config import load_config
+from .execution_budget import ExecutionBudgetExceeded
 from .inference_scope import inference_scope
 from .metrics_snapshot import MetricsSnapshotService
+from .models import TaskStatus
 from .optimization_gate import OptimizationAcceptanceGate, OptimizationGatePolicy
 from .orchestrator import Orchestrator
 from .prefix_reuse import PrefixReusePolicy, PrefixReuseReport, REUSE_REPORT_SCHEMA
@@ -159,23 +161,24 @@ def _reuse_telemetry_path(args: argparse.Namespace) -> Path:
 
 @contextmanager
 def _runtime_task_scope(orchestrator: Orchestrator, task_id: str, *, agent_id: str, stage: str):
-    """Bind the same immutable runtime authority used by the full workflow.
-
-    Direct stage commands are production-capable entry points, so a plain task ID
-    ContextVar is insufficient. They must pass through RuntimeValidatorBridge
-    before model/tool/network access just like `workflow-run`.
-    """
+    """Bind runtime authority and one persistent direct-stage step reservation."""
     attempt = orchestrator.runtime_validator_bridge.begin(task_id)
     if attempt.execution_budget is None or attempt.model_authority is None:
         raise RuntimeError("RUNTIME_TASK_AUTHORITY_NOT_BOUND")
-    with inference_scope(
-        task_id,
-        agent_id=agent_id,
-        stage=stage,
-        execution_budget=attempt.execution_budget,
-        model_authority=attempt.model_authority,
-    ):
-        yield attempt
+    try:
+        attempt.execution_budget.reserve(steps=1)
+        with inference_scope(
+            task_id,
+            agent_id=agent_id,
+            stage=stage,
+            execution_budget=attempt.execution_budget,
+            model_authority=attempt.model_authority,
+        ):
+            yield attempt
+        attempt.execution_budget.assert_active()
+    except ExecutionBudgetExceeded:
+        orchestrator.store.set_status(task_id, TaskStatus.FAILED)
+        raise
 
 
 def main(argv: list[str] | None = None) -> int:

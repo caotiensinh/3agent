@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -32,6 +32,23 @@ class TaskStore:
         conn = sqlite3.connect(self.db_path, factory=_ClosingConnection)
         conn.row_factory = sqlite3.Row
         return conn
+
+    @staticmethod
+    def _ensure_execution_budget_columns(conn: sqlite3.Connection) -> None:
+        """Forward-migrate D6 retry/escalation rows to the complete D0 budget state."""
+        rows = conn.execute("PRAGMA table_info(task_execution_budget_usage)").fetchall()
+        present = {str(row["name"]) for row in rows}
+        additions = (
+            ("max_steps", "max_steps INTEGER NOT NULL DEFAULT -1"),
+            ("max_tool_calls", "max_tool_calls INTEGER NOT NULL DEFAULT -1"),
+            ("max_wall_time_ms", "max_wall_time_ms INTEGER NOT NULL DEFAULT -1"),
+            ("steps_used", "steps_used INTEGER NOT NULL DEFAULT 0"),
+            ("tool_calls_used", "tool_calls_used INTEGER NOT NULL DEFAULT 0"),
+            ("deadline_at", "deadline_at TEXT NOT NULL DEFAULT ''"),
+        )
+        for name, ddl in additions:
+            if name not in present:
+                conn.execute(f"ALTER TABLE task_execution_budget_usage ADD COLUMN {ddl}")
 
     def initialize(self) -> None:
         with self.connect() as conn:
@@ -80,10 +97,16 @@ class TaskStore:
                 );
                 CREATE TABLE IF NOT EXISTS task_execution_budget_usage (
                     task_id TEXT PRIMARY KEY,
+                    max_steps INTEGER NOT NULL,
+                    max_tool_calls INTEGER NOT NULL,
                     max_retries INTEGER NOT NULL,
                     max_escalations INTEGER NOT NULL,
+                    max_wall_time_ms INTEGER NOT NULL,
+                    steps_used INTEGER NOT NULL DEFAULT 0,
+                    tool_calls_used INTEGER NOT NULL DEFAULT 0,
                     retries_used INTEGER NOT NULL DEFAULT 0,
                     escalations_used INTEGER NOT NULL DEFAULT 0,
+                    deadline_at TEXT NOT NULL,
                     bound_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(task_id) REFERENCES tasks(task_id)
@@ -104,6 +127,7 @@ class TaskStore:
                     ON validator_results(task_id, validator, id);
                 """
             )
+            self._ensure_execution_budget_columns(conn)
 
     def _next_task_id(self) -> str:
         today = datetime.now(TZ).strftime("%Y%m%d")
@@ -242,28 +266,51 @@ class TaskStore:
             raise ValueError(f"{field} must be an integer >= 0")
         return value
 
-    def _bound_execution_limits(self, task_id: str) -> tuple[int, int]:
+    def _bound_execution_limits(self, task_id: str) -> tuple[int, int, int, int, int]:
         contract = self.task_contract_for_task(task_id)
         if contract is None:
             raise ValueError("TASK_CONTRACT_NOT_BOUND")
         execution = contract.get("execution_budget")
         if not isinstance(execution, dict):
             raise ValueError("BOUND_TASK_CONTRACT_EXECUTION_BUDGET_MISSING")
-        retries = self._budget_value(execution.get("max_retries"), "max_retries")
-        escalations = self._budget_value(execution.get("max_escalations"), "max_escalations")
-        return retries, escalations
+        return (
+            self._budget_value(execution.get("max_steps"), "max_steps"),
+            self._budget_value(execution.get("max_tool_calls"), "max_tool_calls"),
+            self._budget_value(execution.get("max_retries"), "max_retries"),
+            self._budget_value(execution.get("max_escalations"), "max_escalations"),
+            self._budget_value(execution.get("max_wall_time_ms"), "max_wall_time_ms"),
+        )
+
+    @staticmethod
+    def _deadline(bound_at: str, max_wall_time_ms: int) -> str:
+        started = datetime.fromisoformat(str(bound_at))
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=TZ)
+        return (started + timedelta(milliseconds=max_wall_time_ms)).isoformat()
+
+    @staticmethod
+    def _deadline_expired(deadline_at: str, now: datetime) -> bool:
+        try:
+            deadline = datetime.fromisoformat(str(deadline_at))
+        except ValueError as exc:
+            raise ValueError("TASK_EXECUTION_BUDGET_DEADLINE_INVALID") from exc
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=TZ)
+        return now >= deadline
 
     def bind_task_execution_budget(self, task_id: str) -> dict[str, int | str]:
-        """Persist immutable retry/escalation limits derived only from TaskContract.
+        """Persist all immutable execution limits derived only from TaskContract.
 
-        Rebinding after a process restart is idempotent and preserves usage. A
-        caller cannot supply or inflate limits independently from the already-bound
-        authoritative contract.
+        Rebinding after a restart is idempotent and preserves counters/deadline.
+        Existing D6 retry/escalation rows are forward-migrated without extending
+        their original bound-at wall-time window.
         """
         self.get_task(task_id)
-        retries, escalations = self._bound_execution_limits(task_id)
-        now = datetime.now(TZ).isoformat()
+        max_steps, max_tools, retries, escalations, max_wall = self._bound_execution_limits(task_id)
+        now = datetime.now(TZ)
+        now_text = now.isoformat()
         created = False
+        migrated = False
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -271,25 +318,59 @@ class TaskStore:
                 (task_id,),
             ).fetchone()
             if row is None:
+                deadline = self._deadline(now_text, max_wall)
                 conn.execute(
                     """
                     INSERT INTO task_execution_budget_usage(
-                        task_id,max_retries,max_escalations,retries_used,
-                        escalations_used,bound_at,updated_at
-                    ) VALUES(?,?,?,?,?,?,?)
+                        task_id,max_steps,max_tool_calls,max_retries,max_escalations,
+                        max_wall_time_ms,steps_used,tool_calls_used,retries_used,
+                        escalations_used,deadline_at,bound_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
-                    (task_id, retries, escalations, 0, 0, now, now),
+                    (
+                        task_id, max_steps, max_tools, retries, escalations, max_wall,
+                        0, 0, 0, 0, deadline, now_text, now_text,
+                    ),
                 )
                 created = True
-            elif int(row["max_retries"]) != retries or int(row["max_escalations"]) != escalations:
-                raise ValueError("TASK_EXECUTION_BUDGET_IMMUTABLE_MISMATCH")
-        if created:
+            else:
+                if int(row["max_retries"]) != retries or int(row["max_escalations"]) != escalations:
+                    raise ValueError("TASK_EXECUTION_BUDGET_IMMUTABLE_MISMATCH")
+                legacy = (
+                    int(row["max_steps"]) < 0
+                    or int(row["max_tool_calls"]) < 0
+                    or int(row["max_wall_time_ms"]) < 0
+                    or not str(row["deadline_at"])
+                )
+                if legacy:
+                    deadline = self._deadline(str(row["bound_at"]), max_wall)
+                    conn.execute(
+                        """
+                        UPDATE task_execution_budget_usage
+                        SET max_steps = ?, max_tool_calls = ?, max_wall_time_ms = ?,
+                            deadline_at = ?, updated_at = ?
+                        WHERE task_id = ?
+                        """,
+                        (max_steps, max_tools, max_wall, deadline, now_text, task_id),
+                    )
+                    migrated = True
+                elif (
+                    int(row["max_steps"]) != max_steps
+                    or int(row["max_tool_calls"]) != max_tools
+                    or int(row["max_wall_time_ms"]) != max_wall
+                ):
+                    raise ValueError("TASK_EXECUTION_BUDGET_IMMUTABLE_MISMATCH")
+        if created or migrated:
             self.record_activity(
                 task_id,
                 "execution_budget",
-                "execution_budget_bound",
+                "execution_budget_bound" if created else "execution_budget_extended",
                 "ok",
-                f"max_retries={retries} max_escalations={escalations}",
+                (
+                    f"max_steps={max_steps} max_tool_calls={max_tools} "
+                    f"max_retries={retries} max_escalations={escalations} "
+                    f"max_wall_time_ms={max_wall}"
+                ),
             )
         return self.task_execution_budget_for_task(task_id)
 
@@ -303,10 +384,16 @@ class TaskStore:
             raise ValueError("TASK_EXECUTION_BUDGET_NOT_BOUND")
         return {
             "task_id": str(row["task_id"]),
+            "max_steps": int(row["max_steps"]),
+            "max_tool_calls": int(row["max_tool_calls"]),
             "max_retries": int(row["max_retries"]),
             "max_escalations": int(row["max_escalations"]),
+            "max_wall_time_ms": int(row["max_wall_time_ms"]),
+            "steps_used": int(row["steps_used"]),
+            "tool_calls_used": int(row["tool_calls_used"]),
             "retries_used": int(row["retries_used"]),
             "escalations_used": int(row["escalations_used"]),
+            "deadline_at": str(row["deadline_at"]),
             "bound_at": str(row["bound_at"]),
             "updated_at": str(row["updated_at"]),
         }
@@ -315,14 +402,17 @@ class TaskStore:
         self,
         task_id: str,
         *,
+        steps: int = 0,
+        tool_calls: int = 0,
         retries: int = 0,
         escalations: int = 0,
     ) -> dict[str, int | str]:
+        step_delta = self._budget_value(steps, "steps")
+        tool_delta = self._budget_value(tool_calls, "tool_calls")
         retry_delta = self._budget_value(retries, "retries")
         escalation_delta = self._budget_value(escalations, "escalations")
-        if retry_delta == 0 and escalation_delta == 0:
-            return self.task_execution_budget_for_task(task_id)
-        now = datetime.now(TZ).isoformat()
+        now = datetime.now(TZ)
+        now_text = now.isoformat()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
@@ -331,24 +421,35 @@ class TaskStore:
             ).fetchone()
             if row is None:
                 raise ValueError("TASK_EXECUTION_BUDGET_NOT_BOUND")
-            current_retries = int(row["retries_used"])
-            current_escalations = int(row["escalations_used"])
-            max_retries = int(row["max_retries"])
-            max_escalations = int(row["max_escalations"])
-            new_retries = current_retries + retry_delta
-            new_escalations = current_escalations + escalation_delta
-            if new_retries > max_retries:
+            if self._deadline_expired(str(row["deadline_at"]), now):
+                raise ValueError("TASK_WALL_TIME_BUDGET_EXHAUSTED")
+
+            new_steps = int(row["steps_used"]) + step_delta
+            new_tools = int(row["tool_calls_used"]) + tool_delta
+            new_retries = int(row["retries_used"]) + retry_delta
+            new_escalations = int(row["escalations_used"]) + escalation_delta
+            if new_steps > int(row["max_steps"]):
+                raise ValueError("TASK_STEP_BUDGET_EXHAUSTED")
+            if new_tools > int(row["max_tool_calls"]):
+                raise ValueError("TASK_TOOL_CALL_BUDGET_EXHAUSTED")
+            if new_retries > int(row["max_retries"]):
                 raise ValueError("MODEL_RETRY_BUDGET_EXHAUSTED")
-            if new_escalations > max_escalations:
+            if new_escalations > int(row["max_escalations"]):
                 raise ValueError("MODEL_ESCALATION_BUDGET_EXHAUSTED")
-            conn.execute(
-                """
-                UPDATE task_execution_budget_usage
-                SET retries_used = ?, escalations_used = ?, updated_at = ?
-                WHERE task_id = ?
-                """,
-                (new_retries, new_escalations, now, task_id),
-            )
+
+            if step_delta or tool_delta or retry_delta or escalation_delta:
+                conn.execute(
+                    """
+                    UPDATE task_execution_budget_usage
+                    SET steps_used = ?, tool_calls_used = ?, retries_used = ?,
+                        escalations_used = ?, updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (
+                        new_steps, new_tools, new_retries, new_escalations,
+                        now_text, task_id,
+                    ),
+                )
         return self.task_execution_budget_for_task(task_id)
 
     def record_validator_result(

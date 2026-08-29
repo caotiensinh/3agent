@@ -139,7 +139,7 @@ class DeterministicRetrievalExecutorTests(unittest.TestCase):
             InboundKnowledgeImporter(knowledge).import_bundle(exported)
         return store, artifacts, knowledge
 
-    def test_verified_retrieval_completes_with_zero_inference_telemetry(self):
+    def test_verified_retrieval_completes_with_zero_inference_telemetry_and_persistent_budget(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store, artifacts, knowledge = self._runtime(root)
@@ -170,8 +170,19 @@ class DeterministicRetrievalExecutorTests(unittest.TestCase):
             self.assertEqual(contract["model_policy"]["initial_tier"], "none")
             self.assertEqual(contract["execution_budget"]["max_escalations"], 0)
 
+            budget = store.task_execution_budget_for_task(result.task_id)
+            self.assertEqual(budget["steps_used"], 1)
+            self.assertEqual(budget["tool_calls_used"], 0)
+            self.assertEqual(budget["retries_used"], 0)
+            self.assertEqual(budget["escalations_used"], 0)
+            self.assertTrue(budget["deadline_at"])
+
             artifact = json.loads(Path(result.artifact_path).read_text(encoding="utf-8"))
             self.assertIn("CONFIDENTIAL-MARKER", artifact["context"]["text"])
+            self.assertEqual(artifact["execution_budget"]["steps_used"], 1)
+            self.assertEqual(artifact["execution_budget"]["tool_calls_used"], 0)
+            self.assertEqual(artifact["execution_budget"]["max_model_retries"], 0)
+            self.assertEqual(artifact["execution_budget"]["max_model_escalations"], 0)
             ledger = ValidatorLedger(store).export_results(result.task_id)
             serialized = json.dumps(ledger)
             self.assertNotIn("CONFIDENTIAL-MARKER", serialized)
@@ -192,6 +203,8 @@ class DeterministicRetrievalExecutorTests(unittest.TestCase):
             self.assertEqual(result.task_status, TaskStatus.FAILED.value)
             self.assertFalse(result.verification["verified"])
             self.assertIn("evidence", result.verification["failed_validators"])
+            budget = store.task_execution_budget_for_task(result.task_id)
+            self.assertEqual(budget["steps_used"], 1)
 
     def test_high_risk_retrieval_waits_for_human_instead_of_self_approving(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -207,6 +220,8 @@ class DeterministicRetrievalExecutorTests(unittest.TestCase):
             self.assertFalse(result.verification["verified"])
             self.assertEqual(result.verification["missing_validators"], ["human"])
             self.assertNotIn("human", result.verification["passed_validators"])
+            budget = store.task_execution_budget_for_task(result.task_id)
+            self.assertEqual(budget["steps_used"], 1)
 
 
 if __name__ == "__main__":

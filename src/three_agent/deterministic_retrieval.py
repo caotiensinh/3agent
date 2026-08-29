@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .artifacts import ArtifactManager
 from .context_engine import ContextEngine
+from .execution_budget import ExecutionBudgetExceeded, TaskExecutionBudgetState
 from .knowledge_plane import LocalKnowledgeIndex
 from .models import TaskStatus
 from .route_planner import DeterministicRoutePlanner
@@ -44,10 +45,9 @@ class DeterministicRetrievalResult:
 class DeterministicRetrievalExecutor:
     """Verified local retrieval lane that performs zero LLM inference.
 
-    This executor is intentionally narrow. It searches only the already-imported
-    local public-knowledge mirror through ContextEngine. It has no Internet gateway,
-    no model client and no escalation path. Task completion still requires an
-    immutable TaskContract plus authoritative policy/evidence validator PASS.
+    NO_LLM does not mean no execution budget. This lane binds the same immutable
+    persistent TaskContract execution budget, reserves one top-level step and
+    verifies the wall-time deadline before artifact/final completion.
     """
 
     def __init__(
@@ -65,6 +65,26 @@ class DeterministicRetrievalExecutor:
     @staticmethod
     def _artifact_ref(path: Path) -> str:
         return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def _failed_result(
+        self,
+        task_id: str,
+        route: dict,
+        *,
+        error: str,
+        artifact_path: str | None = None,
+    ) -> DeterministicRetrievalResult:
+        self.store.set_status(task_id, TaskStatus.FAILED)
+        verification = self.ledger.evaluate(task_id)
+        return DeterministicRetrievalResult(
+            task_id=task_id,
+            status="failed",
+            task_status=TaskStatus.FAILED.value,
+            route=route,
+            artifact_path=artifact_path,
+            verification=verification.to_dict(),
+            error=error[:600],
+        )
 
     def run(
         self,
@@ -96,20 +116,42 @@ class DeterministicRetrievalExecutor:
             deterministic_only=True,
         )
         contract_digest = self.ledger.bind_contract(contract)
-        self.ledger.record(
-            task.task_id,
-            "policy",
-            status="passed",
-            reason_code="POLICY_CONTRACT_VALIDATED",
-            evidence_refs=(contract_digest,),
-            validator_version="deterministic-retrieval-policy/v1",
-            attempt=1,
-        )
-
         route = DeterministicRoutePlanner.plan(contract)
         if route.route != "NO_LLM":
             self.store.set_status(task.task_id, TaskStatus.FAILED)
             raise RuntimeError("DETERMINISTIC_RETRIEVAL_ROUTE_NOT_NO_LLM")
+
+        try:
+            budget = TaskExecutionBudgetState.from_bound_contract(
+                self.store,
+                task.task_id,
+            )
+            budget.reserve(steps=1)
+        except Exception as exc:
+            self.ledger.record(
+                task.task_id,
+                "policy",
+                status="failed",
+                reason_code="POLICY_EXECUTION_BUDGET_BIND_FAILED",
+                evidence_refs=(contract_digest,),
+                validator_version="deterministic-retrieval-policy/v2",
+                attempt=1,
+            )
+            return self._failed_result(
+                task.task_id,
+                route.to_dict(),
+                error=f"{type(exc).__name__}: {exc}",
+            )
+
+        self.ledger.record(
+            task.task_id,
+            "policy",
+            status="passed",
+            reason_code="POLICY_CONTRACT_AND_BUDGET_VALIDATED",
+            evidence_refs=(contract_digest,),
+            validator_version="deterministic-retrieval-policy/v2",
+            attempt=1,
+        )
         self.store.record_activity(
             task.task_id,
             "route_planner",
@@ -128,25 +170,25 @@ class DeterministicRetrievalExecutor:
                 contract,
                 max_hits=int(max_hits),
             )
+            budget.assert_active()
         except Exception as exc:
+            reason = (
+                "DETERMINISTIC_RETRIEVAL_BUDGET_EXHAUSTED"
+                if isinstance(exc, ExecutionBudgetExceeded)
+                else "DETERMINISTIC_RETRIEVAL_EXECUTION_FAILED"
+            )
             self.ledger.record(
                 task.task_id,
                 "evidence",
                 status="failed",
-                reason_code="DETERMINISTIC_RETRIEVAL_EXECUTION_FAILED",
-                validator_version="deterministic-retrieval-evidence/v1",
+                reason_code=reason,
+                validator_version="deterministic-retrieval-evidence/v2",
                 attempt=1,
             )
-            self.store.set_status(task.task_id, TaskStatus.FAILED)
-            verification = self.ledger.evaluate(task.task_id)
-            return DeterministicRetrievalResult(
-                task_id=task.task_id,
-                status="failed",
-                task_status=TaskStatus.FAILED.value,
-                route=route.to_dict(),
-                artifact_path=None,
-                verification=verification.to_dict(),
-                error=f"{type(exc).__name__}: {exc}"[:600],
+            return self._failed_result(
+                task.task_id,
+                route.to_dict(),
+                error=f"{type(exc).__name__}: {exc}",
             )
 
         payload = {
@@ -154,6 +196,7 @@ class DeterministicRetrievalExecutor:
             "task_id": task.task_id,
             "route": route.to_dict(),
             "contract_sha256": contract_digest,
+            "execution_budget": budget.snapshot(),
             "context": packed.to_dict(),
         }
         json_path, _ = self.artifacts.write_task_artifact(
@@ -191,9 +234,28 @@ class DeterministicRetrievalExecutor:
                 else "DETERMINISTIC_RETRIEVAL_EVIDENCE_MISSING"
             ),
             evidence_refs=(artifact_ref,),
-            validator_version="deterministic-retrieval-evidence/v1",
+            validator_version="deterministic-retrieval-evidence/v2",
             attempt=1,
         )
+
+        try:
+            budget.assert_active()
+        except ExecutionBudgetExceeded as exc:
+            self.ledger.record(
+                task.task_id,
+                "evidence",
+                status="failed",
+                reason_code="DETERMINISTIC_RETRIEVAL_BUDGET_EXHAUSTED",
+                evidence_refs=(artifact_ref,),
+                validator_version="deterministic-retrieval-evidence/v2",
+                attempt=2,
+            )
+            return self._failed_result(
+                task.task_id,
+                route.to_dict(),
+                error=str(exc),
+                artifact_path=str(json_path),
+            )
 
         verification = self.ledger.evaluate(task.task_id)
         if verification.verified:

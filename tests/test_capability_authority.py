@@ -52,6 +52,19 @@ class FakeBridge:
         return self.attempt
 
 
+class FakeBudget:
+    def __init__(self, task_id):
+        self.task_id = task_id
+        self.reservations = []
+        self.active_checks = 0
+
+    def reserve(self, **kwargs):
+        self.reservations.append(dict(kwargs))
+
+    def assert_active(self):
+        self.active_checks += 1
+
+
 class CapabilityAuthorityTests(unittest.TestCase):
     @staticmethod
     def _public_contract(task_id="TASK-PUBLIC"):
@@ -172,10 +185,10 @@ class CapabilityAuthorityTests(unittest.TestCase):
             self.assertEqual(derived.fingerprint, direct.fingerprint)
             self.assertEqual(derived.allowed_tools, contract.allowed_tools)
 
-    def test_direct_cli_stage_scope_binds_runtime_bridge_authority(self):
+    def test_direct_cli_stage_scope_binds_runtime_bridge_authority_and_budget(self):
         contract = self._public_contract("TASK-DIRECT")
         model_authority = TaskModelAuthority.from_contract(contract)
-        budget = SimpleNamespace(task_id=contract.task_id)
+        budget = FakeBudget(contract.task_id)
         bridge = FakeBridge(
             SimpleNamespace(
                 execution_budget=budget,
@@ -192,13 +205,15 @@ class CapabilityAuthorityTests(unittest.TestCase):
             self.assertIs(current_model_authority(), model_authority)
             self.assertIsNotNone(current_capability_authority())
         self.assertEqual(bridge.calls, [contract.task_id])
+        self.assertEqual(budget.reservations, [{"steps": 1}])
+        self.assertEqual(budget.active_checks, 1)
         self.assertIsNone(current_model_authority())
         self.assertIsNone(current_capability_authority())
 
     def test_direct_cli_stage_scope_fails_closed_without_bound_authority(self):
         bridge = FakeBridge(
             SimpleNamespace(
-                execution_budget=SimpleNamespace(task_id="TASK-DIRECT-NONE"),
+                execution_budget=FakeBudget("TASK-DIRECT-NONE"),
                 model_authority=None,
             )
         )
