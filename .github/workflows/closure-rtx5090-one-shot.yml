@@ -94,55 +94,74 @@ jobs:
           EVIDENCE_ROOT="$EVIDENCE_ROOT" MODEL="$MODEL" CANDIDATE_ROOT="$GITHUB_WORKSPACE/candidate" python - <<'PY'
           import json, os
           from pathlib import Path
+          from three_agent.benchmark_isolation import BenchmarkIsolation, BenchmarkVariantSpec
           from three_agent.config import load_config
           from three_agent.orchestrator import Orchestrator
+          from three_agent.resource_budget import ResourceAdmissionError
 
           root = Path(os.environ['EVIDENCE_ROOT'])
           model = os.environ['MODEL']
-          config = load_config(Path(os.environ['CANDIDATE_ROOT']) / 'config/workspace.secure.json')
-          orchestrator = Orchestrator(config)
-          orchestrator.initialize()
           result = {
               'schema_version': 'workspace-model-runtime-diagnostic/v1',
               'model': model,
+              'isolated_storage_passed': False,
               'resource_admission_passed': False,
               'structured_inference_passed': False,
               'failure_type': None,
               'failure_reason_code': None,
+              'resource_admission_detail': None,
               'raw_prompt_recorded': False,
               'raw_response_recorded': False,
           }
           try:
-              manager = orchestrator.resource_manager
-              if manager is not None:
-                  with manager.admit(model):
+              config = load_config(Path(os.environ['CANDIDATE_ROOT']) / 'config/workspace.secure.json')
+              isolation = BenchmarkIsolation(config, root / 'diagnostic-sandbox')
+              with isolation.activate(BenchmarkVariantSpec('diagnostic')) as prepared:
+                  orchestrator = Orchestrator(prepared.config)
+                  orchestrator.initialize()
+                  result['isolated_storage_passed'] = True
+                  manager = orchestrator.resource_manager
+                  if manager is not None:
+                      try:
+                          with manager.admit(model):
+                              result['resource_admission_passed'] = True
+                      except ResourceAdmissionError as exc:
+                          result['failure_type'] = type(exc).__name__
+                          result['failure_reason_code'] = type(exc).__name__
+                          result['resource_admission_detail'] = ' '.join(str(exc).split())[:320]
+                  else:
                       result['resource_admission_passed'] = True
-              else:
-                  result['resource_admission_passed'] = True
-              payload = orchestrator.research_llm.generate_json(
-                  'Return only the requested JSON object.',
-                  'Return ok=true.',
-                  schema={
-                      'type': 'object',
-                      'properties': {'ok': {'type': 'boolean'}},
-                      'required': ['ok'],
-                      'additionalProperties': False,
-                  },
-                  schema_id='workspace-model-runtime-diagnostic-v1',
-                  think=False,
-                  num_predict=32,
-                  trust_domain='workspace-benchmark-diagnostic',
-                  template_version='workspace.benchmark.diagnostic.v1',
-              )
-              result['structured_inference_passed'] = payload == {'ok': True}
-              if not result['structured_inference_passed']:
-                  result['failure_type'] = 'SemanticMismatch'
-                  result['failure_reason_code'] = 'STRUCTURED_DIAGNOSTIC_SEMANTIC_MISMATCH'
+                  if result['resource_admission_passed']:
+                      payload = orchestrator.research_llm.generate_json(
+                          'Return only the requested JSON object.',
+                          'Return ok=true.',
+                          schema={
+                              'type': 'object',
+                              'properties': {'ok': {'type': 'boolean'}},
+                              'required': ['ok'],
+                              'additionalProperties': False,
+                          },
+                          schema_id='workspace-model-runtime-diagnostic-v1',
+                          think=False,
+                          num_predict=32,
+                          trust_domain='workspace-benchmark-diagnostic',
+                          template_version='workspace.benchmark.diagnostic.v1',
+                      )
+                      result['structured_inference_passed'] = payload == {'ok': True}
+                      if not result['structured_inference_passed']:
+                          result['failure_type'] = 'SemanticMismatch'
+                          result['failure_reason_code'] = 'STRUCTURED_DIAGNOSTIC_SEMANTIC_MISMATCH'
           except Exception as exc:
-              result['failure_type'] = type(exc).__name__
-              result['failure_reason_code'] = str(getattr(exc, 'reason_code', None) or type(exc).__name__)[:160]
+              if result['failure_type'] is None:
+                  result['failure_type'] = type(exc).__name__
+                  result['failure_reason_code'] = str(getattr(exc, 'reason_code', None) or type(exc).__name__)[:160]
           (root / 'model-runtime-diagnostic.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
-          if not (result['resource_admission_passed'] and result['structured_inference_passed']):
+          print(json.dumps(result, sort_keys=True))
+          if not (
+              result['isolated_storage_passed']
+              and result['resource_admission_passed']
+              and result['structured_inference_passed']
+          ):
               raise SystemExit(3)
           PY
 
@@ -219,6 +238,7 @@ jobs:
               verification = json.load(f)
           with open(root + '/observation.json', encoding='utf-8') as f:
               observation = json.load(f)
+          assert diagnostic.get('isolated_storage_passed') is True, diagnostic
           assert diagnostic.get('resource_admission_passed') is True, diagnostic
           assert diagnostic.get('structured_inference_passed') is True, diagnostic
           assert verification.get('passed') is True, verification
