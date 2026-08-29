@@ -1,0 +1,61 @@
+{
+  "schema_version": "workspace-evaluation-profile/v1",
+  "profile_id": "workspace-edge-large-context-v1",
+  "corpus_class": "edge_large_context",
+  "metric_registry_id": "workspace-d3-core-metrics-v1",
+  "holdout_labels_external": true,
+  "cases": [
+    {
+      "case_id": "protected-spans-across-long-context",
+      "dimensions": ["large-context", "protected-spans", "begin-middle-end"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CONTEXT_RECALL_NON_DECREASE",
+        "CRITICAL_SPAN_LOSS_ZERO"
+      ]
+    },
+    {
+      "case_id": "atomic-provenance-at-budget-boundary",
+      "dimensions": ["large-context", "provenance", "budget-boundary"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CRITICAL_SPAN_LOSS_ZERO",
+        "PROVENANCE_ATOMICITY_PASS"
+      ]
+    },
+    {
+      "case_id": "many-source-budget-pressure",
+      "dimensions": ["many-sources", "hard-pack", "recall-pressure"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CONTEXT_RECALL_NON_DECREASE"
+      ]
+    },
+    {
+      "case_id": "adversarial-text-near-critical-span",
+      "dimensions": ["prompt-injection", "critical-span", "large-context"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CRITICAL_SPAN_LOSS_ZERO",
+        "UNTRUSTED_INSTRUCTION_REMAINS_DATA"
+      ]
+    },
+    {
+      "case_id": "exact-source-id-citation-preservation",
+      "dimensions": ["citation", "source-id", "long-context"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CONTEXT_RECALL_NON_DECREASE",
+        "EXACT_SOURCE_ID_PRESERVED"
+      ]
+    }
+  ]
+}

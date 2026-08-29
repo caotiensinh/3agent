@@ -1,0 +1,59 @@
+{
+  "schema_version": "workspace-evaluation-profile/v1",
+  "profile_id": "workspace-efficiency-cache-concurrency-v1",
+  "corpus_class": "efficiency_cache_concurrency",
+  "metric_registry_id": "workspace-d3-core-metrics-v1",
+  "holdout_labels_external": false,
+  "cases": [
+    {
+      "case_id": "fixed-task-quality-before-efficiency",
+      "dimensions": ["fixed-task", "quality-gate", "efficiency"],
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE"
+      ]
+    },
+    {
+      "case_id": "structured-output-under-concurrency",
+      "dimensions": ["concurrency", "structured-output", "schema"],
+      "required_checks": [
+        "STRUCTURED_OUTPUT_NON_REGRESSION",
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE"
+      ]
+    },
+    {
+      "case_id": "measured-resource-benefit",
+      "dimensions": ["tokens", "latency", "resource-accounting"],
+      "required_checks": [
+        "RESOURCE_BENEFIT_MEASURED",
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE"
+      ]
+    },
+    {
+      "case_id": "cache-trust-domain-isolation",
+      "dimensions": ["cache", "trust-domain", "isolation"],
+      "required_checks": [
+        "CACHE_TRUST_ISOLATION_PASS",
+        "STRUCTURED_OUTPUT_NON_REGRESSION"
+      ]
+    },
+    {
+      "case_id": "retry-budget-under-concurrency",
+      "dimensions": ["concurrency", "retry-budget", "escalation-budget"],
+      "required_checks": [
+        "EXECUTION_BUDGET_CONCURRENCY_PASS",
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE"
+      ]
+    },
+    {
+      "case_id": "cache-claim-measurement-honesty",
+      "dimensions": ["cache", "measurement", "telemetry-honesty"],
+      "required_checks": [
+        "NO_UNMEASURED_CACHE_HIT_CLAIM",
+        "RESOURCE_BENEFIT_MEASURED"
+      ]
+    }
+  ]
+}
