@@ -4,6 +4,7 @@ import argparse
 import json
 
 from .config import load_config
+from .inference_scope import inference_scope
 from .orchestrator import Orchestrator
 
 
@@ -98,27 +99,32 @@ def main(argv: list[str] | None = None) -> int:
         task = orchestrator.store.get_task(args.task_id)
         print(json.dumps(task.__dict__ | {"status": task.status.value}, ensure_ascii=False, indent=2))
     elif args.command == "research":
-        paths = orchestrator.research_agent.run(
-            args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live
-        )
+        orchestrator.store.get_task(args.task_id)
+        with inference_scope(args.task_id, agent_id="research", stage="research"):
+            paths = orchestrator.research_agent.run(
+                args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live
+            )
         print("\n".join(str(path) for path in paths))
     elif args.command == "presentation":
-        paths = orchestrator.presentation_agent.run(
-            args.task_id,
-            orchestrator.store,
-            orchestrator.artifacts,
-            live=args.live,
-            audience=args.audience,
-            purpose=args.purpose,
-            language=args.language,
-            slide_count=args.slides,
-            output_format=args.format,
-        )
+        orchestrator.store.get_task(args.task_id)
+        with inference_scope(args.task_id, agent_id="presentation", stage="presentation"):
+            paths = orchestrator.presentation_agent.run(
+                args.task_id,
+                orchestrator.store,
+                orchestrator.artifacts,
+                live=args.live,
+                audience=args.audience,
+                purpose=args.purpose,
+                language=args.language,
+                slide_count=args.slides,
+                output_format=args.format,
+            )
         print("\n".join(str(path) for path in paths))
         presentation_payload = json.loads(paths[0].read_text(encoding="utf-8"))
         for artifact_path in presentation_payload.get("generated_artifacts", {}).values():
             print(artifact_path)
     elif args.command == "daily-report":
+        # Daily reports may aggregate many tasks; no single task scope is assigned.
         paths = orchestrator.daily_report(args.date, live=args.live)
         print("\n".join(str(path) for path in paths))
     return 0
