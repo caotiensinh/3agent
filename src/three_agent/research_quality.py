@@ -3,12 +3,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .runtime_efficiency import sanitize_untrusted_payload
+
 
 _CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
+HANDOFF_SANITIZER_VERSION = "workspace-handoff-sanitizer/v1"
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 def _clean_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    sanitized, _ = sanitize_untrusted_payload(str(value or ""))
+    return re.sub(r"\s+", " ", str(sanitized)).strip()
 
 
 def _claim_key(value: str) -> str:
@@ -53,6 +58,10 @@ def clean_claims(items: Any, valid_source_ids: set[str]) -> tuple[list[dict], li
     The function is intentionally deterministic. The model may propose claims, but
     only claims with collected source IDs can pass through this gate. Optional
     evidence_quotes are retained for later verbatim/numerical validation.
+
+    Untrusted text is normalized before it can become a canonical claim. Embedded
+    role/instruction-like text is preserved as data; build_handoff() records the
+    corresponding security findings for the Agent-1 -> Agent-2 boundary.
     """
     accepted_by_key: dict[str, dict] = {}
     rejected: list[str] = []
@@ -152,6 +161,40 @@ def source_refs(sources: list[dict]) -> list[dict]:
     return refs
 
 
+def _handoff_security_metadata(findings: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    risks = [str(item.get("risk", "low")) for item in findings]
+    max_risk = max(risks, key=lambda value: _RISK_ORDER.get(value, -1), default="low")
+    signal_types = sorted({
+        str(signal)
+        for item in findings
+        for signal in item.get("signals", [])
+        if isinstance(signal, str) and signal
+    })
+    safe_findings = [
+        {
+            "path": str(item.get("path", "")),
+            "risk": str(item.get("risk", "low")),
+            "signals": [
+                str(signal)
+                for signal in item.get("signals", [])
+                if isinstance(signal, str) and signal
+            ],
+        }
+        for item in findings
+    ]
+    return {
+        "sanitizer_version": HANDOFF_SANITIZER_VERSION,
+        "source_agent": "research",
+        "destination_agent": "presentation",
+        "trust_classification": "untrusted_agent_data",
+        "authorization_effect": "none",
+        "max_risk": max_risk,
+        "finding_count": len(safe_findings),
+        "signal_types": signal_types,
+        "findings": safe_findings,
+    }
+
+
 def build_handoff(research: dict) -> dict:
     verified = list(research.get("verified_facts") or [])
     inferences = list(research.get("inferences") or [])
@@ -192,11 +235,11 @@ def build_handoff(research: dict) -> dict:
     if constraint_gaps:
         conclusion = (
             "The collected evidence does not fully satisfy the request's core requirements: "
-            + ", ".join(constraint_gaps)
+            + ", ".join(_clean_text(item) for item in constraint_gaps)
             + ". Unsupported details remain unresolved and must not be treated as verified."
         )
 
-    return {
+    handoff = {
         "schema_version": "1.0",
         "task_id": research.get("task_id"),
         "agent_id": "research",
@@ -229,6 +272,12 @@ def build_handoff(research: dict) -> dict:
         },
         "generated_at": research.get("generated_at"),
     }
+
+    sanitized, findings = sanitize_untrusted_payload(handoff)
+    if not isinstance(sanitized, dict):
+        raise ValueError("research handoff must sanitize to an object")
+    sanitized["handoff_security"] = _handoff_security_metadata(findings)
+    return sanitized
 
 
 def confidence_at_least(value: str, threshold: str) -> bool:
