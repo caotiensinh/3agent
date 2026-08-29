@@ -22,6 +22,7 @@ workspace-benchmark = "three_agent.benchmark_suite:main"
 workspace-chat = "three_agent.chat_gateway_v4:main"
 workspace-egressd = "three_agent.egress_broker:main"
 workspace-knowledge = "three_agent.knowledge_cli:main"
+workspace-retrieval = "three_agent.deterministic_retrieval_cli:main"
 three-agent = "three_agent.cli:main"
 three-agent-chat = "three_agent.chat_gateway_v4:main"
 
