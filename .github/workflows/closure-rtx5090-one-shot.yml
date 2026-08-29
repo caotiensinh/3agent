@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: workspace-closure-rtx5090-one-shot
+  group: workspace-closure-rtx5090-34654bd8
   cancel-in-progress: false
 
 jobs:
