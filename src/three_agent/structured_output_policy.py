@@ -51,16 +51,17 @@ _AGENT_SINGLE_ROUTES: dict[str, tuple[str, dict[str, Any], str]] = {
 
 
 class StructuredOutputPolicyClient:
-    """Deterministic schema policy wrapper around the configured local LLM client.
+    """Schema policy plus metadata-only receipts for structured generation.
 
-    The agent owns *what* operation it is performing; this harness layer owns the
-    structural contract. Once an agent enters a D2 schema-governed phase, every
-    structured generation path for that agent must match a registered route.
+    Receipts contain no prompt, response, evidence, business text, or chain of
+    thought. They exist so artifacts can prove which deterministic structural
+    contract was applied and whether the constrained call validated or failed.
     """
 
     def __init__(self, client: Any, *, agent_id: str):
         self._client = client
         self.agent_id = str(agent_id)
+        self._receipts: list[dict[str, Any]] = []
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
@@ -84,6 +85,9 @@ class StructuredOutputPolicyClient:
             )
         return schema, schema_id
 
+    def structured_output_receipts(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._receipts]
+
     def generate_json(
         self,
         system_prompt: str,
@@ -91,9 +95,38 @@ class StructuredOutputPolicyClient:
         **kwargs: Any,
     ) -> dict[str, Any]:
         route = self._schema_route(user_prompt)
+        schema_id: str | None = None
         if route is not None:
             schema, schema_id = route
             kwargs = dict(kwargs)
             kwargs["schema"] = schema
             kwargs["schema_id"] = schema_id
-        return self._client.generate_json(system_prompt, user_prompt, **kwargs)
+
+        try:
+            result = self._client.generate_json(system_prompt, user_prompt, **kwargs)
+        except Exception as exc:
+            if schema_id is not None:
+                self._receipts.append(
+                    {
+                        "agent_id": self.agent_id,
+                        "schema_id": schema_id,
+                        "validator": "local-json-schema-subset",
+                        "status": "failed",
+                        "error_type": type(exc).__name__,
+                        "raw_content_logged": False,
+                    }
+                )
+            raise
+
+        if schema_id is not None:
+            self._receipts.append(
+                {
+                    "agent_id": self.agent_id,
+                    "schema_id": schema_id,
+                    "validator": "local-json-schema-subset",
+                    "status": "validated",
+                    "error_type": None,
+                    "raw_content_logged": False,
+                }
+            )
+        return result
