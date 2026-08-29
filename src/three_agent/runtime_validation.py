@@ -12,6 +12,7 @@ from .handoff_security import (
     HandoffSecurityValidationError,
     verify_handoff_security_metadata,
 )
+from .model_authority import TaskModelAuthority
 from .models import TaskStatus
 from .presentation_model import handoff_is_presentable
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
@@ -29,17 +30,11 @@ class RuntimeValidationError(RuntimeError):
 class RuntimeValidationAttempt:
     contract_sha256: str
     execution_budget: TaskExecutionBudgetState | None = None
+    model_authority: TaskModelAuthority | None = None
 
 
 class RuntimeValidatorBridge:
-    """Bind production workflow gates to the authoritative Validator Ledger.
-
-    The bridge never asks a model whether work passed. It consumes deterministic
-    contract policy, typed Research handoff integrity/readiness, Presentation
-    lineage/QA artifacts, and compact hashes only. Raw prompts, source bodies,
-    tool output, credentials and business content are never copied into the
-    Validator Ledger.
-    """
+    """Bind production workflow gates to authoritative deterministic state."""
 
     def __init__(
         self,
@@ -119,7 +114,7 @@ class RuntimeValidatorBridge:
         )
 
     def begin(self, task_id: str) -> RuntimeValidationAttempt:
-        """Bind contract, persistent execution budget, policy and route metadata."""
+        """Bind contract, execution budget, model authority, policy and route."""
         contract = self.compiler.compile(
             task_id=task_id,
             task_type="analysis",
@@ -157,13 +152,26 @@ class RuntimeValidatorBridge:
             )
             raise RuntimeValidationError("TASK_EXECUTION_BUDGET_BIND_FAILED") from exc
 
+        try:
+            model_authority = TaskModelAuthority.from_contract(contract)
+        except Exception as exc:
+            self._record(
+                task_id,
+                "policy",
+                passed=False,
+                reason_code="POLICY_MODEL_AUTHORITY_BIND_FAILED",
+                evidence_refs=(digest,),
+                validator_version="runtime-policy/v4",
+            )
+            raise RuntimeValidationError("TASK_MODEL_AUTHORITY_BIND_FAILED") from exc
+
         self._record(
             task_id,
             "policy",
             passed=True,
             reason_code="POLICY_CONTRACT_VALIDATED",
-            evidence_refs=(digest,),
-            validator_version="runtime-policy/v3",
+            evidence_refs=(digest, model_authority.fingerprint),
+            validator_version="runtime-policy/v4",
         )
         route = DeterministicRoutePlanner.plan(contract)
         self.store.record_activity(
@@ -174,7 +182,8 @@ class RuntimeValidatorBridge:
             (
                 f"route={route.route} reason={route.reason_code} "
                 f"initial={route.initial_model_tier} max={route.max_model_tier} "
-                f"escalation={str(route.escalation_allowed).lower()}"
+                f"escalation={str(route.escalation_allowed).lower()} "
+                f"authority={model_authority.fingerprint}"
             ),
         )
         budget = budget_state.snapshot()
@@ -193,6 +202,7 @@ class RuntimeValidatorBridge:
         return RuntimeValidationAttempt(
             contract_sha256=digest,
             execution_budget=budget_state,
+            model_authority=model_authority,
         )
 
     def record_research_evidence(
@@ -202,7 +212,6 @@ class RuntimeValidatorBridge:
         handoff_path: Path | None = None,
         task_status: TaskStatus | None = None,
     ) -> bool:
-        """Record Research evidence outcome from the typed handoff artifact."""
         if handoff_path is None:
             handoff_path = self.artifacts.find_latest_task_artifact(
                 "research", task_id, suffix="_handoff.json"
@@ -302,7 +311,6 @@ class RuntimeValidatorBridge:
         handoff_path: Path | None = None,
         task_status: TaskStatus | None = None,
     ) -> bool:
-        """Record deterministic Presentation schema/semantic/lineage validation."""
         if presentation_path is None:
             presentation_path = self.artifacts.find_latest_task_artifact(
                 "presentations", task_id, suffix=".json"

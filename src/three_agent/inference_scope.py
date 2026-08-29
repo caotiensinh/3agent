@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from .execution_budget import TaskExecutionBudgetState
+from .model_authority import TaskModelAuthority
 
 
 @dataclass(frozen=True)
@@ -14,6 +15,7 @@ class InferenceScope:
     agent_id: str
     stage: str
     execution_budget: TaskExecutionBudgetState | None = None
+    model_authority: TaskModelAuthority | None = None
 
     def metadata(self) -> dict[str, str]:
         return {
@@ -39,6 +41,11 @@ def current_execution_budget() -> TaskExecutionBudgetState | None:
     return scope.execution_budget if scope is not None else None
 
 
+def current_model_authority() -> TaskModelAuthority | None:
+    scope = _CURRENT_SCOPE.get()
+    return scope.model_authority if scope is not None else None
+
+
 @contextmanager
 def inference_scope(
     task_id: str,
@@ -46,13 +53,13 @@ def inference_scope(
     agent_id: str,
     stage: str,
     execution_budget: TaskExecutionBudgetState | None = None,
+    model_authority: TaskModelAuthority | None = None,
 ) -> Iterator[InferenceScope]:
-    """Bind authoritative task attribution and its optional hard execution budget.
+    """Bind authoritative task identity, execution budget and model authority.
 
-    The budget wrapper is derived from the immutable bound TaskContract by the
-    production validator bridge. The same wrapper is passed to Research and
-    Presentation scopes, while persistent usage lives in TaskStore so process
-    restart cannot reset it. Scope metadata remains content-free.
+    Budget and model-authority objects are derived from the immutable TaskContract
+    by the production validator bridge. They are never derived from prompt/model
+    content, and a nested model fallback cannot replace or expand them.
     """
     normalized_task = str(task_id).strip()
     normalized_agent = str(agent_id).strip()
@@ -65,12 +72,15 @@ def inference_scope(
         raise ValueError("stage must be a compact identifier")
     if execution_budget is not None and execution_budget.task_id != normalized_task:
         raise ValueError("execution budget task_id does not match inference scope")
+    if model_authority is not None and model_authority.task_id != normalized_task:
+        raise ValueError("model authority task_id does not match inference scope")
 
     scope = InferenceScope(
         normalized_task,
         normalized_agent,
         normalized_stage,
         execution_budget,
+        model_authority,
     )
     token = _CURRENT_SCOPE.set(scope)
     try:
