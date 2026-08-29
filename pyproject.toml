@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 workspace = "three_agent.cli:main"
 workspace-benchmark = "three_agent.benchmark_suite:main"
+workspace-benchmark-readiness = "three_agent.benchmark_readiness:main"
 workspace-capability = "three_agent.capability_revocation:main"
 workspace-chat = "three_agent.chat_gateway_v4:main"
 workspace-egressd = "three_agent.egress_broker:main"
