@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -13,6 +14,7 @@ from .llm import AdaptiveOllamaClient, OllamaClient
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .store import TaskStore
 from .web_research import WebResearchClient
+from .worker_pool import OllamaWorkerPool
 from .workflow import WorkflowRunner
 
 TZ = ZoneInfo("Asia/Tokyo")
@@ -30,36 +32,95 @@ class Orchestrator:
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
+        resource_config = ResourceBudgetConfig(
+            enabled=True,
+            max_vram_percent=policy.max_vram_percent,
+            max_ram_percent=policy.max_ram_percent,
+            max_gpu_util_percent=policy.max_gpu_util_percent,
+            max_gpu_power_percent=policy.max_gpu_power_percent,
+            max_gpu_temp_c=policy.max_gpu_temp_c,
+            max_balance_skew_percent=policy.max_balance_skew_percent,
+            queue_wait_seconds=policy.queue_wait_seconds,
+            queue_poll_seconds=policy.queue_poll_seconds,
+            model_size_safety_factor=policy.model_size_safety_factor,
+            model_ram_overhead_factor=policy.model_ram_overhead_factor,
+            serialize_generation=policy.serialize_generation,
+            reservation_ttl_seconds=policy.reservation_ttl_seconds,
+        )
+
+        raw_policy = config.raw.get("model_policy", {}) if isinstance(config.raw, dict) else {}
+        raw_workers = raw_policy.get("worker_pool", {}) if isinstance(raw_policy, dict) else {}
+        self.worker_pool_enabled = bool(raw_workers.get("enabled", False)) and policy.enabled
+        self.worker_urls = {
+            "gpu0": os.getenv(
+                "THREE_AGENT_GPU0_OLLAMA_URL",
+                str(raw_workers.get("gpu0_url", "http://127.0.0.1:11435")),
+            ).rstrip("/"),
+            "gpu1": os.getenv(
+                "THREE_AGENT_GPU1_OLLAMA_URL",
+                str(raw_workers.get("gpu1_url", "http://127.0.0.1:11436")),
+            ).rstrip("/"),
+            "dual": os.getenv(
+                "THREE_AGENT_DUAL_OLLAMA_URL",
+                str(raw_workers.get("dual_url", config.llm.base_url)),
+            ).rstrip("/"),
+        }
+
         self.resource_manager = None
-        if policy.enabled and policy.resource_control_enabled:
-            self.resource_manager = ResourceBudgetManager(
-                config.llm.base_url,
-                ResourceBudgetConfig(
-                    enabled=True,
-                    max_vram_percent=policy.max_vram_percent,
-                    max_ram_percent=policy.max_ram_percent,
-                    max_gpu_util_percent=policy.max_gpu_util_percent,
-                    max_gpu_power_percent=policy.max_gpu_power_percent,
-                    max_gpu_temp_c=policy.max_gpu_temp_c,
-                    max_balance_skew_percent=policy.max_balance_skew_percent,
-                    queue_wait_seconds=policy.queue_wait_seconds,
-                    queue_poll_seconds=policy.queue_poll_seconds,
-                    model_size_safety_factor=policy.model_size_safety_factor,
-                    model_ram_overhead_factor=policy.model_ram_overhead_factor,
-                    serialize_generation=policy.serialize_generation,
-                    reservation_ttl_seconds=policy.reservation_ttl_seconds,
-                ),
-            )
+        if policy.enabled and policy.resource_control_enabled and not self.worker_pool_enabled:
+            self.resource_manager = ResourceBudgetManager(config.llm.base_url, resource_config)
 
         if policy.enabled:
-            research_primary = OllamaClient(replace(config.llm, model=policy.research_model), self.resource_manager)
-            presentation_primary = OllamaClient(replace(config.llm, model=policy.presentation_model), self.resource_manager)
-            report_primary = OllamaClient(replace(config.llm, model=policy.report_model), self.resource_manager)
-            deep = OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager) if policy.deep_model else None
-            self.research_llm = AdaptiveOllamaClient(research_primary, deep=deep, deep_escalation=policy.deep_escalation, deep_prompt_chars=policy.deep_prompt_chars, role="research")
-            self.presentation_llm = AdaptiveOllamaClient(presentation_primary, deep=deep, deep_escalation=policy.deep_escalation, deep_prompt_chars=policy.deep_prompt_chars, role="presentation")
-            self.report_llm = AdaptiveOllamaClient(report_primary, deep=None, deep_escalation=False, role="daily_report")
-            if self.resource_manager is not None:
+            if self.worker_pool_enabled:
+                def routed(model: str):
+                    return OllamaWorkerPool(
+                        replace(config.llm, model=model),
+                        resource_config,
+                        gpu0_url=self.worker_urls["gpu0"],
+                        gpu1_url=self.worker_urls["gpu1"],
+                        dual_url=self.worker_urls["dual"],
+                    )
+
+                research_primary = routed(policy.research_model)
+                presentation_primary = routed(policy.presentation_model)
+                report_primary = routed(policy.report_model)
+                deep = routed(policy.deep_model) if policy.deep_model else None
+            else:
+                research_primary = OllamaClient(
+                    replace(config.llm, model=policy.research_model), self.resource_manager
+                )
+                presentation_primary = OllamaClient(
+                    replace(config.llm, model=policy.presentation_model), self.resource_manager
+                )
+                report_primary = OllamaClient(
+                    replace(config.llm, model=policy.report_model), self.resource_manager
+                )
+                deep = (
+                    OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager)
+                    if policy.deep_model
+                    else None
+                )
+            self.research_llm = AdaptiveOllamaClient(
+                research_primary,
+                deep=deep,
+                deep_escalation=policy.deep_escalation,
+                deep_prompt_chars=policy.deep_prompt_chars,
+                role="research",
+            )
+            self.presentation_llm = AdaptiveOllamaClient(
+                presentation_primary,
+                deep=deep,
+                deep_escalation=policy.deep_escalation,
+                deep_prompt_chars=policy.deep_prompt_chars,
+                role="presentation",
+            )
+            self.report_llm = AdaptiveOllamaClient(
+                report_primary,
+                deep=None,
+                deep_escalation=False,
+                role="daily_report",
+            )
+            if policy.resource_control_enabled:
                 self.research_llm.budget_managed_residency = True
                 self.presentation_llm.budget_managed_residency = True
                 self.report_llm.budget_managed_residency = True
@@ -70,14 +131,33 @@ class Orchestrator:
             self.report_llm = shared
 
         self.llm = self.research_llm
-        self.research_agent = ResearchAgent(config.profile_root, self.research_llm, self.web_research, self.knowledge_gateway)
+        self.research_agent = ResearchAgent(
+            config.profile_root,
+            self.research_llm,
+            self.web_research,
+            self.knowledge_gateway,
+        )
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
-        self.workflow = WorkflowRunner(self.store, self.artifacts, self.research_agent, self.presentation_agent, self.daily_agent)
+        self.workflow = WorkflowRunner(
+            self.store,
+            self.artifacts,
+            self.research_agent,
+            self.presentation_agent,
+            self.daily_agent,
+        )
 
     def initialize(self) -> None:
         self.store.initialize()
-        for category in ("research", "presentations", "activity", "daily_reports", "workflow_runs", "reports", "uploads"):
+        for category in (
+            "research",
+            "presentations",
+            "activity",
+            "daily_reports",
+            "workflow_runs",
+            "reports",
+            "uploads",
+        ):
             (self.config.artifact_root / category).mkdir(parents=True, exist_ok=True)
 
     def smoke(self) -> dict:
@@ -111,14 +191,40 @@ class Orchestrator:
             "model_ram_overhead_factor": policy.model_ram_overhead_factor,
             "serialize_generation": policy.serialize_generation,
             "fixed_model_count_limit": False,
+            "worker_pool_enabled": self.worker_pool_enabled,
+            "worker_gpu0_url": self.worker_urls["gpu0"],
+            "worker_gpu1_url": self.worker_urls["gpu1"],
+            "worker_dual_url": self.worker_urls["dual"],
             "research_web_enabled": self.config.internet_gateway.enabled,
             "knowledge_gateway_enabled": True,
             "upload_gateway_enabled": True,
             "e2e_workflow_enabled": True,
         }
 
-    def run_workflow(self, title: str, request: str, *, live: bool = False, audience: str = "R&D internal", purpose: str = "inform", language: str = "ja", slide_count: int = 6, output_format: str = "pptx", report_date: str | None = None):
-        return self.workflow.create_and_run(title, request, live=live, audience=audience, purpose=purpose, language=language, slide_count=slide_count, output_format=output_format, report_date=report_date)
+    def run_workflow(
+        self,
+        title: str,
+        request: str,
+        *,
+        live: bool = False,
+        audience: str = "R&D internal",
+        purpose: str = "inform",
+        language: str = "ja",
+        slide_count: int = 6,
+        output_format: str = "pptx",
+        report_date: str | None = None,
+    ):
+        return self.workflow.create_and_run(
+            title,
+            request,
+            live=live,
+            audience=audience,
+            purpose=purpose,
+            language=language,
+            slide_count=slide_count,
+            output_format=output_format,
+            report_date=report_date,
+        )
 
     def daily_report(self, date: str | None = None, live: bool = False):
         target = date or datetime.now(TZ).strftime("%Y-%m-%d")
