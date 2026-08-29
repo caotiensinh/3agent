@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   observe:
-    runs-on: [self-hosted, Linux, X64, rtx5090]
+    runs-on: [self-hosted]
     timeout-minutes: 30
     env:
       SOURCE_REF: 0cf95cfc0126856b932414967a61ec0e0af5722e
@@ -28,13 +28,15 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Verify exact source boundary
+      - name: Verify exact source and representative host class
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_REF"
           test -z "$(git status --porcelain --untracked-files=no)"
           test "$(uname -s)" = Linux
+          case "$(uname -m)" in x86_64|amd64) ;; *) exit 3 ;; esac
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -eq 2
 
       - name: Create isolated Python environment
         shell: bash
