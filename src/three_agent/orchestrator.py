@@ -41,6 +41,9 @@ class Orchestrator:
                     max_gpu_util_percent=policy.max_gpu_util_percent,
                     max_gpu_power_percent=policy.max_gpu_power_percent,
                     max_gpu_temp_c=policy.max_gpu_temp_c,
+                    max_balance_skew_percent=policy.max_balance_skew_percent,
+                    queue_wait_seconds=policy.queue_wait_seconds,
+                    queue_poll_seconds=policy.queue_poll_seconds,
                     model_size_safety_factor=policy.model_size_safety_factor,
                     model_ram_overhead_factor=policy.model_ram_overhead_factor,
                     serialize_generation=policy.serialize_generation,
@@ -49,44 +52,14 @@ class Orchestrator:
             )
 
         if policy.enabled:
-            research_primary = OllamaClient(
-                replace(config.llm, model=policy.research_model), self.resource_manager
-            )
-            presentation_primary = OllamaClient(
-                replace(config.llm, model=policy.presentation_model), self.resource_manager
-            )
-            report_primary = OllamaClient(
-                replace(config.llm, model=policy.report_model), self.resource_manager
-            )
-            deep = (
-                OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager)
-                if policy.deep_model
-                else None
-            )
-            self.research_llm = AdaptiveOllamaClient(
-                research_primary,
-                deep=deep,
-                deep_escalation=policy.deep_escalation,
-                deep_prompt_chars=policy.deep_prompt_chars,
-                role="research",
-            )
-            self.presentation_llm = AdaptiveOllamaClient(
-                presentation_primary,
-                deep=deep,
-                deep_escalation=policy.deep_escalation,
-                deep_prompt_chars=policy.deep_prompt_chars,
-                role="presentation",
-            )
-            self.report_llm = AdaptiveOllamaClient(
-                report_primary,
-                deep=None,
-                deep_escalation=False,
-                role="daily_report",
-            )
+            research_primary = OllamaClient(replace(config.llm, model=policy.research_model), self.resource_manager)
+            presentation_primary = OllamaClient(replace(config.llm, model=policy.presentation_model), self.resource_manager)
+            report_primary = OllamaClient(replace(config.llm, model=policy.report_model), self.resource_manager)
+            deep = OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager) if policy.deep_model else None
+            self.research_llm = AdaptiveOllamaClient(research_primary, deep=deep, deep_escalation=policy.deep_escalation, deep_prompt_chars=policy.deep_prompt_chars, role="research")
+            self.presentation_llm = AdaptiveOllamaClient(presentation_primary, deep=deep, deep_escalation=policy.deep_escalation, deep_prompt_chars=policy.deep_prompt_chars, role="presentation")
+            self.report_llm = AdaptiveOllamaClient(report_primary, deep=None, deep_escalation=False, role="daily_report")
             if self.resource_manager is not None:
-                # Workflow stage cleanup must not evict models that still fit in
-                # the dynamic residency budget. Ollama may keep multiple models
-                # warm; every new load is re-admitted against live resources.
                 self.research_llm.budget_managed_residency = True
                 self.presentation_llm.budget_managed_residency = True
                 self.report_llm.budget_managed_residency = True
@@ -97,33 +70,14 @@ class Orchestrator:
             self.report_llm = shared
 
         self.llm = self.research_llm
-        self.research_agent = ResearchAgent(
-            config.profile_root,
-            self.research_llm,
-            self.web_research,
-            self.knowledge_gateway,
-        )
+        self.research_agent = ResearchAgent(config.profile_root, self.research_llm, self.web_research, self.knowledge_gateway)
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
-        self.workflow = WorkflowRunner(
-            self.store,
-            self.artifacts,
-            self.research_agent,
-            self.presentation_agent,
-            self.daily_agent,
-        )
+        self.workflow = WorkflowRunner(self.store, self.artifacts, self.research_agent, self.presentation_agent, self.daily_agent)
 
     def initialize(self) -> None:
         self.store.initialize()
-        for category in (
-            "research",
-            "presentations",
-            "activity",
-            "daily_reports",
-            "workflow_runs",
-            "reports",
-            "uploads",
-        ):
+        for category in ("research", "presentations", "activity", "daily_reports", "workflow_runs", "reports", "uploads"):
             (self.config.artifact_root / category).mkdir(parents=True, exist_ok=True)
 
     def smoke(self) -> dict:
@@ -144,11 +98,14 @@ class Orchestrator:
             "deep_model": policy.deep_model if policy.enabled else self.config.llm.model,
             "deep_escalation": bool(policy.enabled and policy.deep_escalation),
             "resource_control_enabled": bool(policy.enabled and policy.resource_control_enabled),
-            "max_vram_percent": policy.max_vram_percent,
+            "resource_control_scope": "per_gpu",
+            "max_vram_percent_per_gpu": policy.max_vram_percent,
             "max_ram_percent": policy.max_ram_percent,
-            "max_gpu_util_percent": policy.max_gpu_util_percent,
+            "gpu_busy_threshold_percent": policy.max_gpu_util_percent,
             "max_gpu_power_percent": policy.max_gpu_power_percent,
             "max_gpu_temp_c": policy.max_gpu_temp_c,
+            "balance_skew_target_percent": policy.max_balance_skew_percent,
+            "gpu_queue_wait_seconds": policy.queue_wait_seconds,
             "model_ram_overhead_factor": policy.model_ram_overhead_factor,
             "serialize_generation": policy.serialize_generation,
             "fixed_model_count_limit": False,
@@ -158,30 +115,8 @@ class Orchestrator:
             "e2e_workflow_enabled": True,
         }
 
-    def run_workflow(
-        self,
-        title: str,
-        request: str,
-        *,
-        live: bool = False,
-        audience: str = "R&D internal",
-        purpose: str = "inform",
-        language: str = "ja",
-        slide_count: int = 6,
-        output_format: str = "pptx",
-        report_date: str | None = None,
-    ):
-        return self.workflow.create_and_run(
-            title,
-            request,
-            live=live,
-            audience=audience,
-            purpose=purpose,
-            language=language,
-            slide_count=slide_count,
-            output_format=output_format,
-            report_date=report_date,
-        )
+    def run_workflow(self, title: str, request: str, *, live: bool = False, audience: str = "R&D internal", purpose: str = "inform", language: str = "ja", slide_count: int = 6, output_format: str = "pptx", report_date: str | None = None):
+        return self.workflow.create_and_run(title, request, live=live, audience=audience, purpose=purpose, language=language, slide_count=slide_count, output_format=output_format, report_date=report_date)
 
     def daily_report(self, date: str | None = None, live: bool = False):
         target = date or datetime.now(TZ).strftime("%Y-%m-%d")
