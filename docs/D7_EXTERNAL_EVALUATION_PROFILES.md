@@ -51,6 +51,28 @@ This profile does not use hidden holdout labels. Results still require evaluator
 
 `RESOURCE_BENEFIT_MEASURED=true` is an evaluator claim backed by referenced benchmark artifacts; this module does not invent the measurement. The real dual-RTX5090 fixed-task benchmark remains a separate execution requirement.
 
+## Representative evidence status — 2026-08-30
+
+The real dual-RTX5090 fixed-task benchmark has now been executed and independently verified for exact source `5472ebbad650d8c466ae0353c3f99408680a770d` in GitHub Actions run `33267084880`.
+
+The evidence verifier passed, but all tested context candidates were rejected by the promotion gate:
+
+- `quality_ranked_v1 / 48000` — not promotion eligible;
+- `quality_ranked_v1 / 40000` — not promotion eligible;
+- `quality_ranked_v1 / 32000` — not promotion eligible.
+
+The same run collected a complete D7-06 precursor hardware observation. Structured-output concurrency, execution-budget concurrency and WorkSpace reuse-opportunity trust-domain isolation passed. However the observation correctly states that backend cache isolation, resource benefit and authoritative GPU-active time were not measured and that evaluator attestation is absent.
+
+Therefore:
+
+- D7-06 is no longer waiting for the first representative hardware observation;
+- the tested optimization candidates are a **NO-GO**;
+- D7-06 cannot emit positive promotion evidence from this run;
+- a future positive D7-06 result still requires a separately attested exact baseline/candidate result satisfying every profile check;
+- D7-05 remains dependent on external holdout labels and evaluator attestation and must not be fabricated inside the repository.
+
+The durable metadata-only closure receipt is `evaluation/representative_hardware_closure_20260830.json`.
+
 ## `workspace-eval-profile`
 
 Without `--result`, the command emits an optimizer-safe profile view containing only test dimensions and required checks.
@@ -67,4 +89,6 @@ The generated evidence uses:
 - exact baseline/candidate refs;
 - evaluator/artifact references only.
 
-D7-05/D7-06 profile infrastructure does not mean representative evidence has already been collected. Production promotion remains blocked until real external results are materialized and admitted by D7-08.
+A representative observation or a verified negative benchmark is sufficient to record a **NO-GO** decision, because that narrows deployment choices. It is not sufficient to create positive promotion evidence.
+
+D7-05/D7-06 profile infrastructure does not mean all positive promotion evidence exists. Production promotion remains blocked until a real external result satisfies every required check and is admitted by D7-08.
