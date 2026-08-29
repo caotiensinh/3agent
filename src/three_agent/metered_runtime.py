@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .capability_authority import CapabilityAuthorityDenied
+from .failure_taxonomy import DEFAULT_FAILURE_TAXONOMY
 from .gateways import ExecutionGateway, InternetGateway
 from .inference_scope import (
     current_capability_authority,
@@ -33,6 +34,11 @@ def _reserve_model_budget(*, retries: int = 0, escalations: int = 0) -> None:
     state = current_execution_budget()
     if state is not None:
         state.reserve(retries=retries, escalations=escalations)
+
+
+def _require_recovery(reason_code: str, operation: str) -> None:
+    """Authorize recovery centrally before consuming budget or invoking fallback."""
+    DEFAULT_FAILURE_TAXONOMY.require_operation(reason_code, operation)
 
 
 def _model_tier_permitted(target_tier: str) -> bool:
@@ -222,7 +228,7 @@ class MeteredExecutionGateway:
 
 
 class MeteredOllamaWorkerPool(OllamaWorkerPool):
-    """Preserve worker routing while enforcing persistent task execution budget."""
+    """Preserve worker routing while enforcing centralized recovery policy."""
 
     def __init__(self, *args, resource_events: ResourceEventRecorder, **kwargs):
         super().__init__(*args, **kwargs)
@@ -247,6 +253,7 @@ class MeteredOllamaWorkerPool(OllamaWorkerPool):
                         if isinstance(exc, ResourceAdmissionError)
                         else "LOCAL_LLM_ERROR"
                     )
+                    _require_recovery(reason, "fallback_worker")
                     _reserve_model_budget(retries=1)
                     self.resource_events.record(
                         "model_retry",
@@ -263,7 +270,7 @@ class MeteredOllamaWorkerPool(OllamaWorkerPool):
 
 
 class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
-    """Adaptive model router with hard budget and monotonic model authority."""
+    """Adaptive model router with hard budgets and centralized failure recovery."""
 
     def __init__(
         self,
@@ -323,6 +330,7 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
             try:
                 return deep_method(system_prompt, user_prompt, **kwargs)
             except ResourceAdmissionError:
+                _require_recovery("RESOURCE_ADMISSION", "fallback_model")
                 _reserve_model_budget(retries=1)
                 self._retry(
                     action="deep_to_primary",
@@ -332,6 +340,7 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
                 )
                 return primary_method(system_prompt, user_prompt, **kwargs)
             except LocalLLMError:
+                _require_recovery("LOCAL_LLM_ERROR", "fallback_model")
                 _reserve_model_budget(retries=1)
                 self._retry(
                     action="deep_to_primary",
@@ -347,6 +356,7 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
             raise
         except LocalLLMError:
             if self.deep_escalation and self._deep_is_distinct() and deep_method is not None:
+                _require_recovery("LOCAL_LLM_ERROR", "escalate_model")
                 _require_model_tier(self.deep_tier)
                 _reserve_model_budget(retries=1, escalations=1)
                 self._retry(
