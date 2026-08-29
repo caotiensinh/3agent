@@ -32,6 +32,9 @@ class ModelPolicyConfig:
     max_gpu_util_percent: float = 95.0
     max_gpu_power_percent: float = 95.0
     max_gpu_temp_c: float = 85.0
+    max_balance_skew_percent: float = 10.0
+    queue_wait_seconds: float = 120.0
+    queue_poll_seconds: float = 1.0
     model_size_safety_factor: float = 1.15
     model_ram_overhead_factor: float = 0.15
     serialize_generation: bool = True
@@ -80,7 +83,6 @@ def _bool_env(name: str, configured: Any, fallback: bool) -> bool:
 
 
 def legacy_model_policy(llm: LLMConfig) -> ModelPolicyConfig:
-    """Single-model compatibility policy for older configs/test fixtures."""
     return ModelPolicyConfig(
         enabled=False,
         fast_model=llm.model,
@@ -106,15 +108,9 @@ def load_config(path: str | None = None) -> AppConfig:
     execution_raw = data.get("execution_gateway", {})
 
     fast_model = _model_env("THREE_AGENT_FAST_MODEL", str(policy_raw.get("fast_model", "")), base_model)
-    research_model = _model_env(
-        "THREE_AGENT_RESEARCH_MODEL", str(policy_raw.get("research_model", "")), base_model
-    )
-    presentation_model = _model_env(
-        "THREE_AGENT_PRESENTATION_MODEL", str(policy_raw.get("presentation_model", "")), fast_model or base_model
-    )
-    report_model = _model_env(
-        "THREE_AGENT_REPORT_MODEL", str(policy_raw.get("report_model", "")), fast_model or base_model
-    )
+    research_model = _model_env("THREE_AGENT_RESEARCH_MODEL", str(policy_raw.get("research_model", "")), base_model)
+    presentation_model = _model_env("THREE_AGENT_PRESENTATION_MODEL", str(policy_raw.get("presentation_model", "")), fast_model or base_model)
+    report_model = _model_env("THREE_AGENT_REPORT_MODEL", str(policy_raw.get("report_model", "")), fast_model or base_model)
     deep_model = _model_env("THREE_AGENT_DEEP_MODEL", str(policy_raw.get("deep_model", "")), research_model)
 
     llm = LLMConfig(
@@ -133,55 +129,19 @@ def load_config(path: str | None = None) -> AppConfig:
         deep_model=deep_model,
         deep_escalation=bool(policy_raw.get("deep_escalation", True)),
         deep_prompt_chars=max(2000, int(policy_raw.get("deep_prompt_chars", 14000))),
-        resource_control_enabled=_bool_env(
-            "THREE_AGENT_RESOURCE_CONTROL",
-            resource_raw.get("enabled"),
-            True,
-        ),
-        max_vram_percent=min(
-            95.0,
-            max(50.0, _float_env("THREE_AGENT_MAX_VRAM_PERCENT", resource_raw.get("max_vram_percent"), 90.0)),
-        ),
-        max_ram_percent=min(
-            95.0,
-            max(50.0, _float_env("THREE_AGENT_MAX_RAM_PERCENT", resource_raw.get("max_ram_percent"), 90.0)),
-        ),
-        max_gpu_util_percent=min(
-            100.0,
-            max(50.0, _float_env("THREE_AGENT_MAX_GPU_UTIL_PERCENT", resource_raw.get("max_gpu_util_percent"), 95.0)),
-        ),
-        max_gpu_power_percent=min(
-            100.0,
-            max(50.0, _float_env("THREE_AGENT_MAX_GPU_POWER_PERCENT", resource_raw.get("max_gpu_power_percent"), 95.0)),
-        ),
-        max_gpu_temp_c=max(
-            60.0,
-            _float_env("THREE_AGENT_MAX_GPU_TEMP_C", resource_raw.get("max_gpu_temp_c"), 85.0),
-        ),
-        model_size_safety_factor=max(
-            1.0,
-            _float_env("THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR", resource_raw.get("model_size_safety_factor"), 1.15),
-        ),
-        model_ram_overhead_factor=min(
-            1.0,
-            max(
-                0.0,
-                _float_env(
-                    "THREE_AGENT_MODEL_RAM_OVERHEAD_FACTOR",
-                    resource_raw.get("model_ram_overhead_factor"),
-                    0.15,
-                ),
-            ),
-        ),
-        serialize_generation=_bool_env(
-            "THREE_AGENT_SERIALIZE_GENERATION",
-            resource_raw.get("serialize_generation"),
-            True,
-        ),
-        reservation_ttl_seconds=max(
-            30,
-            int(resource_raw.get("reservation_ttl_seconds", 900)),
-        ),
+        resource_control_enabled=_bool_env("THREE_AGENT_RESOURCE_CONTROL", resource_raw.get("enabled"), True),
+        max_vram_percent=min(90.0, max(50.0, _float_env("THREE_AGENT_MAX_VRAM_PERCENT", resource_raw.get("max_vram_percent"), 90.0))),
+        max_ram_percent=min(95.0, max(50.0, _float_env("THREE_AGENT_MAX_RAM_PERCENT", resource_raw.get("max_ram_percent"), 90.0))),
+        max_gpu_util_percent=min(100.0, max(50.0, _float_env("THREE_AGENT_MAX_GPU_UTIL_PERCENT", resource_raw.get("max_gpu_util_percent"), 95.0))),
+        max_gpu_power_percent=min(100.0, max(50.0, _float_env("THREE_AGENT_MAX_GPU_POWER_PERCENT", resource_raw.get("max_gpu_power_percent"), 95.0))),
+        max_gpu_temp_c=max(60.0, _float_env("THREE_AGENT_MAX_GPU_TEMP_C", resource_raw.get("max_gpu_temp_c"), 85.0)),
+        max_balance_skew_percent=min(50.0, max(0.0, _float_env("THREE_AGENT_MAX_BALANCE_SKEW_PERCENT", resource_raw.get("max_balance_skew_percent"), 10.0))),
+        queue_wait_seconds=max(0.0, _float_env("THREE_AGENT_GPU_QUEUE_WAIT_SECONDS", resource_raw.get("queue_wait_seconds"), 120.0)),
+        queue_poll_seconds=max(0.05, _float_env("THREE_AGENT_GPU_QUEUE_POLL_SECONDS", resource_raw.get("queue_poll_seconds"), 1.0)),
+        model_size_safety_factor=max(1.0, _float_env("THREE_AGENT_MODEL_SIZE_SAFETY_FACTOR", resource_raw.get("model_size_safety_factor"), 1.15)),
+        model_ram_overhead_factor=min(1.0, max(0.0, _float_env("THREE_AGENT_MODEL_RAM_OVERHEAD_FACTOR", resource_raw.get("model_ram_overhead_factor"), 0.15))),
+        serialize_generation=_bool_env("THREE_AGENT_SERIALIZE_GENERATION", resource_raw.get("serialize_generation"), True),
+        reservation_ttl_seconds=max(30, int(resource_raw.get("reservation_ttl_seconds", 900))),
     )
 
     return AppConfig(
@@ -191,16 +151,8 @@ def load_config(path: str | None = None) -> AppConfig:
         artifact_root=_expand(data.get("artifact_root", "data")),
         profile_root=_expand(data.get("profile_root", "profiles")),
         llm=llm,
-        internet_gateway=GatewayConfig(
-            enabled=bool(internet_raw.get("enabled", True)),
-            allow_all=bool(internet_raw.get("allow_all_outbound_in_test", False)),
-            audit_log=_expand(internet_raw.get("audit_log", "data/activity/internet.jsonl")),
-        ),
-        execution_gateway=GatewayConfig(
-            enabled=bool(execution_raw.get("enabled", True)),
-            allow_all=bool(execution_raw.get("allow_all_commands_in_test", False)),
-            audit_log=_expand(execution_raw.get("audit_log", "data/activity/execution.jsonl")),
-        ),
+        internet_gateway=GatewayConfig(enabled=bool(internet_raw.get("enabled", True)), allow_all=bool(internet_raw.get("allow_all_outbound_in_test", False)), audit_log=_expand(internet_raw.get("audit_log", "data/activity/internet.jsonl"))),
+        execution_gateway=GatewayConfig(enabled=bool(execution_raw.get("enabled", True)), allow_all=bool(execution_raw.get("allow_all_commands_in_test", False)), audit_log=_expand(execution_raw.get("audit_log", "data/activity/execution.jsonl"))),
         raw=data,
         model_policy=policy,
     )
