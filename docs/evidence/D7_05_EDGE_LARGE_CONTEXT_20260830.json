@@ -1,0 +1,73 @@
+{
+  "schema_version": "workspace-d7-evidence-record/v1",
+  "record_id": "d7-05-edge-large-context-20260830",
+  "corpus_class": "edge_large_context",
+  "profile_id": "workspace-edge-large-context-v1",
+  "baseline_ref": "704955f8efba430b1a57b661bc5d03b7e92d2d76",
+  "candidate_ref": "7703137b95cb2985164af5e85fd868915d96a3c9",
+  "workflow_run_id": 33263954693,
+  "workflow_head_sha": "7a766613ce8d224079f30c10fd75709a9a7fc10b",
+  "artifact_id": 9718062818,
+  "artifact_name": "d7-edge-large-context-external-7703137b",
+  "artifact_digest": "sha256:4a34dc8e8ba37d0d2e16201a871c840afba662f5098cca15433f8ba43ba927f2",
+  "profile_sha256": "sha256:96541dfe066fd660a3d216f8a1320258c6a91745ae6380a288af4c64dfdad3e1",
+  "metric_registry_sha256": "sha256:e17c52598f1df2d9984854280ccc588b387853d8910f0b602aaa6804ff98172c",
+  "label_commitment_sha256": "sha256:958f0ecdd8245bc6a977bf1875206f65de11548bba0e47474364dbf30cae0eca",
+  "summary_sha256": "sha256:1c13371623c04279091e76eabe4890ad261be7a1827ed82090c698b329dba1b1",
+  "files": {
+    "edge-result.json": "sha256:6dbea3c72c58602b4d9a62b4f3367f289e5e6397fe63e638eae865d76508dd69",
+    "edge-summary.json": "sha256:5eb6e455c6b96d93d444e4d792d483f0ba43aaabb0e6dd9e1ef884c97ce0661e",
+    "edge-promotion-evidence.json": "sha256:e8e00833743e0e62c717e0440f7f4ca478858b911490882c86f62f340767fc3b"
+  },
+  "acceptance": {
+    "all_required_checks_passed": true,
+    "security_passed": true,
+    "evaluator_attested": true,
+    "raw_holdout_labels_published": false,
+    "raw_source_bodies_published": false,
+    "critical_span_loss_zero": true,
+    "provenance_atomicity_pass": true,
+    "untrusted_instruction_remains_data": true,
+    "exact_source_id_preserved": true,
+    "verified_task_success_non_decrease": true,
+    "first_pass_verified_success_non_decrease": true,
+    "evidence_coverage_non_decrease": true,
+    "context_recall_non_decrease": true
+  },
+  "case_metrics": {
+    "protected-spans-across-long-context": {
+      "candidate_coverage": 0.44444444,
+      "candidate_recall": 0.4163652,
+      "critical_span_loss": 0
+    },
+    "atomic-provenance-at-budget-boundary": {
+      "candidate_coverage": 0.5,
+      "candidate_recall": 0.41781037,
+      "critical_span_loss": 0
+    },
+    "many-source-budget-pressure": {
+      "candidate_coverage": 0.375,
+      "candidate_recall": 0.32844808,
+      "critical_span_loss": 0
+    },
+    "adversarial-text-near-critical-span": {
+      "candidate_coverage": 1.0,
+      "candidate_recall": 1.0,
+      "critical_span_loss": 0
+    },
+    "exact-source-id-citation-preservation": {
+      "candidate_coverage": 1.0,
+      "candidate_recall": 1.0,
+      "critical_span_loss": 0
+    }
+  },
+  "privacy": {
+    "raw_holdout_labels_recorded": false,
+    "raw_source_bodies_recorded": false,
+    "raw_prompts_recorded": false,
+    "raw_model_responses_recorded": false,
+    "hostname_recorded": false,
+    "username_recorded": false,
+    "ip_address_recorded": false
+  }
+}
