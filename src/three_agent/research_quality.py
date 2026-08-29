@@ -8,6 +8,10 @@ from .runtime_efficiency import sanitize_untrusted_payload
 
 
 _CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
+_UNCITED_REJECTION_PREFIXES = (
+    "Uncited model claim rejected:",
+    "Uncited model inference rejected:",
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -155,6 +159,49 @@ def source_refs(sources: list[dict]) -> list[dict]:
     return refs
 
 
+def evidence_claim_accounting(research: dict) -> dict[str, int | float | None]:
+    """Derive D3-05 claim coverage from deterministic Research gate outcomes.
+
+    A material claim requiring evidence is either:
+    - a verified-fact or inference candidate that survived citation/evidence gates; or
+    - a fact/inference candidate explicitly rejected for missing source lineage; or
+    - a verified-fact candidate explicitly rejected by the quantitative evidence gate.
+
+    Conflicts, request constraint gaps, generic unresolved questions and narrative
+    conclusions are excluded from this denominator because the current Research
+    contract does not classify them as material claim candidates. This avoids
+    manufacturing recall/coverage from free-form prose.
+    """
+    verified = research.get("verified_facts")
+    inferences = research.get("inferences")
+    unresolved = research.get("unresolved_items")
+    rejected_numeric = research.get("rejected_numeric_claims")
+
+    supported = (
+        len(verified) if isinstance(verified, list) else 0
+    ) + (
+        len(inferences) if isinstance(inferences, list) else 0
+    )
+    uncited_rejected = 0
+    if isinstance(unresolved, list):
+        for item in unresolved:
+            text = str(item)
+            if any(text.startswith(prefix) for prefix in _UNCITED_REJECTION_PREFIXES):
+                uncited_rejected += 1
+    numeric_rejected = len(rejected_numeric) if isinstance(rejected_numeric, list) else 0
+    unsupported = uncited_rejected + numeric_rejected
+    required = supported + unsupported
+    coverage = round(supported / required, 6) if required else None
+    return {
+        "material_claims_requiring_evidence": required,
+        "evidence_supported_material_claims": supported,
+        "unsupported_material_claims": unsupported,
+        "uncited_rejected_material_claims": uncited_rejected,
+        "quantitative_rejected_material_claims": numeric_rejected,
+        "evidence_coverage": coverage,
+    }
+
+
 def build_handoff(research: dict) -> dict:
     verified = list(research.get("verified_facts") or [])
     inferences = list(research.get("inferences") or [])
@@ -164,6 +211,7 @@ def build_handoff(research: dict) -> dict:
     high_confidence = sum(1 for item in verified if item.get("confidence") == "high")
     critical_conflicts = [item for item in conflicts if item.get("severity") == "critical"]
     constraint_gaps = list(research.get("constraint_gaps") or [])
+    claim_accounting = evidence_claim_accounting(research)
 
     blockers: list[str] = []
     if not usable_sources:
@@ -229,6 +277,7 @@ def build_handoff(research: dict) -> dict:
             "rejected_source_count": len(research.get("rejected_sources") or []),
             "rejected_numeric_claim_count": len(research.get("rejected_numeric_claims") or []),
             "constraint_gap_count": len(constraint_gaps),
+            **claim_accounting,
         },
         "generated_at": research.get("generated_at"),
     }
