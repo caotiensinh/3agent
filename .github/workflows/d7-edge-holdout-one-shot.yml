@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 20
     env:
       BASELINE_SHA: 704955f8efba430b1a57b661bc5d03b7e92d2d76
-      CANDIDATE_SHA: 34654bd8950671cb0eca47dd53996943cfce17e0
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
       PRIOR_CANDIDATE_SHA: 7703137b95cb2985164af5e85fd868915d96a3c9
     steps:
       - name: Checkout external evaluator only
@@ -36,7 +36,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@v4
         with:
-          ref: 34654bd8950671cb0eca47dd53996943cfce17e0
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
           path: candidate
           persist-credentials: false
           fetch-depth: 1
@@ -87,7 +87,7 @@ jobs:
           PYTHONPATH="$GITHUB_WORKSPACE/candidate/src" python3 -m three_agent.evaluation_profiles \
             --profile candidate/evaluation/edge_large_context_profile_v1.json \
             --result evidence-output/edge-result.json \
-            --evidence-id edge-large-context-external-20260830-main \
+            --evidence-id edge-large-context-external-20260830-final-main \
             --output evidence-output/edge-promotion-evidence.json \
             >/dev/null
           test -s evidence-output/edge-promotion-evidence.json
@@ -110,7 +110,7 @@ jobs:
       - name: Publish metadata-only D7-05 evidence
         uses: actions/upload-artifact@v4
         with:
-          name: d7-edge-large-context-external-34654bd8
+          name: d7-edge-large-context-external-303749d5
           if-no-files-found: error
           retention-days: 14
           path: |
