@@ -10,11 +10,17 @@ from .artifacts import ArtifactManager
 from .config import AppConfig, legacy_model_policy
 from .gateways import ExecutionGateway, InternetGateway
 from .knowledge_gateway import KnowledgeGateway
-from .llm import AdaptiveOllamaClient, OllamaClient
+from .llm import OllamaClient
+from .metered_runtime import (
+    MeteredAdaptiveOllamaClient,
+    MeteredExecutionGateway,
+    MeteredInternetGateway,
+    MeteredOllamaWorkerPool,
+)
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
+from .resource_events import ResourceEventRecorder
 from .store import TaskStore
 from .web_research import WebResearchClient
-from .worker_pool import OllamaWorkerPool
 from .workflow import WorkflowRunner
 
 TZ = ZoneInfo("Asia/Tokyo")
@@ -25,15 +31,32 @@ class Orchestrator:
         self.config = config
         self.store = TaskStore(config.database_path)
         self.artifacts = ArtifactManager(config.artifact_root)
-        self.internet_gateway = InternetGateway(config.internet_gateway, config.test_mode_full_access)
-        self.execution_gateway = ExecutionGateway(config.execution_gateway, config.test_mode_full_access)
-        self.web_research = WebResearchClient(self.internet_gateway)
-        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
         self.inference_telemetry_path = os.getenv(
             "WORKSPACE_INFERENCE_TELEMETRY",
             str(config.artifact_root / "activity" / "inference.jsonl"),
         )
+        self.resource_telemetry_path = os.getenv(
+            "WORKSPACE_RESOURCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "resource_events.jsonl"),
+        )
         os.environ.setdefault("WORKSPACE_INFERENCE_TELEMETRY", self.inference_telemetry_path)
+        os.environ.setdefault("WORKSPACE_RESOURCE_TELEMETRY", self.resource_telemetry_path)
+        self.resource_events = ResourceEventRecorder(self.resource_telemetry_path)
+
+        raw_internet_gateway = InternetGateway(
+            config.internet_gateway, config.test_mode_full_access
+        )
+        raw_execution_gateway = ExecutionGateway(
+            config.execution_gateway, config.test_mode_full_access
+        )
+        self.internet_gateway = MeteredInternetGateway(
+            raw_internet_gateway, self.resource_events
+        )
+        self.execution_gateway = MeteredExecutionGateway(
+            raw_execution_gateway, self.resource_events
+        )
+        self.web_research = WebResearchClient(self.internet_gateway)
+        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
@@ -78,12 +101,13 @@ class Orchestrator:
         if policy.enabled:
             if self.worker_pool_enabled:
                 def routed(model: str):
-                    return OllamaWorkerPool(
+                    return MeteredOllamaWorkerPool(
                         replace(config.llm, model=model),
                         resource_config,
                         gpu0_url=self.worker_urls["gpu0"],
                         gpu1_url=self.worker_urls["gpu1"],
                         dual_url=self.worker_urls["dual"],
+                        resource_events=self.resource_events,
                     )
 
                 research_primary = routed(policy.research_model)
@@ -111,25 +135,28 @@ class Orchestrator:
                     if policy.deep_model
                     else None
                 )
-            self.research_llm = AdaptiveOllamaClient(
+            self.research_llm = MeteredAdaptiveOllamaClient(
                 research_primary,
                 deep=deep,
                 deep_escalation=policy.deep_escalation,
                 deep_prompt_chars=policy.deep_prompt_chars,
                 role="research",
+                resource_events=self.resource_events,
             )
-            self.presentation_llm = AdaptiveOllamaClient(
+            self.presentation_llm = MeteredAdaptiveOllamaClient(
                 presentation_primary,
                 deep=deep,
                 deep_escalation=policy.deep_escalation,
                 deep_prompt_chars=policy.deep_prompt_chars,
                 role="presentation",
+                resource_events=self.resource_events,
             )
-            self.report_llm = AdaptiveOllamaClient(
+            self.report_llm = MeteredAdaptiveOllamaClient(
                 report_primary,
                 deep=None,
                 deep_escalation=False,
                 role="daily_report",
+                resource_events=self.resource_events,
             )
             if policy.resource_control_enabled:
                 self.research_llm.budget_managed_residency = True
@@ -213,6 +240,8 @@ class Orchestrator:
             "structured_output_mode": "ollama_native_json_schema",
             "inference_telemetry": self.inference_telemetry_path,
             "inference_telemetry_raw_prompt": False,
+            "resource_telemetry": self.resource_telemetry_path,
+            "resource_telemetry_raw_content": False,
         }
 
     def run_workflow(
