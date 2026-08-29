@@ -12,6 +12,9 @@ _UNCITED_REJECTION_PREFIXES = (
     "Uncited model claim rejected:",
     "Uncited model inference rejected:",
 )
+_SYNTHESIS_CONTEXT_MAX_CHARS = 48000
+_CONTEXT_PROXY_KIND = "source_level_citation_char_proxy"
+_CONTEXT_PROXY_SCOPE = "research_synthesis_only"
 
 
 def _clean_text(value: Any) -> str:
@@ -202,6 +205,117 @@ def evidence_claim_accounting(research: dict) -> dict[str, int | float | None]:
     }
 
 
+def synthesis_context_proxy_accounting(
+    research: dict,
+    *,
+    max_total: int = _SYNTHESIS_CONTEXT_MAX_CHARS,
+) -> dict[str, Any]:
+    """Measure D3-06 source-level context precision without pretending span labels exist.
+
+    The denominator is source TEXT characters actually supplied to the Research
+    synthesis prompt after the same 48k chunk budget used by ResearchAgent. The
+    numerator is supplied source TEXT belonging to a source cited by at least one
+    accepted verified fact, inference, or conflict. Repeated citations never
+    double-count a source. Prompt scaffolding, titles, URLs and source-suitability
+    preview context are deliberately excluded.
+
+    This is a source-level utilization proxy, not true token/span context precision.
+    """
+    if not isinstance(max_total, int) or isinstance(max_total, bool) or max_total < 0:
+        raise ValueError("max_total must be a non-negative integer")
+
+    base: dict[str, Any] = {
+        "context_precision_proxy_kind": _CONTEXT_PROXY_KIND,
+        "context_precision_proxy_scope": _CONTEXT_PROXY_SCOPE,
+        "synthesis_context_budget_chars": max_total,
+        "synthesis_supplied_source_count": 0,
+        "synthesis_cited_source_count": 0,
+        "synthesis_supplied_source_text_chars": 0,
+        "synthesis_cited_source_text_chars": 0,
+        "context_precision_proxy": None,
+    }
+    if research.get("source_assessment_error"):
+        return base
+
+    raw_sources = research.get("sources")
+    raw_assessments = research.get("source_assessments")
+    sources = raw_sources if isinstance(raw_sources, list) else []
+    assessments = raw_assessments if isinstance(raw_assessments, list) else []
+    accepted_ids = {
+        str(item.get("source_id") or "")
+        for item in assessments
+        if isinstance(item, dict)
+        and item.get("relevance") in {"high", "medium"}
+        and item.get("scope_match") is True
+    }
+
+    cited_ids: set[str] = set()
+    for key in ("verified_facts", "inferences", "conflicts"):
+        items = research.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            source_ids = item.get("source_ids")
+            if not isinstance(source_ids, list):
+                continue
+            cited_ids.update(str(source_id) for source_id in source_ids if isinstance(source_id, str))
+
+    total_chunk_chars = 0
+    supplied_text_chars = 0
+    cited_text_chars = 0
+    supplied_source_ids: set[str] = set()
+    cited_source_ids: set[str] = set()
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        source_id = str(source.get("source_id") or "")
+        if (
+            source_id not in accepted_ids
+            or source.get("fetch_status") != "ok"
+            or not source.get("extracted_text")
+        ):
+            continue
+        text = str(source.get("extracted_text") or "")
+        header = (
+            f"[{source_id}]\n"
+            f"TITLE: {source.get('title') or ''}\n"
+            f"URL: {source.get('url') or ''}\n"
+            "TEXT:\n"
+        )
+        chunk = header + text + "\n"
+        remaining = max_total - total_chunk_chars
+        if remaining <= 0:
+            break
+        chunk = chunk[:remaining]
+        total_chunk_chars += len(chunk)
+        included_text_chars = max(0, min(len(text), len(chunk) - len(header)))
+        if included_text_chars <= 0:
+            continue
+        supplied_text_chars += included_text_chars
+        supplied_source_ids.add(source_id)
+        if source_id in cited_ids:
+            cited_text_chars += included_text_chars
+            cited_source_ids.add(source_id)
+
+    base.update(
+        {
+            "synthesis_supplied_source_count": len(supplied_source_ids),
+            "synthesis_cited_source_count": len(cited_source_ids),
+            "synthesis_supplied_source_text_chars": supplied_text_chars,
+            "synthesis_cited_source_text_chars": cited_text_chars,
+            "context_precision_proxy": (
+                round(cited_text_chars / supplied_text_chars, 6)
+                if supplied_text_chars
+                else None
+            ),
+        }
+    )
+    return base
+
+
 def build_handoff(research: dict) -> dict:
     verified = list(research.get("verified_facts") or [])
     inferences = list(research.get("inferences") or [])
@@ -212,6 +326,7 @@ def build_handoff(research: dict) -> dict:
     critical_conflicts = [item for item in conflicts if item.get("severity") == "critical"]
     constraint_gaps = list(research.get("constraint_gaps") or [])
     claim_accounting = evidence_claim_accounting(research)
+    context_accounting = synthesis_context_proxy_accounting(research)
 
     blockers: list[str] = []
     if not usable_sources:
@@ -278,6 +393,7 @@ def build_handoff(research: dict) -> dict:
             "rejected_numeric_claim_count": len(research.get("rejected_numeric_claims") or []),
             "constraint_gap_count": len(constraint_gaps),
             **claim_accounting,
+            **context_accounting,
         },
         "generated_at": research.get("generated_at"),
     }
