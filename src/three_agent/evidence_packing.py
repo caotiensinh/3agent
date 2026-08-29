@@ -8,10 +8,12 @@ from typing import Any, Mapping, Sequence
 LEGACY_PACKING_MODE = "legacy_v1"
 QUALITY_RANKED_PACKING_MODE = "quality_ranked_v1"
 PACKING_RECEIPT_SCHEMA = "workspace-evidence-packing-receipt/v1"
+PACKING_ALGORITHM_VERSION = "workspace-evidence-hard-pack/v2"
 DEFAULT_SYNTHESIS_CONTEXT_BUDGET_CHARS = 48000
 MIN_SYNTHESIS_CONTEXT_BUDGET_CHARS = 4096
 MAX_SYNTHESIS_CONTEXT_BUDGET_CHARS = 64000
 _ALLOWED_MODES = {LEGACY_PACKING_MODE, QUALITY_RANKED_PACKING_MODE}
+_SEPARATOR = "\n---\n"
 
 
 @dataclass(frozen=True)
@@ -141,54 +143,91 @@ def rank_vetted_sources(
     return ranked, receipt
 
 
+def _source_parts(source: Any) -> tuple[str, str, str, str]:
+    return (
+        str(getattr(source, "source_id", "") or ""),
+        str(getattr(source, "title", "") or ""),
+        str(getattr(source, "url", "") or ""),
+        str(getattr(source, "extracted_text", "") or ""),
+    )
+
+
+def _source_header(source_id: str, title: str, url: str) -> str:
+    return (
+        f"[{source_id}]\n"
+        f"TITLE: {title}\n"
+        f"URL: {url}\n"
+        "TEXT:\n"
+    )
+
+
 def pack_evidence_sources(
     sources: Sequence[Any],
     *,
     policy: EvidencePackingPolicy | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Pack vetted sources exactly once and return a metadata-only receipt.
+    """Hard-pack vetted evidence and return a metadata-only receipt.
 
-    The rendering intentionally preserves the legacy algorithm: the character
-    budget applies to each source block before the ``\n---\n`` join separators are
-    inserted. This keeps default 48k output byte-compatible with the old
-    ``ResearchAgent._evidence_text`` implementation while making truncation
-    accounting authoritative for future benchmark candidates.
+    The full rendered output, including inter-source separators, is bounded by the
+    configured character budget. Provenance/data-boundary headers are indivisible:
+    a source is included only when its complete header plus at least one evidence
+    character fits. Body text may be truncated; headers never are.
+
+    When the budget is comfortably large, rendering remains byte-compatible with
+    the historical format. The behavior changes only at the budget boundary where
+    the old implementation could exceed the configured limit or emit a partial
+    provenance header.
     """
 
     resolved = policy or resolve_evidence_packing_policy()
-    chunks: list[str] = []
+    blocks: list[str] = []
     source_receipts: list[dict[str, Any]] = []
-    packed_chunk_chars = 0
     vetted_text_chars = 0
     supplied_text_chars = 0
     supplied_sources = 0
+    header_budget_skips = 0
+    packed_chunk_chars = 0
 
     for rank, source in enumerate(list(sources), start=1):
-        source_id = str(getattr(source, "source_id", "") or "")
-        title = str(getattr(source, "title", "") or "")
-        url = str(getattr(source, "url", "") or "")
-        text = str(getattr(source, "extracted_text", "") or "")
+        source_id, title, url, text = _source_parts(source)
         vetted_chars = len(text)
         vetted_text_chars += vetted_chars
+        header = _source_header(source_id, title, url)
+        separator_cost = len(_SEPARATOR) if blocks else 0
+        remaining = resolved.budget_chars - (
+            packed_chunk_chars
+            + max(0, len(blocks) - 1) * len(_SEPARATOR)
+        )
 
-        header = (
-            f"[{source_id}]\n"
-            f"TITLE: {title}\n"
-            f"URL: {url}\n"
-            "TEXT:\n"
-        )
-        full_chunk = header + text + "\n"
-        remaining = resolved.budget_chars - packed_chunk_chars
-        rendered_chunk = full_chunk[: max(0, remaining)] if remaining > 0 else ""
-        included_text_chars = max(
-            0,
-            min(vetted_chars, len(rendered_chunk) - len(header)),
-        )
+        rendered_chunk = ""
+        included_text_chars = 0
+        skip_reason: str | None = None
+
+        # A source carrying no evidence text is never worth consuming provenance
+        # budget. More importantly, the header itself is never partially emitted.
+        if not text:
+            skip_reason = "empty_evidence_text"
+        elif remaining < separator_cost + len(header) + 1:
+            skip_reason = "provenance_header_or_first_text_char_does_not_fit"
+            header_budget_skips += 1
+        else:
+            available_after_prefix = remaining - separator_cost - len(header)
+            if len(text) + 1 <= available_after_prefix:
+                body = text
+                suffix = "\n"
+            else:
+                body = text[:available_after_prefix]
+                suffix = ""
+            included_text_chars = len(body)
+            if included_text_chars <= 0:
+                skip_reason = "no_body_budget"
+                header_budget_skips += 1
+            else:
+                rendered_chunk = header + body + suffix
 
         if rendered_chunk:
-            chunks.append(rendered_chunk)
+            blocks.append(rendered_chunk)
             packed_chunk_chars += len(rendered_chunk)
-        if included_text_chars > 0:
             supplied_sources += 1
             supplied_text_chars += included_text_chars
 
@@ -199,12 +238,19 @@ def pack_evidence_sources(
                 "vetted_text_chars": vetted_chars,
                 "supplied_text_chars": included_text_chars,
                 "supplied": included_text_chars > 0,
+                "provenance_header_preserved": included_text_chars > 0,
+                "skip_reason": skip_reason,
             }
         )
 
-    rendered = "\n---\n".join(chunks)
+    rendered = _SEPARATOR.join(blocks)
+    if len(rendered) > resolved.budget_chars:
+        raise ValueError("EVIDENCE_HARD_PACK_BUDGET_EXCEEDED")
+
+    separator_chars = max(0, len(blocks) - 1) * len(_SEPARATOR)
     receipt = {
         "schema_version": PACKING_RECEIPT_SCHEMA,
+        "packing_algorithm_version": PACKING_ALGORITHM_VERSION,
         "mode": resolved.mode,
         "budget_chars": resolved.budget_chars,
         "source_count": len(source_receipts),
@@ -212,7 +258,11 @@ def pack_evidence_sources(
         "vetted_source_text_chars": vetted_text_chars,
         "supplied_source_text_chars": supplied_text_chars,
         "packed_chunk_chars": packed_chunk_chars,
+        "separator_chars": separator_chars,
         "packed_output_chars": len(rendered),
+        "hard_budget_respected": len(rendered) <= resolved.budget_chars,
+        "critical_provenance_header_truncated": False,
+        "sources_skipped_for_header_budget": header_budget_skips,
         "sources": source_receipts,
         "raw_content_logged": False,
     }
