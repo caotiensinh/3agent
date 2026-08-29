@@ -3,10 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from .gateways import ExecutionGateway, InternetGateway
+from .inference_scope import current_execution_budget
 from .llm import AdaptiveOllamaClient, LocalLLMError
 from .resource_budget import ResourceAdmissionError
 from .resource_events import ResourceEventRecorder
 from .worker_pool import OllamaWorkerPool
+
+
+def _reserve_model_budget(*, retries: int = 0, escalations: int = 0) -> None:
+    state = current_execution_budget()
+    if state is not None:
+        state.reserve(retries=retries, escalations=escalations)
 
 
 class MeteredInternetGateway:
@@ -97,7 +104,7 @@ class MeteredExecutionGateway:
 
 
 class MeteredOllamaWorkerPool(OllamaWorkerPool):
-    """Preserve worker routing while counting only actual same-model retry attempts."""
+    """Preserve worker routing while enforcing task-wide same-model retry budget."""
 
     def __init__(self, *args, resource_events: ResourceEventRecorder, **kwargs):
         super().__init__(*args, **kwargs)
@@ -121,6 +128,9 @@ class MeteredOllamaWorkerPool(OllamaWorkerPool):
                         if isinstance(exc, ResourceAdmissionError)
                         else "LOCAL_LLM_ERROR"
                     )
+                    # Reserve before telemetry and before the next invocation. An
+                    # exhausted contract budget therefore prevents the retry itself.
+                    _reserve_model_budget(retries=1)
                     self.resource_events.record(
                         "model_retry",
                         task_id=None,
@@ -136,12 +146,13 @@ class MeteredOllamaWorkerPool(OllamaWorkerPool):
 
 
 class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
-    """Adaptive model router with typed retry/escalation telemetry.
+    """Adaptive model router with hard TaskContract retry/escalation budgets.
 
     Planned deep-model routing due to prompt size is not an escalation. A second
     model invocation caused by failure is one retry. Moving primary -> stronger
-    deep model additionally records one escalation. Resource denial never causes
-    an upward escalation.
+    deep model additionally consumes one escalation. The shared budget state comes
+    from the immutable task contract and spans Research + Presentation; models
+    cannot reset or increase it.
     """
 
     def __init__(self, *args, resource_events: ResourceEventRecorder, **kwargs):
@@ -187,6 +198,7 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
             try:
                 return deep_method(system_prompt, user_prompt, **kwargs)
             except ResourceAdmissionError:
+                _reserve_model_budget(retries=1)
                 self._retry(
                     action="deep_to_primary",
                     reason_code="RESOURCE_ADMISSION",
@@ -195,6 +207,7 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
                 )
                 return primary_method(system_prompt, user_prompt, **kwargs)
             except LocalLLMError:
+                _reserve_model_budget(retries=1)
                 self._retry(
                     action="deep_to_primary",
                     reason_code="LOCAL_LLM_ERROR",
@@ -209,6 +222,9 @@ class MeteredAdaptiveOllamaClient(AdaptiveOllamaClient):
             raise
         except LocalLLMError:
             if self.deep_escalation and self._deep_is_distinct() and deep_method is not None:
+                # Reserve retry + escalation atomically before recording either
+                # event and before invoking the stronger model.
+                _reserve_model_budget(retries=1, escalations=1)
                 self._retry(
                     action="primary_to_deep",
                     reason_code="LOCAL_LLM_ERROR",

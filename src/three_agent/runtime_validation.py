@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .artifacts import ArtifactManager
+from .execution_budget import TaskExecutionBudgetState
 from .handoff_security import (
     HandoffSecurityValidationError,
     verify_handoff_security_metadata,
@@ -27,6 +28,7 @@ class RuntimeValidationError(RuntimeError):
 @dataclass(frozen=True)
 class RuntimeValidationAttempt:
     contract_sha256: str
+    execution_budget: TaskExecutionBudgetState | None = None
 
 
 class RuntimeValidatorBridge:
@@ -117,7 +119,7 @@ class RuntimeValidatorBridge:
         )
 
     def begin(self, task_id: str) -> RuntimeValidationAttempt:
-        """Compile, immutably bind, policy-validate, and expose the route decision."""
+        """Bind contract, persistent execution budget, policy and route metadata."""
         contract = self.compiler.compile(
             task_id=task_id,
             task_type="analysis",
@@ -129,8 +131,6 @@ class RuntimeValidatorBridge:
         try:
             digest = self.ledger.bind_contract(contract)
         except Exception as exc:
-            # Preserve a failed policy event when an immutable contract already
-            # exists. Never replace or mutate the bound contract.
             if self.store.task_contract_for_task(task_id) is not None:
                 self._record(
                     task_id,
@@ -141,13 +141,29 @@ class RuntimeValidatorBridge:
                 )
             raise RuntimeValidationError("TASK_CONTRACT_BIND_FAILED") from exc
 
+        try:
+            budget_state = TaskExecutionBudgetState.from_bound_contract(
+                self.store,
+                task_id,
+            )
+        except Exception as exc:
+            self._record(
+                task_id,
+                "policy",
+                passed=False,
+                reason_code="POLICY_EXECUTION_BUDGET_BIND_FAILED",
+                evidence_refs=(digest,),
+                validator_version="runtime-policy/v3",
+            )
+            raise RuntimeValidationError("TASK_EXECUTION_BUDGET_BIND_FAILED") from exc
+
         self._record(
             task_id,
             "policy",
             passed=True,
             reason_code="POLICY_CONTRACT_VALIDATED",
             evidence_refs=(digest,),
-            validator_version="runtime-policy/v2",
+            validator_version="runtime-policy/v3",
         )
         route = DeterministicRoutePlanner.plan(contract)
         self.store.record_activity(
@@ -161,7 +177,23 @@ class RuntimeValidatorBridge:
                 f"escalation={str(route.escalation_allowed).lower()}"
             ),
         )
-        return RuntimeValidationAttempt(contract_sha256=digest)
+        budget = budget_state.snapshot()
+        self.store.record_activity(
+            task_id,
+            "execution_budget",
+            "execution_budget_active",
+            "ok",
+            (
+                f"max_retries={budget['max_model_retries']} "
+                f"max_escalations={budget['max_model_escalations']} "
+                f"retries_used={budget['model_retries_used']} "
+                f"escalations_used={budget['model_escalations_used']}"
+            ),
+        )
+        return RuntimeValidationAttempt(
+            contract_sha256=digest,
+            execution_budget=budget_state,
+        )
 
     def record_research_evidence(
         self,
