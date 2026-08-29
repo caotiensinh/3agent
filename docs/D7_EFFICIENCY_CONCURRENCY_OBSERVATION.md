@@ -121,4 +121,31 @@ The repository profile `workspace-efficiency-cache-concurrency-v1` still require
 
 This observer directly supplies structured-concurrency and execution-budget observations and verifies WorkSpace's own reuse-opportunity trust-domain boundary. It intentionally leaves actual backend cache isolation, before/after resource benefit and evaluator attestation unresolved.
 
-D7-06 therefore remains `EVIDENCE-PENDING` until representative baseline/candidate observations plus the remaining external measurements are independently reviewed and adapted through `workspace-eval-profile`.
+## Representative hardware closure — 2026-08-30
+
+A representative exact-source run has now been collected for `5472ebbad650d8c466ae0353c3f99408680a770d` on self-hosted Linux x64 hardware with two RTX 5090 GPUs and local `qwen3:30b`.
+
+Evidence boundary:
+
+- GitHub Actions run `33267084880` — PASS;
+- artifact `9719019837`;
+- artifact ZIP SHA-256 `sha256:9b41d5a0e07b347625869f79d32d77fcf73fa34cfbb0b1d156bdf93bfe389edf`;
+- observation SHA-256 `sha256:f6d7208c67dee7631ace778bcdfb1e864b7df127094e4d658355eb9e2a6e10ac`.
+
+Observed results:
+
+- structured output: 8/8 requests succeeded and matched deterministic semantics;
+- requested concurrency 4, maximum in-flight observed 4;
+- execution-budget concurrency PASS for tool calls, retries and escalations;
+- WorkSpace reuse-opportunity trust-domain isolation PASS;
+- backend cache isolation remains unmeasured;
+- resource benefit remains unmeasured;
+- authoritative GPU-active time remains unmeasured;
+- evaluator attestation remains false;
+- promotion evidence emitted remains false.
+
+The same closure run independently verified the fixed-task benchmark evidence, but `ranked-48k`, `ranked-40k` and `ranked-32k` were all **not promotion eligible**. Therefore the representative result is a **NO-GO for the tested context-budget candidates**, not a positive D7-06 promotion result.
+
+The durable metadata-only decision receipt is `evaluation/representative_hardware_closure_20260830.json`.
+
+D7-06 should therefore be read as **representative observation collected / positive promotion not admissible**. A future positive result still requires all profile checks, measured resource benefit, actual backend cache isolation and external evaluator attestation.

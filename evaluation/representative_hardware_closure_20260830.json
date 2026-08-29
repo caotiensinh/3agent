@@ -1,0 +1,60 @@
+{
+  "schema_version": "workspace-representative-hardware-closure/v1",
+  "captured_at_utc": "2026-08-29T18:04:35.471601Z",
+  "source_ref": "5472ebbad650d8c466ae0353c3f99408680a770d",
+  "execution": {
+    "github_run_id": 33267084880,
+    "github_artifact_id": 9719019837,
+    "artifact_zip_sha256": "sha256:9b41d5a0e07b347625869f79d32d77fcf73fa34cfbb0b1d156bdf93bfe389edf",
+    "runner_class": [
+      "self-hosted",
+      "Linux",
+      "X64",
+      "dual-RTX5090"
+    ],
+    "model": "qwen3:30b"
+  },
+  "benchmark": {
+    "verification_passed": true,
+    "verification_sha256": "sha256:1e5df3ccf00665d78f8d85ba4a20507ec7c4a0127d2675a3ca623c97f20dc520",
+    "task_set_id": "workspace-reasoning-core-v1",
+    "promotion_eligible": {
+      "ranked-48k": false,
+      "ranked-40k": false,
+      "ranked-32k": false
+    }
+  },
+  "d7_06_observation": {
+    "observation_complete": true,
+    "observation_sha256": "sha256:f6d7208c67dee7631ace778bcdfb1e864b7df127094e4d658355eb9e2a6e10ac",
+    "structured_output_concurrency_passed": true,
+    "structured_output_attempted": 8,
+    "structured_output_succeeded": 8,
+    "max_in_flight_observed": 4,
+    "execution_budget_concurrency_passed": true,
+    "reuse_opportunity_trust_isolation_passed": true,
+    "backend_cache_isolation_measured": false,
+    "backend_cache_hit_measured": false,
+    "resource_benefit_measured": false,
+    "gpu_active_time_measured": false,
+    "evaluator_attested": false,
+    "promotion_evidence_emitted": false
+  },
+  "decisions": {
+    "context_budget_promotion": "NO_GO",
+    "d5_02_near_duplicate_diversity": "KEEP_BENCHMARK_GATED",
+    "d5_05_progressive_expansion": "KEEP_DISABLED",
+    "d7_06_promotion_evidence": "NOT_ADMISSIBLE",
+    "d7_05_edge_large_context": "EXTERNAL_HOLDOUT_EVIDENCE_REQUIRED",
+    "d3_09_gpu_seconds": "NOT_MEASURED"
+  },
+  "privacy": {
+    "raw_prompt_recorded": false,
+    "raw_model_output_recorded": false,
+    "raw_evidence_recorded": false,
+    "credentials_recorded": false,
+    "hostname_recorded": false,
+    "gpu_uuid_or_serial_recorded": false
+  },
+  "closure_sha256": "sha256:641ecb96dfd4e538f9a7055126f00ed5c6a2a4765bf7e5a1c438dc06bdbdaa5c"
+}
