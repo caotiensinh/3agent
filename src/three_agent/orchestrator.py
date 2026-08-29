@@ -29,6 +29,11 @@ class Orchestrator:
         self.execution_gateway = ExecutionGateway(config.execution_gateway, config.test_mode_full_access)
         self.web_research = WebResearchClient(self.internet_gateway)
         self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.inference_telemetry_path = os.getenv(
+            "WORKSPACE_INFERENCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "inference.jsonl"),
+        )
+        os.environ.setdefault("WORKSPACE_INFERENCE_TELEMETRY", self.inference_telemetry_path)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
@@ -87,16 +92,22 @@ class Orchestrator:
                 deep = routed(policy.deep_model) if policy.deep_model else None
             else:
                 research_primary = OllamaClient(
-                    replace(config.llm, model=policy.research_model), self.resource_manager
+                    replace(config.llm, model=policy.research_model),
+                    self.resource_manager,
                 )
                 presentation_primary = OllamaClient(
-                    replace(config.llm, model=policy.presentation_model), self.resource_manager
+                    replace(config.llm, model=policy.presentation_model),
+                    self.resource_manager,
                 )
                 report_primary = OllamaClient(
-                    replace(config.llm, model=policy.report_model), self.resource_manager
+                    replace(config.llm, model=policy.report_model),
+                    self.resource_manager,
                 )
                 deep = (
-                    OllamaClient(replace(config.llm, model=policy.deep_model), self.resource_manager)
+                    OllamaClient(
+                        replace(config.llm, model=policy.deep_model),
+                        self.resource_manager,
+                    )
                     if policy.deep_model
                     else None
                 )
@@ -199,6 +210,9 @@ class Orchestrator:
             "knowledge_gateway_enabled": True,
             "upload_gateway_enabled": True,
             "e2e_workflow_enabled": True,
+            "structured_output_mode": "ollama_native_json_schema",
+            "inference_telemetry": self.inference_telemetry_path,
+            "inference_telemetry_raw_prompt": False,
         }
 
     def run_workflow(
