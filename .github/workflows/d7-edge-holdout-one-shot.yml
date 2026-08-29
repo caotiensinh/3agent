@@ -1,0 +1,96 @@
+name: d7-edge-holdout-one-shot
+
+on:
+  push:
+    branches:
+      - evidence/d7-edge-holdout-20260830
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout external evaluator only
+        uses: actions/checkout@v4
+        with:
+          ref: evidence/d7-edge-holdout-20260830
+          path: evaluator
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout exact baseline
+        uses: actions/checkout@v4
+        with:
+          ref: 704955f8efba430b1a57b661bc5d03b7e92d2d76
+          path: baseline
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: 7703137b95cb2985164af5e85fd868915d96a3c9
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify source and evaluator separation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "704955f8efba430b1a57b661bc5d03b7e92d2d76"
+          test "$(git -C candidate rev-parse HEAD)" = "7703137b95cb2985164af5e85fd868915d96a3c9"
+          test -z "$(git -C baseline status --porcelain --untracked-files=no)"
+          test -z "$(git -C candidate status --porcelain --untracked-files=no)"
+          test ! -e baseline/evidence_tools/edge_holdout_evaluator.py
+          test ! -e candidate/evidence_tools/edge_holdout_evaluator.py
+
+      - name: Execute hidden external holdout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence-output
+          python3 evaluator/evidence_tools/edge_holdout_evaluator.py \
+            --baseline baseline \
+            --candidate candidate \
+            --output evidence-output/edge-result.json \
+            --summary evidence-output/edge-summary.json
+
+      - name: Validate result through candidate D7 adapter
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          PYTHONPATH="$GITHUB_WORKSPACE/candidate/src" python3 -m three_agent.evaluation_profiles \
+            --profile candidate/evaluation/edge_large_context_profile_v1.json \
+            --result evidence-output/edge-result.json \
+            --evidence-id edge-large-context-external-20260830 \
+            --output evidence-output/edge-promotion-evidence.json \
+            >/dev/null
+          test -s evidence-output/edge-promotion-evidence.json
+          python3 - <<'PY'
+          import json
+          with open('evidence-output/edge-summary.json', encoding='utf-8') as f:
+              summary = json.load(f)
+          assert summary['all_required_checks_passed'] is True
+          assert summary['raw_holdout_labels_published'] is False
+          assert summary['raw_source_bodies_published'] is False
+          with open('evidence-output/edge-promotion-evidence.json', encoding='utf-8') as f:
+              evidence = json.load(f)
+          assert evidence['corpus_class'] == 'edge_large_context'
+          assert evidence['security_passed'] is True
+          assert evidence['evaluator_attested'] is True
+          PY
+
+      - name: Publish metadata-only D7-05 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: d7-edge-large-context-external-7703137b
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            evidence-output/edge-result.json
+            evidence-output/edge-summary.json
+            evidence-output/edge-promotion-evidence.json
