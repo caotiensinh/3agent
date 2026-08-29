@@ -8,7 +8,12 @@ from three_agent.capability_authority import (
     CapabilityAuthorityDenied,
     TaskCapabilityAuthority,
 )
-from three_agent.inference_scope import current_capability_authority, inference_scope
+from three_agent.cli import _runtime_task_scope
+from three_agent.inference_scope import (
+    current_capability_authority,
+    current_model_authority,
+    inference_scope,
+)
 from three_agent.metered_runtime import MeteredExecutionGateway, MeteredInternetGateway
 from three_agent.model_authority import TaskModelAuthority
 from three_agent.resource_events import ResourceEventRecorder
@@ -35,6 +40,16 @@ class FakeExecution:
     def run(self, agent_id, task_id, argv, cwd=None):
         self.calls.append((agent_id, task_id, tuple(argv), cwd))
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+
+class FakeBridge:
+    def __init__(self, attempt):
+        self.attempt = attempt
+        self.calls = []
+
+    def begin(self, task_id):
+        self.calls.append(task_id)
+        return self.attempt
 
 
 class CapabilityAuthorityTests(unittest.TestCase):
@@ -132,6 +147,16 @@ class CapabilityAuthorityTests(unittest.TestCase):
         self.assertNotIn("resource_ref", decision.metadata())
         self.assertTrue(decision.metadata()["resource_sha256"].startswith("sha256:"))
 
+    def test_malformed_capability_identifier_fails_closed(self):
+        authority = TaskCapabilityAuthority.from_contract(self._public_contract())
+        with self.assertRaisesRegex(ValueError, "capability must be a compact identifier"):
+            authority.authorize(
+                "web_gateway DROP AUTHORITY",
+                resource_kind="network",
+                resource_ref="public_search",
+                effect="network_read",
+            )
+
     def test_scope_derives_same_capability_authority_from_bridge_bound_model_authority(self):
         contract = self._public_contract("TASK-DERIVED")
         direct = TaskCapabilityAuthority.from_contract(contract)
@@ -146,6 +171,46 @@ class CapabilityAuthorityTests(unittest.TestCase):
             self.assertIsNotNone(derived)
             self.assertEqual(derived.fingerprint, direct.fingerprint)
             self.assertEqual(derived.allowed_tools, contract.allowed_tools)
+
+    def test_direct_cli_stage_scope_binds_runtime_bridge_authority(self):
+        contract = self._public_contract("TASK-DIRECT")
+        model_authority = TaskModelAuthority.from_contract(contract)
+        budget = SimpleNamespace(task_id=contract.task_id)
+        bridge = FakeBridge(
+            SimpleNamespace(
+                execution_budget=budget,
+                model_authority=model_authority,
+            )
+        )
+        orchestrator = SimpleNamespace(runtime_validator_bridge=bridge)
+        with _runtime_task_scope(
+            orchestrator,
+            contract.task_id,
+            agent_id="research",
+            stage="research",
+        ):
+            self.assertIs(current_model_authority(), model_authority)
+            self.assertIsNotNone(current_capability_authority())
+        self.assertEqual(bridge.calls, [contract.task_id])
+        self.assertIsNone(current_model_authority())
+        self.assertIsNone(current_capability_authority())
+
+    def test_direct_cli_stage_scope_fails_closed_without_bound_authority(self):
+        bridge = FakeBridge(
+            SimpleNamespace(
+                execution_budget=SimpleNamespace(task_id="TASK-DIRECT-NONE"),
+                model_authority=None,
+            )
+        )
+        orchestrator = SimpleNamespace(runtime_validator_bridge=bridge)
+        with self.assertRaisesRegex(RuntimeError, "RUNTIME_TASK_AUTHORITY_NOT_BOUND"):
+            with _runtime_task_scope(
+                orchestrator,
+                "TASK-DIRECT-NONE",
+                agent_id="research",
+                stage="research",
+            ):
+                pass
 
     def test_internet_gateway_denies_before_inner_call_or_tool_event(self):
         with tempfile.TemporaryDirectory() as tmp:

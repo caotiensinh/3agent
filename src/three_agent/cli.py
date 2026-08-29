@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from .benchmark_snapshot import build_benchmark_manifest, write_benchmark_manifest
@@ -156,6 +157,27 @@ def _reuse_telemetry_path(args: argparse.Namespace) -> Path:
     return config.artifact_root / "activity" / "inference.jsonl"
 
 
+@contextmanager
+def _runtime_task_scope(orchestrator: Orchestrator, task_id: str, *, agent_id: str, stage: str):
+    """Bind the same immutable runtime authority used by the full workflow.
+
+    Direct stage commands are production-capable entry points, so a plain task ID
+    ContextVar is insufficient. They must pass through RuntimeValidatorBridge
+    before model/tool/network access just like `workflow-run`.
+    """
+    attempt = orchestrator.runtime_validator_bridge.begin(task_id)
+    if attempt.execution_budget is None or attempt.model_authority is None:
+        raise RuntimeError("RUNTIME_TASK_AUTHORITY_NOT_BOUND")
+    with inference_scope(
+        task_id,
+        agent_id=agent_id,
+        stage=stage,
+        execution_budget=attempt.execution_budget,
+        model_authority=attempt.model_authority,
+    ):
+        yield attempt
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -238,14 +260,24 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(task.__dict__ | {"status": task.status.value}, ensure_ascii=False, indent=2))
     elif args.command == "research":
         orchestrator.store.get_task(args.task_id)
-        with inference_scope(args.task_id, agent_id="research", stage="research"):
+        with _runtime_task_scope(
+            orchestrator,
+            args.task_id,
+            agent_id="research",
+            stage="research",
+        ):
             paths = orchestrator.research_agent.run(
                 args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live
             )
         print("\n".join(str(path) for path in paths))
     elif args.command == "presentation":
         orchestrator.store.get_task(args.task_id)
-        with inference_scope(args.task_id, agent_id="presentation", stage="presentation"):
+        with _runtime_task_scope(
+            orchestrator,
+            args.task_id,
+            agent_id="presentation",
+            stage="presentation",
+        ):
             paths = orchestrator.presentation_agent.run(
                 args.task_id,
                 orchestrator.store,
