@@ -33,8 +33,11 @@ _ALLOWED_EXPECTED_KEYS = {
     "max_model_tier",
     "escalation_allowed",
     "model_trusted_local_only",
+    "max_steps",
+    "max_tool_calls",
     "max_retries",
     "max_escalations",
+    "max_wall_time_ms",
     "cache_mode",
     "semantic_cache_allowed",
     "logging_raw_prompt",
@@ -152,9 +155,9 @@ class EvaluationReplay:
 
     No model, network, tool gateway, task database or business data is required.
     D7-03/D7-04 reuse the same production TaskContractCompiler and route planner as
-    the golden lane, while extending checks to capability/write/cache/logging and
-    model-locality boundaries. Rejected security-policy cases are expected results,
-    not replay errors.
+    the golden lane, while extending checks to capability/write/cache/logging,
+    model-locality and the complete immutable execution-budget boundary. Rejected
+    security-policy cases are expected results, not replay errors.
     """
 
     def __init__(self, compiler: TaskContractCompiler | None = None):
@@ -185,8 +188,11 @@ class EvaluationReplay:
             "max_model_tier": route.max_model_tier,
             "escalation_allowed": route.escalation_allowed,
             "model_trusted_local_only": contract.model_policy.trusted_local_only,
+            "max_steps": contract.execution_budget.max_steps,
+            "max_tool_calls": contract.execution_budget.max_tool_calls,
             "max_retries": contract.execution_budget.max_retries,
             "max_escalations": contract.execution_budget.max_escalations,
+            "max_wall_time_ms": contract.execution_budget.max_wall_time_ms,
             "cache_mode": contract.cache_policy.mode,
             "semantic_cache_allowed": contract.cache_policy.semantic_cache_allowed,
             "logging_raw_prompt": contract.logging_policy.raw_prompt,

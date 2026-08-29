@@ -49,9 +49,15 @@ class EvaluationLabTests(unittest.TestCase):
         self.assertEqual(secret["logging_raw_prompt"], "deny")
         self.assertEqual(secret["logging_raw_tool_output"], "deny")
         self.assertTrue(secret["model_trusted_local_only"])
+        self.assertEqual(secret["max_steps"], 8)
+        self.assertEqual(secret["max_tool_calls"], 12)
+        self.assertEqual(secret["max_wall_time_ms"], 600000)
         code_fix = by_id["internal-code-fix-write-scope-and-tools"]["actual"]
         self.assertEqual(code_fix["allowed_sources"], ["repo:workspace"])
         self.assertEqual(code_fix["write_scope"], ["repo:staging"])
+        self.assertEqual(code_fix["max_steps"], 6)
+        self.assertEqual(code_fix["max_tool_calls"], 10)
+        self.assertEqual(code_fix["max_wall_time_ms"], 300000)
 
     def test_repository_adversarial_corpus_replays_all_expected_rejections(self):
         corpus = EvaluationCorpus.load(ADVERSARIAL)
@@ -92,6 +98,24 @@ class EvaluationLabTests(unittest.TestCase):
         failed = [item for item in report["cases"] if not item["passed"]]
         self.assertEqual(len(failed), 1)
         self.assertEqual(failed[0]["mismatch_keys"], ["cache_mode"])
+
+    def test_tampered_complete_execution_budget_fails_regression_replay(self):
+        payload = json.loads(REGRESSION.read_text(encoding="utf-8"))
+        expected = payload["cases"][2]["expected"]
+        expected["max_steps"] += 1
+        expected["max_tool_calls"] += 1
+        expected["max_wall_time_ms"] += 1
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tampered-budget.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            corpus = EvaluationCorpus.load(path)
+            report = EvaluationReplay().replay(corpus, source_ref=SOURCE_REF)
+        failed = [item for item in report["cases"] if not item["passed"]]
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(
+            failed[0]["mismatch_keys"],
+            ["max_steps", "max_tool_calls", "max_wall_time_ms"],
+        )
 
     def test_invalid_source_ref_fails_closed(self):
         corpus = EvaluationCorpus.load(GOLDEN)
