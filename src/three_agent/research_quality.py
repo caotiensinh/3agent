@@ -15,6 +15,8 @@ _UNCITED_REJECTION_PREFIXES = (
 _SYNTHESIS_CONTEXT_MAX_CHARS = 48000
 _CONTEXT_PROXY_KIND = "source_level_citation_char_proxy"
 _CONTEXT_PROXY_SCOPE = "research_synthesis_only"
+_CONTEXT_RECALL_PROXY_KIND = "vetted_source_char_retention_proxy"
+_CONTEXT_RECALL_PROXY_SCOPE = "research_synthesis_context_budget"
 
 
 def _clean_text(value: Any) -> str:
@@ -210,16 +212,19 @@ def synthesis_context_proxy_accounting(
     *,
     max_total: int = _SYNTHESIS_CONTEXT_MAX_CHARS,
 ) -> dict[str, Any]:
-    """Measure D3-06 source-level context precision without pretending span labels exist.
+    """Measure deterministic source-level D3-06 precision and D3-07 recall proxies.
 
-    The denominator is source TEXT characters actually supplied to the Research
-    synthesis prompt after the same 48k chunk budget used by ResearchAgent. The
-    numerator is supplied source TEXT belonging to a source cited by at least one
-    accepted verified fact, inference, or conflict. Repeated citations never
-    double-count a source. Prompt scaffolding, titles, URLs and source-suitability
-    preview context are deliberately excluded.
+    Precision proxy:
+      cited supplied source TEXT chars / all supplied source TEXT chars.
 
-    This is a source-level utilization proxy, not true token/span context precision.
+    Recall proxy:
+      supplied source TEXT chars / all source TEXT chars that passed the
+      suitability gate before the synthesis context budget was applied.
+
+    The packing loop mirrors ResearchAgent's existing 48k chunk budget. Titles,
+    URLs, separators and prompt scaffolding are excluded from the reported TEXT
+    counters even though their bytes still consume the packing budget. Neither
+    metric is true semantic token/span precision or recall.
     """
     if not isinstance(max_total, int) or isinstance(max_total, bool) or max_total < 0:
         raise ValueError("max_total must be a non-negative integer")
@@ -227,12 +232,17 @@ def synthesis_context_proxy_accounting(
     base: dict[str, Any] = {
         "context_precision_proxy_kind": _CONTEXT_PROXY_KIND,
         "context_precision_proxy_scope": _CONTEXT_PROXY_SCOPE,
+        "context_recall_proxy_kind": _CONTEXT_RECALL_PROXY_KIND,
+        "context_recall_proxy_scope": _CONTEXT_RECALL_PROXY_SCOPE,
         "synthesis_context_budget_chars": max_total,
+        "synthesis_vetted_source_count": 0,
         "synthesis_supplied_source_count": 0,
         "synthesis_cited_source_count": 0,
+        "synthesis_vetted_source_text_chars": 0,
         "synthesis_supplied_source_text_chars": 0,
         "synthesis_cited_source_text_chars": 0,
         "context_precision_proxy": None,
+        "context_recall_proxy": None,
     }
     if research.get("source_assessment_error"):
         return base
@@ -262,12 +272,9 @@ def synthesis_context_proxy_accounting(
                 continue
             cited_ids.update(str(source_id) for source_id in source_ids if isinstance(source_id, str))
 
-    total_chunk_chars = 0
-    supplied_text_chars = 0
-    cited_text_chars = 0
-    supplied_source_ids: set[str] = set()
-    cited_source_ids: set[str] = set()
-
+    vetted_sources: list[tuple[str, str, str, str]] = []
+    vetted_source_ids: set[str] = set()
+    vetted_text_chars = 0
     for source in sources:
         if not isinstance(source, dict):
             continue
@@ -279,10 +286,28 @@ def synthesis_context_proxy_accounting(
         ):
             continue
         text = str(source.get("extracted_text") or "")
+        vetted_sources.append(
+            (
+                source_id,
+                str(source.get("title") or ""),
+                str(source.get("url") or ""),
+                text,
+            )
+        )
+        vetted_source_ids.add(source_id)
+        vetted_text_chars += len(text)
+
+    total_chunk_chars = 0
+    supplied_text_chars = 0
+    cited_text_chars = 0
+    supplied_source_ids: set[str] = set()
+    cited_source_ids: set[str] = set()
+
+    for source_id, title, url, text in vetted_sources:
         header = (
             f"[{source_id}]\n"
-            f"TITLE: {source.get('title') or ''}\n"
-            f"URL: {source.get('url') or ''}\n"
+            f"TITLE: {title}\n"
+            f"URL: {url}\n"
             "TEXT:\n"
         )
         chunk = header + text + "\n"
@@ -302,13 +327,20 @@ def synthesis_context_proxy_accounting(
 
     base.update(
         {
+            "synthesis_vetted_source_count": len(vetted_source_ids),
             "synthesis_supplied_source_count": len(supplied_source_ids),
             "synthesis_cited_source_count": len(cited_source_ids),
+            "synthesis_vetted_source_text_chars": vetted_text_chars,
             "synthesis_supplied_source_text_chars": supplied_text_chars,
             "synthesis_cited_source_text_chars": cited_text_chars,
             "context_precision_proxy": (
                 round(cited_text_chars / supplied_text_chars, 6)
                 if supplied_text_chars
+                else None
+            ),
+            "context_recall_proxy": (
+                round(supplied_text_chars / vetted_text_chars, 6)
+                if vetted_text_chars
                 else None
             ),
         }
