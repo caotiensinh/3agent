@@ -46,7 +46,7 @@ jobs:
           test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
           test -z "$(git -C candidate status --porcelain --untracked-files=no)"
 
-      - name: Create isolated offline Python environment
+      - name: Create isolated Python environment
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -57,11 +57,15 @@ jobs:
           echo "$VENV_ROOT/bin" >> "$GITHUB_PATH"
           echo "WORKSPACE_CLOSURE_VENV=$VENV_ROOT" >> "$GITHUB_ENV"
 
-      - name: Install exact candidate without dependency resolution
+      - name: Install exact candidate and declared runtime dependencies in venv
         shell: bash
         run: |
           set -Eeuo pipefail
-          python -m pip install --no-deps -e candidate
+          python -m pip install -e candidate
+          python - <<'PY'
+          import docx, PIL, pptx, reportlab, zoneinfo
+          print('runtime dependency import check: PASS')
+          PY
           workspace-benchmark --help >/dev/null
           workspace-benchmark-canonicalize --help >/dev/null
           workspace-benchmark-readiness --help >/dev/null
