@@ -51,10 +51,12 @@ The following work packages are complete in the current implementation lineage:
 - D3 Verified Work Metrics foundation — `DONE`
 - Evidence Packing Rank v1 — `DONE`
 - Authoritative Packing Receipt v1 — `DONE`
-- Runtime Validator Bridge — `DONE` when its exact-head CI and merge evidence are green
+- Runtime Validator Bridge — `DONE`
 - Benchmark Isolation v1 — `DONE`
+- Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+- D4 Durable Prefix Reuse Measurement — `DONE` when its exact-head CI and merge evidence are green
 
-The next benchmark work is **fixed-task benchmark execution + quality acceptance gating**. Isolation is not to be reimplemented.
+The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/32k benchmark result is still pending execution**. No context-budget candidate is promoted by implementation alone.
 
 ---
 
@@ -84,9 +86,9 @@ Current Ollama structured generation uses native JSON Schema plus deterministic 
 
 Telemetry records model/schema/template/trust metadata, token counts, timing and stable-prefix fingerprints without raw prompt/response content.
 
-## PICO-07 — Reuse-before-recompute fingerprint — `PARTIAL`
+## PICO-07 — Reuse-before-recompute fingerprint — `DONE` baseline
 
-Reuse opportunity can be measured, but durable representative-period aggregation remains D4 work. Do not call reuse opportunity a backend cache hit.
+Stable-prefix fingerprints are recorded metadata-only and D4 reconstructs durable repeated-prefix opportunity across process restarts and representative periods. Reuse identity includes model + trust domain + template + schema + prefix hash. WorkSpace still does not call reuse opportunity a backend cache hit.
 
 ## PICO-08 — Verified work per resource — `DONE` baseline
 
@@ -263,15 +265,41 @@ Baseline/candidate variants use isolated:
 
 Non-empty sandboxes fail closed and process-global optimization knobs are serialized/restored. Baseline and candidate must never share counters or task lineage.
 
+## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+
+The repository now owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
+
+- `legacy_v1 / 48000` baseline;
+- `quality_ranked_v1 / 48000`;
+- `quality_ranked_v1 / 40000`;
+- `quality_ranked_v1 / 32000`.
+
+Each variant uses isolated runtime state, exact Git lineage, deterministic fixture corpus identity and the real Runtime Validator Bridge. Candidate efficiency is not evaluated until exact required-validator parity/PASS non-regression and verified-quality gates pass. The self-hosted RTX5090 workflow publishes metadata-only benchmark evidence and does not download a missing model or dependencies during benchmark setup.
+
+Implementation readiness does not equal benchmark acceptance. The real hardware comparison remains pending until the manual fixed-task benchmark is executed.
+
 ---
 
-# D4 — Persistent prefix/reuse measurement
+# D4 — Persistent prefix/reuse measurement — `DONE` baseline
 
-## D4-01 — Durable reuse-observation index — `TODO`
-## D4-02 — Representative-period report — `TODO`
-## D4-03 — Decision gate — `TODO`
+## D4-01 — Durable reuse-observation aggregate — `DONE`
 
-Do not call repeated-prefix opportunity a real APC cache hit while the backend does not expose that metric.
+The existing metadata-only inference JSONL is reused as the durable cross-process observation log. `workspace reuse-report` deterministically reconstructs repeated-prefix opportunity from model + trust-domain + template + schema + stable-prefix hash rather than trusting the process-local reuse bit. No second database/index is added before measurement proves it necessary.
+
+## D4-02 — Representative-period report — `DONE`
+
+Default reporting window is 7 days and includes reuse opportunity, distinct/repeated prefix counts, prefix-size summary, prompt-eval duration share, model segmentation, opaque trust-domain segmentation and malformed/out-of-window accounting. Raw prompts/responses/tool output/prefix text/hashes and raw trust-domain labels are not emitted.
+
+## D4-03 — Decision gate — `DONE`
+
+Starting policy:
+
+- insufficient representative events → collect more metadata;
+- reuse below the configured planning threshold (default 30%) → redesign prompt layout first;
+- reuse above threshold but prompt-eval does not dominate measured model duration → continue measurement/optimize elsewhere;
+- reuse above threshold and prompt-eval duration share is at least 50% → a D9 serving/cache **benchmark** is eligible.
+
+The gate never authorizes a production serving change and never reports repeated-prefix opportunity as a backend cache hit.
 
 ---
 
@@ -331,7 +359,7 @@ Do not compress short or authorization/security/citation-critical context merely
 
 # D9 — Serving/cache benchmark — `BENCHMARK-GATED`
 
-Prerequisite: D4 proves sufficient reuse/prefill opportunity.
+Prerequisite: D4 proves sufficient reuse/prefill opportunity on representative traces.
 
 - D9-01 current Ollama vs candidate serving-engine replay benchmark
 - D9-02 same-model/same-quantization quality parity where possible
@@ -341,7 +369,7 @@ Prerequisite: D4 proves sufficient reuse/prefill opportunity.
 - D9-06 one primary production server selected by ADR
 - D9-07 external cache layer only when native cache is insufficient and net value is positive
 
-No framework accumulation. One primary stack wins.
+No framework accumulation. One primary stack wins. A D4 `SERVING_CACHE_BENCHMARK_ELIGIBLE` result permits only a benchmark, not production migration.
 
 ---
 
@@ -378,26 +406,29 @@ An item may move to `DONE` only when all applicable evidence exists:
 # Immediate execution queue
 
 ```text
-Runtime Validator Bridge exact-head CI + merge
+Fixed-task benchmark harness + validator gate — DONE
         ↓
-Benchmark Isolation v1 (already DONE; preserve it)
-        ↓
-Fixed benchmark task-set contract
-        ↓
-Run baseline: legacy_v1 / 48000
-        ↓
-Run candidates:
+Run real dual-RTX5090 fixed benchmark:
+  legacy_v1 / 48000
   quality_ranked_v1 / 48000
   quality_ranked_v1 / 40000
   quality_ranked_v1 / 32000
         ↓
-Quality acceptance gate first:
+Quality acceptance first:
   Verified Task Success must not decrease
   First-Pass Verified Success must not decrease
   Evidence Coverage must not decrease
-  required-validator success must not decrease
+  exact required-validator success must not decrease
         ↓
 Only then compare tokens/context proxies/latency/retries/escalations/tool calls/resource usage
+        ↓
+Run D4 representative reuse report on real workload telemetry
+        ↓
+D5 context map/rank/dedupe/hard-pack completion
+        ↓
+D6 deterministic NO_LLM + bounded escalation completion
+        ↓
+D7 evaluation/promotion corpus and pipeline
 ```
 
-Do not promote 40k/32k context budgets without benchmark evidence. Do not begin D8/D9/D10/D11/D12 production integration before their prerequisite gates are satisfied.
+Do not promote 40k/32k context budgets without benchmark evidence. Do not begin D9 unless D4 representative evidence permits its benchmark. Do not begin D8/D10/D11/D12 production integration before their prerequisite gates are satisfied.
