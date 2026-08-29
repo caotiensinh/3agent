@@ -1,0 +1,139 @@
+name: closure-rtx5090-one-shot
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-closure-rtx5090-one-shot
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: [self-hosted, Linux, X64, rtx5090]
+    timeout-minutes: 300
+    env:
+      CANDIDATE_SHA: 7703137b95cb2985164af5e85fd868915d96a3c9
+      MODEL: qwen3:30b
+      EVIDENCE_ROOT: ${{ runner.temp }}/workspace-closure-${{ github.run_id }}
+      WORKSPACE_FAST_MODEL: qwen3:30b
+      WORKSPACE_RESEARCH_MODEL: qwen3:30b
+      WORKSPACE_PRESENTATION_MODEL: qwen3:30b
+      WORKSPACE_REPORT_MODEL: qwen3:30b
+      WORKSPACE_DEEP_MODEL: qwen3:30b
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - name: Checkout exact main candidate
+        uses: actions/checkout@v4
+        with:
+          ref: 7703137b95cb2985164af5e85fd868915d96a3c9
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git -C candidate status --porcelain --untracked-files=no)"
+
+      - name: Install exact candidate without dependency resolution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --no-deps -e candidate
+          workspace-benchmark --help >/dev/null
+          workspace-benchmark-canonicalize --help >/dev/null
+          workspace-benchmark-readiness --help >/dev/null
+          workspace-benchmark-verify --help >/dev/null
+          workspace-eval-efficiency-observe --help >/dev/null
+
+      - name: Capture metadata-only readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          workspace-benchmark-readiness \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --model "$MODEL" \
+            --output "$EVIDENCE_ROOT/environment.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/environment.json"
+
+      - name: Execute fixed-task benchmark
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workspace-benchmark \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$EVIDENCE_ROOT/benchmark" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
+            --config "$GITHUB_WORKSPACE/candidate/config/workspace.secure.json" \
+            >/dev/null
+          workspace-benchmark-canonicalize --root "$EVIDENCE_ROOT/benchmark" >/dev/null
+          workspace-benchmark-verify \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$EVIDENCE_ROOT/benchmark" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
+            --output "$EVIDENCE_ROOT/benchmark/verification.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/benchmark/suite.json"
+          test -s "$EVIDENCE_ROOT/benchmark/verification.json"
+
+      - name: Execute D7-06 concurrency observation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workspace-eval-efficiency-observe \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --environment "$EVIDENCE_ROOT/environment.json" \
+            --model "$MODEL" \
+            --concurrency 4 \
+            --samples 8 \
+            --output "$EVIDENCE_ROOT/observation.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/observation.json"
+
+      - name: Publish closure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-closure-rtx5090-${{ env.CANDIDATE_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/observation.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/verification.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/suite.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/*/benchmark.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/*/isolation.json
+
+      - name: Require complete evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s "$EVIDENCE_ROOT/environment.json"
+          test -s "$EVIDENCE_ROOT/observation.json"
+          test -s "$EVIDENCE_ROOT/benchmark/verification.json"
+          python3 - <<'PY'
+          import json, os
+          root = os.environ['EVIDENCE_ROOT']
+          with open(root + '/benchmark/verification.json', encoding='utf-8') as f:
+              verification = json.load(f)
+          with open(root + '/observation.json', encoding='utf-8') as f:
+              observation = json.load(f)
+          assert verification.get('passed') is True, verification
+          assert observation.get('complete') is True, observation
+          PY
