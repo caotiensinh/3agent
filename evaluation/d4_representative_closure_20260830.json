@@ -1,0 +1,45 @@
+{
+  "schema_version": "workspace-d4-representative-closure/v1",
+  "captured_at_utc": "2026-08-29T18:27:20Z",
+  "source_ref": "0cf95cfc0126856b932414967a61ec0e0af5722e",
+  "execution": {
+    "github_run_id": 33268295997,
+    "github_artifact_id": 9719314497,
+    "artifact_zip_sha256": "sha256:d71900821df80d094050119fbd55f404148a2cf1fd586af09c7d1e2291b19fba",
+    "runner_class": [
+      "self-hosted",
+      "Linux",
+      "X64",
+      "dual-RTX5090"
+    ]
+  },
+  "observation": {
+    "window_days": 7,
+    "minimum_events": 20,
+    "reuse_threshold": 0.3,
+    "telemetry_discovery": "not-found",
+    "eligible_events": 0,
+    "reuse_opportunity_rate": 0.0,
+    "prompt_eval_duration_share": null,
+    "decision": "INSUFFICIENT_REPRESENTATIVE_DATA",
+    "allowed_action": "collect_more_metadata",
+    "production_serving_change_authorized": false,
+    "backend_cache_hit_claimed": false,
+    "raw_telemetry_uploaded": false,
+    "source_observation_receipt_sha256": "sha256:e192a0ccc764e069abc2b05ea2a94f0097a4968ce5bde7e1c53a8090405639a1"
+  },
+  "decisions": {
+    "d9_serving_cache_benchmark": "NOT_ELIGIBLE",
+    "production_serving_change": "NOT_AUTHORIZED",
+    "next_action": "COLLECT_REAL_WORKLOAD_METADATA",
+    "synthetic_workload_substitution": "FORBIDDEN"
+  },
+  "privacy": {
+    "raw_prompt_recorded": false,
+    "raw_response_recorded": false,
+    "raw_telemetry_committed": false,
+    "prefix_hashes_committed": false,
+    "credentials_recorded": false
+  },
+  "closure_sha256": "sha256:77e0d442ddc7999ba879f49339aae8c4bcd1283c5f1e15c2addc36854255b0b6"
+}
