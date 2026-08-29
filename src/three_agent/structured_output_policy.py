@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .daily_report_schemas import DAILY_REPORT_SCHEMA_ID, DAILY_REPORT_SCHEMA_V1
@@ -49,18 +54,46 @@ _AGENT_SINGLE_ROUTES: dict[str, tuple[str, dict[str, Any], str]] = {
     ),
 }
 
+_RECEIPT_LOCK = threading.Lock()
+
+
+def _validation_telemetry_path() -> Path | None:
+    configured = os.getenv("WORKSPACE_INFERENCE_TELEMETRY", "").strip()
+    if not configured:
+        return None
+    base = Path(configured).expanduser()
+    suffix = base.suffix or ".jsonl"
+    return base.with_name(f"{base.stem}.structured-validation{suffix}")
+
+
+def _persist_receipt(receipt: dict[str, Any]) -> None:
+    path = _validation_telemetry_path()
+    if path is None:
+        return
+    event = {
+        "schema_version": "workspace-structured-validation/v1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **receipt,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _RECEIPT_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+
 
 class StructuredOutputPolicyClient:
-    """Deterministic schema policy wrapper around the configured local LLM client.
+    """Schema policy plus metadata-only post-validation receipts.
 
-    The agent owns *what* operation it is performing; this harness layer owns the
-    structural contract. Once an agent enters a D2 schema-governed phase, every
-    structured generation path for that agent must match a registered route.
+    The wrapped LLM client performs decoder-time schema constraint and local
+    deterministic validation before returning. A successful wrapper return is
+    therefore the correct point to record `validated`; exceptions record only the
+    exception type. Prompt/response/evidence text is never copied into receipts.
     """
 
     def __init__(self, client: Any, *, agent_id: str):
         self._client = client
         self.agent_id = str(agent_id)
+        self._receipts: list[dict[str, Any]] = []
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._client, name)
@@ -84,6 +117,27 @@ class StructuredOutputPolicyClient:
             )
         return schema, schema_id
 
+    def structured_output_receipts(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._receipts]
+
+    def _record_receipt(
+        self,
+        schema_id: str,
+        *,
+        status: str,
+        error_type: str | None,
+    ) -> None:
+        receipt = {
+            "agent_id": self.agent_id,
+            "schema_id": schema_id,
+            "validator": "decoder-schema+local-json-schema-subset",
+            "status": status,
+            "error_type": error_type,
+            "raw_content_logged": False,
+        }
+        self._receipts.append(receipt)
+        _persist_receipt(receipt)
+
     def generate_json(
         self,
         system_prompt: str,
@@ -91,9 +145,24 @@ class StructuredOutputPolicyClient:
         **kwargs: Any,
     ) -> dict[str, Any]:
         route = self._schema_route(user_prompt)
+        schema_id: str | None = None
         if route is not None:
             schema, schema_id = route
             kwargs = dict(kwargs)
             kwargs["schema"] = schema
             kwargs["schema_id"] = schema_id
-        return self._client.generate_json(system_prompt, user_prompt, **kwargs)
+
+        try:
+            result = self._client.generate_json(system_prompt, user_prompt, **kwargs)
+        except Exception as exc:
+            if schema_id is not None:
+                self._record_receipt(
+                    schema_id,
+                    status="failed",
+                    error_type=type(exc).__name__,
+                )
+            raise
+
+        if schema_id is not None:
+            self._record_receipt(schema_id, status="validated", error_type=None)
+        return result
