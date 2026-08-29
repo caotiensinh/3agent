@@ -4,13 +4,15 @@ on:
   push:
     branches:
       - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-rtx5090-one-shot.yml'
 
 permissions:
   contents: read
 
 concurrency:
   group: workspace-closure-selfhosted-probe-303749d5
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   collect:
