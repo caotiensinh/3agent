@@ -5,6 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Iterator
 
+from .capability_authority import TaskCapabilityAuthority
 from .execution_budget import TaskExecutionBudgetState
 from .model_authority import TaskModelAuthority
 
@@ -16,6 +17,7 @@ class InferenceScope:
     stage: str
     execution_budget: TaskExecutionBudgetState | None = None
     model_authority: TaskModelAuthority | None = None
+    capability_authority: TaskCapabilityAuthority | None = None
 
     def metadata(self) -> dict[str, str]:
         return {
@@ -46,6 +48,17 @@ def current_model_authority() -> TaskModelAuthority | None:
     return scope.model_authority if scope is not None else None
 
 
+def current_capability_authority() -> TaskCapabilityAuthority | None:
+    scope = _CURRENT_SCOPE.get()
+    if scope is None:
+        return None
+    if scope.capability_authority is not None:
+        return scope.capability_authority
+    if scope.model_authority is not None:
+        return TaskCapabilityAuthority.from_model_authority(scope.model_authority)
+    return None
+
+
 @contextmanager
 def inference_scope(
     task_id: str,
@@ -54,12 +67,14 @@ def inference_scope(
     stage: str,
     execution_budget: TaskExecutionBudgetState | None = None,
     model_authority: TaskModelAuthority | None = None,
+    capability_authority: TaskCapabilityAuthority | None = None,
 ) -> Iterator[InferenceScope]:
-    """Bind authoritative task identity, execution budget and model authority.
+    """Bind authoritative task identity, budgets and immutable authorities.
 
-    Budget and model-authority objects are derived from the immutable TaskContract
-    by the production validator bridge. They are never derived from prompt/model
-    content, and a nested model fallback cannot replace or expand them.
+    Budget/model authority come from the production TaskContract bridge. The
+    capability broker is either explicitly supplied from that contract or derived
+    deterministically from the bridge-bound model authority's capability subset.
+    Prompt/model content can never replace or expand these objects.
     """
     normalized_task = str(task_id).strip()
     normalized_agent = str(agent_id).strip()
@@ -74,6 +89,8 @@ def inference_scope(
         raise ValueError("execution budget task_id does not match inference scope")
     if model_authority is not None and model_authority.task_id != normalized_task:
         raise ValueError("model authority task_id does not match inference scope")
+    if capability_authority is not None and capability_authority.task_id != normalized_task:
+        raise ValueError("capability authority task_id does not match inference scope")
 
     scope = InferenceScope(
         normalized_task,
@@ -81,6 +98,7 @@ def inference_scope(
         normalized_stage,
         execution_budget,
         model_authority,
+        capability_authority,
     )
     token = _CURRENT_SCOPE.set(scope)
     try:
