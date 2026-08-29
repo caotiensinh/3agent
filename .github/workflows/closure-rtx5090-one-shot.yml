@@ -14,10 +14,10 @@ concurrency:
 
 jobs:
   collect:
-    runs-on: [self-hosted, Linux, X64, rtx5090]
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 300
     env:
-      CANDIDATE_SHA: 7703137b95cb2985164af5e85fd868915d96a3c9
+      CANDIDATE_SHA: 34654bd8950671cb0eca47dd53996943cfce17e0
       MODEL: qwen3:30b
       WORKSPACE_FAST_MODEL: qwen3:30b
       WORKSPACE_RESEARCH_MODEL: qwen3:30b
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout exact main candidate
         uses: actions/checkout@v4
         with:
-          ref: 7703137b95cb2985164af5e85fd868915d96a3c9
+          ref: 34654bd8950671cb0eca47dd53996943cfce17e0
           path: candidate
           persist-credentials: false
           fetch-depth: 1
