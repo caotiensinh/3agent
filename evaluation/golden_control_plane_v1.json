@@ -1,0 +1,176 @@
+{
+  "schema_version": "workspace-evaluation-corpus/v1",
+  "corpus_id": "workspace-control-plane-golden-v1",
+  "cases": [
+    {
+      "case_id": "internal-general-small-first",
+      "inputs": {
+        "task_type": "general",
+        "sensitivity": "internal",
+        "risk_level": "low"
+      },
+      "expected": {
+        "accepted": true,
+        "task_type": "general",
+        "sensitivity": "internal",
+        "risk_level": "low",
+        "network_scope": "internal_only",
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy"],
+        "evidence_required": false,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SMALL_FIRST",
+        "initial_model_tier": "small",
+        "max_model_tier": "strong",
+        "escalation_allowed": true,
+        "max_retries": 1,
+        "max_escalations": 1
+      }
+    },
+    {
+      "case_id": "confidential-analysis-specialist",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "confidential",
+        "risk_level": "low"
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "deny",
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true,
+        "max_retries": 2,
+        "max_escalations": 1
+      }
+    },
+    {
+      "case_id": "public-analysis-allowlisted-web",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "public",
+        "risk_level": "low",
+        "public_web": true
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "allowlisted_egress",
+        "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+        "validators": ["policy", "evidence"],
+        "route": "MODEL",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true
+      }
+    },
+    {
+      "case_id": "internal-code-review-specialist",
+      "inputs": {
+        "task_type": "code_review",
+        "sensitivity": "internal",
+        "risk_level": "medium"
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "internal_only",
+        "allowed_tools": ["search_repo", "read_file", "run_linter", "run_tests"],
+        "validators": ["policy", "syntax", "lint", "unit_test"],
+        "evidence_required": false,
+        "route": "MODEL",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "max_retries": 1,
+        "max_escalations": 1
+      }
+    },
+    {
+      "case_id": "public-classification-small",
+      "inputs": {
+        "task_type": "classification",
+        "sensitivity": "public",
+        "risk_level": "low"
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "deny",
+        "allowed_tools": [],
+        "validators": ["policy"],
+        "evidence_required": false,
+        "route": "MODEL",
+        "route_reason_code": "CONTRACT_SMALL_FIRST",
+        "initial_model_tier": "small",
+        "max_model_tier": "specialist",
+        "escalation_allowed": true
+      }
+    },
+    {
+      "case_id": "confidential-retrieval-no-llm",
+      "inputs": {
+        "task_type": "retrieval",
+        "sensitivity": "confidential",
+        "risk_level": "low",
+        "deterministic_only": true
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "deny",
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence"],
+        "evidence_required": true,
+        "route": "NO_LLM",
+        "route_reason_code": "CONTRACT_NO_LLM",
+        "initial_model_tier": "none",
+        "max_model_tier": "none",
+        "escalation_allowed": false,
+        "max_retries": 0,
+        "max_escalations": 0
+      }
+    },
+    {
+      "case_id": "high-risk-analysis-human-gate",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "internal",
+        "risk_level": "high"
+      },
+      "expected": {
+        "accepted": true,
+        "validators": ["policy", "evidence", "human"],
+        "evidence_required": true,
+        "route": "MODEL",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong"
+      }
+    },
+    {
+      "case_id": "reject-confidential-public-web",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "confidential",
+        "risk_level": "low",
+        "public_web": true
+      },
+      "expected": {
+        "accepted": false
+      }
+    },
+    {
+      "case_id": "reject-no-llm-extra-tool",
+      "inputs": {
+        "task_type": "retrieval",
+        "sensitivity": "confidential",
+        "risk_level": "low",
+        "deterministic_only": true,
+        "allowed_tools": ["search_docs", "calculator"]
+      },
+      "expected": {
+        "accepted": false
+      }
+    }
+  ]
+}
