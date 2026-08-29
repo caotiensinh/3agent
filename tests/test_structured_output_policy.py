@@ -22,6 +22,11 @@ class CaptureClient:
         return {"ok": True}
 
 
+class FailingClient:
+    def generate_json(self, *_args, **_kwargs):
+        raise ValueError("SECRET-PROMPT-CONTENT must never enter receipt")
+
+
 class StructuredOutputPolicyTests(unittest.TestCase):
     def test_research_plan_gets_versioned_schema(self):
         inner = CaptureClient()
@@ -75,6 +80,31 @@ class StructuredOutputPolicyTests(unittest.TestCase):
         self.assertEqual(kwargs["schema_id"], DAILY_REPORT_SCHEMA_ID)
         self.assertIn("work_items", kwargs["schema"]["required"])
 
+    def test_success_receipt_contains_schema_and_no_raw_content(self):
+        client = StructuredOutputPolicyClient(CaptureClient(), agent_id="presentation")
+        client.generate_json(
+            "SYSTEM SECRET",
+            "Plan an evidence-bounded professional presentation. SECRET USER DATA",
+        )
+        receipt = client.structured_output_receipts()[0]
+        self.assertEqual(receipt["schema_id"], PRESENTATION_PLAN_SCHEMA_ID)
+        self.assertEqual(receipt["status"], "validated")
+        self.assertFalse(receipt["raw_content_logged"])
+        self.assertNotIn("SECRET", str(receipt))
+
+    def test_failed_receipt_records_error_type_not_exception_text(self):
+        client = StructuredOutputPolicyClient(FailingClient(), agent_id="daily_report")
+        with self.assertRaises(ValueError):
+            client.generate_json(
+                "system",
+                "Create a concise Japanese R&D daily report using ONLY the JSON evidence below.",
+            )
+        receipt = client.structured_output_receipts()[0]
+        self.assertEqual(receipt["schema_id"], DAILY_REPORT_SCHEMA_ID)
+        self.assertEqual(receipt["status"], "failed")
+        self.assertEqual(receipt["error_type"], "ValueError")
+        self.assertNotIn("SECRET-PROMPT-CONTENT", str(receipt))
+
     def test_unknown_schema_governed_path_fails_closed(self):
         for agent_id in ("research", "presentation", "daily_report"):
             with self.subTest(agent_id=agent_id):
@@ -90,6 +120,7 @@ class StructuredOutputPolicyTests(unittest.TestCase):
         self.assertNotIn("schema", kwargs)
         self.assertNotIn("schema_id", kwargs)
         self.assertEqual(kwargs["num_predict"], 10)
+        self.assertEqual(client.structured_output_receipts(), [])
 
 
 if __name__ == "__main__":
