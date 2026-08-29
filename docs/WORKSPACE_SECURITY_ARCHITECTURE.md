@@ -1,104 +1,75 @@
-# WorkSpace Confidentiality and Egress Security Architecture
+# WorkSpace Security Architecture
 
-## Security objective
+## Product security invariant
 
-WorkSpace is intended for internal enterprise work where prompts, source files, reports, code, research notes and business information may be confidential.
+WorkSpace is a local-first AI runtime for internal enterprise work. The default rule is:
 
-The design objective is to prevent confidential runtime data from reaching uncontrolled external destinations. Absolute zero-risk claims are not technically defensible under every host compromise, so WorkSpace uses layered controls and removes network capability from the principal that holds confidential data.
+> Confidential data is processed locally and the runtime that can read it has no public egress capability and no broker access.
 
-## Default policy: no public egress
+Cloud LLM APIs, telemetry, autonomous GitHub synchronization and arbitrary web requests are not runtime dependencies.
 
-`config/workspace.secure.json` sets:
+## Trust zones
+
+### Zone A — Confidential Core
+
+Contains tasks, uploaded/internal files, evidence, reports, caches and model prompts. Runs as `workspace-core`. It can access only local Ollama inference endpoints and is deliberately not in the egress IPC group.
+
+### Zone B — Public Research
+
+Runs as `workspace-public` with a separate database and artifact root. It exists only for questions that are already safe to disclose publicly. It cannot read the confidential store and has no direct network access. Search goes through the broker.
+
+### Zone C — Egress Broker
+
+Runs as `workspace-egress`. It has local DNS plus public HTTPS only and no permission to read either WorkSpace data root. It accepts requests only from the public-research UID and only for the research capability.
+
+## Default deny matrix
+
+| Capability | Core | Public Research | Egress Broker |
+| --- | --- | --- | --- |
+| Read confidential data | YES | NO | NO |
+| Read public research data | NO by default | YES | NO |
+| Local Ollama | YES | YES | NO |
+| Broker IPC | NO | YES | server side |
+| Direct LAN/Internet | NO | NO | HTTPS only |
+| DNS | NO | NO | local resolver only |
+| Shell execution gateway | policy-controlled | NO | NO |
+| GitHub runtime push | NO | NO | NO |
+
+## Constraint-first security
+
+PicoLM's engineering method is applied to security too:
 
 ```text
-confidentiality_mode = confidential
-public_search_enabled = false
-direct_egress = false
+remove capability > filter capability
+avoid data movement > inspect data movement
+reuse validated state > recompute blindly
+mechanical constraint > prompt request
 ```
 
-Local inference, file processing, artifacts and daily reports continue to function without public Internet access.
+The strongest leak prevention is not a better prompt or larger DLP model; it is removing the route by which confidential bytes could leave.
 
-## High-assurance Linux trust boundary
+## Internet exception policy
 
-### workspace-core
+Public research is an exception and must satisfy all conditions: public-zone task, research capability, deterministic DLP, allowlisted search endpoint, GET-only fixed API, no body/caller headers/cookies/credentials, bounded redirects, globally routable destinations, search-derived one-time result URLs, bounded responses and hashed/minimal audit metadata.
 
-Owns `/var/lib/workspace` and may read confidential task data. nftables blocks all network traffic owned by this UID except loopback TCP/11434–11436 for local Ollama workers. AF_UNIX IPC remains available.
+## OS enforcement
 
-### workspace-egress
+`scripts/install_workspace_secure_boundary.sh` creates separate UIDs and an nftables owner-based policy:
 
-Runs `workspace-egressd`. Its OS egress is restricted to the local DNS stub and public TCP/443, while RFC1918/link-local/special-use destinations are rejected; it has no permission to read `/var/lib/workspace`. It accepts narrowly structured requests only from the configured Core UID over `/run/workspace/egress.sock`.
+- `workspace-core`: localhost Ollama ports, then reject;
+- `workspace-public`: localhost Ollama ports, then reject;
+- `workspace-egress`: local resolver + TCP/443, private/special ranges rejected, then reject.
 
-This is intentional privilege separation: the component with data has no Internet; the component with Internet has no data.
+Systemd hardening removes unnecessary capabilities and makes both data roots inaccessible to the egress service.
 
-## Broker protocol
+## File/prompt injection rule
 
-Accepted actions are only:
+Files and web pages are untrusted data. Their content cannot authorize network access, shell execution, credential access, policy changes, skill installation or persistent memory changes. Deterministic policy outranks model/file instructions.
 
-1. `search` — research agent only, allowlisted HTTPS search host, allowlisted parameters, DLP-approved public query.
-2. `fetch_result` — research agent only, exact URL must have been observed in a recent allowlisted search response.
+## Deployment rule
 
-Not supported:
+For enterprise deployment, pin repository/installers to a reviewed exact commit SHA and verify it before execution. A moving `main` branch is not a supply-chain trust anchor.
 
-- arbitrary URL fetch;
-- POST/PUT/PATCH/DELETE;
-- request body upload;
-- cookies;
-- Authorization headers;
-- user-controlled headers;
-- webhooks;
-- file upload;
-- cloud LLM calls;
-- presentation/daily-report Internet access.
+## Re-review triggers
 
-## Query DLP
-
-Before a public query can leave the machine, WorkSpace rejects known identifiers/secrets such as private IPs, e-mail addresses, MAC addresses, API/token patterns, UUIDs, local filesystem paths, confidentiality markers, embedded URLs, multiline content and suspicious high-entropy tokens.
-
-This is defense in depth, not magical business-secret detection. An unknown internal codename cannot always be detected automatically. That is why public search is disabled in confidential mode.
-
-## Search-result capability
-
-Arbitrary content URLs are not accepted. The direct broker observes URLs returned by the search engine and issues short-lived exact-URL capabilities internally. A result URL is consumed once. This prevents a model from constructing `https://attacker.example/<secret>` and asking the gateway to fetch it.
-
-## SSRF and redirect controls
-
-- HTTPS only in strict mode;
-- port 443 only;
-- no URL credentials;
-- localhost/.local prohibited;
-- every DNS resolution must produce globally routable addresses;
-- nftables separately denies egress-UID access to LAN/private/link-local/special-use networks before allowing public TCP/443;
-- redirects are revalidated;
-- redirect count is bounded;
-- response bytes are bounded.
-
-## Minimal audit
-
-Egress logs record:
-
-- timestamp;
-- task/agent identity;
-- action;
-- destination scheme/host/path without query string;
-- allow/deny reason;
-- query SHA-256 and character count for authorized search.
-
-Search query plaintext is intentionally not logged.
-
-## GitHub and updates
-
-Runtime agents do not autonomously push internal artifacts to GitHub. Repository/software update operations are operator/deployment functions executed outside the confidential Core runtime. No agent receives GitHub credentials by default.
-
-## Relationship to industry guidance
-
-The design follows zero-trust/default-deny principles: explicit authorization, least privilege, segmentation/microsegmentation and egress filtering. CISA guidance recommends restricting Internet traffic from hosts that do not require it and allowlisting specific outbound destinations when needed. NIST Zero Trust guidance emphasizes granular policy enforcement rather than implicit trust from network location.
-
-## Residual risks
-
-- a compromised root/kernel/hypervisor can bypass process separation;
-- an administrator can intentionally weaken policy;
-- a public query explicitly approved by an operator may itself reveal information;
-- local malware running under privileged accounts may access data outside WorkSpace controls;
-- side channels are outside the current threat model.
-
-These risks must be handled by enterprise endpoint security, OS hardening, access control, backup, monitoring and physical/administrative controls.
+Review is mandatory if user/group memberships, nftables rules, broker peer UID, search defaults, request methods/headers, egress destinations, data-root permissions, remote model support, telemetry/update behavior or automatic public/confidential transfers change.
