@@ -1,0 +1,66 @@
+{
+  "schema_version": "workspace-promotion-policy/v1",
+  "policy_id": "workspace-production-promotion-v1",
+  "metric_registry_id": "workspace-d3-core-metrics-v1",
+  "classes": {
+    "golden": {
+      "source_kind": "repository_corpus",
+      "source_ref": "evaluation/golden_control_plane_v1.json",
+      "required_checks": ["CONTROL_PLANE_REPLAY_PASS"],
+      "holdout_commitment_required": false,
+      "evaluator_attestation_required": false
+    },
+    "replay": {
+      "source_kind": "external_replay",
+      "source_ref": null,
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE"
+      ],
+      "holdout_commitment_required": true,
+      "evaluator_attestation_required": true
+    },
+    "regression": {
+      "source_kind": "repository_corpus",
+      "source_ref": "evaluation/regression_control_plane_v1.json",
+      "required_checks": ["CONTROL_PLANE_REPLAY_PASS"],
+      "holdout_commitment_required": false,
+      "evaluator_attestation_required": false
+    },
+    "adversarial_security": {
+      "source_kind": "repository_corpus",
+      "source_ref": "evaluation/adversarial_security_v1.json",
+      "required_checks": ["ADVERSARIAL_REPLAY_PASS", "SECURITY_GATE_PASS"],
+      "holdout_commitment_required": false,
+      "evaluator_attestation_required": false
+    },
+    "edge_large_context": {
+      "source_kind": "external_holdout",
+      "source_ref": null,
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "CONTEXT_RECALL_NON_DECREASE",
+        "CRITICAL_SPAN_LOSS_ZERO"
+      ],
+      "holdout_commitment_required": true,
+      "evaluator_attestation_required": true
+    },
+    "efficiency_cache_concurrency": {
+      "source_kind": "external_benchmark",
+      "source_ref": null,
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "STRUCTURED_OUTPUT_NON_REGRESSION",
+        "RESOURCE_BENEFIT_MEASURED"
+      ],
+      "holdout_commitment_required": false,
+      "evaluator_attestation_required": true
+    }
+  }
+}
