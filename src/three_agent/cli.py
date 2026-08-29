@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 
 from .config import load_config
 from .inference_scope import inference_scope
 from .metrics_snapshot import MetricsSnapshotService
+from .optimization_gate import OptimizationAcceptanceGate, OptimizationGatePolicy
 from .orchestrator import Orchestrator
 
 
@@ -73,11 +75,46 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="Limit the snapshot to one task; repeat for multiple task IDs",
     )
+
+    compare = sub.add_parser(
+        "metrics-compare",
+        help="Fail closed if an optimization candidate lowers verified quality or misses its token target",
+    )
+    compare.add_argument("--baseline", required=True, help="Baseline workspace-unified-metrics/v1 JSON file")
+    compare.add_argument("--candidate", required=True, help="Candidate workspace-unified-metrics/v1 JSON file")
+    compare.add_argument(
+        "--min-token-reduction-pct",
+        type=float,
+        default=0.0,
+        help="Required reduction in total tokens per verified task (0..100)",
+    )
     return parser
+
+
+def _load_json_object(path: str) -> dict:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON file must contain an object: {path}")
+    return payload
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "metrics-compare":
+        try:
+            report = OptimizationAcceptanceGate(
+                OptimizationGatePolicy(args.min_token_reduction_pct)
+            ).evaluate(
+                _load_json_object(args.baseline),
+                _load_json_object(args.candidate),
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(json.dumps({"schema_version": "workspace-optimization-acceptance/v1", "accepted": False, "error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False, indent=2))
+            return 3
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["accepted"] else 3
+
     orchestrator = Orchestrator(load_config())
     orchestrator.initialize()
 
