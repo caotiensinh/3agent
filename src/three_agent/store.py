@@ -78,6 +78,16 @@ class TaskStore:
                     bound_at TEXT NOT NULL,
                     FOREIGN KEY(task_id) REFERENCES tasks(task_id)
                 );
+                CREATE TABLE IF NOT EXISTS task_execution_budget_usage (
+                    task_id TEXT PRIMARY KEY,
+                    max_retries INTEGER NOT NULL,
+                    max_escalations INTEGER NOT NULL,
+                    retries_used INTEGER NOT NULL DEFAULT 0,
+                    escalations_used INTEGER NOT NULL DEFAULT 0,
+                    bound_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+                );
                 CREATE TABLE IF NOT EXISTS validator_results (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -170,12 +180,7 @@ class TaskStore:
         return text, digest
 
     def bind_task_contract(self, task_id: str, contract: dict[str, Any]) -> str:
-        """Bind one immutable TaskContract payload to a task.
-
-        Rebinding the exact same canonical payload is idempotent. A different
-        contract for the same task is rejected so later metrics cannot silently
-        redefine which validators were required after execution began.
-        """
+        """Bind one immutable TaskContract payload to a task."""
         self.get_task(task_id)
         if not isinstance(contract, dict):
             raise TypeError("contract must be a dictionary")
@@ -230,6 +235,121 @@ class TaskStore:
                 "SELECT * FROM task_contracts WHERE task_id = ?",
                 (task_id,),
             ).fetchone()
+
+    @staticmethod
+    def _budget_value(value: Any, field: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"{field} must be an integer >= 0")
+        return value
+
+    def _bound_execution_limits(self, task_id: str) -> tuple[int, int]:
+        contract = self.task_contract_for_task(task_id)
+        if contract is None:
+            raise ValueError("TASK_CONTRACT_NOT_BOUND")
+        execution = contract.get("execution_budget")
+        if not isinstance(execution, dict):
+            raise ValueError("BOUND_TASK_CONTRACT_EXECUTION_BUDGET_MISSING")
+        retries = self._budget_value(execution.get("max_retries"), "max_retries")
+        escalations = self._budget_value(execution.get("max_escalations"), "max_escalations")
+        return retries, escalations
+
+    def bind_task_execution_budget(self, task_id: str) -> dict[str, int | str]:
+        """Persist immutable retry/escalation limits derived only from TaskContract.
+
+        Rebinding after a process restart is idempotent and preserves usage. A
+        caller cannot supply or inflate limits independently from the already-bound
+        authoritative contract.
+        """
+        self.get_task(task_id)
+        retries, escalations = self._bound_execution_limits(task_id)
+        now = datetime.now(TZ).isoformat()
+        created = False
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM task_execution_budget_usage WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                conn.execute(
+                    """
+                    INSERT INTO task_execution_budget_usage(
+                        task_id,max_retries,max_escalations,retries_used,
+                        escalations_used,bound_at,updated_at
+                    ) VALUES(?,?,?,?,?,?,?)
+                    """,
+                    (task_id, retries, escalations, 0, 0, now, now),
+                )
+                created = True
+            elif int(row["max_retries"]) != retries or int(row["max_escalations"]) != escalations:
+                raise ValueError("TASK_EXECUTION_BUDGET_IMMUTABLE_MISMATCH")
+        if created:
+            self.record_activity(
+                task_id,
+                "execution_budget",
+                "execution_budget_bound",
+                "ok",
+                f"max_retries={retries} max_escalations={escalations}",
+            )
+        return self.task_execution_budget_for_task(task_id)
+
+    def task_execution_budget_for_task(self, task_id: str) -> dict[str, int | str]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM task_execution_budget_usage WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise ValueError("TASK_EXECUTION_BUDGET_NOT_BOUND")
+        return {
+            "task_id": str(row["task_id"]),
+            "max_retries": int(row["max_retries"]),
+            "max_escalations": int(row["max_escalations"]),
+            "retries_used": int(row["retries_used"]),
+            "escalations_used": int(row["escalations_used"]),
+            "bound_at": str(row["bound_at"]),
+            "updated_at": str(row["updated_at"]),
+        }
+
+    def reserve_task_execution_budget(
+        self,
+        task_id: str,
+        *,
+        retries: int = 0,
+        escalations: int = 0,
+    ) -> dict[str, int | str]:
+        retry_delta = self._budget_value(retries, "retries")
+        escalation_delta = self._budget_value(escalations, "escalations")
+        if retry_delta == 0 and escalation_delta == 0:
+            return self.task_execution_budget_for_task(task_id)
+        now = datetime.now(TZ).isoformat()
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM task_execution_budget_usage WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("TASK_EXECUTION_BUDGET_NOT_BOUND")
+            current_retries = int(row["retries_used"])
+            current_escalations = int(row["escalations_used"])
+            max_retries = int(row["max_retries"])
+            max_escalations = int(row["max_escalations"])
+            new_retries = current_retries + retry_delta
+            new_escalations = current_escalations + escalation_delta
+            if new_retries > max_retries:
+                raise ValueError("MODEL_RETRY_BUDGET_EXHAUSTED")
+            if new_escalations > max_escalations:
+                raise ValueError("MODEL_ESCALATION_BUDGET_EXHAUSTED")
+            conn.execute(
+                """
+                UPDATE task_execution_budget_usage
+                SET retries_used = ?, escalations_used = ?, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (new_retries, new_escalations, now, task_id),
+            )
+        return self.task_execution_budget_for_task(task_id)
 
     def record_validator_result(
         self,

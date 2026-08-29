@@ -5,12 +5,15 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Iterator
 
+from .execution_budget import TaskExecutionBudgetState
+
 
 @dataclass(frozen=True)
 class InferenceScope:
     task_id: str
     agent_id: str
     stage: str
+    execution_budget: TaskExecutionBudgetState | None = None
 
     def metadata(self) -> dict[str, str]:
         return {
@@ -31,13 +34,25 @@ def current_inference_scope() -> InferenceScope | None:
     return _CURRENT_SCOPE.get()
 
 
-@contextmanager
-def inference_scope(task_id: str, *, agent_id: str, stage: str) -> Iterator[InferenceScope]:
-    """Bind authoritative task attribution without deriving it from prompt/model text.
+def current_execution_budget() -> TaskExecutionBudgetState | None:
+    scope = _CURRENT_SCOPE.get()
+    return scope.execution_budget if scope is not None else None
 
-    ContextVar keeps nested/async execution isolated. Callers must provide the task
-    identifier from TaskStore/workflow state. This scope carries metadata only and
-    grants no tool, network, model, or write authority.
+
+@contextmanager
+def inference_scope(
+    task_id: str,
+    *,
+    agent_id: str,
+    stage: str,
+    execution_budget: TaskExecutionBudgetState | None = None,
+) -> Iterator[InferenceScope]:
+    """Bind authoritative task attribution and its optional hard execution budget.
+
+    The budget wrapper is derived from the immutable bound TaskContract by the
+    production validator bridge. The same wrapper is passed to Research and
+    Presentation scopes, while persistent usage lives in TaskStore so process
+    restart cannot reset it. Scope metadata remains content-free.
     """
     normalized_task = str(task_id).strip()
     normalized_agent = str(agent_id).strip()
@@ -48,8 +63,15 @@ def inference_scope(task_id: str, *, agent_id: str, stage: str) -> Iterator[Infe
         raise ValueError("agent_id must be a compact identifier")
     if not normalized_stage or len(normalized_stage) > 64 or any(ch.isspace() for ch in normalized_stage):
         raise ValueError("stage must be a compact identifier")
+    if execution_budget is not None and execution_budget.task_id != normalized_task:
+        raise ValueError("execution budget task_id does not match inference scope")
 
-    scope = InferenceScope(normalized_task, normalized_agent, normalized_stage)
+    scope = InferenceScope(
+        normalized_task,
+        normalized_agent,
+        normalized_stage,
+        execution_budget,
+    )
     token = _CURRENT_SCOPE.set(scope)
     try:
         yield scope

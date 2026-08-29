@@ -9,6 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .artifacts import ArtifactManager
+from .execution_budget import TaskExecutionBudgetState
 from .inference_scope import inference_scope
 from .models import TaskStatus
 from .runtime_validation import RuntimeValidatorBridge
@@ -40,13 +41,9 @@ class WorkflowRunner:
     """Run Research -> Presentation -> Daily Report as one auditable workflow.
 
     Production construction supplies RuntimeValidatorBridge. In that path the
-    TaskContract is bound before Research, deterministic Research and Presentation
-    validators are recorded, and DONE is impossible until ValidatorLedger.evaluate
-    reports verified=True. Stage statuses remain state-machine invariants only;
-    they never substitute for validator evidence.
-
-    A bridge-less runner is retained only for narrow legacy/unit-test construction
-    that does not participate in Verified Task Success accounting.
+    TaskContract and its persistent execution budget are bound before Research,
+    deterministic Research and Presentation validators are recorded, and DONE is
+    impossible until ValidatorLedger.evaluate reports verified=True.
     """
 
     def __init__(
@@ -157,6 +154,7 @@ class WorkflowRunner:
         outcome = "failed"
         bridge_bound = False
         verification = None
+        execution_budget: TaskExecutionBudgetState | None = None
         handoff_path: Path | None = None
         presentation_path: Path | None = None
 
@@ -172,6 +170,7 @@ class WorkflowRunner:
             if self.validator_bridge is not None:
                 attempt = self.validator_bridge.begin(task_id)
                 bridge_bound = True
+                execution_budget = attempt.execution_budget
                 self.store.record_activity(
                     task_id,
                     "workflow",
@@ -182,7 +181,12 @@ class WorkflowRunner:
 
             stage = "research"
             try:
-                with inference_scope(task_id, agent_id="research", stage="research"):
+                with inference_scope(
+                    task_id,
+                    agent_id="research",
+                    stage="research",
+                    execution_budget=execution_budget,
+                ):
                     paths = self.research_agent.run(
                         task_id, self.store, self.artifacts, live=live
                     )
@@ -246,7 +250,10 @@ class WorkflowRunner:
                 stage = "presentation"
                 try:
                     with inference_scope(
-                        task_id, agent_id="presentation", stage="presentation"
+                        task_id,
+                        agent_id="presentation",
+                        stage="presentation",
+                        execution_budget=execution_budget,
                     ):
                         paths = self.presentation_agent.run(
                             task_id,
@@ -350,8 +357,8 @@ class WorkflowRunner:
         try:
             stage = "daily_report"
             try:
-                # Daily Report is date-wide and may cover many tasks. It is not a
-                # validator for the task-specific Research -> Presentation contract.
+                # Daily Report is date-wide and not part of the task-specific
+                # retry/escalation budget or task validator contract.
                 paths = self.daily_agent.run(
                     target_date, self.store, self.artifacts, live=live
                 )
@@ -406,6 +413,9 @@ class WorkflowRunner:
             "daily_report_artifacts": daily_paths,
             "verification": (
                 verification.to_dict() if verification is not None else None
+            ),
+            "execution_budget": (
+                execution_budget.snapshot() if execution_budget is not None else None
             ),
             "error": error,
             "started_at": started_at,
