@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import AppConfig
+from .evidence_packing import resolve_evidence_packing_policy
 
 BENCHMARK_SCHEMA = "workspace-benchmark-snapshot/v1"
 METRICS_SCHEMA = "workspace-unified-metrics/v1"
@@ -54,17 +55,21 @@ def effective_config_fingerprint(config: AppConfig) -> str:
 
     `config.raw` is deliberately excluded because it can contain deployment-local
     values or secrets. The fingerprint uses only resolved typed fields that can
-    affect model routing, resource admission, or capability/egress behavior.
+    affect model routing, resource admission, capability/egress behavior, plus
+    explicitly allowlisted deterministic optimization policy resolved from the
+    WorkSpace runtime environment.
     """
 
     internet = config.internet_gateway
     execution = config.execution_gateway
+    evidence_packing = resolve_evidence_packing_policy()
     payload = {
         "environment": config.environment,
         "confidentiality_mode": config.confidentiality_mode,
         "test_mode_full_access": config.test_mode_full_access,
         "llm": asdict(config.llm),
         "model_policy": asdict(config.model_policy) if config.model_policy else None,
+        "evidence_packing": evidence_packing.to_fingerprint_dict(),
         "internet_gateway": {
             "enabled": internet.enabled,
             "allow_all": internet.allow_all,
