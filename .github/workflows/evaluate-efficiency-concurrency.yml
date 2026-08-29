@@ -36,8 +36,6 @@ jobs:
     if: ${{ inputs.confirm == 'EVALUATE' }}
     runs-on: [self-hosted, Linux, X64, rtx5090]
     timeout-minutes: 120
-    env:
-      OBS_ROOT: ${{ runner.temp }}/workspace-d7-efficiency-${{ github.run_id }}
     steps:
       - name: Checkout exact observation source
         uses: actions/checkout@v4
@@ -72,6 +70,7 @@ jobs:
           MODEL: ${{ inputs.model }}
         run: |
           set -Eeuo pipefail
+          OBS_ROOT="$RUNNER_TEMP/workspace-d7-efficiency-$GITHUB_RUN_ID"
           mkdir -p "$OBS_ROOT"
           workspace-benchmark-readiness \
             --source-ref "$EXPECTED_SHA" \
@@ -93,6 +92,7 @@ jobs:
           SAMPLES: ${{ inputs.samples }}
         run: |
           set -Eeuo pipefail
+          OBS_ROOT="$RUNNER_TEMP/workspace-d7-efficiency-$GITHUB_RUN_ID"
           workspace-eval-efficiency-observe \
             --source-ref "$EXPECTED_SHA" \
             --repo-root "$GITHUB_WORKSPACE" \
