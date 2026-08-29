@@ -46,11 +46,22 @@ jobs:
           test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
           test -z "$(git -C candidate status --porcelain --untracked-files=no)"
 
+      - name: Create isolated offline Python environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV_ROOT="$RUNNER_TEMP/workspace-closure-venv-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV_ROOT"
+          test -x "$VENV_ROOT/bin/python"
+          test -x "$VENV_ROOT/bin/pip"
+          echo "$VENV_ROOT/bin" >> "$GITHUB_PATH"
+          echo "WORKSPACE_CLOSURE_VENV=$VENV_ROOT" >> "$GITHUB_ENV"
+
       - name: Install exact candidate without dependency resolution
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --no-deps -e candidate
+          python -m pip install --no-deps -e candidate
           workspace-benchmark --help >/dev/null
           workspace-benchmark-canonicalize --help >/dev/null
           workspace-benchmark-readiness --help >/dev/null
@@ -134,7 +145,7 @@ jobs:
           test -s "$EVIDENCE_ROOT/environment.json"
           test -s "$EVIDENCE_ROOT/observation.json"
           test -s "$EVIDENCE_ROOT/benchmark/verification.json"
-          EVIDENCE_ROOT="$EVIDENCE_ROOT" python3 - <<'PY'
+          EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
           import json, os
           root = os.environ['EVIDENCE_ROOT']
           with open(root + '/benchmark/verification.json', encoding='utf-8') as f:
@@ -142,5 +153,5 @@ jobs:
           with open(root + '/observation.json', encoding='utf-8') as f:
               observation = json.load(f)
           assert verification.get('passed') is True, verification
-          assert observation.get('complete') is True, observation
+          assert observation.get('observation_complete') is True, observation
           PY
