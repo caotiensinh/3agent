@@ -165,27 +165,107 @@ jobs:
               raise SystemExit(3)
           PY
 
-      - name: Execute fixed-task benchmark
+      - name: Execute fixed-task benchmark and diagnose gates
         shell: bash
         run: |
           set -Eeuo pipefail
           EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          BENCH_ROOT="$EVIDENCE_ROOT/benchmark"
+          mkdir -p "$BENCH_ROOT"
+          cp "$EVIDENCE_ROOT/environment.json" "$BENCH_ROOT/environment.json"
           workspace-benchmark \
             --source-ref "$CANDIDATE_SHA" \
-            --root "$EVIDENCE_ROOT/benchmark" \
+            --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE/candidate" \
             --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
             --config "$GITHUB_WORKSPACE/candidate/config/workspace.secure.json" \
             >/dev/null
-          workspace-benchmark-canonicalize --root "$EVIDENCE_ROOT/benchmark" >/dev/null
+          BENCH_ROOT="$BENCH_ROOT" EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
+          import json, os, sqlite3
+          from pathlib import Path
+
+          bench = Path(os.environ['BENCH_ROOT'])
+          out = {'schema_version': 'workspace-benchmark-gate-diagnostic/v1', 'variants': {}}
+          safe_actions = {
+              'runtime_validator_bridge_bound', 'route_selected', 'execution_budget_active',
+              'research_started', 'knowledge_gateway_completed', 'web_search_completed',
+              'source_suitability_gate', 'research_quality_gate', 'presentation_skipped',
+              'workflow_stage_failed', 'runtime_verification_failed'
+          }
+          for variant in ('baseline-legacy-48k','ranked-48k','ranked-40k','ranked-32k'):
+              db = bench / variant / 'state' / 'tasks.db'
+              entries = []
+              if not db.is_file():
+                  out['variants'][variant] = {'database_missing': True, 'tasks': []}
+                  continue
+              conn = sqlite3.connect(db)
+              conn.row_factory = sqlite3.Row
+              for task in conn.execute('SELECT task_id,status FROM tasks ORDER BY task_id'):
+                  tid = task['task_id']
+                  validators = [dict(row) for row in conn.execute(
+                      'SELECT validator,status,reason_code,attempt FROM validator_results WHERE task_id=? ORDER BY id',
+                      (tid,)
+                  )]
+                  activities = []
+                  for row in conn.execute(
+                      'SELECT action,status,details FROM activities WHERE task_id=? ORDER BY id',
+                      (tid,)
+                  ):
+                      if row['action'] in safe_actions:
+                          activities.append({
+                              'action': row['action'],
+                              'status': row['status'],
+                              'details': ' '.join(str(row['details']).split())[:500],
+                          })
+                  research_error = None
+                  synthesis_error = None
+                  handoff_blockers = []
+                  artifact = conn.execute(
+                      "SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_json' ORDER BY id DESC LIMIT 1",
+                      (tid,)
+                  ).fetchone()
+                  if artifact:
+                      try:
+                          payload = json.loads(Path(artifact['path']).read_text(encoding='utf-8'))
+                          research_error = payload.get('source_assessment_error')
+                          synthesis_error = payload.get('synthesis_error')
+                      except Exception as exc:
+                          research_error = type(exc).__name__
+                  handoff = conn.execute(
+                      "SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_handoff_json' ORDER BY id DESC LIMIT 1",
+                      (tid,)
+                  ).fetchone()
+                  if handoff:
+                      try:
+                          hp = json.loads(Path(handoff['path']).read_text(encoding='utf-8'))
+                          if isinstance(hp.get('blockers'), list):
+                              handoff_blockers = [str(x)[:160] for x in hp['blockers']]
+                      except Exception:
+                          pass
+                  entries.append({
+                      'task_id': tid,
+                      'task_status': task['status'],
+                      'validators': validators,
+                      'activities': activities,
+                      'source_assessment_error': research_error,
+                      'synthesis_error': synthesis_error,
+                      'handoff_blockers': handoff_blockers,
+                  })
+              conn.close()
+              out['variants'][variant] = {'database_missing': False, 'tasks': entries}
+          target = Path(os.environ['EVIDENCE_ROOT']) / 'benchmark-gate-diagnostic.json'
+          target.write_text(json.dumps(out, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(out, ensure_ascii=False, sort_keys=True))
+          PY
+          workspace-benchmark-canonicalize --root "$BENCH_ROOT" >/dev/null
           workspace-benchmark-verify \
             --source-ref "$CANDIDATE_SHA" \
-            --root "$EVIDENCE_ROOT/benchmark" \
+            --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE/candidate" \
             --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
-            --output "$EVIDENCE_ROOT/benchmark/verification.json"
-          test -s "$EVIDENCE_ROOT/benchmark/suite.json"
-          test -s "$EVIDENCE_ROOT/benchmark/verification.json"
+            --output "$BENCH_ROOT/verification.json"
+          test -s "$BENCH_ROOT/suite.json"
+          test -s "$BENCH_ROOT/verification.json"
 
       - name: Execute D7-06 concurrency observation
         shell: bash
@@ -213,7 +293,9 @@ jobs:
           path: |
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/environment.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/model-runtime-diagnostic.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark-gate-diagnostic.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/observation.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/environment.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/verification.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/suite.json
             ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/*/benchmark.json
@@ -227,6 +309,7 @@ jobs:
           EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           test -s "$EVIDENCE_ROOT/environment.json"
           test -s "$EVIDENCE_ROOT/model-runtime-diagnostic.json"
+          test -s "$EVIDENCE_ROOT/benchmark-gate-diagnostic.json"
           test -s "$EVIDENCE_ROOT/observation.json"
           test -s "$EVIDENCE_ROOT/benchmark/verification.json"
           EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
