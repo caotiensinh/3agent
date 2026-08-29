@@ -24,7 +24,7 @@ class LLMTests(unittest.TestCase):
         with self.assertRaises(LocalLLMError):
             _extract_json_object('[1, 2, 3]')
 
-    def test_generate_json_repairs_malformed_first_response(self):
+    def test_generate_json_passes_native_schema_to_request(self):
         class FakeClient(OllamaClient):
             def __init__(self):
                 super().__init__(
@@ -39,19 +39,49 @@ class LLMTests(unittest.TestCase):
 
             def _request(self, system_prompt, user_prompt, **kwargs):
                 self.calls.append((system_prompt, user_prompt, kwargs))
-                if len(self.calls) == 1:
-                    return {"response": '{"verified_facts":[{"claim":"a" "source_ids":["S1"]}]}'}
-                return {
-                    "response": '{"verified_facts":[{"claim":"a","source_ids":["S1"]}]}'
-                }
+                return {"response": '{"answer":"ok"}'}
 
+        schema = {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        }
         client = FakeClient()
-        result = client.generate_json("system", "user", num_predict=4096)
-        self.assertEqual(result["verified_facts"][0]["source_ids"], ["S1"])
-        self.assertEqual(len(client.calls), 2)
-        self.assertIn("syntax repair", client.calls[1][0])
+        result = client.generate_json("system", "user", schema=schema, schema_id="answer-v1")
+        self.assertEqual(result, {"answer": "ok"})
+        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(client.calls[0][2]["format_schema"], schema)
+        self.assertEqual(client.calls[0][2]["schema_id"], "answer-v1")
 
-    def test_generate_json_fails_after_one_repair_retry(self):
+    def test_generate_json_schema_failure_does_not_retry_model(self):
+        class FakeClient(OllamaClient):
+            def __init__(self):
+                super().__init__(
+                    SimpleNamespace(
+                        model="qwen-test",
+                        base_url="http://127.0.0.1:11434",
+                        timeout_seconds=10,
+                        keep_alive="2m",
+                    )
+                )
+                self.calls = 0
+
+            def _request(self, system_prompt, user_prompt, **kwargs):
+                self.calls += 1
+                return {"response": '{}'}
+
+        schema = {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+        }
+        client = FakeClient()
+        with self.assertRaisesRegex(LocalLLMError, "deterministic validation"):
+            client.generate_json("system", "user", schema=schema)
+        self.assertEqual(client.calls, 1)
+
+    def test_generate_json_malformed_response_fails_without_probabilistic_repair(self):
         class FakeClient(OllamaClient):
             def __init__(self):
                 super().__init__(
@@ -69,9 +99,9 @@ class LLMTests(unittest.TestCase):
                 return {"response": '{"broken": }'}
 
         client = FakeClient()
-        with self.assertRaisesRegex(LocalLLMError, "automatic repair retry also failed"):
+        with self.assertRaisesRegex(LocalLLMError, "invalid JSON"):
             client.generate_json("system", "user")
-        self.assertEqual(client.calls, 2)
+        self.assertEqual(client.calls, 1)
 
     def test_adaptive_client_uses_primary_for_normal_prompt(self):
         class Fake:

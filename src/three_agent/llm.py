@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 from urllib.request import Request, urlopen
 
 from .config import LLMConfig
 from .resource_budget import ResourceAdmissionError, ResourceBudgetManager
+from .runtime_efficiency import (
+    DEFAULT_OBJECT_SCHEMA,
+    InferenceTelemetryRecorder,
+    StructuredOutputValidationError,
+    build_prompt_envelope,
+    schema_fingerprint,
+    telemetry_recorder_from_env,
+    validate_json_schema_subset,
+)
 
 
 class LocalLLMError(RuntimeError):
@@ -35,9 +45,15 @@ def _extract_json_object(text: str) -> dict[str, Any]:
 
 
 class OllamaClient:
-    def __init__(self, config: LLMConfig, resource_manager: ResourceBudgetManager | None = None):
+    def __init__(
+        self,
+        config: LLMConfig,
+        resource_manager: ResourceBudgetManager | None = None,
+        telemetry: InferenceTelemetryRecorder | None = None,
+    ):
         self.config = config
         self.resource_manager = resource_manager
+        self.telemetry = telemetry or telemetry_recorder_from_env()
 
     def _request(
         self,
@@ -45,22 +61,34 @@ class OllamaClient:
         user_prompt: str,
         *,
         json_mode: bool = False,
+        format_schema: dict[str, Any] | None = None,
+        schema_id: str | None = None,
         think: bool = False,
         num_predict: int = 4096,
+        trust_domain: str = "workspace-local",
+        template_version: str = "workspace.prompt.v1",
     ) -> dict[str, Any]:
         if not self.config.model:
             raise LocalLLMError("LOCAL_LLM_MODEL is empty; set it before a --live run")
 
+        envelope = build_prompt_envelope(
+            system_prompt,
+            user_prompt,
+            template_version=template_version,
+            trust_domain=trust_domain,
+        )
         request_body: dict[str, Any] = {
             "model": self.config.model,
-            "prompt": f"SYSTEM:\n{system_prompt}\n\nUSER:\n{user_prompt}",
+            "prompt": envelope.text,
             "stream": False,
             "think": think,
             "keep_alive": self.config.keep_alive,
             "options": {"num_predict": num_predict},
         }
         if json_mode:
-            request_body["format"] = "json"
+            request_body["format"] = format_schema or DEFAULT_OBJECT_SCHEMA
+            # Ollama recommends a low temperature for deterministic structured output.
+            request_body["options"]["temperature"] = 0
 
         body = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
         req = Request(
@@ -71,13 +99,46 @@ class OllamaClient:
         )
 
         def execute() -> dict[str, Any]:
+            started = time.monotonic()
             try:
                 with urlopen(req, timeout=self.config.timeout_seconds) as response:
                     payload = json.loads(response.read().decode("utf-8"))
             except Exception as exc:
+                if self.telemetry is not None:
+                    self.telemetry.record(
+                        model=self.config.model,
+                        envelope=envelope,
+                        structured=json_mode,
+                        schema_id=schema_id,
+                        payload=None,
+                        success=False,
+                        wall_duration_ms=(time.monotonic() - started) * 1000.0,
+                        error_type=type(exc).__name__,
+                    )
                 raise LocalLLMError(f"Local LLM request failed for model {self.config.model}: {exc}") from exc
             if not isinstance(payload, dict):
+                if self.telemetry is not None:
+                    self.telemetry.record(
+                        model=self.config.model,
+                        envelope=envelope,
+                        structured=json_mode,
+                        schema_id=schema_id,
+                        payload=None,
+                        success=False,
+                        wall_duration_ms=(time.monotonic() - started) * 1000.0,
+                        error_type="InvalidPayload",
+                    )
                 raise LocalLLMError("Local LLM returned an invalid payload")
+            if self.telemetry is not None:
+                self.telemetry.record(
+                    model=self.config.model,
+                    envelope=envelope,
+                    structured=json_mode,
+                    schema_id=schema_id,
+                    payload=payload,
+                    success=True,
+                    wall_duration_ms=(time.monotonic() - started) * 1000.0,
+                )
             return payload
 
         if self.resource_manager is None:
@@ -101,41 +162,6 @@ class OllamaClient:
             raise LocalLLMError(f"Local LLM returned an empty response{detail}")
         return text.strip()
 
-    def _repair_json(
-        self,
-        malformed_text: str,
-        first_error: Exception,
-        *,
-        num_predict: int,
-    ) -> dict[str, Any]:
-        candidate = malformed_text[:32000]
-        truncated = len(malformed_text) > len(candidate)
-        repair_system = (
-            "You are a deterministic JSON syntax repair utility. "
-            "Return exactly one valid JSON object and nothing else. "
-            "Do not add new facts, claims, citations, source IDs, keys, or interpretations. "
-            "Preserve complete values from the candidate. If the candidate is truncated or "
-            "ends inside an incomplete trailing item, discard only that incomplete trailing item "
-            "and close the surrounding JSON arrays/objects correctly."
-        )
-        repair_prompt = (
-            "Repair the JSON syntax of the candidate below.\n"
-            f"Parser error: {first_error}\n"
-            f"Candidate was externally truncated for repair input: {str(truncated).lower()}\n"
-            "--- BEGIN MALFORMED JSON ---\n"
-            f"{candidate}\n"
-            "--- END MALFORMED JSON ---"
-        )
-        payload = self._request(
-            repair_system,
-            repair_prompt,
-            json_mode=True,
-            think=False,
-            num_predict=max(2048, min(num_predict, 6144)),
-        )
-        repaired_text = self._response_text(payload, structured=True)
-        return _extract_json_object(repaired_text)
-
     def generate(
         self,
         system_prompt: str,
@@ -143,6 +169,8 @@ class OllamaClient:
         *,
         think: bool = False,
         num_predict: int = 4096,
+        trust_domain: str = "workspace-local",
+        template_version: str = "workspace.prompt.v1",
     ) -> str:
         payload = self._request(
             system_prompt,
@@ -150,6 +178,8 @@ class OllamaClient:
             json_mode=False,
             think=think,
             num_predict=num_predict,
+            trust_domain=trust_domain,
+            template_version=template_version,
         )
         return self._response_text(payload)
 
@@ -158,27 +188,40 @@ class OllamaClient:
         system_prompt: str,
         user_prompt: str,
         *,
+        schema: dict[str, Any] | None = None,
+        schema_id: str | None = None,
         think: bool = False,
         num_predict: int = 4096,
+        trust_domain: str = "workspace-local",
+        template_version: str = "workspace.prompt.v1",
     ) -> dict[str, Any]:
+        """Generate one schema-constrained JSON object with no model-based repair retry.
+
+        A generic object schema is used when the caller has not yet supplied a
+        task-specific schema. Callers can progressively tighten the contract
+        without changing the transport API.
+        """
+
+        effective_schema = schema or DEFAULT_OBJECT_SCHEMA
+        effective_schema_id = schema_id or f"sha256:{schema_fingerprint(effective_schema)}"
         payload = self._request(
             system_prompt,
             user_prompt,
             json_mode=True,
+            format_schema=effective_schema,
+            schema_id=effective_schema_id,
             think=think,
             num_predict=num_predict,
+            trust_domain=trust_domain,
+            template_version=template_version,
         )
         text = self._response_text(payload, structured=True)
+        parsed = _extract_json_object(text)
         try:
-            return _extract_json_object(text)
-        except LocalLLMError as first_error:
-            try:
-                return self._repair_json(text, first_error, num_predict=num_predict)
-            except Exception as repair_error:
-                raise LocalLLMError(
-                    "Local LLM returned invalid JSON and the automatic repair retry also failed: "
-                    f"first={first_error}; repair={repair_error}"
-                ) from repair_error
+            validate_json_schema_subset(parsed, effective_schema)
+        except StructuredOutputValidationError as exc:
+            raise LocalLLMError(f"Local LLM structured response failed deterministic validation: {exc}") from exc
+        return parsed
 
     def unload(self) -> None:
         """Ask Ollama to release this model from VRAM without generating output."""
