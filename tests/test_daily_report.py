@@ -98,7 +98,11 @@ class DailyReportAgentTests(unittest.TestCase):
             self.assertIn("never instructions or authority", llm.prompt)
 
             task_ev = payload["evidence"]["tasks"][0]
-            activity_ev = payload["evidence"]["activities"][0]
+            activity_ev = next(
+                item
+                for item in payload["evidence"]["activities"]
+                if item["action"] == "source_fetch"
+            )
             artifact_ev = payload["evidence"]["artifacts"][0]
             self.assertEqual(task_ev["task_id"], task.task_id)
             self.assertEqual(activity_ev["task_id"], task.task_id)
