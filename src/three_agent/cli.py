@@ -11,21 +11,15 @@ def _add_presentation_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--audience", default="R&D internal")
     parser.add_argument("--purpose", default="inform")
     parser.add_argument("--language", choices=("ja", "en", "vi"), default="ja")
-    parser.add_argument(
-        "--slides",
-        type=int,
-        default=6,
-        help="Target narrative slide count before deterministic appendices",
-    )
-    parser.add_argument(
-        "--format",
-        choices=("source", "pptx", "pdf", "all"),
-        default="pptx",
-    )
+    parser.add_argument("--slides", type=int, default=6, help="Target narrative slide count before deterministic appendices")
+    parser.add_argument("--format", choices=("source", "pptx", "pdf", "all"), default="pptx")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="three-agent")
+    parser = argparse.ArgumentParser(
+        prog="workspace",
+        description="WorkSpace — local-first AI runtime for confidential internal business work",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init")
     sub.add_parser("smoke")
@@ -39,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     workflow.add_argument(
         "--live",
         action="store_true",
-        help="Enable live web research and local-model generation. Without this flag Agent 1 dry-runs and the quality gate blocks Agent 2 by design.",
+        help="Enable configured local-model generation and, only when policy permits, public web research.",
     )
     workflow.add_argument("--date", help="Daily-report date (YYYY-MM-DD); defaults to today in Asia/Tokyo")
     _add_presentation_options(workflow)
@@ -73,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     orchestrator.initialize()
 
     if args.command == "init":
-        print("3Agent initialized")
+        print("WorkSpace initialized")
     elif args.command == "smoke":
         print(json.dumps(orchestrator.smoke(), ensure_ascii=False, indent=2))
     elif args.command == "workflow-run":
@@ -88,13 +82,7 @@ def main(argv: list[str] | None = None) -> int:
             output_format=args.format,
             report_date=args.date,
         )
-        print(
-            json.dumps(
-                orchestrator.workflow.result_dict(result),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps(orchestrator.workflow.result_dict(result), ensure_ascii=False, indent=2))
         if result.status == "completed":
             return 0
         if result.status == "blocked":
@@ -108,19 +96,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{task.task_id}\t{task.status.value}\t{task.title}")
     elif args.command == "status":
         task = orchestrator.store.get_task(args.task_id)
-        print(
-            json.dumps(
-                task.__dict__ | {"status": task.status.value},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps(task.__dict__ | {"status": task.status.value}, ensure_ascii=False, indent=2))
     elif args.command == "research":
         paths = orchestrator.research_agent.run(
-            args.task_id,
-            orchestrator.store,
-            orchestrator.artifacts,
-            live=args.live,
+            args.task_id, orchestrator.store, orchestrator.artifacts, live=args.live
         )
         print("\n".join(str(path) for path in paths))
     elif args.command == "presentation":
@@ -137,9 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print("\n".join(str(path) for path in paths))
         presentation_payload = json.loads(paths[0].read_text(encoding="utf-8"))
-        for artifact_path in presentation_payload.get(
-            "generated_artifacts", {}
-        ).values():
+        for artifact_path in presentation_payload.get("generated_artifacts", {}).values():
             print(artifact_path)
     elif args.command == "daily-report":
         paths = orchestrator.daily_report(args.date, live=args.live)

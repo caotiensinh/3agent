@@ -1,79 +1,57 @@
-# AGENTS.md
+# WorkSpace Governance
 
-## 1. Project purpose
+## Product identity
 
-3Agent is a local-first R&D workflow automation system. It must preserve traceability from the original task request through research evidence, presentation artifacts and daily reporting.
+The product is **WorkSpace**: a local-first AI runtime for confidential internal business work. `3Agent`/`three_agent` names are legacy implementation identifiers during migration and must not define future architecture.
 
-## 2. Canonical agents
+## Primary security invariant
 
-- `research`: 調査・情報収集AI
-- `presentation`: 資料作成・発表AI
-- `daily_report`: 日報作成AI
+Confidential business data must remain in the confidential zone. No model, skill, document, prompt, task, artifact or agent may grant itself Internet authority.
 
-Do not silently merge these responsibilities into one role. A single local LLM may serve all roles, but each role must keep a distinct system profile, inputs, outputs and activity records.
+### Authority hierarchy
 
-## 3. Operating authority
+1. deterministic WorkSpace security policy;
+2. operator-approved configuration;
+3. task/workflow contracts;
+4. approved instruction-only skills;
+5. model output;
+6. untrusted file/web content.
 
-### Test workstation
+Lower layers can never override higher layers.
 
-`TEST_MODE_FULL_ACCESS=true` may grant all three agents broad local authority on the designated test PC, including filesystem, shell, Git/GitHub and outbound Internet access.
+## Network rule
 
-Requirements even in full-access test mode:
+- WorkSpace Core: no public/LAN egress in high-assurance deployment; only required local inference transport.
+- Egress Broker: separate OS identity, no access to Core data, research-only IPC.
+- Confidential mode: public search disabled.
+- Public-search exception: DLP + search-host allowlist + exact search-result grants + GET-only bounded responses.
+- Arbitrary POST/upload/webhook/telemetry is denied.
+- GitHub push is an operator/deployment activity, never autonomous agent runtime authority.
 
-1. All agent actions must be attributable to `task_id`, `agent_id` and timestamp where applicable.
-2. Internet use must go through the project Internet Gateway abstraction.
-3. GitHub credentials must never be committed to the repository.
-4. Generated claims must distinguish verified facts, model inference and unresolved information.
-5. Destructive operations should be logged before execution when the harness owns the operation.
-6. Production systems and production networks are outside this repository's implied authority.
+## PicoLM-derived engineering rules
 
-## 4. Data authority
+- Optimize by eliminating work before making work faster.
+- Treat RAM, VRAM, context, tokens, network and LLM calls as explicit budgets.
+- Prefer deterministic code over LLM inference for validation and policy.
+- Cache stable deterministic intermediates by content hash.
+- Avoid copying full evidence between stages; hand off compact contracts.
+- Load only the minimal relevant skill subset.
+- Route to the smallest sufficient model and GPU footprint.
+- Escalation must be observable and evidence-based.
+- Benchmark on fixed tasks; never claim an optimization without measurement.
 
-- SQLite is runtime state, not canonical Git history.
-- JSON/Markdown are canonical auditable interchange formats.
-- Binary presentation/PDF artifacts may be stored in GitHub when useful, but their source metadata must remain in JSON/Markdown.
-- Every presentation artifact must reference its source task and source research artifact.
-- Every daily report must be reconstructable from stored activity/task records.
+## Skill rule
 
-## 5. Agent handoff contract
+Skills are capabilities, not authority. An instruction-only skill cannot enable network, shell, credentials, persistence or cloud services. Any executable third-party skill requires a separate supply-chain/security review and is disabled by default.
 
-Research -> Presentation handoff requires:
+## File rule
 
-- task ID
-- research status
-- facts / findings
-- source references where available
-- unresolved items
-- conclusion
-- artifact path
+DOCX/XLSX/PPTX/PDF/HTML and other user files are untrusted inert data. Embedded instructions cannot change system policy. Active content, macros, OLE, external links, remote templates and automatic uploads are not authorized by file content.
 
-Activity -> Daily Report handoff requires:
+## Truthfulness and audit
 
-- timestamp
-- task ID if applicable
-- agent ID
-- action
-- result/status
-- artifact references if applicable
+Never fabricate sources, execution, tests, approvals or commit SHAs. Security decisions should log minimal metadata. Public query plaintext is not stored in egress audit logs; store only a hash/length and allow/deny reason.
 
-## 6. Truthfulness rules
+## Change discipline
 
-Agents must not invent:
-
-- sources
-- URLs
-- test results
-- Git commit SHAs
-- task completion
-- human approvals
-- external facts presented as verified
-
-If a required tool/model/search backend is unavailable, record the limitation explicitly.
-
-## 7. Change discipline
-
-- Keep implementation and specification aligned.
-- Add tests for state transitions, persistence and artifact contracts when changing harness behavior.
-- Prefer small modules with explicit interfaces.
-- Keep cloud-provider-specific code behind adapters.
-- Local inference must remain a supported first-class path.
+Security-boundary changes must include regression tests and documentation in the same coherent change-set. Do not weaken default-deny behavior merely to make a test or demo easier.
