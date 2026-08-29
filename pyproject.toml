@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "three-agent"
-version = "0.5.0"
-description = "Local-first three-agent R&D workflow harness"
+name = "workspace-local-ai"
+version = "0.6.0"
+description = "WorkSpace: local-first AI runtime for confidential internal business work"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,6 +17,9 @@ dependencies = [
 ]
 
 [project.scripts]
+workspace = "three_agent.cli:main"
+workspace-chat = "three_agent.chat_gateway_v4:main"
+workspace-egressd = "three_agent.egress_broker:main"
 three-agent = "three_agent.cli:main"
 three-agent-chat = "three_agent.chat_gateway_v4:main"
 

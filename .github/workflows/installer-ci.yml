@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/**'
       - '.github/workflows/**'
+      - 'config/**'
       - 'pyproject.toml'
       - 'src/**'
       - 'tests/**'
@@ -13,10 +14,12 @@ on:
       - 'docs/**'
       - 'skills/**'
       - 'README.md'
+      - 'AGENTS.md'
   pull_request:
     paths:
       - 'scripts/**'
       - '.github/workflows/**'
+      - 'config/**'
       - 'pyproject.toml'
       - 'src/**'
       - 'tests/**'
@@ -24,6 +27,7 @@ on:
       - 'docs/**'
       - 'skills/**'
       - 'README.md'
+      - 'AGENTS.md'
   workflow_dispatch:
 
 permissions:
@@ -42,6 +46,7 @@ jobs:
           bash scripts/test_e2e_acceptance_contract.sh
           bash scripts/test_chat_gateway_contract.sh
           bash scripts/test_lan_ai_server_contract.sh
+          bash scripts/test_workspace_security_contract.sh
       - name: ShellCheck
         run: |
           sudo apt-get update -y
@@ -55,12 +60,15 @@ jobs:
             scripts/run_e2e_acceptance.sh \
             scripts/install_chat_gateway.sh \
             scripts/configure_telegram.sh \
+            scripts/install_workspace_secure_boundary.sh \
+            scripts/setup_workspace_secure.sh \
             scripts/test_installer_contract.sh \
             scripts/test_ai_stack_contract.sh \
             scripts/test_model_pool_contract.sh \
             scripts/test_e2e_acceptance_contract.sh \
             scripts/test_chat_gateway_contract.sh \
-            scripts/test_lan_ai_server_contract.sh
+            scripts/test_lan_ai_server_contract.sh \
+            scripts/test_workspace_security_contract.sh
 
   harness-regression:
     runs-on: ubuntu-24.04
