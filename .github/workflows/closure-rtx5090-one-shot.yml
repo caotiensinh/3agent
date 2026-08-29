@@ -19,7 +19,6 @@ jobs:
     env:
       CANDIDATE_SHA: 7703137b95cb2985164af5e85fd868915d96a3c9
       MODEL: qwen3:30b
-      EVIDENCE_ROOT: ${{ runner.temp }}/workspace-closure-${{ github.run_id }}
       WORKSPACE_FAST_MODEL: qwen3:30b
       WORKSPACE_RESEARCH_MODEL: qwen3:30b
       WORKSPACE_PRESENTATION_MODEL: qwen3:30b
@@ -58,6 +57,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           mkdir -p "$EVIDENCE_ROOT"
           workspace-benchmark-readiness \
             --source-ref "$CANDIDATE_SHA" \
@@ -71,6 +71,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           workspace-benchmark \
             --source-ref "$CANDIDATE_SHA" \
             --root "$EVIDENCE_ROOT/benchmark" \
@@ -93,6 +94,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           workspace-eval-efficiency-observe \
             --source-ref "$CANDIDATE_SHA" \
             --repo-root "$GITHUB_WORKSPACE/candidate" \
@@ -124,10 +126,11 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
           test -s "$EVIDENCE_ROOT/environment.json"
           test -s "$EVIDENCE_ROOT/observation.json"
           test -s "$EVIDENCE_ROOT/benchmark/verification.json"
-          python3 - <<'PY'
+          EVIDENCE_ROOT="$EVIDENCE_ROOT" python3 - <<'PY'
           import json, os
           root = os.environ['EVIDENCE_ROOT']
           with open(root + '/benchmark/verification.json', encoding='utf-8') as f:
