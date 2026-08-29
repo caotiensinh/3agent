@@ -69,18 +69,18 @@ jobs:
 
           if [[ -z "$TELEMETRY" && -r "$HOME/3agent/config/local.json" ]]; then
             CANDIDATE="$(python - "$HOME/3agent/config/local.json" "$HOME/3agent" <<'PY'
-import json
-import pathlib
-import sys
-config = pathlib.Path(sys.argv[1])
-root = pathlib.Path(sys.argv[2])
-data = json.loads(config.read_text(encoding='utf-8'))
-artifact = pathlib.Path(str(data.get('artifact_root') or 'data')).expanduser()
-if not artifact.is_absolute():
-    artifact = root / artifact
-print(artifact / 'activity' / 'inference.jsonl')
-PY
-)"
+          import json
+          import pathlib
+          import sys
+          config = pathlib.Path(sys.argv[1])
+          root = pathlib.Path(sys.argv[2])
+          data = json.loads(config.read_text(encoding='utf-8'))
+          artifact = pathlib.Path(str(data.get('artifact_root') or 'data')).expanduser()
+          if not artifact.is_absolute():
+              artifact = root / artifact
+          print(artifact / 'activity' / 'inference.jsonl')
+          PY
+          )"
             if [[ -r "$CANDIDATE" ]]; then
               TELEMETRY="$CANDIDATE"
               SOURCE_KIND="installed-local-config"
@@ -109,47 +109,47 @@ PY
             > "$OUT/reuse-report.json"
 
           SOURCE_REF="$SOURCE_REF" SOURCE_KIND="$SOURCE_KIND" OUT="$OUT" python - <<'PY'
-import hashlib
-import json
-import os
-from pathlib import Path
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
 
-out = Path(os.environ['OUT'])
-report = json.loads((out / 'reuse-report.json').read_text(encoding='utf-8'))
-privacy = report.get('privacy') or {}
-gate = report.get('decision_gate') or {}
-if report.get('schema_version') != 'workspace-prefix-reuse-report/v1':
-    raise SystemExit('unexpected report schema')
-if privacy.get('raw_content_emitted') is not False:
-    raise SystemExit('raw content privacy boundary failed')
-if privacy.get('prefix_hashes_emitted') is not False:
-    raise SystemExit('prefix hash privacy boundary failed')
-if gate.get('production_serving_change_authorized') is not False:
-    raise SystemExit('D4 may not authorize production serving change')
-if gate.get('backend_cache_hit_claimed') is not False:
-    raise SystemExit('D4 may not claim backend cache hit')
+          out = Path(os.environ['OUT'])
+          report = json.loads((out / 'reuse-report.json').read_text(encoding='utf-8'))
+          privacy = report.get('privacy') or {}
+          gate = report.get('decision_gate') or {}
+          if report.get('schema_version') != 'workspace-prefix-reuse-report/v1':
+              raise SystemExit('unexpected report schema')
+          if privacy.get('raw_content_emitted') is not False:
+              raise SystemExit('raw content privacy boundary failed')
+          if privacy.get('prefix_hashes_emitted') is not False:
+              raise SystemExit('prefix hash privacy boundary failed')
+          if gate.get('production_serving_change_authorized') is not False:
+              raise SystemExit('D4 may not authorize production serving change')
+          if gate.get('backend_cache_hit_claimed') is not False:
+              raise SystemExit('D4 may not claim backend cache hit')
 
-receipt = {
-    'schema_version': 'workspace-d4-representative-observation/v1',
-    'source_ref': os.environ['SOURCE_REF'],
-    'telemetry_discovery': os.environ['SOURCE_KIND'],
-    'report': report,
-    'raw_telemetry_uploaded': False,
-}
-canonical = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
-receipt['receipt_sha256'] = 'sha256:' + hashlib.sha256(canonical).hexdigest()
-(out / 'observation.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-print(json.dumps({
-    'telemetry_discovery': receipt['telemetry_discovery'],
-    'eligible_events': report['observation']['eligible_events'],
-    'reuse_opportunity_rate': report['observation']['reuse_opportunity_rate'],
-    'prompt_eval_duration_share': report['prefill']['prompt_eval_duration_share'],
-    'decision': gate['decision'],
-    'allowed_action': gate['allowed_action'],
-    'production_serving_change_authorized': gate['production_serving_change_authorized'],
-    'receipt_sha256': receipt['receipt_sha256'],
-}, sort_keys=True))
-PY
+          receipt = {
+              'schema_version': 'workspace-d4-representative-observation/v1',
+              'source_ref': os.environ['SOURCE_REF'],
+              'telemetry_discovery': os.environ['SOURCE_KIND'],
+              'report': report,
+              'raw_telemetry_uploaded': False,
+          }
+          canonical = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          receipt['receipt_sha256'] = 'sha256:' + hashlib.sha256(canonical).hexdigest()
+          (out / 'observation.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'telemetry_discovery': receipt['telemetry_discovery'],
+              'eligible_events': report['observation']['eligible_events'],
+              'reuse_opportunity_rate': report['observation']['reuse_opportunity_rate'],
+              'prompt_eval_duration_share': report['prefill']['prompt_eval_duration_share'],
+              'decision': gate['decision'],
+              'allowed_action': gate['allowed_action'],
+              'production_serving_change_authorized': gate['production_serving_change_authorized'],
+              'receipt_sha256': receipt['receipt_sha256'],
+          }, sort_keys=True))
+          PY
 
       - name: Publish metadata-only D4 evidence
         uses: actions/upload-artifact@v4
