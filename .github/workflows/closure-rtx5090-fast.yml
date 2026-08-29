@@ -19,7 +19,7 @@ jobs:
     runs-on: [self-hosted]
     timeout-minutes: 300
     env:
-      CANDIDATE_SHA: e7a3b6dc9445354774951f035b764b0646425d69
+      CANDIDATE_SHA: 5472ebbad650d8c466ae0353c3f99408680a770d
       MODEL: qwen3:30b
       WORKSPACE_FAST_MODEL: qwen3:30b
       WORKSPACE_RESEARCH_MODEL: qwen3:30b
@@ -32,7 +32,7 @@ jobs:
       - name: Checkout exact product candidate at workspace root
         uses: actions/checkout@v4
         with:
-          ref: e7a3b6dc9445354774951f035b764b0646425d69
+          ref: 5472ebbad650d8c466ae0353c3f99408680a770d
           persist-credentials: false
           fetch-depth: 1
 
