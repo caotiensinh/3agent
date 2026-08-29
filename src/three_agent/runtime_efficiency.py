@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .inference_scope import current_inference_scope
+
 DEFAULT_OBJECT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": True,
@@ -261,17 +263,19 @@ class InferenceTelemetryRecorder:
         error_type: str | None = None,
     ) -> None:
         prefix_key = (model, envelope.trust_domain, envelope.prefix_sha256)
+        scope = current_inference_scope()
         with self._lock:
             reuse_candidate = prefix_key in self._seen_prefixes
             self._seen_prefixes.add(prefix_key)
             event = {
-                "schema_version": "workspace-inference-telemetry/v1",
+                "schema_version": "workspace-inference-telemetry/v2",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "model": model,
                 "success": bool(success),
                 "error_type": error_type,
                 "structured": bool(structured),
                 "structured_schema_id": schema_id,
+                "task_scope": scope.metadata() if scope is not None else None,
                 "prompt": envelope.metadata(),
                 "prefix_reuse_candidate": reuse_candidate,
                 "usage": {
