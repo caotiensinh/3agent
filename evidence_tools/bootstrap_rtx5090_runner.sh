@@ -20,6 +20,7 @@ command -v gh >/dev/null 2>&1 || fail "GitHub CLI (gh) is required and must alre
 command -v curl >/dev/null 2>&1 || fail "curl is required."
 command -v tar >/dev/null 2>&1 || fail "tar is required."
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required."
+command -v python3 >/dev/null 2>&1 || fail "python3 is required."
 command -v nvidia-smi >/dev/null 2>&1 || fail "nvidia-smi is required."
 command -v ollama >/dev/null 2>&1 || fail "ollama is required."
 
@@ -57,10 +58,10 @@ cd "$RUNNER_ROOT"
 
 if [[ -f .runner ]]; then
   info "A GitHub Actions runner is already configured in $RUNNER_ROOT."
-  if [[ -x ./svc.sh ]]; then
-    sudo ./svc.sh status || true
-  fi
-  info "No reconfiguration was performed."
+  [[ -x ./svc.sh ]] || fail "Existing runner has no service controller; refusing to mutate it blindly."
+  sudo ./svc.sh start
+  sudo ./svc.sh status
+  info "Existing runner service was started/rechecked."
   exit 0
 fi
 
@@ -70,10 +71,12 @@ VERSION="${TAG#v}"
 ASSET_NAME="actions-runner-linux-x64-${VERSION}.tar.gz"
 
 readarray -t ASSET_META < <(
-  python3 - "$ASSET_NAME" <<'PY' <<<"$RELEASE_JSON"
-import json, sys
-name = sys.argv[1]
-data = json.load(sys.stdin)
+  RELEASE_JSON="$RELEASE_JSON" ASSET_NAME="$ASSET_NAME" python3 - <<'PY'
+import json
+import os
+
+name = os.environ["ASSET_NAME"]
+data = json.loads(os.environ["RELEASE_JSON"])
 for asset in data.get("assets", []):
     if asset.get("name") == name:
         print(asset.get("browser_download_url", ""))
