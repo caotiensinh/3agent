@@ -13,7 +13,7 @@ grep -Fq 'workspace-import' scripts/install_workspace_knowledge_plane.sh
 grep -Fq "meta skuid \${IMPORT_UID} counter reject" scripts/install_workspace_knowledge_plane.sh
 grep -Fq '/var/spool/workspace-public-export' scripts/install_workspace_knowledge_plane.sh
 grep -Fq '/var/lib/workspace-knowledge-public' scripts/install_workspace_knowledge_plane.sh
-grep -Fq 'InaccessiblePaths=${EXPORT_ROOT} ${KNOWLEDGE_ROOT}' scripts/install_workspace_knowledge_plane.sh
+grep -Fq "InaccessiblePaths=\${EXPORT_ROOT} \${KNOWLEDGE_ROOT}" scripts/install_workspace_knowledge_plane.sh
 grep -Fq 'install_workspace_knowledge_plane.sh' scripts/setup_workspace_secure.sh
 grep -Fq '"network_direction": "inbound_only"' config/workspace.secure.json
 grep -Fq '"direction": "inbound_only"' config/workspace.public-research.json
