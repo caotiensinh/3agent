@@ -7,14 +7,29 @@ bash -n scripts/setup_workspace_secure.sh
 python3 -m json.tool config/workspace.secure.json >/dev/null
 python3 -m json.tool config/workspace.public-research.json >/dev/null
 
-grep -Fq '"product_name": "WorkSpace"' config/workspace.secure.json
-grep -Fq '"confidentiality_mode": "confidential"' config/workspace.secure.json
-grep -Fq '"public_search_enabled": false' config/workspace.secure.json
-grep -Fq '"direct_egress": false' config/workspace.secure.json
+python3 - <<'PY'
+import json
+from pathlib import Path
 
-grep -Fq '"confidentiality_mode": "public-research"' config/workspace.public-research.json
-grep -Fq '"database_path": "/var/lib/workspace-public/tasks.db"' config/workspace.public-research.json
-grep -Fq '"public_search_enabled": true' config/workspace.public-research.json
+secure = json.loads(Path("config/workspace.secure.json").read_text(encoding="utf-8"))
+public = json.loads(Path("config/workspace.public-research.json").read_text(encoding="utf-8"))
+
+assert secure["product_name"] == "WorkSpace"
+assert secure["confidentiality_mode"] == "confidential"
+assert secure["test_mode_full_access"] is False
+assert secure["internet_gateway"]["public_search_enabled"] is False
+assert secure["internet_gateway"]["direct_egress"] is False
+
+assert public["product_name"] == "WorkSpace"
+assert public["confidentiality_mode"] == "public-research"
+assert public["test_mode_full_access"] is False
+assert public["database_path"] == "/var/lib/workspace-public/tasks.db"
+assert public["artifact_root"] == "/var/lib/workspace-public/data"
+assert public["internet_gateway"]["public_search_enabled"] is True
+assert public["internet_gateway"]["direct_egress"] is False
+assert public["execution_gateway"]["enabled"] is False
+assert public["github"]["enabled"] is False
+PY
 
 grep -Fq 'workspace-core' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-public' scripts/install_workspace_secure_boundary.sh

@@ -180,4 +180,3 @@ log "Public Research UID=${PUBLIC_UID}: separate DB/data, localhost Ollama only,
 log "Egress UID=${EGRESS_UID}: public TCP/443 + local DNS only; both WorkSpace data roots inaccessible."
 log "Confidential command: workspace-secure <command>"
 log "Public research command: workspace-public <command>"
-EOF
