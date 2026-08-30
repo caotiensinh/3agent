@@ -17,6 +17,7 @@ from three_agent.chat_gateway_v16 import (
     ContextAwareProjectChatService,
     ContextAwareWorkflowV3HTTPHandler,
 )
+from three_agent.version import PACKAGE_VERSION
 
 
 class ChatGatewayV16ContractTests(unittest.TestCase):
@@ -115,7 +116,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('version = "1!0.0.1"', pyproject)
+        self.assertIn(f'version = "{PACKAGE_VERSION}"', pyproject)
         self.assertIn('workspace-chat = "three_agent.chat_gateway_v17:main"', pyproject)
         self.assertIn('three-agent-chat = "three_agent.chat_gateway_v17:main"', pyproject)
         self.assertIn(
@@ -123,7 +124,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             pyproject,
         )
         self.assertIn(
-            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
+            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
             pyproject,
         )
 
