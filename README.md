@@ -159,6 +159,13 @@ If the package is already installed, install only the OS boundary:
 sudo WORKSPACE_INSTALL_DIR=/opt/workspace bash scripts/install_workspace_secure_boundary.sh
 ```
 
+## CI runner pool
+
+`scripts/setup_runner_pool.sh` registers a pool of GitHub Actions self-hosted runner
+instances on the workstation, split into a `general` lane (lightweight lint/test CI,
+parallel-safe) and an exclusive `gpu` lane (live-Ollama/benchmark CI, always serialized).
+See `docs/WORKSPACE_RUNNER_POOL.md`.
+
 ## Current capability model
 
 WorkSpace grows by **capabilities and reviewed skills**, not by adding a fixed number of agents. Current areas include research/evidence synthesis, data quality, presentation/report generation, daily reporting, coding/software-development guidance, language quality, local file/Office/PDF safety, skill approval, model/resource routing, dual RTX 5090 scheduling and deterministic citation/evidence validation.
