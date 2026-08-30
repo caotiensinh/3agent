@@ -92,7 +92,10 @@ class PromptCompilationLedgerTests(unittest.TestCase):
         task = self.store.create_task("Immutable", "Original request")
         ledger = PromptCompilationLedger(self.store)
         ledger.compile_and_bind(task.task_id)
-        with sqlite3.connect(self.db) as conn:
+        # Mutate through the same closing TaskStore lifecycle used by production.
+        # A raw sqlite3 context manager would leave the handle open on Windows and
+        # turn this semantic test into a fixture-level WinError 32 cleanup failure.
+        with self.store.connect() as conn:
             conn.execute(
                 "UPDATE tasks SET request=? WHERE task_id=?",
                 ("Changed request", task.task_id),
