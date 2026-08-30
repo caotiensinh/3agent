@@ -105,7 +105,7 @@ def test_candidate_skill_is_advisory_and_never_auto_promoted():
         "procedure_steps": ["compare local interface errors with end-to-end loss"],
         "stop_conditions": ["insufficient evidence to isolate the failing segment"],
         "authority": "advisory",
-        "auto_promotable": false,
+        "auto_promotable": False,
     }
     skill = SkillCandidate.from_dict(payload)
     assert skill.authority == "advisory"
