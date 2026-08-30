@@ -30,6 +30,8 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
         uploads = list(self._job_uploads.get(job_id, []))
         language_source = self._job_language_sources.get(job_id, "fallback")
         contract = self._effective_output_contract(job, effort)
+        high_effort = str(effort or "").strip().lower() == "high"
+        generation_num_predict = max(contract.num_predict, 768) if high_effort else contract.num_predict
 
         self._update(job_id, status="running")
         self._stage(
@@ -46,7 +48,7 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
             (
                 f"mode=chat language={job.language} language_source={language_source} "
                 f"effort={effort} uploads={len(uploads)} output_kind={contract.kind} "
-                f"num_predict={contract.num_predict}"
+                f"num_predict={generation_num_predict}"
             ),
         )
 
@@ -69,8 +71,8 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 answer = self.orchestrator.llm.generate(
                     system_prompt,
                     prompt,
-                    think=effort == "high",
-                    num_predict=contract.num_predict,
+                    think=high_effort,
+                    num_predict=generation_num_predict,
                     trust_domain="workspace-local-chat",
                     template_version="workspace.chat.direct.v2",
                 )
