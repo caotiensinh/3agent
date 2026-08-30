@@ -84,7 +84,9 @@ class MonitoringPolicyTests(unittest.TestCase):
             collector_capabilities=("icmp_echo", "tcp_connect"),
             allowed_tcp_ports=(443,),
         ).validate()
-        self.engine = MonitoringPolicyEngine(MonitoringPolicy(max_workers=2, max_retries=1))
+        self.engine = MonitoringPolicyEngine(
+            MonitoringPolicy(max_workers=2, max_retries=1, allow_active_liveness=True)
+        )
 
     def test_exact_approved_host_and_port_are_required(self):
         allowed = self.engine.require(
@@ -129,11 +131,14 @@ class MonitoringPolicyTests(unittest.TestCase):
 
     def test_policy_bounds_retries_workers_and_scope(self):
         for kwargs in (
-            {"max_workers": 17},
+            {"max_workers": 5},
             {"max_retries": 2},
             {"max_catch_up_runs": 2},
             {"network_scope": "whole_lan"},
             {"read_only": False},
+            {"production_safety_profile": "unsafe"},
+            {"bandwidth_measurement_mode": "speedtest"},
+            {"packet_analysis_mode": "inject"},
         ):
             with self.subTest(kwargs=kwargs), self.assertRaises(MonitoringContractError):
                 MonitoringPolicy(**kwargs).validate()
