@@ -26,11 +26,11 @@ WORKSPACE_ADMIN_DEPARTMENT      optional
 WORKSPACE_ADMIN_TITLE           default: Administrator
 ```
 
-For upgrade compatibility, when `WORKSPACE_ADMIN_PASSWORD` is not set, the existing `THREE_AGENT_WEB_ACCESS_TOKEN` is used as the first administrator password. Only the derived scrypt hash and salt are stored.
+For upgrade compatibility, when `WORKSPACE_ADMIN_PASSWORD` is not set, the existing `THREE_AGENT_WEB_ACCESS_TOKEN` is used as the first administrator password. Only the derived scrypt hash and salt are stored. Once at least one local account exists, WorkSpace restart does not require the bootstrap password to remain in an environment variable; the persisted account database becomes authoritative.
 
 ## Roles
 
-- `user`: chat, account-scoped history, account-scoped uploads, and own password change.
+- `user`: chat, account-scoped history, account-scoped uploads, own jobs/artifacts, and own password change.
 - `admin`: all `user` rights plus local user creation, role changes, enable/disable, profile updates and password reset through the admin API.
 
 The server refuses to disable or demote the last enabled administrator.
@@ -38,6 +38,8 @@ The server refuses to disable or demote the last enabled administrator.
 ## Ownership
 
 New web conversations and uploads are owned by a stable local account identity (`workspace-user:<user_id>`), not by UI state and not by a user-supplied conversation ID. Every conversation and upload reference is validated against the authenticated account on the server.
+
+Job status, recent-job listings, and artifact downloads are also checked against that exact account identity. Being authenticated is not sufficient to read another user's job or artifact.
 
 Legacy v5 conversation history was IP-scoped. On successful login, only the bootstrap administrator may migrate legacy history from that same client IP into the administrator account. The migration changes ownership metadata only and preserves message content.
 
