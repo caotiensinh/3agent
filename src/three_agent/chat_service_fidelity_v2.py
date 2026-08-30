@@ -69,7 +69,7 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 answer = self.orchestrator.llm.generate(
                     system_prompt,
                     prompt,
-                    think=False,
+                    think=effort == "high",
                     num_predict=contract.num_predict,
                     trust_domain="workspace-local-chat",
                     template_version="workspace.chat.direct.v2",
