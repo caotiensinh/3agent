@@ -1,27 +1,32 @@
 from __future__ import annotations
 
 import subprocess
+import unittest
 from pathlib import Path
 
 
 SCRIPT = Path("scripts/update_workspace_linux.sh")
 
 
-def test_linux_update_script_has_valid_bash_syntax() -> None:
-    subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
+class LinuxUpdateContractTests(unittest.TestCase):
+    def test_linux_update_script_has_valid_bash_syntax(self) -> None:
+        subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
+
+    def test_linux_update_is_application_only_and_runner_safe(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("git merge --ff-only", text)
+        self.assertIn('python" -m pip install -e .', text)
+        self.assertIn('systemctl --user restart "$CHAT_SERVICE"', text)
+        self.assertIn("nvidia-smi --query-gpu=name,uuid", text)
+        self.assertIn("actions.runner.*", text)
+        self.assertNotIn("apt install", text)
+        self.assertNotIn("apt-get", text)
+        self.assertNotIn("nvidia-driver", text)
+        self.assertNotIn("update-grub", text)
+        self.assertNotIn("reboot", text)
+        self.assertNotIn("restart actions.runner", text)
+        self.assertNotIn("stop actions.runner", text)
 
 
-def test_linux_update_is_application_only_and_runner_safe() -> None:
-    text = SCRIPT.read_text(encoding="utf-8")
-    assert "git merge --ff-only" in text
-    assert 'python" -m pip install -e .' in text
-    assert "systemctl --user restart \"$CHAT_SERVICE\"" in text
-    assert "nvidia-smi --query-gpu=name,uuid" in text
-    assert "actions.runner.*" in text
-    assert "apt install" not in text
-    assert "apt-get" not in text
-    assert "nvidia-driver" not in text
-    assert "update-grub" not in text
-    assert "reboot" not in text
-    assert "restart actions.runner" not in text
-    assert "stop actions.runner" not in text
+if __name__ == "__main__":
+    unittest.main()
