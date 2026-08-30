@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import chat_gateway_v4 as _v4
 from . import chat_gateway_v17 as _v17
 from .chat_context_v2 import (
     CONTEXT_MODE_FOLLOW_UP,
@@ -16,6 +17,30 @@ from .chat_fidelity import parse_chat_request
 from .chat_gateway_v5 import _history_owner_key
 from .chat_service_fidelity_v2 import ContractAwareProjectChatService
 from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+
+
+_BASE_WORKSPACE_UI_CAPABILITIES = _v4.workspace_ui_capabilities
+
+
+def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
+    """Add connector discovery metadata without granting execution authority."""
+
+    payload = _BASE_WORKSPACE_UI_CAPABILITIES(config)
+    features = payload.setdefault("features", {})
+    for name, label in (
+        ("figma", "Figma"),
+        ("canva", "Canva"),
+        ("gmail", "Gmail"),
+    ):
+        features[name] = {
+            "enabled": False,
+            "state_label": "Connect",
+            "reason": (
+                f"{label} is not configured for WorkSpace web chat. "
+                "No connector authority has been granted."
+            ),
+        }
+    return payload
 
 
 class CurrentRequestProjectChatService(ContractAwareProjectChatService):
@@ -79,9 +104,11 @@ class CurrentRequestProjectChatService(ContractAwareProjectChatService):
         )
 
 
-# Reuse the fully hardened v17 HTTP/auth/workflow runtime. Only the active local
-# chat service class and UI document are advanced here; every V4 execution,
-# identity, DLP, upload, project, and authorization boundary remains unchanged.
+# Reuse the fully hardened v17 HTTP/auth/workflow runtime. Only current-request
+# language/context behavior, UI document, and disabled connector discovery
+# metadata advance here. No connector gets runtime execution authority.
+_v4.workspace_ui_capabilities = workspace_ui_capabilities
+_v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = CurrentRequestProjectChatService
 _v17.HTML_V17 = WORKSPACE_HTML_V13
 
