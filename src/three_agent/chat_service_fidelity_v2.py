@@ -13,12 +13,17 @@ from .chat_output_contract import (
     strict_structured_schema_id,
     tighten_for_missing_reference,
 )
+from .llm import LocalLLMError
 from .privacy import redact_sensitive_text
 
 
 OUTPUT_CONTRACT_POLICY_VERSION = "current-request-output-contract/v1"
 _STANDARD_OUTPUT_CHARS_PER_PREDICT_TOKEN = 5
 _MIN_STANDARD_NUM_PREDICT = 8
+_STRUCTURED_INTERNAL_MIN_NUM_PREDICT = 32
+_STRUCTURED_PLAIN_FALLBACK_REASONS = frozenset(
+    {"target_language_mismatch", "structured_runtime_error"}
+)
 
 
 def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
@@ -26,8 +31,9 @@ def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
 
     High-effort thinking keeps its established floor because Ollama thinking tokens
     share the generation budget on supported reasoning models. Standard chat does
-    not need that reasoning reserve, so its output budget is capped conservatively
-    against max_chars instead of allowing the decoder to outrun the validator.
+    not need that reasoning reserve, so its visible-output budget is capped
+    conservatively against max_chars instead of allowing the decoder to outrun the
+    authoritative final-answer validator.
     """
 
     configured = max(1, int(getattr(contract, "num_predict", 0) or 1))
@@ -45,6 +51,26 @@ def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
     return min(configured, char_bound)
 
 
+def _structured_generation_num_predict(contract: Any, visible_num_predict: int) -> int:
+    """Reserve decoder budget for the internal JSON envelope.
+
+    The final user-visible answer may be tiny (for example one number), but a
+    structured decoder must first emit a JSON object containing property names,
+    punctuation, and the value. Reusing the visible-answer character cap for that
+    internal representation can truncate valid structured output before the
+    deterministic renderer ever sees it. The final answer remains bounded by the
+    unchanged output-contract validator; this floor applies only to the private
+    intermediate JSON generation.
+    """
+
+    if strict_structured_schema(contract) is None:
+        return max(1, int(visible_num_predict or 1))
+    return max(
+        max(1, int(visible_num_predict or 1)),
+        _STRUCTURED_INTERNAL_MIN_NUM_PREDICT,
+    )
+
+
 def _strict_structured_mode(llm: Any, contract: Any, high_effort: bool) -> bool:
     """Use decoder-time shape control only where it cannot steal reasoning budget."""
 
@@ -60,20 +86,22 @@ def _use_structured_attempt(
     attempt: int,
     previous_failure: str,
 ) -> bool:
-    """Avoid repeating a deterministic structured-language failure unchanged.
+    """Give the final bounded repair attempt an independent generation path.
 
-    Decoder-time JSON shape control is the preferred first attempt for strict
-    standard-chat output. If that attempt is rejected specifically by the
-    authoritative target-language validator, the bounded repair attempt switches
-    to ordinary deterministic generation while keeping the same system prompt,
-    current-request output contract, language validator, and exact-shape validator.
-    This gives the repair attempt an independent generation path without weakening
-    any acceptance rule or increasing the two-attempt retry budget.
+    Structured decoding remains the preferred first attempt. If it either returns
+    content rejected specifically by the target-language validator or raises a
+    LocalLLMError before a valid internal JSON object is produced, the second and
+    final attempt uses ordinary deterministic generation with the same current-
+    request output contract and authoritative validators. Resource-admission and
+    resource-busy failures are not LocalLLMError and therefore remain fail-closed.
     """
 
     if not structured_mode:
         return False
-    return not (attempt > 0 and previous_failure == "target_language_mismatch")
+    return not (
+        attempt > 0
+        and previous_failure in _STRUCTURED_PLAIN_FALLBACK_REASONS
+    )
 
 
 class ContractAwareProjectChatService(ContextAwareProjectChatService):
@@ -92,6 +120,10 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
         contract = self._effective_output_contract(job, effort)
         high_effort = str(effort or "").strip().lower() == "high"
         generation_num_predict = _bounded_generation_num_predict(contract, high_effort)
+        structured_num_predict = _structured_generation_num_predict(
+            contract,
+            generation_num_predict,
+        )
         generation_temperature = None if high_effort else 0.0
         structured_mode = _strict_structured_mode(
             self.orchestrator.llm,
@@ -115,6 +147,7 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 f"mode=chat language={job.language} language_source={language_source} "
                 f"effort={effort} uploads={len(uploads)} output_kind={contract.kind} "
                 f"num_predict={generation_num_predict} "
+                f"structured_num_predict={structured_num_predict} "
                 f"sampling={'default' if generation_temperature is None else 'temperature0'} "
                 f"structured={str(structured_mode).lower()}"
             ),
@@ -151,16 +184,32 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                         "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
                         "- A deterministic local renderer will convert these values to the user's requested final shape."
                     )
-                    payload = self.orchestrator.llm.generate_json(
-                        system_prompt,
-                        prompt,
-                        schema=strict_structured_schema(contract),
-                        schema_id=strict_structured_schema_id(contract),
-                        think=False,
-                        num_predict=generation_num_predict,
-                        trust_domain="workspace-local-chat",
-                        template_version="workspace.chat.direct.structured.v1",
-                    )
+                    try:
+                        payload = self.orchestrator.llm.generate_json(
+                            system_prompt,
+                            prompt,
+                            schema=strict_structured_schema(contract),
+                            schema_id=strict_structured_schema_id(contract),
+                            think=False,
+                            num_predict=structured_num_predict,
+                            trust_domain="workspace-local-chat",
+                            template_version="workspace.chat.direct.structured.v1",
+                        )
+                    except LocalLLMError:
+                        last_reason = "structured_runtime_error"
+                        self.orchestrator.store.record_activity(
+                            None,
+                            "chat_gateway",
+                            "direct_chat_retry",
+                            "warning",
+                            (
+                                f"language={job.language} attempt={attempt + 1} "
+                                f"reason={last_reason} output_kind={contract.kind}"
+                            ),
+                        )
+                        if attempt == 0:
+                            continue
+                        raise
                     answer = render_strict_structured_answer(contract, payload)
                 else:
                     answer = self.orchestrator.llm.generate(
