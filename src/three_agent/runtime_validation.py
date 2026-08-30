@@ -18,8 +18,11 @@ from .presentation_model import handoff_is_presentable
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
 from .route_planner import DeterministicRoutePlanner
 from .store import TaskStore
-from .task_contract import TaskContractCompiler
+from .task_contract import TaskContract, TaskContractCompiler
 from .validator_ledger import TaskVerificationState, ValidatorLedger
+
+
+MAX_PRECOMPILED_ANALYSIS_WALL_TIME_MS = 86_400_000
 
 
 class RuntimeValidationError(RuntimeError):
@@ -113,9 +116,8 @@ class RuntimeValidatorBridge:
             attempt=self._next_attempt(task_id, validator),
         )
 
-    def begin(self, task_id: str) -> RuntimeValidationAttempt:
-        """Bind contract, execution budget, model authority, policy and route."""
-        contract = self.compiler.compile(
+    def _canonical_analysis_contract(self, task_id: str) -> TaskContract:
+        return self.compiler.compile(
             task_id=task_id,
             task_type="analysis",
             sensitivity=self.sensitivity,
@@ -123,6 +125,66 @@ class RuntimeValidatorBridge:
             public_web=self.public_web,
             output_schema=PRESENTATION_PLAN_SCHEMA_V1,
         )
+
+    def _validate_precompiled_contract(
+        self,
+        task_id: str,
+        contract: TaskContract,
+    ) -> TaskContract:
+        """Allow only the canonical authority envelope plus a bounded wall-time extension."""
+        contract.validate()
+        if contract.task_id != task_id:
+            raise RuntimeValidationError("TASK_CONTRACT_TASK_MISMATCH")
+
+        baseline = self._canonical_analysis_contract(task_id)
+        candidate = contract.to_dict()
+        canonical = baseline.to_dict()
+        candidate_execution = candidate.pop("execution_budget", None)
+        canonical_execution = canonical.pop("execution_budget", None)
+        # Reason codes are audit explanation, not authority. V3 may append a
+        # checkpoint-specific bounded-lifetime reason without changing authority.
+        candidate.pop("policy_reason_codes", None)
+        canonical.pop("policy_reason_codes", None)
+
+        if candidate != canonical:
+            raise RuntimeValidationError("TASK_CONTRACT_AUTHORITY_EXPANSION_DENIED")
+        if not isinstance(candidate_execution, dict) or not isinstance(canonical_execution, dict):
+            raise RuntimeValidationError("TASK_CONTRACT_EXECUTION_BUDGET_INVALID")
+
+        for field in ("max_steps", "max_tool_calls", "max_retries", "max_escalations"):
+            if candidate_execution.get(field) != canonical_execution.get(field):
+                raise RuntimeValidationError("TASK_CONTRACT_EXECUTION_AUTHORITY_EXPANSION_DENIED")
+
+        wall_time = candidate_execution.get("max_wall_time_ms")
+        canonical_wall_time = canonical_execution.get("max_wall_time_ms")
+        if (
+            isinstance(wall_time, bool)
+            or not isinstance(wall_time, int)
+            or isinstance(canonical_wall_time, bool)
+            or not isinstance(canonical_wall_time, int)
+            or wall_time < canonical_wall_time
+            or wall_time > MAX_PRECOMPILED_ANALYSIS_WALL_TIME_MS
+        ):
+            raise RuntimeValidationError("TASK_CONTRACT_WALL_TIME_EXTENSION_DENIED")
+        return contract
+
+    def begin(
+        self,
+        task_id: str,
+        *,
+        contract: TaskContract | None = None,
+    ) -> RuntimeValidationAttempt:
+        """Bind contract, execution budget, model authority, policy and route.
+
+        A supplied contract must be byte-for-byte equivalent in authority to the
+        canonical low-risk analysis contract. The sole permitted difference is a
+        bounded wall-time extension up to 24 hours for durable human checkpoints.
+        """
+        if contract is None:
+            contract = self._canonical_analysis_contract(task_id)
+        else:
+            contract = self._validate_precompiled_contract(task_id, contract)
+
         try:
             digest = self.ledger.bind_contract(contract)
         except Exception as exc:
