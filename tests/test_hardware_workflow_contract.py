@@ -29,6 +29,7 @@ def test_hardware_workflows_are_manual_and_exact_runner_scoped():
         assert "  workflow_dispatch:" in text
         assert "runs-on: [self-hosted, Linux, X64, rtx5090]" in text
         assert "\n  push:" not in text
+        assert "\n  pull_request:" not in text
         assert "ollama pull" not in text.lower()
         assert "nvidia-driver" not in text.lower()
         assert "apt install" not in text.lower()
@@ -51,3 +52,21 @@ def test_hardware_workflow_outputs_remain_metadata_only_contracts():
     assert "environment.json" in efficiency
     assert "observation.json" in efficiency
     assert "workspace-eval-efficiency-observe" in efficiency
+
+
+def test_context_benchmark_candidate_preserves_authorization_and_read_only_boundary():
+    benchmark = WORKFLOWS["benchmark"].read_text(encoding="utf-8")
+
+    assert "permissions:\n  contents: read\n" in benchmark
+    assert "      exact_body_dedupe:\n" in benchmark
+    assert "        type: choice\n" in benchmark
+    assert "        default: 'false'\n" in benchmark
+    assert "          - 'false'\n          - 'true'\n" in benchmark
+    assert (
+        "      WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE: "
+        "${{ inputs.exact_body_dedupe }}\n"
+    ) in benchmark
+    assert (
+        "name: context-packing-benchmark-${{ inputs.source_ref }}-dedupe-"
+        "${{ inputs.exact_body_dedupe }}"
+    ) in benchmark

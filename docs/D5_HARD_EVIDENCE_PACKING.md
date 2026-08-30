@@ -19,7 +19,7 @@ len(rendered_evidence) <= policy.budget_chars
 
 The final rendered length is checked again after packing. Any programming path that exceeds the configured budget fails closed with `EVIDENCE_HARD_PACK_BUDGET_EXCEEDED`.
 
-The historical implementation budgeted source blocks before joining them with `\n---\n`, which meant separators could push the final output beyond the configured limit. v2 charges separators to the same budget.
+The historical implementation budgeted source blocks before joining them with `\n---\n`, which meant separators could push the final output beyond the configured limit. The hard packer charges separators to the same budget.
 
 ## Critical provenance spans
 
@@ -42,37 +42,41 @@ This protects source IDs, citations/provenance and the `TEXT:` boundary from tru
 
 ## Compatibility
 
-When the budget is comfortably large enough for all sources, the rendered output remains byte-compatible with the historical format, including trailing newlines and `\n---\n` separators.
+When the budget is comfortably large enough for all sources and optional exact-body suppression is disabled, the rendered output remains byte-compatible with the historical format, including trailing newlines and `\n---\n` separators.
 
-The behavior changes only at the budget boundary where the previous packer could exceed the budget or cut a provenance header.
+The hard-budget behavior changes only at the budget boundary where the previous packer could exceed the budget or cut a provenance header.
 
-The receipt wire schema remains `workspace-evidence-packing-receipt/v1` because the authoritative source-level fields consumed by existing D3 metrics are unchanged. The receipt now also identifies the deterministic algorithm as:
+The receipt wire schema remains `workspace-evidence-packing-receipt/v1` because the authoritative source-level fields consumed by existing D3 metrics remain backward compatible. The current deterministic implementation identifies itself as:
 
 ```text
-workspace-evidence-hard-pack/v2
+workspace-evidence-hard-pack/v3
 ```
 
-and adds metadata-only invariants such as:
+Version v3 retains the D5-03/D5-04 hard-pack semantics and adds optional D5-02a exact-body duplicate metadata. The default for that candidate remains disabled.
+
+Metadata-only invariants include:
 
 - `separator_chars`;
 - `hard_budget_respected`;
 - `critical_provenance_header_truncated`;
 - `sources_skipped_for_header_budget`;
-- per-source `provenance_header_preserved` and `skip_reason`.
+- per-source `provenance_header_preserved` and `skip_reason`;
+- optional exact-body suppression state/counts when D5-02a is benchmarked.
 
-No raw source title, URL or evidence body is copied into the receipt.
+No raw source title, URL, evidence body or body hash is copied into the receipt.
 
 ## Security / privacy
 
 This change adds no network, file, tool, cache or model authority.
 
-Receipts remain metadata-only. Raw prompts, model responses, evidence bodies, credentials and confidential business content are not logged by the packer.
+Receipts remain metadata-only. Raw prompts, model responses, evidence bodies, credentials and confidential business content are not logged by the packer. D5-02a SHA-256 values are transient comparison keys only and are not persisted in the receipt.
 
 ## D5 relationship
 
-After this item:
+Current boundaries are:
 
 - D5-03 hard context packing is complete for the authoritative Research synthesis packer and Context Engine paths;
 - D5-04 critical provenance-span protection is enforced in both paths;
-- D5-02 near-duplicate/diversity semantics remain separate because removing corroborating sources can affect verified quality;
+- D5-02a exact full-body duplicate suppression exists only as an opt-in benchmark candidate; see `D5_EXACT_BODY_DEDUPE.md`;
+- D5-02b near-duplicate/diversity semantics remain separate because similarity-based removal can affect verified quality and corroboration;
 - D5-05 progressive body expansion remains benchmark-gated because skipping candidate bodies can affect recall.
