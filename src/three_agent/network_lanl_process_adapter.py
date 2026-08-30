@@ -25,6 +25,7 @@ from .network_lanl_adapter import (
     lanl_required_identity,
     lanl_time_offset,
 )
+from .network_lanl_family import validate_lanl_source_family_ref
 
 LANL_PROCESS_ADAPTER_ID = "lanl-comprehensive-process"
 LANL_PROCESS_ADAPTER_VERSION = "lanl-comprehensive-process/0.1"
@@ -94,6 +95,7 @@ class LANLProcessAdapter:
             raise LANLAdapterSchemaError(
                 "adapter version in input contract does not match runtime adapter"
             )
+        validate_lanl_source_family_ref(contract.source_object_ref, self.source_family)
 
     def inspect(
         self,
