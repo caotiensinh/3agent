@@ -46,7 +46,7 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
                 self.assertIn(f'data-action="{action}"', html)
 
         for label in (
-            "Add photos &amp; files",
+            "Add photos & files",
             "Add from library",
             "Create image",
             "Web search",
