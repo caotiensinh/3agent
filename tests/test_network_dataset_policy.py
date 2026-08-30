@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,11 @@ def manager() -> NetworkDatasetManager:
     )
 
 
+@unittest.skipIf(
+    os.name == "nt",
+    "Network dataset acquisition/processing policy uses Linux deployment roots; "
+    "cross-platform harness contracts are tested separately.",
+)
 class NetworkDatasetPolicyTests(unittest.TestCase):
     def test_enterprise_dataset_allowed_for_experience_extraction(self):
         plan = manager().plan(
