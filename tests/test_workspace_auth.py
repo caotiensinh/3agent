@@ -41,6 +41,13 @@ class WorkspaceAuthStoreTests(unittest.TestCase):
             store.login("admin", "fedcba9876543210", "192.168.11.20")
         )
 
+    def test_bootstrap_secret_is_required_only_when_database_is_empty(self):
+        store = self.make_store()
+        first = store.bootstrap_admin("admin", "0123456789abcdef")
+        restarted = store.bootstrap_admin("admin", "")
+        self.assertEqual(restarted["user_id"], first["user_id"])
+        self.assertEqual(restarted["role"], "admin")
+
     def test_admin_can_create_user_and_last_admin_is_fail_closed(self):
         store = self.make_store()
         admin = store.bootstrap_admin("admin", "0123456789abcdef")
