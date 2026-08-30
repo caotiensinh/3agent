@@ -42,7 +42,15 @@ class FakeSnmpBackend:
 
 class CollectorTests(unittest.TestCase):
     def setUp(self):
-        self.engine = MonitoringPolicyEngine(MonitoringPolicy(max_workers=2, timeout_seconds=2, max_retries=1))
+        # Synthetic unit tests explicitly opt into the bounded liveness exception.
+        self.engine = MonitoringPolicyEngine(
+            MonitoringPolicy(
+                max_workers=2,
+                timeout_seconds=2,
+                max_retries=1,
+                allow_active_liveness=True,
+            )
+        )
 
     def test_tcp_connect_uses_exact_asset_target_and_timeout(self):
         calls = []
