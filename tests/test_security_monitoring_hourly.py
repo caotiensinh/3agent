@@ -2,12 +2,17 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from three_agent.security_monitoring.collectors import CollectorResult
 from three_agent.security_monitoring.contracts import AssetInventoryRecord, ObservationRecord
 from three_agent.security_monitoring.hourly import HourlyMonitoringRunner, hourly_slot_key
-from three_agent.security_monitoring.locking import HourlyRunLockManager, MonitoringRunAlreadyLocked
+from three_agent.security_monitoring.locking import (
+    HOURLY_LOCK_STALE_AFTER_SECONDS,
+    HourlyRunLockManager,
+    MonitoringRunAlreadyLocked,
+)
 from three_agent.security_monitoring.policy import MonitoringPolicy
 from three_agent.security_monitoring.storage import MonitoringStore
 
@@ -73,6 +78,47 @@ class HourlyRunnerTests(unittest.TestCase):
             self.assertEqual(store.count("hourly_runs"), 1)
             self.assertEqual(store.count("observations"), 3)
             self.assertTrue(all(call[3] != receipt.scheduled_at for call in calls))
+
+    def test_finalized_hourly_slot_replay_returns_durable_receipt_without_recollection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp)
+            calls = []
+
+            def execute(item, asset, run_id, observed_at):
+                calls.append(item.work_id)
+                return CollectorResult(
+                    (
+                        ObservationRecord(
+                            run_id=run_id,
+                            asset_id=asset.asset_id,
+                            collector=item.capability,
+                            observed_at=observed_at,
+                            metric="synthetic_reachable",
+                            status="ok",
+                            value=True,
+                            unit="bool",
+                        ).validate(),
+                    )
+                )
+
+            runner = HourlyMonitoringRunner(
+                store=store,
+                policy=MonitoringPolicy(
+                    profile_id="rnd", max_workers=2, max_retries=0, allow_active_liveness=True
+                ),
+                execute_work_item=execute,
+            )
+            scheduled = "2026-08-30T21:05:00+09:00"
+            first = runner.run(scheduled_at=scheduled)
+            calls_after_first = list(calls)
+            observations_after_first = store.count("observations")
+            replay = runner.run(scheduled_at=scheduled)
+
+            self.assertEqual(replay, first)
+            self.assertEqual(replay.attempt, 1)
+            self.assertEqual(calls, calls_after_first)
+            self.assertEqual(store.count("hourly_runs"), 1)
+            self.assertEqual(store.count("observations"), observations_after_first)
 
     def test_retry_is_bounded_to_one_and_recorded(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,7 +200,11 @@ class HourlyRunnerTests(unittest.TestCase):
             policy = MonitoringPolicy(profile_id="rnd")
             slot = hourly_slot_key("rnd", "2026-08-30T21:05:00+09:00")
             manager = HourlyRunLockManager(store)
-            held = manager.acquire(slot_key=slot, owner_id="test-owner", acquired_at="2026-08-30T12:05:00+00:00")
+            held = manager.acquire(
+                slot_key=slot,
+                owner_id="test-owner",
+                acquired_at=datetime.now(timezone.utc).isoformat(),
+            )
             runner = HourlyMonitoringRunner(
                 store=store,
                 policy=policy,
@@ -163,6 +213,32 @@ class HourlyRunnerTests(unittest.TestCase):
             with self.assertRaises(MonitoringRunAlreadyLocked):
                 runner.run(scheduled_at="2026-08-30T21:05:00+09:00")
             self.assertTrue(manager.release(held))
+
+    def test_restart_can_reclaim_only_a_hard_stale_lock(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = self._store(tmp)
+            manager = HourlyRunLockManager(store)
+            slot = "hourly:rnd:2026-08-30T21"
+            old = manager.acquire(
+                slot_key=slot,
+                owner_id="old-process",
+                acquired_at="2026-08-30T12:00:00+00:00",
+            )
+            with self.assertRaises(MonitoringRunAlreadyLocked):
+                manager.acquire(
+                    slot_key=slot,
+                    owner_id="too-early",
+                    acquired_at="2026-08-30T12:19:59+00:00",
+                )
+            replacement = manager.acquire(
+                slot_key=slot,
+                owner_id="restarted-process",
+                acquired_at="2026-08-30T12:20:01+00:00",
+            )
+            self.assertFalse(manager.release(old))
+            self.assertTrue(manager.is_locked(slot))
+            self.assertTrue(manager.release(replacement))
+            self.assertEqual(HOURLY_LOCK_STALE_AFTER_SECONDS, 20 * 60)
 
     def test_worker_concurrency_never_exceeds_policy_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
