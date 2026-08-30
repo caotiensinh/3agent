@@ -325,7 +325,7 @@ class WorkflowStateMachineV4Tests(unittest.TestCase):
         encoded = repr(result)
         for forbidden in (str(self.controller.root), "approver", "audience", "contract", "prompt"):
             self.assertNotIn(forbidden, encoded)
-        self.assertEqual(result["release_version"], "ver.0.0.1")
+        self.assertEqual(result["release_version"], DISPLAY_VERSION)
 
 
 if __name__ == "__main__":
