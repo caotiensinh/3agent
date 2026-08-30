@@ -6,6 +6,8 @@ Design and control-plane contract for using public network/security/operations d
 
 The purpose of this subsystem is **not** to build a permanent raw-log warehouse.
 
+> Specialist implementation is governed by `docs/WORKSPACE_NETWORK_SPECIALIST_HARNESS_SPEC_V1.md` and the machine-readable `evaluation/network_specialist_harness_v1.json`. The required order is goal/spec/harness/pass-fail contract first, implementation second. No specialist or coordinator may claim PASS outside those gates.
+
 ## Primary objective
 
 WorkSpace should learn how experienced network engineers reason:
@@ -498,10 +500,12 @@ The command creates an immutable bounded plan and performs no network I/O.
 10. Dataset-derived skills remain advisory candidates and cannot auto-promote.
 11. Approved skills retain the existing WorkSpace hash/review/authority boundary.
 12. Every durable experience artifact is traceable to source hashes and transformation provenance.
+13. Specialist-visible evaluation input contains neither hidden ground truth nor case-class labels such as positive/negative/ambiguous.
+14. Pass/fail thresholds are frozen before candidate implementation and cannot be relaxed merely to make an existing candidate pass.
 
 ## Implementation phases
 
-### V1 — control plane and experience contract
+### G0 / V1 — control plane, experience contract and specialist harness contract
 
 Implemented on this branch:
 
@@ -513,25 +517,36 @@ Implemented on this branch:
 - stable policy/registry fingerprints;
 - source provenance templates;
 - `ExperienceCase`, `EvidencePattern` and `SkillCandidate` validation contracts;
+- three independent specialist blueprints;
+- frozen specialist harness spec and machine-readable pass/fail profile;
 - prohibition on unsupported confirmed causes/remediation;
-- prohibition on candidate-skill self-approval;
-- unit tests.
+- prohibition on candidate-skill self-approval.
 
-### V2 — isolated acquisition/extraction boundary
+### G1 / V3 — corpus boundary and evidence extraction
 
-Add `workspace-dataset-fetch` and offline `workspace-dataset` services, systemd/nftables/filesystem boundary, streamed SHA-256 and append-only acquisition ledger.
+The first code is harness infrastructure, not model training:
 
-### V3 — evidence normalizers and case extraction
+1. corpus manifest and hidden-ground-truth boundary;
+2. bounded adapters for CIC/LANL/BOTS;
+3. incident slicer and evidence-reference builder;
+4. deterministic harness validator/scorer;
+5. staging deletion and provenance receipt.
 
-Add bounded adapters for CIC processed CSV, LANL event streams and BOTS. Build deterministic event references and incident segmentation. Raw/normalized staging must be deleted after successful extraction unless explicitly pinned for an active audit/evaluation job.
+### G2 — specialist baseline
 
-### V4 — pattern miner and candidate-skill compiler
+Build the smallest evidence-first specialist implementation for each blueprint, preferring procedure + deterministic retrieval before fine-tuning.
 
-Aggregate independently supported cases, mine discriminators/false-positive checks, and create advisory candidate skills. No auto-promotion.
+### G3 — held-out and hard-negative evaluation
 
-### V5 — runtime Network AI reasoning
+Freeze holdout manifest before candidate execution and require all quality plus zero-tolerance security/evidence/license gates.
 
-Connect the approved Experience Store to deterministic retrieval and the WorkSpace reasoning harness so new incidents are diagnosed through evidence-backed case/pattern comparison before an LLM produces a human explanation.
+### G4 — approved skill promotion
+
+Only independently reviewed G3 PASS candidates may become compact hashed skills under the existing WorkSpace skill trust path.
+
+### G5 — multi-skill coordinator
+
+Only after the required specialists reach G4. The coordinator must preserve disagreement, contradiction and uncertainty rather than manufacture consensus.
 
 ## Final design statement
 
