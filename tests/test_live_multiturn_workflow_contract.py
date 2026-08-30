@@ -56,6 +56,20 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertIn("actions/upload-artifact@v4", text)
         self.assertIn("retention-days: 14", text)
 
+    def test_portable_gate_tracks_live_acceptance_contract_changes(self):
+        text = (ROOT / ".github/workflows/portable-deploy-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertGreaterEqual(
+            text.count("'.github/workflows/live-chat-multiturn-acceptance.yml'"),
+            2,
+        )
+        self.assertGreaterEqual(
+            text.count("'tests/test_live_multiturn_workflow_contract.py'"),
+            2,
+        )
+        self.assertIn("workflow_dispatch:", text)
+
     def test_package_exposes_new_cli_without_replacing_chat_gateway(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('version = "0.18.0"', text)
