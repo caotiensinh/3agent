@@ -21,6 +21,9 @@ jobs:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -32,3 +35,17 @@ jobs:
         run: python -m compileall -q src tests
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Enterprise verification EV-01 through EV-10
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts/security_enterprise_verify.py \
+            --source-sha "$EXACT_SOURCE_SHA" \
+            --output "$RUNNER_TEMP/security-enterprise-verification.json"
+      - name: Upload enterprise verification receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-enterprise-verification-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/security-enterprise-verification.json
+          if-no-files-found: error
+          retention-days: 14
