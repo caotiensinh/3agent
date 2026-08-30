@@ -45,7 +45,7 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(contract.exact_items, 3)
         self.assertLessEqual(contract.max_chars, 900)
 
-    def test_one_sentence_has_hard_line_and_size_budget(self):
+    def test_one_sentence_has_hard_line_size_and_sentence_budget(self):
         for prompt in (
             "Explain that in exactly one sentence.",
             "Đúng một câu thôi.",
@@ -57,6 +57,13 @@ class ChatOutputContractTests(unittest.TestCase):
                 self.assertEqual(contract.max_lines, 1)
                 self.assertLessEqual(contract.max_chars, 400)
                 self.assertLessEqual(contract.num_predict, 128)
+                self.assertTrue(contract.validate("This is one sentence.")[0])
+                self.assertFalse(contract.validate("First sentence. Second sentence.")[0])
+                self.assertFalse(contract.validate("一文です。二文目です。")[0])
+
+    def test_sentence_validator_does_not_split_decimal(self):
+        contract = compile_chat_output_contract("Explain in one sentence.")
+        self.assertTrue(contract.validate("Version 1.2 remains supported.")[0])
 
     def test_language_neutral_formats_are_tightly_bounded(self):
         number = compile_chat_output_contract("Chỉ trả lời một số duy nhất: HTTPS port?")
@@ -80,6 +87,7 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(tightened.max_lines, 1)
         self.assertLessEqual(tightened.max_chars, 400)
         self.assertIn("do not invent", tightened.instruction)
+        self.assertFalse(tightened.validate("Bạn muốn tiếp phần nào? Hãy cho tôi nội dung trước.")[0])
 
     def test_standard_default_no_longer_has_4096_token_budget(self):
         contract = compile_chat_output_contract("Explain DNSSEC briefly.", effort="standard")
@@ -99,12 +107,14 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(mode, CONTEXT_MODE_FOLLOW_UP)
         self.assertEqual(language, "ja")
 
-    def test_current_service_forces_thinking_off_and_dynamic_predict_budget(self):
+    def test_current_service_preserves_high_reasoning_and_dynamic_predict_budget(self):
         text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn("think=False", text)
-        self.assertIn("num_predict=contract.num_predict", text)
+        self.assertIn('high_effort = str(effort or "").strip().lower() == "high"', text)
+        self.assertIn("think=high_effort", text)
+        self.assertIn("generation_num_predict = max(contract.num_predict, 768) if high_effort else contract.num_predict", text)
+        self.assertIn("num_predict=generation_num_predict", text)
         self.assertIn("contract.validate(answer)", text)
         self.assertIn("workspace.chat.direct.v2", text)
 
