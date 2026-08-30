@@ -6,7 +6,6 @@ import unittest
 from three_agent.chat_gateway_v15 import WorkflowV3HTTPHandler
 from three_agent.chat_gateway_v16 import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
-    ContextAwareProjectChatService,
     ContextAwareWorkflowV3HTTPHandler,
 )
 from three_agent.chat_gateway_v17 import (
@@ -35,9 +34,15 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
 
     def test_product_application_uses_budget_hardened_v4_controller(self):
         source = inspect.getsource(WorkflowV4ContextApplication.__init__)
-        self.assertIn("BudgetedWorkflowStateMachineV4Controller", source)
+        self.assertIn(
+            "self.workflow_v4 = BudgetedWorkflowStateMachineV4Controller(service.orchestrator)",
+            source,
+        )
         self.assertIn("self.workflow_v3 = self.workflow_v4", source)
-        self.assertNotIn("WorkflowStateMachineV4Controller(service.orchestrator)", source)
+        self.assertNotIn(
+            "self.workflow_v4 = WorkflowStateMachineV4Controller(service.orchestrator)",
+            source,
+        )
 
     def test_prepare_is_admin_gated_and_uses_v4_controller(self):
         source = inspect.getsource(WorkflowV4ContextHTTPHandler._prepare_dispatch)
