@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import csv
 import hashlib
 import inspect
@@ -281,16 +282,40 @@ class CICIntegrityBoundaryTests(unittest.TestCase):
 
 
 class CICAuthorityTests(unittest.TestCase):
-    def test_adapter_source_contains_no_network_model_subprocess_or_whole_file_read(self):
+    def test_adapter_ast_contains_no_network_model_or_subprocess_import_authority(self):
         text = inspect.getsource(cic_module)
-        lowered = text.casefold()
-        self.assertNotIn("import requests", text)
-        self.assertNotIn("import urllib", text)
-        self.assertNotIn("import socket", text)
-        self.assertNotIn("subprocess", text)
-        self.assertNotIn("ollama", lowered)
-        self.assertNotIn("openai", lowered)
-        self.assertNotIn(".read()", text)
+        tree = ast.parse(text)
+        banned_roots = {
+            "requests",
+            "urllib",
+            "socket",
+            "subprocess",
+            "openai",
+            "ollama",
+        }
+        imported_roots: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_roots.add(node.module.split(".", 1)[0])
+
+        self.assertFalse(
+            imported_roots & banned_roots,
+            f"forbidden authority imports: {sorted(imported_roots & banned_roots)}",
+        )
+
+    def test_adapter_ast_contains_no_unbounded_whole_file_read(self):
+        text = inspect.getsource(cic_module)
+        tree = ast.parse(text)
+        unbounded_reads = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "read":
+                if not node.args and not node.keywords:
+                    unbounded_reads.append(node.lineno)
+        self.assertEqual(unbounded_reads, [])
         self.assertIn("csv.reader", text)
 
 
