@@ -16,8 +16,9 @@ The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Determinis
 - `NETWORK_SECURITY_ANALYST_LEARNING.md` — domain-specific application for Network Monitoring, Security Analysis, and general Analyst work, where evidence quality and false-positive control are critical.
 - `ADAPTIVE_LEARNING_PHASE1.md` — implemented deterministic contracts for evidence, experience, candidate provenance, contradictions, validation receipts, classification monotonicity and knowledge-level promotion.
 - `ADAPTIVE_LEARNING_PHASE2.md` — implemented offline/synthetic Network/Security/Analyst evaluation corpus and metadata-only deterministic replay.
+- `ADAPTIVE_LEARNING_PHASE3.md` — implemented local immutable version store, append-only hash-chained audit ledger, staged/active lifecycle, enterprise-baseline protection, archive, and exact-version rollback.
 
-The current implementation still has **no background LLM learner**. Phase 1 and Phase 2 establish the deterministic control plane and fixed evaluation gate that must exist first.
+The current implementation still has **no background LLM learner**. Phase 1 through Phase 3 establish the deterministic contract, evaluation, persistence, audit, and rollback boundaries that must exist first.
 
 ## Provenance
 
