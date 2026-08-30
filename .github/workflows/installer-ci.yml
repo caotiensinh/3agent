@@ -48,6 +48,7 @@ jobs:
           bash scripts/test_lan_ai_server_contract.sh
           bash scripts/test_workspace_security_contract.sh
           bash scripts/test_workspace_knowledge_contract.sh
+          bash scripts/test_identity_broker_contract.sh
       - name: ShellCheck
         run: |
           sudo apt-get update -y
@@ -63,6 +64,7 @@ jobs:
             scripts/configure_telegram.sh \
             scripts/install_workspace_secure_boundary.sh \
             scripts/install_workspace_knowledge_plane.sh \
+            scripts/install_workspace_identity_broker.sh \
             scripts/setup_workspace_secure.sh \
             scripts/test_installer_contract.sh \
             scripts/test_ai_stack_contract.sh \
@@ -71,7 +73,8 @@ jobs:
             scripts/test_chat_gateway_contract.sh \
             scripts/test_lan_ai_server_contract.sh \
             scripts/test_workspace_security_contract.sh \
-            scripts/test_workspace_knowledge_contract.sh
+            scripts/test_workspace_knowledge_contract.sh \
+            scripts/test_identity_broker_contract.sh
 
   harness-regression:
     runs-on: ubuntu-24.04
