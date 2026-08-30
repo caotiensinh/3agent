@@ -80,9 +80,10 @@ class WorkflowDesignTests(unittest.TestCase):
         mermaid = render_mermaid(payload)
         self.assertNotIn("<script>", svg)
         self.assertIn("&lt;script&gt;", svg)
-        for token in ("[danger]", "|", "{edge}", ";"):
-            self.assertNotIn(token, mermaid)
+        self.assertNotIn("[danger] | {edge};", mermaid)
+        self.assertIn("(danger) / (edge),", mermaid)
         self.assertNotIn('"x"', mermaid)
+        self.assertIn('-->|"validation passed"| approve', mermaid)
 
     def test_schedule_trigger_is_design_only_and_adds_warning(self):
         contract = validate_contract(sample_contract())
