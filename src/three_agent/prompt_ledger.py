@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from datetime import datetime
 from typing import Any
@@ -19,9 +18,15 @@ class PromptCompilationLedger:
         self.db_path = store.db_path
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Reuse TaskStore's closing connection factory.
+
+        A plain ``sqlite3.Connection`` context manager commits/rolls back but does
+        not close the underlying handle. That is observable as locked temporary DB
+        files on Windows. The authoritative TaskStore already provides a connection
+        subclass that closes after every ``with`` scope, so prompt metadata must use
+        the same lifecycle rather than opening an independent raw SQLite handle.
+        """
+        return self.store.connect()
 
     def initialize(self) -> None:
         with self.connect() as conn:
