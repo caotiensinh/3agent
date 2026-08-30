@@ -8,13 +8,25 @@ from .chat_fidelity import requested_language_neutral_format
 
 
 _BULLET_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S")
+_SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
+
+
+def _sentence_terminator_count(text: str) -> int:
+    """Count likely sentence terminators without treating decimals as boundaries."""
+
+    body = str(text or "").strip()
+    if not body:
+        return 0
+    body = re.sub(r"(?<=\d)\.(?=\d)", "", body)
+    body = re.sub(r"\b(?:e\.g|i\.e)\.", "", body, flags=re.IGNORECASE)
+    return len(_SENTENCE_TERMINATOR_RE.findall(body))
 
 
 @dataclass(frozen=True)
 class ChatOutputContract:
     """Deterministic current-request response-shape contract.
 
-    The contract is derived only from the current user request.  It never reads
+    The contract is derived only from the current user request. It never reads
     prior conversation text and never grants model/tool/network authority.
     """
 
@@ -42,6 +54,9 @@ class ChatOutputContract:
                 return False, "output_contract_non_bullet_text"
             if self.exact_items and len(bullet_lines) != self.exact_items:
                 return False, f"output_contract_bullets:{len(bullet_lines)}_not_{self.exact_items}"
+        elif self.kind == "single_sentence":
+            if _sentence_terminator_count(body) > 1:
+                return False, "output_contract_multiple_sentences"
         elif self.kind == "json_only":
             try:
                 json.loads(body)
@@ -52,7 +67,7 @@ class ChatOutputContract:
                 return False, "output_contract_not_single_number"
         elif self.kind == "code_only":
             # The established chat_fidelity validator performs the authoritative
-            # command/code shape check.  This layer only enforces bounded size.
+            # command/code shape check. This layer only enforces bounded size.
             pass
         return True, "ok"
 
