@@ -1,0 +1,114 @@
+name: live-chat-multiturn-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN to execute local-model acceptance on the trusted RTX 5090 runner'
+        required: true
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'src/three_agent/chat_context.py'
+      - 'src/three_agent/chat_fidelity.py'
+      - 'src/three_agent/chat_gateway_v16.py'
+      - 'src/three_agent/chat_multiturn_acceptance.py'
+      - 'tests/test_chat_multiturn_acceptance.py'
+      - '.github/workflows/live-chat-multiturn-acceptance.yml'
+      - 'pyproject.toml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-live-chat-multiturn-main
+  cancel-in-progress: false
+
+jobs:
+  live-multiturn:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.confirm == 'RUN')
+    runs-on: [self-hosted, Linux, X64, rtx5090]
+    timeout-minutes: 75
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify runner GPU inventory read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -ge 2
+
+      - name: Create ephemeral acceptance environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-multiturn-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install -e .
+          echo "WORKSPACE_ACCEPTANCE_VENV=$VENV" >> "$GITHUB_ENV"
+
+      - name: Resolve installed WorkSpace config without printing it
+        shell: bash
+        env:
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$HOME/3agent/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "WORKSPACE_ACCEPTANCE_CONFIG_PATH=$CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - name: Run sanitized local-model multi-turn acceptance
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          REPORT="$RUNNER_TEMP/workspace-multiturn-acceptance-${GITHUB_SHA}.json"
+          WORKSPACE_CONFIG="$WORKSPACE_ACCEPTANCE_CONFIG_PATH" \
+            "$WORKSPACE_ACCEPTANCE_VENV/bin/workspace-chat-multiturn-acceptance" \
+              --live \
+              --source-sha "$GITHUB_SHA" \
+              --output "$REPORT"
+          echo "WORKSPACE_ACCEPTANCE_REPORT=$REPORT" >> "$GITHUB_ENV"
+
+      - name: Publish non-sensitive result summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test -n "${WORKSPACE_ACCEPTANCE_REPORT:-}" && test -f "$WORKSPACE_ACCEPTANCE_REPORT"; then
+            "$WORKSPACE_ACCEPTANCE_VENV/bin/python" - "$WORKSPACE_ACCEPTANCE_REPORT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## WorkSpace multi-turn live acceptance')
+          print()
+          print(f"- source SHA: `{p.get('source_sha', 'unknown')}`")
+          print(f"- package: `{p.get('package_version', 'unknown')}`")
+          print(f"- cases: `{p.get('case_count', 0)}`")
+          print(f"- turns: `{p.get('turn_count', 0)}`")
+          print(f"- result: `{'PASS' if p.get('passed') else 'FAIL'}`")
+          print(f"- corpus: `{p.get('corpus_sha256', 'unknown')}`")
+          print('- raw prompts/answers: `not persisted`')
+          PY
+          else
+            echo '## WorkSpace multi-turn live acceptance' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '- result: `NO_REPORT`' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload sanitized evidence
+        if: always() && env.WORKSPACE_ACCEPTANCE_REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-multiturn-acceptance-${{ github.sha }}
+          path: ${{ env.WORKSPACE_ACCEPTANCE_REPORT }}
+          if-no-files-found: error
+          retention-days: 14
