@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from three_agent.chat_fidelity import direct_chat_answer_valid
 from three_agent.chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
 from three_agent.chat_output_contract import (
     ChatOutputContract,
@@ -15,6 +16,7 @@ from three_agent.chat_output_contract import (
 from three_agent.chat_service_fidelity_v2 import (
     _bounded_generation_num_predict,
     _strict_structured_mode,
+    _use_structured_attempt,
 )
 from three_agent.llm import OllamaClient
 
@@ -138,6 +140,38 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         )
         self.assertEqual(contract.validate(answer), (True, "ok"))
 
+    def test_vi_technical_only_bullets_stay_rejected_by_language_gate(self):
+        request = (
+            "Hãy trả lời bằng tiếng Việt với đúng 3 gạch đầu dòng theo thứ tự: "
+            "(1) kiểm tra địa chỉ IP bằng ip addr; (2) kiểm tra default gateway bằng "
+            "ip route; (3) kiểm tra DNS bằng resolvectl status."
+        )
+        technical_only = "- ip addr\n- ip route\n- resolvectl status"
+        localized = (
+            "- Kiểm tra địa chỉ IP bằng ip addr\n"
+            "- Kiểm tra cổng mặc định bằng ip route\n"
+            "- Kiểm tra DNS bằng resolvectl status"
+        )
+
+        self.assertEqual(
+            direct_chat_answer_valid(technical_only, "vi", request),
+            (False, "target_language_mismatch"),
+        )
+        self.assertEqual(
+            direct_chat_answer_valid(localized, "vi", request),
+            (True, "ok"),
+        )
+
+    def test_language_mismatch_repair_uses_independent_plain_generation_path(self):
+        self.assertTrue(_use_structured_attempt(True, 0, ""))
+        self.assertFalse(
+            _use_structured_attempt(True, 1, "target_language_mismatch")
+        )
+        self.assertTrue(
+            _use_structured_attempt(True, 1, "output_contract_chars:900_gt_840")
+        )
+        self.assertFalse(_use_structured_attempt(False, 0, ""))
+
     def test_structured_number_renderer_is_canonical(self):
         contract = ChatOutputContract(kind="single_number", max_lines=1, max_chars=32)
         self.assertEqual(render_strict_structured_answer(contract, {"value": 443}), "443")
@@ -191,11 +225,13 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         )
         self.assertIn("generation_temperature = None if high_effort else 0.0", text)
         self.assertIn("structured_mode = _strict_structured_mode", text)
+        self.assertIn("use_structured = _use_structured_attempt", text)
         self.assertIn("self.orchestrator.llm.generate_json(", text)
         self.assertIn("render_strict_structured_answer(contract, payload)", text)
         self.assertIn("temperature=generation_temperature", text)
         self.assertIn("for attempt in range(2):", text)
         self.assertIn("contract.validate(answer)", text)
+        self.assertIn("Technical commands and identifiers may remain unchanged", text)
 
 
 if __name__ == "__main__":
