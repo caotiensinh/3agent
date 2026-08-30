@@ -20,7 +20,7 @@ on:
         required: true
         default: '4'
       samples:
-        description: 'Total structured requests (2..128, >= concurrency)'
+        description: 'Requests per serial/concurrent mode (2..128, >= concurrency)'
         required: true
         default: '8'
 
@@ -60,6 +60,7 @@ jobs:
           python3 -m pip install --no-deps -e .
           workspace-benchmark-readiness --help >/dev/null
           workspace-eval-efficiency-observe --help >/dev/null
+          python3 -m three_agent.resource_benefit_observer --help >/dev/null
 
       - name: Capture metadata-only hardware readiness receipt
         id: readiness
@@ -104,6 +105,30 @@ jobs:
             >/dev/null
           test -s "$OBS_ROOT/observation.json"
 
+      - name: Measure serial-versus-concurrent resource benefit
+        id: resource_benefit
+        if: ${{ steps.readiness.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.source_ref }}
+          MODEL: ${{ inputs.model }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          SAMPLES: ${{ inputs.samples }}
+        run: |
+          set -Eeuo pipefail
+          OBS_ROOT="$RUNNER_TEMP/workspace-d7-efficiency-$GITHUB_RUN_ID"
+          python3 -m three_agent.resource_benefit_observer \
+            --source-ref "$EXPECTED_SHA" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --environment "$OBS_ROOT/environment.json" \
+            --model "$MODEL" \
+            --concurrency "$CONCURRENCY" \
+            --samples "$SAMPLES" \
+            --output "$OBS_ROOT/resource-benefit.json" \
+            >/dev/null
+          test -s "$OBS_ROOT/resource-benefit.json"
+
       - name: Publish metadata-only observation evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -114,6 +139,7 @@ jobs:
           path: |
             ${{ runner.temp }}/workspace-d7-efficiency-${{ github.run_id }}/environment.json
             ${{ runner.temp }}/workspace-d7-efficiency-${{ github.run_id }}/observation.json
+            ${{ runner.temp }}/workspace-d7-efficiency-${{ github.run_id }}/resource-benefit.json
 
       - name: Require complete observation
         if: ${{ always() }}
@@ -121,7 +147,9 @@ jobs:
         env:
           READINESS_OUTCOME: ${{ steps.readiness.outcome }}
           OBSERVATION_OUTCOME: ${{ steps.observation.outcome }}
+          RESOURCE_BENEFIT_OUTCOME: ${{ steps.resource_benefit.outcome }}
         run: |
           set -Eeuo pipefail
           test "$READINESS_OUTCOME" = "success"
           test "$OBSERVATION_OUTCOME" = "success"
+          test "$RESOURCE_BENEFIT_OUTCOME" = "success"
