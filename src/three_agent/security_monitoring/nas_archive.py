@@ -82,6 +82,17 @@ def verify_report_bundle(bundle: ReportBundle, config: NasArchiveConfig) -> tupl
     return entries
 
 
+def _nas_mount_ready(nas_root: Path) -> bool:
+    """Filesystem-only readiness check; never opens a network socket or probes a host."""
+
+    return (
+        nas_root.exists()
+        and nas_root.is_dir()
+        and not nas_root.is_symlink()
+        and os.path.ismount(nas_root)
+    )
+
+
 def archive_existing_bundle(
     bundle: ReportBundle,
     *,
@@ -94,13 +105,15 @@ def archive_existing_bundle(
 
     This function never mounts SMB/NFS and never accepts NAS credentials. A missing
     mount becomes PENDING_NAS so the exact existing bundle can be retried later.
+    The local bundle is always verified before NAS readiness is considered.
     """
 
     config.validate()
+    entries = verify_report_bundle(bundle, config)
     now = datetime.now(TOKYO).isoformat()
     archive_id = f"archive-{period_kind}-{period_key}-{attempt}"
     nas_root = Path(config.nas_root)
-    if not nas_root.exists() or not nas_root.is_dir() or nas_root.is_symlink():
+    if not _nas_mount_ready(nas_root):
         return ArchiveReceipt(
             archive_id=archive_id,
             period_kind=period_kind,
@@ -113,7 +126,6 @@ def archive_existing_bundle(
             failure_code="NAS_UNAVAILABLE",
         ).validate()
 
-    entries = verify_report_bundle(bundle, config)
     period_dir = nas_root / period_kind / period_key
     final = period_dir / bundle.report_id
     temp = period_dir / f".{bundle.report_id}.{os.getpid()}.tmp"
