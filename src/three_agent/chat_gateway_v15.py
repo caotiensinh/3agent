@@ -179,12 +179,20 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
                     plan.text,
                     "</RECENT_CONVERSATION_CONTEXT>",
                 ]
+            else:
+                sections += [
+                    "",
+                    '<RECENT_CONVERSATION_CONTEXT available="false">',
+                    "No eligible completed prior conversation is available for this reference.",
+                    "Do not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.",
+                    "</RECENT_CONVERSATION_CONTEXT>",
+                ]
         else:
             sections += [
                 "",
                 '<CONVERSATION_CONTEXT_POLICY mode="standalone">',
                 "No earlier conversation is supplied because the current request contains no explicit cross-turn reference.",
-                "Answer only the CURRENT USER REQUEST.",
+                "Answer only the CURRENT USER_REQUEST.",
                 "</CONVERSATION_CONTEXT_POLICY>",
             ]
 
