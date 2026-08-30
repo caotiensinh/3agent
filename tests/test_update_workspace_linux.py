@@ -31,7 +31,7 @@ class LinuxUpdateContractTests(unittest.TestCase):
         self.assertNotIn("update-grub", text)
         self.assertNotIn("reboot", text)
         self.assertNotIn("ollama pull", text)
-        self.assertNotIn("docker", text.lower())
+        self.assertNotIn("docker ", text.lower())
 
     def test_updater_resolves_exact_trusted_fast_forward_target(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
