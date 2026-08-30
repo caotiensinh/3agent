@@ -143,6 +143,8 @@ ensure_pat() {
   # which can report a device node readable even with no controlling terminal
   # attached (e.g. inside some sandboxes), where the open itself then fails.
   if exec 3<>/dev/tty 2>/dev/null; then
+    log "Waiting for your GitHub PAT below. Paste ONLY the token (nothing else queued up in the" \
+      "same paste/enter), then press Enter."
     read -rsp "GitHub PAT (repo admin, used once to mint a ${purpose} token, never stored): " GH_PAT <&3
     exec 3<&-
     echo >&2
