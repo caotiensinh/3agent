@@ -1,4 +1,9 @@
-"""Deterministic, runtime-inert contracts for WorkSpace adaptive learning."""
+"""Deterministic, runtime-inert contracts for WorkSpace adaptive learning.
+
+This module defines provenance and promotion contracts only. It does not grant
+network, shell, credential, remediation, deployment, or source-mutation
+capability. Learned content remains subordinate to WorkSpace policy.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -24,8 +29,26 @@ ACTIONS = {"create", "patch", "supersede"}
 LEVELS = ("candidate", "validated", "approved", "enterprise")
 EXECUTION_MODES = {"analysis_only", "passive", "read_only", "offline", "synthetic"}
 COLLECTION_MODES = {"passive", "read_only", "offline", "synthetic", "local_artifact"}
-SOURCE_TYPES = {"syslog", "application_log", "pcap", "device_snapshot", "monitoring_export",
-                "read_only_status", "inventory", "synthetic_fixture", "task_artifact", "document", "other"}
+SENSITIVITY_ORDER = {
+    "public": 0,
+    "internal": 1,
+    "confidential": 2,
+    "restricted": 3,
+    "secret": 4,
+}
+SOURCE_TYPES = {
+    "syslog",
+    "application_log",
+    "pcap",
+    "device_snapshot",
+    "monitoring_export",
+    "read_only_status",
+    "inventory",
+    "synthetic_fixture",
+    "task_artifact",
+    "document",
+    "other",
+}
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -40,13 +63,24 @@ _INJECTION = (
 
 
 class LearningContractError(ValueError):
-    pass
+    """Adaptive-learning data is incomplete, inconsistent, or unsafe."""
 
 
 def _strict(payload: Any, schema: str, fields: set[str]) -> dict[str, Any]:
-    if not isinstance(payload, dict) or set(payload) != fields or payload.get("schema_version") != schema:
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != fields
+        or payload.get("schema_version") != schema
+    ):
         raise LearningContractError(f"invalid or non-strict payload for {schema}")
     return dict(payload)
+
+
+def _schema(value: Any, expected: str) -> str:
+    text = str(value or "").strip()
+    if text != expected:
+        raise LearningContractError(f"schema_version must be {expected}")
+    return text
 
 
 def _id(value: Any, name: str) -> str:
@@ -79,7 +113,11 @@ def _enum(value: Any, allowed: set[str], name: str) -> str:
 
 def _text(value: Any, name: str, limit: int) -> str:
     text = str(value or "").strip()
-    if not text or len(text) > limit or any(ord(char) < 32 and char not in "\n\t\r" for char in text):
+    if (
+        not text
+        or len(text) > limit
+        or any(ord(char) < 32 and char not in "\n\t\r" for char in text)
+    ):
         raise LearningContractError(f"invalid {name}")
     return text
 
@@ -115,7 +153,12 @@ def _payload(obj: Any) -> dict[str, Any]:
 
 
 def _digest(payload: dict[str, Any]) -> str:
-    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
     return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
@@ -133,11 +176,20 @@ class EvidenceReference:
     schema_version: str = SCHEMAS["evidence"]
 
     FIELDS = {
-        "schema_version", "ref_id", "sha256", "source_type", "source_task_id", "sensitivity",
-        "collection_mode", "created_at", "vendor_family", "version"
+        "schema_version",
+        "ref_id",
+        "sha256",
+        "source_type",
+        "source_task_id",
+        "sensitivity",
+        "collection_mode",
+        "created_at",
+        "vendor_family",
+        "version",
     }
 
-    def validate(self):
+    def validate(self) -> "EvidenceReference":
+        _schema(self.schema_version, SCHEMAS["evidence"])
         _id(self.ref_id, "ref_id")
         _sha(self.sha256, "sha256")
         _enum(self.source_type, SOURCE_TYPES, "source_type")
@@ -150,12 +202,12 @@ class EvidenceReference:
                 raise LearningContractError(f"invalid {name}")
         return self
 
-    def to_payload(self):
+    def to_payload(self) -> dict[str, Any]:
         self.validate()
         return _payload(self)
 
     @classmethod
-    def from_payload(cls, payload):
+    def from_payload(cls, payload: Any) -> "EvidenceReference":
         return cls(**_strict(payload, SCHEMAS["evidence"], cls.FIELDS)).validate()
 
 
@@ -172,11 +224,19 @@ class ExperienceRecord:
     schema_version: str = SCHEMAS["experience"]
 
     FIELDS = {
-        "schema_version", "experience_id", "domain", "task_id", "outcome", "sensitivity",
-        "summary", "evidence", "created_at"
+        "schema_version",
+        "experience_id",
+        "domain",
+        "task_id",
+        "outcome",
+        "sensitivity",
+        "summary",
+        "evidence",
+        "created_at",
     }
 
-    def validate(self):
+    def validate(self) -> "ExperienceRecord":
+        _schema(self.schema_version, SCHEMAS["experience"])
         _id(self.experience_id, "experience_id")
         _enum(self.domain, DOMAINS, "domain")
         _id(self.task_id, "task_id")
@@ -185,21 +245,27 @@ class ExperienceRecord:
         _text(self.summary, "summary", 4000)
         if not self.evidence or len(self.evidence) > 32:
             raise LearningContractError("invalid evidence")
-        refs = set()
+        refs: set[str] = set()
         for item in self.evidence:
             item.validate()
             if item.ref_id in refs or item.source_task_id != self.task_id:
                 raise LearningContractError("evidence lineage mismatch")
+            if SENSITIVITY_ORDER[self.sensitivity] < SENSITIVITY_ORDER[item.sensitivity]:
+                raise LearningContractError("experience sensitivity cannot downgrade evidence")
             refs.add(item.ref_id)
         _utc(self.created_at, "created_at")
         return self
 
-    def to_payload(self):
+    def to_payload(self) -> dict[str, Any]:
         self.validate()
         return _payload(self)
 
+    @property
+    def sha256(self) -> str:
+        return _digest(self.to_payload())
+
     @classmethod
-    def from_payload(cls, payload):
+    def from_payload(cls, payload: Any) -> "ExperienceRecord":
         data = _strict(payload, SCHEMAS["experience"], cls.FIELDS)
         if not isinstance(data["evidence"], list):
             raise LearningContractError("evidence must be a list")
@@ -221,6 +287,9 @@ class KnowledgeCandidate:
     action: str
     execution_mode: str
     source_experience_ids: tuple[str, ...]
+    source_experience_hashes: tuple[str, ...]
+    source_domains: tuple[str, ...]
+    source_sensitivities: tuple[str, ...]
     source_task_ids: tuple[str, ...]
     source_outcomes: tuple[str, ...]
     evidence_ref_ids: tuple[str, ...]
@@ -231,13 +300,33 @@ class KnowledgeCandidate:
     schema_version: str = SCHEMAS["candidate"]
 
     FIELDS = {
-        "schema_version", "candidate_id", "domain", "kind", "title", "content", "scope",
-        "sensitivity", "risk_level", "ownership", "action", "execution_mode",
-        "source_experience_ids", "source_task_ids", "source_outcomes", "evidence_ref_ids",
-        "evidence_hashes", "target_item_id", "base_item_sha256", "created_at"
+        "schema_version",
+        "candidate_id",
+        "domain",
+        "kind",
+        "title",
+        "content",
+        "scope",
+        "sensitivity",
+        "risk_level",
+        "ownership",
+        "action",
+        "execution_mode",
+        "source_experience_ids",
+        "source_experience_hashes",
+        "source_domains",
+        "source_sensitivities",
+        "source_task_ids",
+        "source_outcomes",
+        "evidence_ref_ids",
+        "evidence_hashes",
+        "target_item_id",
+        "base_item_sha256",
+        "created_at",
     }
 
-    def validate(self):
+    def validate(self) -> "KnowledgeCandidate":
+        _schema(self.schema_version, SCHEMAS["candidate"])
         _id(self.candidate_id, "candidate_id")
         _enum(self.domain, DOMAINS, "domain")
         _enum(self.kind, KINDS, "kind")
@@ -250,20 +339,42 @@ class KnowledgeCandidate:
         _enum(self.ownership, OWNERS, "ownership")
         _enum(self.action, ACTIONS, "action")
         _enum(self.execution_mode, EXECUTION_MODES, "execution_mode")
+
         experience_ids = _seq(self.source_experience_ids, _id, "source_experience_ids")
-        _seq(self.source_task_ids, _id, "source_task_ids")
+        experience_hashes = _seq(
+            self.source_experience_hashes,
+            _sha,
+            "source_experience_hashes",
+        )
+        if len(experience_ids) != len(experience_hashes):
+            raise LearningContractError("source experience id/hash mismatch")
+        if not isinstance(self.source_domains, tuple) or len(self.source_domains) != len(experience_ids):
+            raise LearningContractError("source domain lineage mismatch")
+        if not isinstance(self.source_sensitivities, tuple) or len(self.source_sensitivities) != len(experience_ids):
+            raise LearningContractError("source sensitivity lineage mismatch")
         if not isinstance(self.source_outcomes, tuple) or len(self.source_outcomes) != len(experience_ids):
             raise LearningContractError("source outcome mismatch")
+        for source_domain in self.source_domains:
+            _enum(source_domain, DOMAINS, "source_domain")
+            if source_domain != self.domain:
+                raise LearningContractError("candidate/source domain mismatch")
+        for source_sensitivity in self.source_sensitivities:
+            _enum(source_sensitivity, SENSITIVITIES, "source_sensitivity")
+            if SENSITIVITY_ORDER[self.sensitivity] < SENSITIVITY_ORDER[source_sensitivity]:
+                raise LearningContractError("candidate sensitivity cannot downgrade source experience")
         for outcome in self.source_outcomes:
             _enum(outcome, OUTCOMES, "source_outcome")
         if self.kind in {"memory", "skill"} and any(
             outcome != "verified_success" for outcome in self.source_outcomes
         ):
             raise LearningContractError("memory/skill requires verified-success experience")
+
+        _seq(self.source_task_ids, _id, "source_task_ids")
         refs = _seq(self.evidence_ref_ids, _id, "evidence_ref_ids")
         hashes = _seq(self.evidence_hashes, _sha, "evidence_hashes")
         if len(refs) != len(hashes):
             raise LearningContractError("evidence reference/hash mismatch")
+
         if self.action == "create":
             if self.target_item_id is not None or self.base_item_sha256 is not None:
                 raise LearningContractError("create cannot specify base item")
@@ -274,7 +385,12 @@ class KnowledgeCandidate:
         return self
 
     @classmethod
-    def from_experiences(cls, *, experiences: Iterable[ExperienceRecord], **kwargs):
+    def from_experiences(
+        cls,
+        *,
+        experiences: Iterable[ExperienceRecord],
+        **kwargs: Any,
+    ) -> "KnowledgeCandidate":
         source = tuple(experiences)
         domain = str(kwargs.get("domain") or "")
         if not source:
@@ -283,12 +399,16 @@ class KnowledgeCandidate:
             item.validate()
             if item.domain != domain:
                 raise LearningContractError("candidate/source domain mismatch")
+
         evidence = tuple(ref for item in source for ref in item.evidence)
         kwargs.setdefault("target_item_id", None)
         kwargs.setdefault("base_item_sha256", None)
         pairs = list(dict.fromkeys((ref.ref_id, ref.sha256) for ref in evidence))
         return cls(
             source_experience_ids=tuple(item.experience_id for item in source),
+            source_experience_hashes=tuple(item.sha256 for item in source),
+            source_domains=tuple(item.domain for item in source),
+            source_sensitivities=tuple(item.sensitivity for item in source),
             source_task_ids=tuple(dict.fromkeys(item.task_id for item in source)),
             source_outcomes=tuple(item.outcome for item in source),
             evidence_ref_ids=tuple(pair[0] for pair in pairs),
@@ -296,20 +416,26 @@ class KnowledgeCandidate:
             **kwargs,
         ).validate()
 
-    def to_payload(self):
+    def to_payload(self) -> dict[str, Any]:
         self.validate()
         return _payload(self)
 
     @property
-    def sha256(self):
+    def sha256(self) -> str:
         return _digest(self.to_payload())
 
     @classmethod
-    def from_payload(cls, payload):
+    def from_payload(cls, payload: Any) -> "KnowledgeCandidate":
         data = _strict(payload, SCHEMAS["candidate"], cls.FIELDS)
         for key in (
-            "source_experience_ids", "source_task_ids", "source_outcomes",
-            "evidence_ref_ids", "evidence_hashes"
+            "source_experience_ids",
+            "source_experience_hashes",
+            "source_domains",
+            "source_sensitivities",
+            "source_task_ids",
+            "source_outcomes",
+            "evidence_ref_ids",
+            "evidence_hashes",
         ):
             if not isinstance(data[key], list):
                 raise LearningContractError(f"{key} must be a list")
@@ -329,7 +455,20 @@ class ContradictionRecord:
     resolved_at: str | None = None
     schema_version: str = SCHEMAS["contradiction"]
 
-    def validate(self):
+    FIELDS = {
+        "schema_version",
+        "contradiction_id",
+        "candidate_id",
+        "evidence_ref_ids",
+        "evidence_hashes",
+        "summary",
+        "status",
+        "created_at",
+        "resolved_at",
+    }
+
+    def validate(self) -> "ContradictionRecord":
+        _schema(self.schema_version, SCHEMAS["contradiction"])
         _id(self.contradiction_id, "contradiction_id")
         _id(self.candidate_id, "candidate_id")
         refs = _seq(self.evidence_ref_ids, _id, "evidence_ref_ids")
@@ -344,6 +483,19 @@ class ContradictionRecord:
         if self.status != "open":
             _utc(self.resolved_at, "resolved_at")
         return self
+
+    def to_payload(self) -> dict[str, Any]:
+        self.validate()
+        return _payload(self)
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "ContradictionRecord":
+        data = _strict(payload, SCHEMAS["contradiction"], cls.FIELDS)
+        for key in ("evidence_ref_ids", "evidence_hashes"):
+            if not isinstance(data[key], list):
+                raise LearningContractError(f"{key} must be a list")
+            data[key] = tuple(data[key])
+        return cls(**data).validate()
 
 
 @dataclass(frozen=True)
@@ -360,13 +512,28 @@ class LearningValidationReceipt:
     created_at: str
     schema_version: str = SCHEMAS["receipt"]
 
-    def validate(self):
+    FIELDS = {
+        "schema_version",
+        "receipt_id",
+        "candidate_id",
+        "candidate_sha256",
+        "checks",
+        "validator_ids",
+        "evidence_ref_ids",
+        "evidence_hashes",
+        "domain_reviewer_id",
+        "human_reviewer_id",
+        "created_at",
+    }
+
+    def validate(self) -> "LearningValidationReceipt":
+        _schema(self.schema_version, SCHEMAS["receipt"])
         _id(self.receipt_id, "receipt_id")
         _id(self.candidate_id, "candidate_id")
         _sha(self.candidate_sha256, "candidate_sha256")
         if not isinstance(self.checks, dict) or not self.checks:
             raise LearningContractError("validation checks required")
-        names = set()
+        names: set[str] = set()
         for name, value in self.checks.items():
             check = str(name).strip().upper()
             if not _CHECK.fullmatch(check) or not isinstance(value, bool) or check in names:
@@ -385,8 +552,21 @@ class LearningValidationReceipt:
         return self
 
     @property
-    def passed(self):
+    def passed(self) -> bool:
         return bool(self.checks) and all(self.checks.values())
+
+    def to_payload(self) -> dict[str, Any]:
+        self.validate()
+        return _payload(self)
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "LearningValidationReceipt":
+        data = _strict(payload, SCHEMAS["receipt"], cls.FIELDS)
+        for key in ("validator_ids", "evidence_ref_ids", "evidence_hashes"):
+            if not isinstance(data[key], list):
+                raise LearningContractError(f"{key} must be a list")
+            data[key] = tuple(data[key])
+        return cls(**data).validate()
 
 
 @dataclass(frozen=True)
@@ -414,10 +594,13 @@ class AdaptiveLearningPolicy:
             raise LearningContractError("invalid promotion level")
         if LEVELS.index(target_level) != LEVELS.index(current_level) + 1:
             return PromotionDecision(
-                False, current_level, target_level, ("NON_MONOTONIC_OR_SKIPPED_LEVEL",)
+                False,
+                current_level,
+                target_level,
+                ("NON_MONOTONIC_OR_SKIPPED_LEVEL",),
             )
 
-        reasons = []
+        reasons: list[str] = []
         for contradiction in contradictions:
             contradiction.validate()
             if contradiction.candidate_id != candidate.candidate_id:
