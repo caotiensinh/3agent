@@ -13,13 +13,13 @@ from three_agent.version import (
 
 
 class WorkSpaceV4VersioningTests(unittest.TestCase):
-    def test_new_product_version_is_ver_0_0_1(self):
-        self.assertEqual(DISPLAY_VERSION, "ver.0.0.1")
+    def test_product_version_is_ver_0_0_2(self):
+        self.assertEqual(DISPLAY_VERSION, "ver.0.0.2")
         self.assertEqual(RELEASE_GENERATION, "v4")
         self.assertEqual(VERSION_SCHEME, "workspace-release/v2")
 
     def test_pep440_epoch_preserves_upgrade_order_but_is_not_display_label(self):
-        self.assertEqual(PACKAGE_VERSION, "1!0.0.1")
+        self.assertEqual(PACKAGE_VERSION, "1!0.0.2")
         self.assertNotIn("1!", DISPLAY_VERSION)
 
     def test_pyproject_matches_package_version_and_preserves_both_acceptance_clis(self):
@@ -36,7 +36,7 @@ class WorkSpaceV4VersioningTests(unittest.TestCase):
         )
         self.assertEqual(
             scripts["workspace-chat-multiturn-acceptance"],
-            "three_agent.chat_multiturn_acceptance:main",
+            "three_agent.chat_multiturn_acceptance_v2:main",
         )
 
 

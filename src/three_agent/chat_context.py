@@ -51,7 +51,11 @@ _EN_FOLLOW_UP_PATTERNS = (
 )
 _JA_FOLLOW_UP_PATTERNS = (
     r"^(?:では|じゃあ|それでは)?\s*(?:次|次に|続けて|続き)(?:は|を|も|へ|[?？。！!\s]|$)",
-    r"(?:2つ目|２つ目|二つ目|第二)(?:の|を|は|について|[?？。！!\s]|$)",
+    # A numbered item is a cross-turn reference only at the start of the
+    # request, optionally under an explicit demonstrative such as それの/その.
+    # This preserves `それの2つ目...` while avoiding internal 1つ目/2つ目/3つ目
+    # enumerations in otherwise standalone prompts.
+    r"^(?:(?:では|じゃあ|それでは)\s*)?(?:(?:それ|その)の?\s*)?(?:2つ目|２つ目|二つ目|第二)(?:だけ|の|を|は|について|[?？。！!\s]|$)",
     r"(?:上記|上の|前の|先ほど|さっき)(?:の|と|を|に|で|設定|内容|部分|回答|コマンド|コード)",
     r"(?:それ|その)(?:設定|内容|部分|回答|方法|コマンド|コード|案|項目)",
     r"^(?:それ|その件)(?:は|を|で|について|[?？。！!\s]|$)",
@@ -164,8 +168,6 @@ def build_conversation_context(
     eligible = _eligible_messages(messages, current_job_id=current_job_id)
     selected = eligible[-message_limit:]
 
-    # Pack from newest to oldest so the immediately preceding completed turn is
-    # never displaced by older history. Reorder chronologically before rendering.
     packed_reversed: list[tuple[str, str, int]] = []
     used = 0
     for item in reversed(selected):
