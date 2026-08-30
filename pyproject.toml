@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "workspace-local-ai"
-version = "0.15.1"
+version = "0.16.0"
 description = "WorkSpace: local-first AI runtime for confidential internal business work"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ workspace-benchmark-canonicalize = "three_agent.benchmark_artifact_canonicalize:
 workspace-benchmark-readiness = "three_agent.benchmark_readiness:main"
 workspace-benchmark-verify = "three_agent.benchmark_evidence:main"
 workspace-capability = "three_agent.capability_revocation:main"
-workspace-chat = "three_agent.chat_gateway_v14:main"
+workspace-chat = "three_agent.chat_gateway_v15:main"
 workspace-chat-acceptance = "three_agent.chat_acceptance:main"
 workspace-egressd = "three_agent.egress_broker:main"
 workspace-eval = "three_agent.evaluation_lab:main"
@@ -36,7 +36,7 @@ workspace-knowledge = "three_agent.knowledge_cli:main"
 workspace-promotion = "three_agent.promotion_gate:main"
 workspace-retrieval = "three_agent.deterministic_retrieval_cli:main"
 three-agent = "three_agent.cli:main"
-three-agent-chat = "three_agent.chat_gateway_v14:main"
+three-agent-chat = "three_agent.chat_gateway_v15:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
