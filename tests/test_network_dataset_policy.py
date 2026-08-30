@@ -35,15 +35,18 @@ def test_enterprise_dataset_allowed_for_experience_extraction():
 
 
 def test_training_is_secondary_staging_not_durable_log_promotion():
-    plan = manager().plan(
+    mgr = manager()
+    plan = mgr.plan(
         "cse-cic-ids2018",
         purpose="training",
         variant="processed-ml",
         estimated_bytes=1024,
     )
     assert plan.destination_class == "training_staging"
-    assert manager().policy.raw_logs_durable is False
-    assert manager().policy.normalized_events_durable is False
+    assert mgr.policy.raw_logs_durable is False
+    assert mgr.policy.normalized_events_durable is False
+    assert str(mgr.policy.experience_root).endswith("workspace-network-experience/approved")
+    assert str(mgr.policy.normalized_staging_root).startswith("/var/cache/")
 
 
 def test_research_only_dataset_denied_for_enterprise_experience_extraction():
