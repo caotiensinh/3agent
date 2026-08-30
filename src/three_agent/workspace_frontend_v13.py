@@ -16,10 +16,11 @@ html = _replace_once(
     "hide-session-language-selector",
 )
 
-# Match the compact one-plus-menu interaction expected by users. Integrations are
-# visible discovery points but remain fail-closed unless the local capability
-# registry explicitly enables them.
-figma_canva = r'''
+# Add connector discovery rows at the stable menu boundary. The existing upload,
+# library, image, web, deep-research, and GitHub rows are preserved unchanged.
+# Discovery rows are visible but receive no runtime authority until capabilities
+# explicitly enable a compatible local connector.
+integration_rows = r'''
       <button class="menu-row" type="button" data-action="figma" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">F</span>
         <span><div class="menu-title">Figma</div><div class="menu-sub">Design-to-code workflows</div></span><span class="menu-state">Connect</span>
@@ -28,15 +29,6 @@ figma_canva = r'''
         <span class="menu-icon blue">C</span>
         <span><div class="menu-title">Canva</div><div class="menu-sub">Create, review, and edit designs</div></span><span class="menu-state">Connect</span>
       </button>
-'''
-html = _replace_once(
-    html,
-    '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
-    figma_canva + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
-    "integration-menu-before-github",
-)
-
-gmail = r'''
       <button class="menu-row" type="button" data-action="gmail" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">M</span>
         <span><div class="menu-title">Gmail</div><div class="menu-sub">Read and manage Gmail</div></span><span class="menu-state">Connect</span>
@@ -45,8 +37,8 @@ gmail = r'''
 html = _replace_once(
     html,
     '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    gmail + '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    "integration-menu-gmail",
+    integration_rows + '      <div class="menu-divider"></div>\n      <div class="menu-options">',
+    "integration-menu-boundary",
 )
 
 # For connector discovery rows that are not yet present in the runtime capability
