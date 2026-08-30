@@ -39,6 +39,8 @@ REMOVE_TOKEN=""
 TARBALL_URL=""
 TARBALL_SHA256=""
 ADOPT_EXISTING_DIR=""
+ADOPT_EXISTING_SET=0
+DEFAULT_EXISTING_DIR="$HOME/actions-runner"
 ACTION="setup"
 SELF_TEST=0
 
@@ -47,18 +49,22 @@ warn() { printf '[RunnerPool][WARN] %s\n' "$*" >&2; }
 die() { printf '[RunnerPool][ERROR] %s\n' "$*" >&2; exit 1; }
 
 usage() {
-  cat <<'EOF'
-One-command setup (mints its own registration token from a PAT):
-  GH_PAT=<your PAT with repo admin rights> scripts/setup_runner_pool.sh
-  # or, without exporting anything, it will prompt silently for the PAT.
+  cat <<EOF
+Paste-a-key setup — no local checkout, no flags needed:
+  curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_runner_pool.sh | bash
+It will prompt once, silently, for a GitHub PAT (repo admin rights) and do the rest:
+resolve the current runner release, mint its own registration token, register 7
+general-lane + 1 gpu-lane instance, and fold an already-existing runner at
+$DEFAULT_EXISTING_DIR into the general lane automatically if one is found.
+Set GH_PAT=<token> beforehand to skip the prompt entirely.
 
-Options:
+Options (all optional):
   --repo-url URL           default: https://github.com/caotiensinh/3agent
   --general-count N        default: 7  (lightweight lane, safe to run in parallel)
   --gpu-count N             default: 1  (exclusive lane, see docs/WORKSPACE_RUNNER_POOL.md)
-  --base-dir DIR            default: $HOME/actions-runner-pool
-  --adopt-existing[=DIR]    fold an already-registered runner (default: $HOME/actions-runner)
-                            into the general lane in place, instead of leaving it unlabeled
+  --base-dir DIR            default: \$HOME/actions-runner-pool
+  --adopt-existing[=DIR]    force-adopt an existing runner at DIR (default: $DEFAULT_EXISTING_DIR)
+  --no-adopt-existing        do not touch any pre-existing runner, even if one is found
   --token TOKEN              use this registration token instead of minting one from GH_PAT
   --remove-token TOKEN       token used to deregister the adopted runner's old identity
                               (falls back to --token/minted token if omitted)
@@ -88,8 +94,9 @@ for arg in "$@"; do
     --base-dir=*) BASE_DIR="${arg#*=}" ;;
     --general-count=*) GENERAL_COUNT="${arg#*=}" ;;
     --gpu-count=*) GPU_COUNT="${arg#*=}" ;;
-    --adopt-existing) ADOPT_EXISTING_DIR="$HOME/actions-runner" ;;
-    --adopt-existing=*) ADOPT_EXISTING_DIR="${arg#*=}" ;;
+    --adopt-existing) ADOPT_EXISTING_DIR="$DEFAULT_EXISTING_DIR"; ADOPT_EXISTING_SET=1 ;;
+    --adopt-existing=*) ADOPT_EXISTING_DIR="${arg#*=}"; ADOPT_EXISTING_SET=1 ;;
+    --no-adopt-existing) ADOPT_EXISTING_DIR=""; ADOPT_EXISTING_SET=1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $arg (see --help)" ;;
   esac
@@ -114,6 +121,12 @@ validate_settings
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 
+if [[ "$ACTION" == "setup" && "$ADOPT_EXISTING_SET" == "0" && -f "$DEFAULT_EXISTING_DIR/.runner" ]]; then
+  log "Found an already-registered runner at $DEFAULT_EXISTING_DIR; folding it into the" \
+    "general lane automatically (pass --no-adopt-existing to leave it untouched)."
+  ADOPT_EXISTING_DIR="$DEFAULT_EXISTING_DIR"
+fi
+
 owner_repo() {
   local path="${REPO_URL#https://github.com/}"
   path="${path%.git}"
@@ -123,8 +136,15 @@ owner_repo() {
 ensure_pat() {
   local purpose="$1"
   [[ -n "$GH_PAT" ]] && return 0
-  if [[ -t 0 ]]; then
-    read -rsp "GitHub PAT (repo admin, used once to mint a ${purpose} token, never stored): " GH_PAT
+  # Read from the controlling terminal, not fd 0: when this script is run as
+  # `curl ... | bash`, fd 0 is the pipe carrying the script text itself, not a
+  # terminal, so a plain `read` would silently see EOF instead of prompting.
+  # Probe by actually opening /dev/tty on a spare fd rather than trusting `-r`,
+  # which can report a device node readable even with no controlling terminal
+  # attached (e.g. inside some sandboxes), where the open itself then fails.
+  if exec 3<>/dev/tty 2>/dev/null; then
+    read -rsp "GitHub PAT (repo admin, used once to mint a ${purpose} token, never stored): " GH_PAT <&3
+    exec 3<&-
     echo >&2
   fi
   [[ -n "$GH_PAT" ]] || die "No PAT available (set GH_PAT, or pass --token/--remove-token/--tarball-url explicitly)"

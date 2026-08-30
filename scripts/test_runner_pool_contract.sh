@@ -40,12 +40,19 @@ grep -q 'self-hosted,general' "$SCRIPT"
 grep -q 'self-hosted,gpu' "$SCRIPT"
 grep -q -- '--teardown' "$SCRIPT"
 grep -q -- '--adopt-existing' "$SCRIPT"
+grep -q -- '--no-adopt-existing' "$SCRIPT"
 grep -q 'config.sh remove' "$SCRIPT"
 grep -q 'GH_PAT' "$SCRIPT"
 grep -q 'actions/runners/' "$SCRIPT"
 grep -q 'mint_token registration' "$SCRIPT"
 grep -q 'mint_token remove' "$SCRIPT"
 grep -q 'read -rsp' "$SCRIPT"
+grep -q '/dev/tty' "$SCRIPT"
+
+# An already-registered runner at the default path must be detected and folded in
+# automatically (the whole point of the "paste a key" flow), unless the caller opted out.
+grep -q 'ADOPT_EXISTING_SET' "$SCRIPT"
+grep -q 'DEFAULT_EXISTING_DIR' "$SCRIPT"
 
 # The script must resolve the runner release dynamically from GitHub's API at run time,
 # never a hardcoded https://github.com/.../releases/download/vX.Y.Z/... asset URL of a

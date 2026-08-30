@@ -35,67 +35,62 @@ Most existing CI (`installer-ci.yml`'s `shellcheck-and-contracts` / `harness-reg
 jobs) already runs on GitHub-hosted `ubuntu-24.04` runners and does not need to move —
 only workflows that were already `runs-on: [self-hosted, ...]` benefit from this pool.
 
-## Setting it up — one command
+## Setting it up — paste a key, nothing else
 
-The script resolves the current linux-x64 runner release from GitHub's own public API
-at run time (never a version/URL hardcoded by this repo) and mints its own short-lived
-registration token via the GitHub API from a Personal Access Token, instead of asking
-you to open the Runners UI page and copy/paste three values by hand.
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/setup_runner_pool.sh | bash
+```
 
-1. Create a classic PAT with `repo` scope (or a fine-grained PAT with this repo's
-   **Administration: read and write** permission — that is what grants
-   `actions/runners/registration-token`) at
-   <https://github.com/settings/tokens>. It is used once, over HTTPS, only to mint a
-   registration token; the script never writes it to disk.
+That is the entire interaction. It prompts once, with a hidden (`read -s`) input so the
+key never lands in shell history or `ps` output:
 
-2. On `aiserver`, from the repository checkout:
+```text
+GitHub PAT (repo admin, used once to mint a registration token, never stored):
+```
 
-   ```bash
-   GH_PAT='<your PAT>' scripts/setup_runner_pool.sh
-   ```
+Paste the PAT and press Enter. Everything else is automatic:
 
-   Leaving `GH_PAT` unset also works — the script prompts for it once with a hidden
-   (`read -s`) input instead of taking it as a command-line argument, so it never ends up
-   in shell history or `ps` output.
+- the current linux-x64 runner release is resolved from GitHub's own public API at run
+  time — never a version/URL hardcoded by this repo;
+- a registration token is minted via the GitHub API from the pasted PAT (used once, over
+  HTTPS, never written to disk);
+- if this machine already has a runner registered at `~/actions-runner` (as `aiserver`
+  did before this pool existed), it is detected automatically and folded into the
+  general lane in place — pass `--no-adopt-existing` to skip that;
+- 7 `general` + 1 `gpu` instance are registered under `~/actions-runner-pool/`, each as
+  its own systemd service (survives terminal closes and reboots — unlike running
+  `./run.sh` by hand in a foreground terminal, which is the most likely reason a
+  manually-started runner stops responding to queued jobs after the SSH session closes).
 
-   Defaults to 7 `general` + 1 `gpu` instance under `~/actions-runner-pool/`. Override
-   with `--general-count`/`--gpu-count` (or `RUNNER_POOL_GENERAL_COUNT`/
-   `RUNNER_POOL_GPU_COUNT`). If this machine already has a runner registered at
-   `~/actions-runner` (as `aiserver` did before this pool existed), fold it into the
-   general lane instead of leaving it unlabeled:
+Where to get the PAT: <https://github.com/settings/tokens> → classic token with `repo`
+scope (or a fine-grained PAT with this repo's **Administration: read and write**
+permission — that is what grants `actions/runners/registration-token`).
 
-   ```bash
-   GH_PAT='<your PAT>' scripts/setup_runner_pool.sh --adopt-existing
-   ```
+To skip the prompt entirely (e.g. scripting it), export `GH_PAT` first:
+`GH_PAT='<your PAT>' curl -fsSL .../setup_runner_pool.sh | bash`. To change the split,
+add args after `--`: `... | bash -s -- --general-count=6 --gpu-count=2`.
 
-   The runner tarball is downloaded once and reused for every instance (`avoid > reuse`,
-   not 8 redundant downloads). Each instance becomes its own systemd service via the
-   runner's own `svc.sh install`, so it survives terminal closes and reboots — unlike
-   running `./run.sh` by hand in a foreground terminal (which is the most likely reason
-   a manually-started runner stops responding to queued jobs after the terminal or SSH
-   session closes).
+Prefer to audit every value before anything runs, or don't want to paste a PAT at all?
+The fully manual path still works and never reads `GH_PAT`: pass `--token`,
+`--tarball-url` and `--tarball-sha256`, copied from this repo's **Settings → Actions →
+Runners → New self-hosted runner** page.
 
-   Prefer to audit every value before anything runs? The fully manual path still works
-   and never reads `GH_PAT`: pass `--token`, `--tarball-url` and `--tarball-sha256`,
-   copied from this repo's **Settings → Actions → Runners → New self-hosted runner**
-   page.
+Verify: **Settings → Actions → Runners** should list `aiserver-general-1` .. `-7` and
+`aiserver-gpu-1` (plus `aiserver-general-existing` if an existing runner was adopted),
+all idle/online.
 
-3. Verify: **Settings → Actions → Runners** should list `aiserver-general-1` .. `-7` and
-   `aiserver-gpu-1` (plus `aiserver-general-existing` if you used `--adopt-existing`),
-   all idle/online.
+Point workflow files at the right lane:
 
-4. Point workflow files at the right lane:
+```yaml
+runs-on: [self-hosted, general]   # lint/test/shellcheck work
+```
 
-   ```yaml
-   runs-on: [self-hosted, general]   # lint/test/shellcheck work
-   ```
-
-   ```yaml
-   runs-on: [self-hosted, gpu]
-   concurrency:
-     group: gpu-rtx5090-exclusive
-     cancel-in-progress: false       # never cancel a job mid-inference/mid-benchmark
-   ```
+```yaml
+runs-on: [self-hosted, gpu]
+concurrency:
+  group: gpu-rtx5090-exclusive
+  cancel-in-progress: false       # never cancel a job mid-inference/mid-benchmark
+```
 
 `deploy-rtx5090.yml` in this repo already uses the `gpu` lane and the shared
 concurrency group.
