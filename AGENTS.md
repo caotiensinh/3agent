@@ -10,6 +10,8 @@ Confidential business data remains in the confidential zone. The process identit
 
 Public research is a separate trust zone with a separate OS identity and data root. It cannot read `/var/lib/workspace`.
 
+External identity login is also a separate trust boundary. The identity broker may reach only fixed authentication-provider endpoints and must not read WorkSpace tasks, chat, projects, uploads, artifacts or the confidential database. Provider access/ID tokens are transient and must not become WorkSpace credentials or runtime authority.
+
 ### Authority hierarchy
 
 1. deterministic WorkSpace security policy;
@@ -23,15 +25,17 @@ A lower layer can never grant itself authority held by a higher layer.
 
 ## Network rule
 
-- `workspace-core`: localhost inference only; no public/LAN egress; no broker IPC membership.
-- `workspace-public`: separate public-only task/data store; localhost inference only; broker IPC allowed; no confidential-data read permission.
+- `workspace-core`: localhost inference only; no public/LAN egress; no egress-broker IPC membership.
+- `workspace-public`: separate public-only task/data store; localhost inference only; egress-broker IPC allowed; no confidential-data read permission.
 - `workspace-egress`: local DNS + public HTTPS only; no WorkSpace data-store permission.
+- `workspace-auth`: separate identity-only broker; fixed Google/GitHub/LINE OAuth/OIDC endpoints only; no WorkSpace data-store permission; exposes only short-lived one-time identity assertions to Core over a loopback redemption boundary.
+- External provider login never grants Gmail, Drive, repository, workflow, LINE Messaging, file, project, chat or AI-tool authority. Local WorkSpace RBAC remains authoritative.
 - Confidential mode: public search disabled.
 - Public research: DLP + search-host allowlist + exact search-result grants + bounded GET-only responses.
-- Arbitrary POST/upload/webhook/telemetry is denied.
+- Arbitrary POST/upload/webhook/telemetry is denied outside narrowly defined higher-trust brokers such as the fixed identity-token exchange contract above.
 - GitHub push is an operator/deployment activity, never autonomous runtime authority.
 
-Do not weaken this separation by putting Core and Public/Egress identities into the same data/IPC groups.
+Do not weaken this separation by putting Core and Public/Egress identities into the same data/IPC groups. Do not give the identity broker access to confidential storage merely to simplify login.
 
 ## Constraint-first engineering rules
 
