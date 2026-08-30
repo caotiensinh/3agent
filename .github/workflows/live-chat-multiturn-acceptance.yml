@@ -30,7 +30,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || inputs.confirm == 'RUN')
-    runs-on: [self-hosted, Linux, X64, rtx5090]
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 75
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -45,6 +45,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          command -v nvidia-smi >/dev/null 2>&1
           test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -ge 2
 
       - name: Create ephemeral acceptance environment
