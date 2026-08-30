@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 
@@ -31,6 +32,15 @@ _VI_SPECIAL_RE = re.compile(
 )
 _JA_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 _WORD_RE = re.compile(r"[A-Za-zÀ-ỹĐđ]+")
+_NUMBER_ONLY_RE = re.compile(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?")
+_FENCED_CODE_ONLY_RE = re.compile(
+    r"```[A-Za-z0-9_+.-]*[ \t]*\n[\s\S]*?\n```",
+    re.MULTILINE,
+)
+_COMMAND_RESPONSE_HINT_RE = re.compile(
+    r"(?:^|\s)(?:sudo|ip|ping|curl|ssh|ss|netstat|systemctl|docker|podman|python3?|git|ls|cat|grep|awk|sed|nmcli|resolvectl|traceroute|tracepath|Get-[A-Za-z0-9-]+|Test-NetConnection)(?:\s|$)|[|&;/\\=(){}]",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +181,91 @@ def resolve_response_language(
     return controls.language, controls.language_source
 
 
+def requested_language_neutral_format(request: str) -> str:
+    """Return a strict language-neutral format explicitly requested by the user.
+
+    This is deliberately conservative. A request that merely mentions JSON, a
+    number, code, or a command does not bypass the prose language gate. The user
+    must also clearly ask for that output *only* / without explanation.
+    """
+
+    compact = " ".join(str(request or "").casefold().split())
+    json_patterns = (
+        r"\bjson\s+only\b",
+        r"\bonly\s+json\b",
+        r"(?:chỉ|chi)\s+(?:trả lời|tra loi|xuất|xuat|đưa|dua|ghi).{0,40}\bjson\b",
+        r"\bjson\b.{0,20}(?:thôi|thoi|duy\s+nhất|duy nhat)",
+        r"json(?:だけ|のみ)",
+    )
+    if any(re.search(pattern, compact, re.DOTALL) for pattern in json_patterns):
+        return "json"
+
+    number_patterns = (
+        r"\b(?:number|numeric\s+value)\s+only\b",
+        r"\bonly\s+(?:a\s+|one\s+)?(?:number|numeric\s+value)\b",
+        r"\bsingle\s+number\b",
+        r"(?:chỉ|chi)\s+(?:trả lời|tra loi|xuất|xuat|đưa|dua|ghi).{0,40}(?:một\s+)?(?:số|so)\b",
+        r"(?:một\s+)?(?:số|so)\s+(?:duy\s+nhất|duy nhat)",
+        r"(?:数字|数値)(?:だけ|のみ)",
+    )
+    if any(re.search(pattern, compact, re.DOTALL) for pattern in number_patterns):
+        return "number"
+
+    code_patterns = (
+        r"\b(?:code|command)(?:\s+block)?\s+only\b",
+        r"\bonly\s+(?:the\s+)?(?:code|command)(?:\s+block)?\b",
+        r"\b(?:code|command)(?:\s+block)?.{0,32}(?:no\s+explanation|without\s+explanation)\b",
+        r"(?:chỉ|chi)\s+(?:trả lời|tra loi|đưa|dua|ghi|xuất|xuat).{0,40}(?:lệnh|lenh|code|mã|ma)\b",
+        r"(?:lệnh|lenh|code|mã|ma).{0,32}(?:không|khong)\s+(?:giải thích|giai thich)",
+        r"(?:コード(?:ブロック)?|コマンド).{0,40}(?:だけ|のみ)",
+        r"(?:コード(?:ブロック)?|コマンド).{0,40}説明(?:文)?(?:なし|不要)",
+    )
+    if any(re.search(pattern, compact, re.DOTALL) for pattern in code_patterns):
+        return "code"
+    return ""
+
+
+def _looks_like_code_or_command(answer: str, request: str) -> bool:
+    body = str(answer or "").strip()
+    if _FENCED_CODE_ONLY_RE.fullmatch(body):
+        return True
+    if not body or len(body) > 4_000:
+        return False
+    request_lower = str(request or "").casefold()
+    command_request = bool(
+        re.search(r"\bcommand\b|(?:lệnh|lenh)|コマンド", request_lower)
+    )
+    if command_request and "\n" not in body and len(body) <= 320:
+        return bool(_COMMAND_RESPONSE_HINT_RE.search(body))
+    lines = [line for line in body.splitlines() if line.strip()]
+    if not lines or len(lines) > 80:
+        return False
+    code_signal_lines = sum(
+        bool(
+            _COMMAND_RESPONSE_HINT_RE.search(line)
+            or re.match(r"\s*(?:def|class|import|from|if|for|while|return|function|const|let|var)\b", line)
+        )
+        for line in lines
+    )
+    return code_signal_lines >= max(1, len(lines) // 2)
+
+
+def language_neutral_response_matches_request(answer: str, request: str) -> bool:
+    neutral_format = requested_language_neutral_format(request)
+    body = str(answer or "").strip()
+    if neutral_format == "json":
+        try:
+            json.loads(body)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
+        return True
+    if neutral_format == "number":
+        return _NUMBER_ONLY_RE.fullmatch(body) is not None
+    if neutral_format == "code":
+        return _looks_like_code_or_command(body, request)
+    return False
+
+
 def _narrative_text(text: str) -> str:
     body = re.sub(r"```.*?```", " ", str(text or ""), flags=re.DOTALL)
     body = re.sub(r"`[^`]*`|https?://\S+", " ", body)
@@ -206,7 +301,11 @@ def response_language_matches(text: str, language: str) -> bool:
 def direct_chat_answer_valid(answer: str, language: str, request: str) -> tuple[bool, str]:
     if not str(answer or "").strip():
         return False, "empty_response"
-    if not response_language_matches(answer, language):
+    neutral_format = requested_language_neutral_format(request)
+    if neutral_format:
+        if not language_neutral_response_matches_request(answer, request):
+            return False, "requested_format_mismatch"
+    elif not response_language_matches(answer, language):
         return False, "target_language_mismatch"
     markers = (
         "# workspace report", "agent 1 · research", "agent 3 · daily report",
@@ -222,13 +321,14 @@ def direct_chat_answer_valid(answer: str, language: str, request: str) -> tuple[
 def direct_chat_system_prompt(language: str, *, effort: str = "high", repair: bool = False) -> str:
     target = LANGUAGE_LABELS.get(language, "Japanese")
     depth = "Be thorough enough to solve the request, but do not add unrelated sections." if effort == "high" else "Be concise and directly useful."
-    repair_line = "A previous attempt failed the response-language/routing validator. Correct that failure completely.\n" if repair else ""
+    repair_line = "A previous attempt failed the response format/language/routing validator. Correct that failure completely.\n" if repair else ""
     return (
         "You are WorkSpace, a local-only assistant for confidential internal business work.\n"
         + repair_line
         + f"TARGET RESPONSE LANGUAGE: {target}.\n"
         + "NON-NEGOTIABLE RULES:\n"
         + f"- Write all explanatory prose in {target}.\n"
+        + "- If the user explicitly requests language-neutral output such as JSON only, code/command only, or only a number, obey that exact format and do not add prose merely to satisfy the language rule.\n"
         + "- Answer the CURRENT USER REQUEST directly and preserve its intent, constraints, requested format and scope.\n"
         + "- Do not convert ordinary chat into a research report, presentation, daily report, or evidence workflow.\n"
         + "- No public web research is performed in normal chat. Do not claim that external research occurred.\n"
