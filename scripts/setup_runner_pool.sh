@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Register a pool of GitHub Actions self-hosted runner instances on ONE physical machine,
-# split into two lanes so lightweight CI work stops queueing behind whatever else is
-# running, while GPU-bound work stays exclusive (docs/WORKSPACE_RUNNER_POOL.md).
+# One-command bootstrap for a pool of GitHub Actions self-hosted runner instances on
+# ONE physical machine, split into two lanes so lightweight CI work stops queueing
+# behind whatever else is running, while GPU-bound work stays exclusive
+# (docs/WORKSPACE_RUNNER_POOL.md).
 #
 #   general lane  (default 7 instances, labels: self-hosted,general)
 #     For jobs that never touch the GPUs or Ollama: shellcheck, bash contract tests,
@@ -18,20 +19,26 @@
 #     `concurrency: group: gpu-rtx5090-exclusive` so true parallel GPU execution never
 #     happens regardless of how many gpu-labeled runners exist.
 #
-# This script only automates the repetitive part (download once, register N times,
-# install N systemd services). It never fabricates a runner version, download URL, or
-# checksum: --tarball-url, --tarball-sha256, and --token must be pasted from this
-# repository's own "Settings -> Actions -> Runners -> New self-hosted runner" page,
-# which GitHub generates specifically for this repo and the current runner release.
+# Nothing about the runner release is hardcoded: the current linux-x64 runner
+# version/URL is resolved live from GitHub's public releases API on every run, so this
+# script is never stale and never guesses a version on the caller's behalf. The
+# registration token is short-lived and repo-scoped by design; this script mints it
+# itself via the GitHub API from a Personal Access Token (never printed, never written
+# to disk) instead of asking you to open the GitHub UI and copy/paste it. A
+# --token/--tarball-url/--tarball-sha256 manual path remains for anyone who prefers to
+# audit exactly what they are pasting from the "New self-hosted runner" UI page.
 set -Eeuo pipefail
 
 REPO_URL="${RUNNER_POOL_REPO_URL:-https://github.com/caotiensinh/3agent}"
 BASE_DIR="${RUNNER_POOL_BASE_DIR:-$HOME/actions-runner-pool}"
 GENERAL_COUNT="${RUNNER_POOL_GENERAL_COUNT:-7}"
 GPU_COUNT="${RUNNER_POOL_GPU_COUNT:-1}"
+GH_PAT="${GH_PAT:-${GITHUB_TOKEN:-}}"
 TOKEN=""
+REMOVE_TOKEN=""
 TARBALL_URL=""
 TARBALL_SHA256=""
+ADOPT_EXISTING_DIR=""
 ACTION="setup"
 SELF_TEST=0
 
@@ -41,16 +48,29 @@ die() { printf '[RunnerPool][ERROR] %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Usage:
-  setup_runner_pool.sh --token <REG_TOKEN> --tarball-url <URL> --tarball-sha256 <SHA256> \
-      [--repo-url URL] [--base-dir DIR] [--general-count N] [--gpu-count N]
-  setup_runner_pool.sh --teardown --token <REMOVE_TOKEN> [--base-dir DIR]
-  setup_runner_pool.sh --self-test
+One-command setup (mints its own registration token from a PAT):
+  GH_PAT=<your PAT with repo admin rights> scripts/setup_runner_pool.sh
+  # or, without exporting anything, it will prompt silently for the PAT.
 
---token, --tarball-url and --tarball-sha256 must come from this repository's own
-GitHub "Settings -> Actions -> Runners -> New self-hosted runner" page (Linux x64).
-That page generates the current runner release URL/checksum and a short-lived
-registration token scoped to this exact repo; this script never guesses them.
+Options:
+  --repo-url URL           default: https://github.com/caotiensinh/3agent
+  --general-count N        default: 7  (lightweight lane, safe to run in parallel)
+  --gpu-count N             default: 1  (exclusive lane, see docs/WORKSPACE_RUNNER_POOL.md)
+  --base-dir DIR            default: $HOME/actions-runner-pool
+  --adopt-existing[=DIR]    fold an already-registered runner (default: $HOME/actions-runner)
+                            into the general lane in place, instead of leaving it unlabeled
+  --token TOKEN              use this registration token instead of minting one from GH_PAT
+  --remove-token TOKEN       token used to deregister the adopted runner's old identity
+                              (falls back to --token/minted token if omitted)
+  --tarball-url URL          skip release auto-detection, use this download URL
+  --tarball-sha256 SHA256    required together with --tarball-url
+  --teardown                 stop, uninstall and deregister every instance in --base-dir
+  --self-test                validate arguments only, no network/system changes
+
+The fully manual, nothing-auto-fetched path (for anyone who wants to audit every value
+before it runs) is still available: pass --token, --tarball-url and --tarball-sha256,
+all copied from this repo's GitHub Settings -> Actions -> Runners -> New self-hosted
+runner page. In that mode GH_PAT is never read.
 EOF
 }
 
@@ -61,12 +81,15 @@ for arg in "$@"; do
     --self-test) SELF_TEST=1 ;;
     --teardown) ACTION="teardown" ;;
     --token=*) TOKEN="${arg#*=}" ;;
+    --remove-token=*) REMOVE_TOKEN="${arg#*=}" ;;
     --tarball-url=*) TARBALL_URL="${arg#*=}" ;;
     --tarball-sha256=*) TARBALL_SHA256="${arg#*=}" ;;
     --repo-url=*) REPO_URL="${arg#*=}" ;;
     --base-dir=*) BASE_DIR="${arg#*=}" ;;
     --general-count=*) GENERAL_COUNT="${arg#*=}" ;;
     --gpu-count=*) GPU_COUNT="${arg#*=}" ;;
+    --adopt-existing) ADOPT_EXISTING_DIR="$HOME/actions-runner" ;;
+    --adopt-existing=*) ADOPT_EXISTING_DIR="${arg#*=}" ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $arg (see --help)" ;;
   esac
@@ -88,7 +111,59 @@ if [[ "$SELF_TEST" == "1" ]]; then
 fi
 
 validate_settings
-[[ -n "$TOKEN" ]] || die "--token is required (paste it from the GitHub New-runner page)"
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v jq >/dev/null 2>&1 || die "jq is required"
+
+owner_repo() {
+  local path="${REPO_URL#https://github.com/}"
+  path="${path%.git}"
+  printf '%s\n' "$path"
+}
+
+ensure_pat() {
+  local purpose="$1"
+  [[ -n "$GH_PAT" ]] && return 0
+  if [[ -t 0 ]]; then
+    read -rsp "GitHub PAT (repo admin, used once to mint a ${purpose} token, never stored): " GH_PAT
+    echo >&2
+  fi
+  [[ -n "$GH_PAT" ]] || die "No PAT available (set GH_PAT, or pass --token/--remove-token/--tarball-url explicitly)"
+}
+
+mint_token() {
+  local purpose="$1" # "registration" or "remove"
+  ensure_pat "$purpose"
+  local resp
+  resp="$(curl -fsS -X POST \
+    -H "Authorization: Bearer ${GH_PAT}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$(owner_repo)/actions/runners/${purpose}-token")" \
+    || die "Failed to mint a ${purpose} token via the GitHub API (check GH_PAT scope/expiry)"
+  jq -r '.token' <<<"$resp"
+}
+
+resolve_release() {
+  [[ -n "$TARBALL_URL" ]] && return 0
+  log "Resolving the current linux-x64 actions/runner release from GitHub's public API"
+  local arch os_arch latest name
+  os_arch="$(uname -m)"
+  case "$os_arch" in
+    x86_64|amd64) arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) die "Unsupported architecture for the GitHub Actions runner: $os_arch" ;;
+  esac
+  local -a auth_header=()
+  [[ -n "$GH_PAT" ]] && auth_header=(-H "Authorization: Bearer ${GH_PAT}")
+  latest="$(curl -fsSL "${auth_header[@]}" https://api.github.com/repos/actions/runner/releases/latest)" \
+    || die "Failed to query the actions/runner releases API (an unauthenticated IP can hit GitHub's rate limit; set GH_PAT to raise it, or pass --tarball-url/--tarball-sha256 manually)"
+  local version
+  version="$(jq -r '.tag_name' <<<"$latest" | sed 's/^v//')"
+  [[ -n "$version" && "$version" != "null" ]] || die "Could not resolve the latest runner version"
+  name="actions-runner-linux-${arch}-${version}.tar.gz"
+  TARBALL_URL="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .browser_download_url' <<<"$latest")"
+  [[ -n "$TARBALL_URL" ]] || die "Release asset $name not found in the latest actions/runner release"
+  log "Resolved runner v$version for linux-$arch: $TARBALL_URL"
+}
 
 instance_names() {
   local i
@@ -98,6 +173,7 @@ instance_names() {
 
 if [[ "$ACTION" == "teardown" ]]; then
   [[ -d "$BASE_DIR" ]] || die "Nothing to tear down: $BASE_DIR does not exist"
+  [[ -n "$TOKEN" ]] || TOKEN="$(mint_token remove)"
   while read -r name _labels; do
     dir="$BASE_DIR/$name"
     [[ -d "$dir" ]] || continue
@@ -115,23 +191,39 @@ if [[ "$ACTION" == "teardown" ]]; then
   exit 0
 fi
 
-[[ -n "$TARBALL_URL" ]] || die "--tarball-url is required (paste it from the GitHub New-runner page)"
-[[ -n "$TARBALL_SHA256" ]] || die "--tarball-sha256 is required (paste it from the GitHub New-runner page)"
-command -v curl >/dev/null 2>&1 || die "curl is required"
+if [[ -n "$TARBALL_URL" ]]; then
+  [[ -n "$TARBALL_SHA256" ]] || die "--tarball-sha256 is required together with --tarball-url"
+else
+  [[ -n "$TOKEN" ]] || ensure_pat "registration"
+fi
+resolve_release
 command -v tar >/dev/null 2>&1 || die "tar is required"
 command -v sudo >/dev/null 2>&1 || die "sudo is required to install the runner systemd services"
+
+[[ -n "$TOKEN" ]] || TOKEN="$(mint_token registration)"
+[[ -n "$TOKEN" && "$TOKEN" != "null" ]] || die "Could not obtain a registration token"
 
 mkdir -p "$BASE_DIR/.cache"
 CACHE_TARBALL="$BASE_DIR/.cache/$(basename "$TARBALL_URL")"
 
-if [[ -f "$CACHE_TARBALL" ]] \
-    && echo "${TARBALL_SHA256}  ${CACHE_TARBALL}" | sha256sum -c - >/dev/null 2>&1; then
-  log "Reusing already-downloaded, checksum-verified runner tarball: $CACHE_TARBALL"
+if [[ -n "$TARBALL_SHA256" ]]; then
+  if [[ -f "$CACHE_TARBALL" ]] \
+      && echo "${TARBALL_SHA256}  ${CACHE_TARBALL}" | sha256sum -c - >/dev/null 2>&1; then
+    log "Reusing already-downloaded, checksum-verified runner tarball: $CACHE_TARBALL"
+  else
+    log "Downloading runner release once for reuse across all $((GENERAL_COUNT + GPU_COUNT)) instances"
+    curl -fsSL -o "$CACHE_TARBALL" "$TARBALL_URL"
+    echo "${TARBALL_SHA256}  ${CACHE_TARBALL}" | sha256sum -c - \
+      || die "Checksum mismatch for $CACHE_TARBALL; refusing to extract an unverified runner binary"
+  fi
 else
-  log "Downloading runner release once for reuse across all $((GENERAL_COUNT + GPU_COUNT)) instances"
-  curl -fsSL -o "$CACHE_TARBALL" "$TARBALL_URL"
-  echo "${TARBALL_SHA256}  ${CACHE_TARBALL}" | sha256sum -c - \
-    || die "Checksum mismatch for $CACHE_TARBALL; refusing to extract an unverified runner binary"
+  if [[ -f "$CACHE_TARBALL" ]]; then
+    log "Reusing already-downloaded runner tarball: $CACHE_TARBALL"
+  else
+    log "Downloading runner release once (over HTTPS from github.com) for reuse across all $((GENERAL_COUNT + GPU_COUNT)) instances"
+    curl -fsSL -o "$CACHE_TARBALL" "$TARBALL_URL"
+    log "Downloaded $(sha256sum "$CACHE_TARBALL" | cut -d' ' -f1)  $(basename "$CACHE_TARBALL")"
+  fi
 fi
 
 setup_instance() {
@@ -163,11 +255,39 @@ setup_instance() {
   log "Instance $name ready (labels: $labels)"
 }
 
+if [[ -n "$ADOPT_EXISTING_DIR" ]]; then
+  if [[ -f "$ADOPT_EXISTING_DIR/.runner" ]]; then
+    log "Adopting existing runner at $ADOPT_EXISTING_DIR into the general lane"
+    [[ -n "$REMOVE_TOKEN" ]] || REMOVE_TOKEN="$TOKEN"
+    if [[ -x "$ADOPT_EXISTING_DIR/svc.sh" ]]; then
+      (cd "$ADOPT_EXISTING_DIR" && { sudo ./svc.sh stop || true; })
+    fi
+    (cd "$ADOPT_EXISTING_DIR" && ./config.sh remove --unattended --token "$REMOVE_TOKEN") \
+      || warn "Could not deregister the existing runner's old identity; continuing to reconfigure it anyway"
+    (
+      cd "$ADOPT_EXISTING_DIR"
+      ./config.sh --unattended --replace \
+        --url "$REPO_URL" \
+        --token "$TOKEN" \
+        --name "aiserver-general-existing" \
+        --labels "self-hosted,general" \
+        --work "_work"
+    )
+    if [[ -x "$ADOPT_EXISTING_DIR/svc.sh" ]]; then
+      (cd "$ADOPT_EXISTING_DIR" && { sudo ./svc.sh install || true; sudo ./svc.sh start; })
+    fi
+    log "Existing runner adopted as aiserver-general-existing (labels: self-hosted,general)"
+  else
+    warn "No existing runner found at $ADOPT_EXISTING_DIR; nothing adopted"
+  fi
+fi
+
 while read -r name labels; do
   setup_instance "$name" "$labels"
 done < <(instance_names)
 
-log "FINAL PASS: $GENERAL_COUNT general + $GPU_COUNT gpu runner instance(s) registered under $BASE_DIR"
+log "FINAL PASS: $GENERAL_COUNT general + $GPU_COUNT gpu new runner instance(s) registered under $BASE_DIR"
+[[ -n "$ADOPT_EXISTING_DIR" ]] && log "Plus the adopted existing runner at $ADOPT_EXISTING_DIR"
 log "Verify on GitHub: repository Settings -> Actions -> Runners should list aiserver-general-* and aiserver-gpu-*"
 log "Point lightweight CI at 'runs-on: [self-hosted, general]' and GPU-bound workflows at"
 log "'runs-on: [self-hosted, gpu]' plus a shared 'concurrency: group: gpu-rtx5090-exclusive'."

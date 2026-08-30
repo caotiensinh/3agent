@@ -35,37 +35,54 @@ Most existing CI (`installer-ci.yml`'s `shellcheck-and-contracts` / `harness-reg
 jobs) already runs on GitHub-hosted `ubuntu-24.04` runners and does not need to move —
 only workflows that were already `runs-on: [self-hosted, ...]` benefit from this pool.
 
-## Setting it up
+## Setting it up — one command
 
-1. On GitHub, open this repository's **Settings → Actions → Runners → New self-hosted
-   runner**, select Linux / x64. That page shows three values generated specifically for
-   this repo and the current runner release — copy them as-is, do not substitute a
-   version or URL from memory or from another repo:
-   - the download URL (`--tarball-url`)
-   - the SHA256 checksum shown right after it (`--tarball-sha256`)
-   - the registration token used in the `./config.sh --url ... --token ...` line
-     (`--token`) — valid for about an hour and reusable for multiple registrations
-     within that window.
+The script resolves the current linux-x64 runner release from GitHub's own public API
+at run time (never a version/URL hardcoded by this repo) and mints its own short-lived
+registration token via the GitHub API from a Personal Access Token, instead of asking
+you to open the Runners UI page and copy/paste three values by hand.
 
-2. Run the pool script once on `aiserver` with those three values:
+1. Create a classic PAT with `repo` scope (or a fine-grained PAT with this repo's
+   **Administration: read and write** permission — that is what grants
+   `actions/runners/registration-token`) at
+   <https://github.com/settings/tokens>. It is used once, over HTTPS, only to mint a
+   registration token; the script never writes it to disk.
+
+2. On `aiserver`, from the repository checkout:
 
    ```bash
-   scripts/setup_runner_pool.sh \
-     --token '<TOKEN_FROM_THE_PAGE>' \
-     --tarball-url '<URL_FROM_THE_PAGE>' \
-     --tarball-sha256 '<SHA256_FROM_THE_PAGE>'
+   GH_PAT='<your PAT>' scripts/setup_runner_pool.sh
    ```
+
+   Leaving `GH_PAT` unset also works — the script prompts for it once with a hidden
+   (`read -s`) input instead of taking it as a command-line argument, so it never ends up
+   in shell history or `ps` output.
 
    Defaults to 7 `general` + 1 `gpu` instance under `~/actions-runner-pool/`. Override
    with `--general-count`/`--gpu-count` (or `RUNNER_POOL_GENERAL_COUNT`/
-   `RUNNER_POOL_GPU_COUNT`). The runner tarball is downloaded once and its checksum
-   verified once, then reused for every instance (`avoid > reuse`, not 8 redundant
-   downloads). Each instance becomes its own systemd service via the runner's own
-   `svc.sh install`, so it survives terminal closes and reboots — unlike running
-   `./run.sh` by hand in a foreground terminal.
+   `RUNNER_POOL_GPU_COUNT`). If this machine already has a runner registered at
+   `~/actions-runner` (as `aiserver` did before this pool existed), fold it into the
+   general lane instead of leaving it unlabeled:
+
+   ```bash
+   GH_PAT='<your PAT>' scripts/setup_runner_pool.sh --adopt-existing
+   ```
+
+   The runner tarball is downloaded once and reused for every instance (`avoid > reuse`,
+   not 8 redundant downloads). Each instance becomes its own systemd service via the
+   runner's own `svc.sh install`, so it survives terminal closes and reboots — unlike
+   running `./run.sh` by hand in a foreground terminal (which is the most likely reason
+   a manually-started runner stops responding to queued jobs after the terminal or SSH
+   session closes).
+
+   Prefer to audit every value before anything runs? The fully manual path still works
+   and never reads `GH_PAT`: pass `--token`, `--tarball-url` and `--tarball-sha256`,
+   copied from this repo's **Settings → Actions → Runners → New self-hosted runner**
+   page.
 
 3. Verify: **Settings → Actions → Runners** should list `aiserver-general-1` .. `-7` and
-   `aiserver-gpu-1`, all idle/online.
+   `aiserver-gpu-1` (plus `aiserver-general-existing` if you used `--adopt-existing`),
+   all idle/online.
 
 4. Point workflow files at the right lane:
 
@@ -86,12 +103,14 @@ concurrency group.
 ## Removing the pool
 
 ```bash
-scripts/setup_runner_pool.sh --teardown --token '<REMOVE_TOKEN_FROM_THE_SAME_PAGE>'
+GH_PAT='<your PAT>' scripts/setup_runner_pool.sh --teardown
 ```
 
-Stops and uninstalls each instance's systemd service, deregisters it from GitHub, and
-removes its directory. Safe to re-run `setup_runner_pool.sh` (without `--teardown`)
-afterward to rebuild the pool — registration is idempotent per instance.
+Mints its own removal token the same way, stops and uninstalls each instance's systemd
+service, deregisters it from GitHub, and removes its directory. Safe to re-run
+`setup_runner_pool.sh` (without `--teardown`) afterward to rebuild the pool —
+registration is idempotent per instance. `--token '<REMOVE_TOKEN>'` still works if you
+prefer to paste it from the Runners page instead of using a PAT.
 
 ## What this does not change
 
