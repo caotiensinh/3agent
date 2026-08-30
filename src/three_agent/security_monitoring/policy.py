@@ -14,6 +14,11 @@ from .contracts import (
 )
 
 NETWORK_SCOPE = "approved_inventory_only"
+ACTIVE_LIVENESS_CAPABILITIES = frozenset({"icmp_echo", "tcp_connect"})
+PASSIVE_OR_COUNTER_CAPABILITIES = frozenset({"snmpv3_read", "local_net_read", "fixed_readonly_adapter"})
+PRODUCTION_SAFETY_PROFILE = "non_disruptive_v1"
+BANDWIDTH_MEASUREMENT_MODE = "counter_only"
+PACKET_ANALYSIS_MODE = "passive_only"
 READ_ONLY_EFFECTS = {
     "icmp_echo": "network_read",
     "tcp_connect": "network_read",
@@ -28,12 +33,16 @@ class MonitoringPolicy:
     profile_id: str = "default"
     network_scope: str = NETWORK_SCOPE
     read_only: bool = True
+    production_safety_profile: str = PRODUCTION_SAFETY_PROFILE
+    allow_active_liveness: bool = False
+    bandwidth_measurement_mode: str = BANDWIDTH_MEASUREMENT_MODE
+    packet_analysis_mode: str = PACKET_ANALYSIS_MODE
     max_workers: int = 4
     timeout_seconds: float = 3.0
     max_retries: int = 1
     max_catch_up_runs: int = 1
     allowed_capabilities: tuple[str, ...] = field(default_factory=lambda: tuple(sorted(COLLECTOR_CAPABILITIES)))
-    schema_version: str = "workspace-security-monitoring/policy-v1"
+    schema_version: str = "workspace-security-monitoring/policy-v2"
 
     def validate(self) -> "MonitoringPolicy":
         profile = str(self.profile_id or "").strip()
@@ -44,10 +53,18 @@ class MonitoringPolicy:
             raise MonitoringContractError("monitoring network scope must be approved_inventory_only")
         if not self.read_only:
             raise MonitoringContractError("monitoring v1 is read-only by policy")
-        if not 1 <= self.max_workers <= 16:
-            raise MonitoringContractError("max_workers must be within 1..16")
-        if not 0.1 <= float(self.timeout_seconds) <= 30.0:
-            raise MonitoringContractError("timeout_seconds must be within 0.1..30")
+        if self.production_safety_profile != PRODUCTION_SAFETY_PROFILE:
+            raise MonitoringContractError("production monitoring requires non_disruptive_v1")
+        if not isinstance(self.allow_active_liveness, bool):
+            raise MonitoringContractError("allow_active_liveness must be boolean")
+        if self.bandwidth_measurement_mode != BANDWIDTH_MEASUREMENT_MODE:
+            raise MonitoringContractError("bandwidth measurement must be counter_only")
+        if self.packet_analysis_mode != PACKET_ANALYSIS_MODE:
+            raise MonitoringContractError("packet analysis must be passive_only")
+        if not 1 <= self.max_workers <= 4:
+            raise MonitoringContractError("production-safe max_workers must be within 1..4")
+        if not 0.1 <= float(self.timeout_seconds) <= 5.0:
+            raise MonitoringContractError("production-safe timeout_seconds must be within 0.1..5")
         if not 0 <= self.max_retries <= 1:
             raise MonitoringContractError("max_retries must be within 0..1")
         if not 0 <= self.max_catch_up_runs <= 1:
@@ -97,11 +114,13 @@ class MonitoringCapabilityDecision:
 
 
 class MonitoringPolicyEngine:
-    """Specialized, deterministic LAN read authority.
+    """Specialized deterministic, non-disruptive LAN read authority.
 
-    This authority is intentionally separate from model/task authority. It accepts an
-    already operator-approved inventory record and can only authorize the exact
-    read-only capability/host/port declared by that record and the monitoring policy.
+    The authority is separate from model/task authority. It can only authorize the
+    exact read-only capability/host/port declared by operator-approved inventory.
+    Active ICMP/TCP liveness is disabled by default and can never be used for
+    throughput measurement. State-changing or traffic-generating operations do not
+    exist in the capability vocabulary.
     """
 
     def __init__(self, policy: MonitoringPolicy):
@@ -155,6 +174,8 @@ class MonitoringPolicyEngine:
             return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="CAPABILITY_UNKNOWN")
         if cap not in self.policy.allowed_capabilities:
             return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="CAPABILITY_POLICY_DENIED")
+        if cap in ACTIVE_LIVENESS_CAPABILITIES and not self.policy.allow_active_liveness:
+            return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="ACTIVE_LIVENESS_DISABLED")
         if cap not in asset.collector_capabilities:
             return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="CAPABILITY_NOT_IN_ASSET_PROFILE")
         expected_effect = READ_ONLY_EFFECTS[cap]
@@ -170,9 +191,7 @@ class MonitoringPolicyEngine:
             return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="PORT_NOT_APPLICABLE")
 
         if cap == "snmpv3_read":
-            if asset.credential_ref is None:
-                return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="CREDENTIAL_REF_REQUIRED")
-            if credential_ref is None:
+            if asset.credential_ref is None or credential_ref is None:
                 return self._decision(asset, cap, eff, host, target_port, allowed=False, reason_code="CREDENTIAL_REF_REQUIRED")
             try:
                 credential_ref.validate()
