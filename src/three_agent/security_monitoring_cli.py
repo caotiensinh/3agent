@@ -12,6 +12,7 @@ from .security_monitoring.hourly import HourlyMonitoringRunner
 from .security_monitoring.locking import MonitoringRunAlreadyLocked
 from .security_monitoring.policy import MonitoringPolicyEngine
 from .security_monitoring.runtime_config import MonitoringRuntimeConfig, load_runtime_config
+from .security_monitoring.snmp_backend import FileSecretResolver, PySnmpV3Backend
 from .security_monitoring.storage import MonitoringStore
 
 TOKYO = ZoneInfo("Asia/Tokyo")
@@ -27,6 +28,7 @@ def _sync_inventory(config: MonitoringRuntimeConfig, store: MonitoringStore) -> 
 
 
 def _safe_config_summary(config: MonitoringRuntimeConfig) -> dict:
+    snmp_assets = sum(1 for asset in config.assets if "snmpv3_read" in asset.collector_capabilities and asset.enabled)
     return {
         "enabled": config.enabled,
         "allow_real_network": config.allow_real_network,
@@ -34,6 +36,8 @@ def _safe_config_summary(config: MonitoringRuntimeConfig) -> dict:
         "policy_fingerprint": config.policy.fingerprint,
         "asset_count": len(config.assets),
         "enabled_asset_count": sum(1 for asset in config.assets if asset.enabled),
+        "snmpv3_asset_count": snmp_assets,
+        "snmpv3_secret_boundary_configured": bool(config.secret_directory),
         "database_parent": str(config.database_path.parent),
         "contains_raw_credentials": False,
     }
@@ -54,6 +58,13 @@ def cmd_init(config_path: Path) -> int:
     return 0
 
 
+def _snmp_backend(config: MonitoringRuntimeConfig):
+    has_snmp_assets = any(asset.enabled and "snmpv3_read" in asset.collector_capabilities for asset in config.assets)
+    if not has_snmp_assets or config.secret_directory is None:
+        return None
+    return PySnmpV3Backend(FileSecretResolver(config.secret_directory))
+
+
 def cmd_run_hourly(config_path: Path, *, execute_readonly: bool) -> int:
     config = load_runtime_config(config_path)
     if not config.enabled:
@@ -67,12 +78,14 @@ def cmd_run_hourly(config_path: Path, *, execute_readonly: bool) -> int:
     store = MonitoringStore(config.database_path)
     _sync_inventory(config, store)
     policy_engine = MonitoringPolicyEngine(config.policy)
-    dispatcher = DefaultCollectorDispatcher(policy_engine)
+    dispatcher = DefaultCollectorDispatcher(policy_engine, snmp_backend=_snmp_backend(config))
     runner = HourlyMonitoringRunner(
         store=store,
         policy=config.policy,
         execute_work_item=dispatcher,
     )
+    # A persistent timer may invoke us after downtime. The measurement timestamp is
+    # always current execution time; we never pretend a missed historic sample exists.
     scheduled_at = datetime.now(TOKYO).isoformat()
     try:
         receipt = runner.run(scheduled_at=scheduled_at)
