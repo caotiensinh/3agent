@@ -81,12 +81,14 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
             '"public_query_final_dlp": True',
             '"direct_chat": True',
             '"response_language_current_request_precedence": True',
+            '"response_output_contract": OUTPUT_CONTRACT_POLICY_VERSION',
+            '"response_output_contract_current_request_only": True',
+            '"response_generation_bounded": True',
             '"conversation_context_policy": CONVERSATION_CONTEXT_POLICY_VERSION',
             '"conversation_context_reference_gated": True',
             '"conversation_context_completed_only": True',
             '"standalone_request_history_injected": False',
             '"follow_up_language_continuity": True',
-            '"chat_output_contract": OUTPUT_CONTRACT_POLICY_VERSION',
         ):
             self.assertIn(token, source)
         self.assertEqual(
