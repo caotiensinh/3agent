@@ -55,6 +55,27 @@ def _strict_structured_mode(llm: Any, contract: Any, high_effort: bool) -> bool:
     )
 
 
+def _use_structured_attempt(
+    structured_mode: bool,
+    attempt: int,
+    previous_failure: str,
+) -> bool:
+    """Avoid repeating a deterministic structured-language failure unchanged.
+
+    Decoder-time JSON shape control is the preferred first attempt for strict
+    standard-chat output. If that attempt is rejected specifically by the
+    authoritative target-language validator, the bounded repair attempt switches
+    to ordinary deterministic generation while keeping the same system prompt,
+    current-request output contract, language validator, and exact-shape validator.
+    This gives the repair attempt an independent generation path without weakening
+    any acceptance rule or increasing the two-attempt retry budget.
+    """
+
+    if not structured_mode:
+        return False
+    return not (attempt > 0 and previous_failure == "target_language_mismatch")
+
+
 class ContractAwareProjectChatService(ContextAwareProjectChatService):
     """Reference-gated local chat plus deterministic response-shape enforcement."""
 
@@ -115,12 +136,18 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                         repair_reason=last_reason if attempt > 0 else "",
                     )
                 )
-                if structured_mode:
+                use_structured = _use_structured_attempt(
+                    structured_mode,
+                    attempt,
+                    last_reason,
+                )
+                if use_structured:
                     system_prompt += (
                         "\n\nINTERNAL STRUCTURED DECODING (mandatory for this generation):\n"
                         "- The decoder returns an internal JSON object, not the final user-visible format.\n"
                         "- Fill every required value with only the requested answer content.\n"
-                        "- Keep explanatory text in the target response language.\n"
+                        "- Every required string value that contains explanatory prose must itself be clearly written in the TARGET RESPONSE LANGUAGE above.\n"
+                        "- Technical commands and identifiers may remain unchanged, but do not return only technical identifiers when the current request asks for target-language explanation.\n"
                         "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
                         "- A deterministic local renderer will convert these values to the user's requested final shape."
                     )
