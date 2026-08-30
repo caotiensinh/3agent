@@ -16,10 +16,10 @@ html = _replace_once(
     "hide-session-language-selector",
 )
 
-# Add connector discovery rows at the stable menu boundary. The existing upload,
-# library, image, web, deep-research, and GitHub rows are preserved unchanged.
-# Discovery rows are visible but receive no runtime authority until capabilities
-# explicitly enable a compatible local connector.
+# Add connector discovery rows at the stable menu boundary. Existing upload,
+# library, image, web, deep-research, and GitHub rows remain unchanged. Runtime
+# capability metadata is authoritative: discovery rows have zero authority until
+# a compatible connector is explicitly configured server-side.
 integration_rows = r'''
       <button class="menu-row" type="button" data-action="figma" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">F</span>
@@ -41,18 +41,8 @@ html = _replace_once(
     "integration-menu-boundary",
 )
 
-# For connector discovery rows that are not yet present in the runtime capability
-# registry, show `Connect` rather than a misleading generic `Unavailable`. Clicking
-# still fails closed and explains that the connector is not configured.
-html = _replace_once(
-    html,
-    "function feature(name){return state.capabilities?.features?.[name]||{enabled:false,reason:'Capability information is unavailable.'}}",
-    "function feature(name){const configured=state.capabilities?.features?.[name];if(configured)return configured;const connect=new Set(['figma','canva','gmail']);return{enabled:false,state_label:connect.has(name)?'Connect':'Unavailable',reason:connect.has(name)?'This connector is not configured for the local WorkSpace runtime.':'Capability information is unavailable.'}}",
-    "connector-discovery-state",
-)
-
-# Make the request-driven language behavior explicit in the output selector area
-# without adding another control the user has to maintain per conversation.
+# Make request-driven language behavior explicit without adding another control
+# users must maintain for the whole conversation.
 html = _replace_once(
     html,
     '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
