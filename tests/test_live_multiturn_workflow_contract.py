@@ -12,10 +12,19 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64]", text)
+        self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
         self.assertNotIn("pull_request:", text)
+
+    def test_gpu_inventory_is_verified_inside_the_trusted_job(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("command -v nvidia-smi", text)
+        self.assertIn("grep -c 'RTX 5090'", text)
+        self.assertIn('test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c \'RTX 5090\')" -ge 2', text)
 
     def test_live_workflow_is_read_only_to_host_runtime(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
