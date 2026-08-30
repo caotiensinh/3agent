@@ -45,10 +45,29 @@ class EvidencePackingTests(unittest.TestCase):
             },
         ]
 
-    def test_default_policy_is_legacy(self):
+    def test_default_policy_is_legacy_with_exact_body_dedupe_off(self):
         with patch.dict(os.environ, {}, clear=True):
             policy = resolve_evidence_packing_policy()
         self.assertEqual(policy.mode, LEGACY_PACKING_MODE)
+        self.assertFalse(policy.exact_body_dedupe)
+
+    def test_exact_body_dedupe_is_explicit_opt_in(self):
+        policy = resolve_evidence_packing_policy(
+            {"WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "true"}
+        )
+        self.assertTrue(policy.exact_body_dedupe)
+        fingerprint = policy.to_fingerprint_dict()
+        self.assertTrue(fingerprint["exact_body_dedupe"])
+        self.assertEqual(
+            fingerprint["schema_version"],
+            "workspace-evidence-packing-policy/v3",
+        )
+
+    def test_invalid_exact_body_dedupe_value_fails_closed(self):
+        with self.assertRaises(ValueError):
+            resolve_evidence_packing_policy(
+                {"WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "sometimes"}
+            )
 
     def test_invalid_policy_fails_closed(self):
         with self.assertRaises(ValueError):
@@ -144,6 +163,7 @@ class EvidencePackingTests(unittest.TestCase):
             by_id["S3"]["synthesis_packing_mode"],
             QUALITY_RANKED_PACKING_MODE,
         )
+        self.assertFalse(by_id["S3"]["synthesis_exact_body_dedupe_enabled"])
 
 
 if __name__ == "__main__":

@@ -115,6 +115,7 @@ class PackingReceiptTests(unittest.TestCase):
             policy = resolve_evidence_packing_policy()
         self.assertEqual(policy.budget_chars, DEFAULT_SYNTHESIS_CONTEXT_BUDGET_CHARS)
         self.assertEqual(policy.mode, "legacy_v1")
+        self.assertFalse(policy.exact_body_dedupe)
 
     def test_invalid_budget_fails_closed(self):
         for value in ("abc", "0", "1024", "70000"):
@@ -135,6 +136,8 @@ class PackingReceiptTests(unittest.TestCase):
         )
         self.assertEqual(rendered, expected)
         self.assertEqual(receipt["schema_version"], PACKING_RECEIPT_SCHEMA)
+        self.assertFalse(receipt["exact_body_dedupe_enabled"])
+        self.assertFalse(receipt["body_hashes_logged"])
         self.assertFalse(receipt["raw_content_logged"])
 
     def test_smaller_budget_records_full_vetted_and_actual_supplied_text(self):
@@ -153,6 +156,7 @@ class PackingReceiptTests(unittest.TestCase):
         item = receipt["sources"][0]
         self.assertEqual(item["vetted_text_chars"], 10)
         self.assertEqual(item["supplied_text_chars"], 4)
+        self.assertFalse(item["body_fully_supplied"])
         self.assertNotIn("text", item)
         self.assertNotIn("url", item)
         self.assertNotIn("title", item)
@@ -177,6 +181,7 @@ class PackingReceiptTests(unittest.TestCase):
             {
                 "WORKSPACE_EVIDENCE_PACKING_MODE": "quality_ranked_v1",
                 "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "32000",
+                "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "false",
             },
             clear=False,
         ):
@@ -192,11 +197,63 @@ class PackingReceiptTests(unittest.TestCase):
         item = assessments[0]
         self.assertEqual(item["synthesis_packing_receipt_version"], PACKING_RECEIPT_SCHEMA)
         self.assertEqual(item["synthesis_context_budget_chars"], 32000)
+        self.assertFalse(item["synthesis_exact_body_dedupe_enabled"])
         self.assertEqual(item["synthesis_vetted_text_chars"], len(source.extracted_text))
         self.assertEqual(item["synthesis_supplied_text_chars"], len(source.extracted_text))
         self.assertTrue(item["synthesis_supplied"])
+        self.assertTrue(item["synthesis_body_fully_supplied"])
+        self.assertFalse(item["synthesis_exact_body_duplicate_suppressed"])
+        self.assertIsNone(item["synthesis_duplicate_of_source_id"])
         self.assertNotIn("extracted_text", item)
         self.assertNotIn("url", item)
+
+    def test_runtime_synthesis_records_duplicate_relationship_without_body_hash(self):
+        agent = ResearchAgent.__new__(ResearchAgent)
+        agent.llm = FakeLLM()
+        agent.profile = lambda: "profile"
+        body = "identical vetted evidence"
+        sources = [Source("S1", body), Source("S2", body)]
+        assessments = [
+            {
+                "source_id": source.source_id,
+                "relevance": "high",
+                "scope_match": True,
+                "time_match": True,
+                "authority": "primary",
+                "reason": "test",
+            }
+            for source in sources
+        ]
+        with patch.dict(
+            os.environ,
+            {
+                "WORKSPACE_EVIDENCE_PACKING_MODE": "legacy_v1",
+                "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "32000",
+                "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "true",
+            },
+            clear=False,
+        ):
+            result = agent._synthesize(
+                "title",
+                "request",
+                "objective",
+                [],
+                sources,
+                assessments,
+            )
+
+        self.assertEqual(result["verified_facts"][0]["claim"], "Fact")
+        by_id = {item["source_id"]: item for item in assessments}
+        self.assertTrue(by_id["S1"]["synthesis_exact_body_dedupe_enabled"])
+        self.assertTrue(by_id["S1"]["synthesis_supplied"])
+        self.assertTrue(by_id["S1"]["synthesis_body_fully_supplied"])
+        self.assertFalse(by_id["S1"]["synthesis_exact_body_duplicate_suppressed"])
+        self.assertFalse(by_id["S2"]["synthesis_supplied"])
+        self.assertTrue(by_id["S2"]["synthesis_exact_body_duplicate_suppressed"])
+        self.assertEqual(by_id["S2"]["synthesis_duplicate_of_source_id"], "S1")
+        serialized = repr(assessments)
+        self.assertNotIn("sha256", serialized.lower())
+        self.assertNotIn(body, serialized)
 
     def test_context_accounting_prefers_authoritative_receipt(self):
         research = {
@@ -218,6 +275,30 @@ class PackingReceiptTests(unittest.TestCase):
         self.assertEqual(metric["context_precision_proxy"], 0.8)
         self.assertEqual(metric["context_recall_proxy"], 0.625)
         self.assertEqual(metric["synthesis_packing_receipt_version"], PACKING_RECEIPT_SCHEMA)
+
+    def test_duplicate_suppression_does_not_redefine_context_recall_metric(self):
+        body = "x" * 100
+        duplicate = assessment("S2", 100, 0, 48000) | {
+            "synthesis_packed_rank": 2,
+            "synthesis_exact_body_dedupe_enabled": True,
+            "synthesis_exact_body_duplicate_suppressed": True,
+            "synthesis_duplicate_of_source_id": "S1",
+        }
+        research = {
+            "sources": [source_dict("S1", body), source_dict("S2", body)],
+            "source_assessments": [
+                assessment("S1", 100, 100, 48000),
+                duplicate,
+            ],
+            "verified_facts": [{"claim": "fact", "source_ids": ["S1"]}],
+            "inferences": [],
+            "conflicts": [],
+            "source_assessment_error": None,
+        }
+        metric = synthesis_context_proxy_accounting(research)
+        self.assertEqual(metric["synthesis_vetted_source_text_chars"], 200)
+        self.assertEqual(metric["synthesis_supplied_source_text_chars"], 100)
+        self.assertEqual(metric["context_recall_proxy"], 0.5)
 
     def test_partial_or_tampered_receipt_fails_closed(self):
         base = {
@@ -300,13 +381,42 @@ class PackingReceiptTests(unittest.TestCase):
             config = app_config(Path(tmp))
             with patch.dict(
                 os.environ,
-                {"WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "48000"},
+                {
+                    "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "48000",
+                    "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "false",
+                },
                 clear=False,
             ):
                 baseline = effective_config_fingerprint(config)
             with patch.dict(
                 os.environ,
-                {"WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "32000"},
+                {
+                    "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "32000",
+                    "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "false",
+                },
+                clear=False,
+            ):
+                candidate = effective_config_fingerprint(config)
+        self.assertNotEqual(baseline, candidate)
+
+    def test_benchmark_fingerprint_changes_with_exact_body_dedupe_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = app_config(Path(tmp))
+            with patch.dict(
+                os.environ,
+                {
+                    "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "48000",
+                    "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "false",
+                },
+                clear=False,
+            ):
+                baseline = effective_config_fingerprint(config)
+            with patch.dict(
+                os.environ,
+                {
+                    "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": "48000",
+                    "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": "true",
+                },
                 clear=False,
             ):
                 candidate = effective_config_fingerprint(config)
