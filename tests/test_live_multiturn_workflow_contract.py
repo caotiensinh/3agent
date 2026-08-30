@@ -12,10 +12,9 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64]", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64, workspace-benchmark]", text)
         self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
-        self.assertIn("group: workspace-live-chat-multiturn-main-v2", text)
-        self.assertNotIn("group: workspace-live-chat-multiturn-main\n", text)
+        self.assertIn("group: workspace-live-chat-multiturn-main-v3", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
         self.assertNotIn("pull_request:", text)
@@ -57,12 +56,25 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, text)
 
+    def test_failure_report_path_is_exported_before_live_command(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        export = 'echo "WORKSPACE_ACCEPTANCE_REPORT=$REPORT" >> "$GITHUB_ENV"'
+        command = '"$WORKSPACE_ACCEPTANCE_VENV/bin/workspace-chat-multiturn-acceptance"'
+        self.assertIn(export, text)
+        self.assertIn(command, text)
+        self.assertLess(text.index(export), text.index(command))
+        self.assertIn("set +e", text)
+        self.assertIn('exit "$rc"', text)
+
     def test_report_is_sanitized_and_artifact_is_bounded(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("raw prompts/answers: `not persisted`", text)
         self.assertIn("actions/upload-artifact@v4", text)
+        self.assertIn("if: always() && env.WORKSPACE_ACCEPTANCE_REPORT != ''", text)
         self.assertIn("retention-days: 14", text)
 
     def test_portable_gate_tracks_live_acceptance_contract_changes(self):
@@ -79,18 +91,18 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("workflow_dispatch:", text)
 
-    def test_package_preserves_multiturn_cli_when_product_gateway_advances(self):
+    def test_package_routes_live_acceptance_to_current_contract_service(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "1!0.0.1"', text)
+        self.assertIn('version = "1!0.0.2"', text)
         self.assertIn(
-            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
+            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
             text,
         )
         self.assertIn('workspace-chat = "three_agent.chat_gateway_v17:main"', text)
         self.assertIn('three-agent-chat = "three_agent.chat_gateway_v17:main"', text)
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v16.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").is_file())
         v17 = (ROOT / "src/three_agent/chat_gateway_v17.py").read_text(encoding="utf-8")
-        self.assertIn("ContextAwareProjectChatService", v17)
+        self.assertIn("ContractAwareProjectChatService", v17)
         self.assertIn("ContextAwareWorkflowV3HTTPHandler", v17)
 
 
