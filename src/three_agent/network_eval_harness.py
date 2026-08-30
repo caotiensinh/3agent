@@ -22,8 +22,10 @@ CASE_CLASSES = {
 PROMOTION_DATASET_STATUSES = {"enterprise_approved", "operator_verified"}
 NON_POSITIVE_CASE_CLASSES = CASE_CLASSES - {"positive"}
 FORBIDDEN_VISIBLE_KEYS = {
+    "case_class",
     "ground_truth",
     "hidden_ground_truth",
+    "hidden_ground_truth_ref",
     "answer_key",
     "expected_answer",
     "expected_root_cause",
@@ -190,7 +192,6 @@ class CaseManifest:
             "case_id": self.case_id,
             "dataset_id": self.dataset_id,
             "specialist_target": self.specialist_target,
-            "case_class": self.case_class,
             "incident_start": self.incident_start,
             "incident_end": self.incident_end,
             "visible_evidence_refs": list(self.visible_evidence_refs),
@@ -198,6 +199,15 @@ class CaseManifest:
         }
         _reject_hidden_truth_fields(payload)
         return payload
+
+    def scorer_contract(self) -> dict[str, Any]:
+        """Return scorer-only labels/references that must never enter specialist input."""
+
+        return {
+            "case_id": self.case_id,
+            "case_class": self.case_class,
+            "hidden_ground_truth_ref": self.hidden_ground_truth_ref,
+        }
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -268,19 +278,19 @@ class CorpusManifest:
     def fingerprint(self) -> str:
         return canonical_sha256(self.as_dict())
 
+    def _case(self, case_id: str) -> CaseManifest:
+        for case in self.cases:
+            if case.case_id == case_id:
+                return case
+        raise NetworkHarnessError(f"unknown case_id: {case_id}")
+
     def visible_case(self, case_id: str) -> dict[str, Any]:
-        for case in self.cases:
-            if case.case_id == case_id:
-                return case.visible_contract()
-        raise NetworkHarnessError(f"unknown case_id: {case_id}")
+        return self._case(case_id).visible_contract()
 
-    def hidden_truth_ref(self, case_id: str) -> str:
-        """Scorer-only accessor. Specialist runners must never receive this value."""
+    def scorer_case(self, case_id: str) -> dict[str, Any]:
+        """Scorer-only accessor. Never pass this result to a specialist runner."""
 
-        for case in self.cases:
-            if case.case_id == case_id:
-                return case.hidden_ground_truth_ref
-        raise NetworkHarnessError(f"unknown case_id: {case_id}")
+        return self._case(case_id).scorer_contract()
 
 
 def build_specialist_input(
