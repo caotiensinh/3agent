@@ -174,6 +174,21 @@ class WorkspaceAuthStore:
             "initials": self._initials(display_name, username),
         }
 
+    def _existing_bootstrap_user(self, username: str) -> sqlite3.Row | None:
+        with self.connect() as conn:
+            count = int(conn.execute("SELECT COUNT(*) FROM workspace_users").fetchone()[0])
+            if not count:
+                return None
+            row = conn.execute(
+                "SELECT * FROM workspace_users WHERE username=? COLLATE NOCASE",
+                (username,),
+            ).fetchone()
+            if row is None:
+                row = conn.execute(
+                    "SELECT * FROM workspace_users ORDER BY created_at,user_id LIMIT 1"
+                ).fetchone()
+            return row
+
     def bootstrap_admin(
         self,
         username: str,
@@ -184,7 +199,10 @@ class WorkspaceAuthStore:
         title: str = "Administrator",
     ) -> dict[str, Any]:
         username = self._username(username)
-        password = self._password(password)
+        existing = self._existing_bootstrap_user(username)
+        if existing is not None:
+            return self._public(existing)
+
         salt, digest = self._password_record(password)
         now = self._now()
         with self.connect() as conn:
@@ -223,15 +241,21 @@ class WorkspaceAuthStore:
                     now,
                 ),
             )
-            row = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (user_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM workspace_users WHERE user_id=?", (user_id,)
+            ).fetchone()
         if row is None:
             raise RuntimeError("Failed to create bootstrap administrator")
         return self._public(row)
 
     def _dummy_check(self, password: str) -> None:
-        hmac.compare_digest(self._derive(str(password or ""), b"\0" * 16), b"\0" * SCRYPT_DKLEN)
+        hmac.compare_digest(
+            self._derive(str(password or ""), b"\0" * 16), b"\0" * SCRYPT_DKLEN
+        )
 
-    def login(self, username: str, password: str, client_ip: str) -> tuple[str, dict[str, Any]] | None:
+    def login(
+        self, username: str, password: str, client_ip: str
+    ) -> tuple[str, dict[str, Any]] | None:
         try:
             username = self._username(username)
         except ValueError:
@@ -240,12 +264,19 @@ class WorkspaceAuthStore:
         now = time.time()
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT * FROM workspace_users WHERE username=? COLLATE NOCASE", (username,)
+                "SELECT * FROM workspace_users WHERE username=? COLLATE NOCASE",
+                (username,),
             ).fetchone()
-        if row is None or not bool(row["enabled"]) or float(row["locked_until"] or 0) > now:
+        if (
+            row is None
+            or not bool(row["enabled"])
+            or float(row["locked_until"] or 0) > now
+        ):
             self._dummy_check(password)
             return None
-        if not self._matches(password, str(row["password_salt"]), str(row["password_hash"])):
+        if not self._matches(
+            password, str(row["password_salt"]), str(row["password_hash"])
+        ):
             attempts = int(row["failed_attempts"] or 0) + 1
             locked = now + LOCK_SECONDS if attempts >= MAX_FAILED_ATTEMPTS else 0
             with self.connect() as conn:
@@ -273,7 +304,9 @@ class WorkspaceAuthStore:
                     expires,
                 ),
             )
-            fresh = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (str(row["user_id"]),)).fetchone()
+            fresh = conn.execute(
+                "SELECT * FROM workspace_users WHERE user_id=?", (str(row["user_id"]),)
+            ).fetchone()
         return (token, self._public(fresh)) if fresh is not None else None
 
     def user_for_session(self, token: str, client_ip: str) -> dict[str, Any] | None:
@@ -292,9 +325,17 @@ class WorkspaceAuthStore:
             ).fetchone()
             if row is None:
                 return None
-            valid_ip = hmac.compare_digest(str(row["client_ip_hash"]), self._ip_hash(client_ip))
-            if float(row["expires_at"]) < now or not valid_ip or not bool(row["enabled"]):
-                conn.execute("DELETE FROM workspace_auth_sessions WHERE session_hash=?", (digest,))
+            valid_ip = hmac.compare_digest(
+                str(row["client_ip_hash"]), self._ip_hash(client_ip)
+            )
+            if (
+                float(row["expires_at"]) < now
+                or not valid_ip
+                or not bool(row["enabled"])
+            ):
+                conn.execute(
+                    "DELETE FROM workspace_auth_sessions WHERE session_hash=?", (digest,)
+                )
                 return None
         return self._public(row)
 
@@ -316,7 +357,12 @@ class WorkspaceAuthStore:
                 "SELECT bootstrap_admin,role,enabled FROM workspace_users WHERE user_id=?",
                 (user_id,),
             ).fetchone()
-        return bool(row and row["bootstrap_admin"] and row["role"] == "admin" and row["enabled"])
+        return bool(
+            row
+            and row["bootstrap_admin"]
+            and row["role"] == "admin"
+            and row["enabled"]
+        )
 
     def list_users(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
@@ -363,7 +409,9 @@ class WorkspaceAuthStore:
                         now,
                     ),
                 )
-                row = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (user_id,)).fetchone()
+                row = conn.execute(
+                    "SELECT * FROM workspace_users WHERE user_id=?", (user_id,)
+                ).fetchone()
         except sqlite3.IntegrityError as exc:
             raise ValueError("Username already exists") from exc
         if row is None:
@@ -394,11 +442,15 @@ class WorkspaceAuthStore:
         password_record = self._password_record(new_password) if new_password else None
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            current = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (user_id,)).fetchone()
+            current = conn.execute(
+                "SELECT * FROM workspace_users WHERE user_id=?", (user_id,)
+            ).fetchone()
             if current is None:
                 raise KeyError("User not found")
             resulting_role = next_role or str(current["role"])
-            resulting_enabled = bool(enabled) if enabled is not None else bool(current["enabled"])
+            resulting_enabled = (
+                bool(enabled) if enabled is not None else bool(current["enabled"])
+            )
             if (
                 str(current["role"]) == "admin"
                 and bool(current["enabled"])
@@ -423,24 +475,40 @@ class WorkspaceAuthStore:
                 updates.append("enabled=?")
                 values.append(1 if enabled else 0)
             if password_record:
-                updates += ["password_salt=?", "password_hash=?", "failed_attempts=0", "locked_until=0"]
+                updates += [
+                    "password_salt=?",
+                    "password_hash=?",
+                    "failed_attempts=0",
+                    "locked_until=0",
+                ]
                 values += list(password_record)
             updates.append("updated_at=?")
             values.append(self._now())
             values.append(user_id)
-            conn.execute(f"UPDATE workspace_users SET {','.join(updates)} WHERE user_id=?", tuple(values))
+            conn.execute(
+                f"UPDATE workspace_users SET {','.join(updates)} WHERE user_id=?",
+                tuple(values),
+            )
             if enabled is False or password_record:
-                conn.execute("DELETE FROM workspace_auth_sessions WHERE user_id=?", (user_id,))
-            row = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (user_id,)).fetchone()
+                conn.execute(
+                    "DELETE FROM workspace_auth_sessions WHERE user_id=?", (user_id,)
+                )
+            row = conn.execute(
+                "SELECT * FROM workspace_users WHERE user_id=?", (user_id,)
+            ).fetchone()
         if row is None:
             raise KeyError("User not found")
         return self._public(row)
 
-    def change_password(self, user_id: str, current_password: str, new_password: str) -> None:
+    def change_password(
+        self, user_id: str, current_password: str, new_password: str
+    ) -> None:
         user_id = self._user_id(user_id)
         self._password(new_password)
         with self.connect() as conn:
-            row = conn.execute("SELECT * FROM workspace_users WHERE user_id=?", (user_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM workspace_users WHERE user_id=?", (user_id,)
+            ).fetchone()
         if row is None or not self._matches(
             current_password, str(row["password_salt"]), str(row["password_hash"])
         ):
@@ -452,4 +520,6 @@ class WorkspaceAuthStore:
                 "UPDATE workspace_users SET password_salt=?,password_hash=?,failed_attempts=0,locked_until=0,updated_at=? WHERE user_id=?",
                 (salt, digest, self._now(), user_id),
             )
-            conn.execute("DELETE FROM workspace_auth_sessions WHERE user_id=?", (user_id,))
+            conn.execute(
+                "DELETE FROM workspace_auth_sessions WHERE user_id=?", (user_id,)
+            )
