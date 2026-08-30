@@ -1,0 +1,1 @@
+P2 repair reruns the unchanged five-case / twelve-turn corpus. The first live failure remains the baseline; ordinary CI is not semantic evidence.
