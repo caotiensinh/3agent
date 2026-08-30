@@ -14,6 +14,32 @@ from .privacy import redact_sensitive_text
 
 
 OUTPUT_CONTRACT_POLICY_VERSION = "current-request-output-contract/v1"
+_STANDARD_OUTPUT_CHARS_PER_PREDICT_TOKEN = 5
+_MIN_STANDARD_NUM_PREDICT = 8
+
+
+def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
+    """Bound standard direct-chat output tokens to the deterministic char contract.
+
+    High-effort thinking keeps its established floor because Ollama thinking tokens
+    share the generation budget on supported reasoning models. Standard chat does
+    not need that reasoning reserve, so its output budget is capped conservatively
+    against max_chars instead of allowing the decoder to outrun the validator.
+    """
+
+    configured = max(1, int(getattr(contract, "num_predict", 0) or 1))
+    if high_effort:
+        return max(configured, 768)
+
+    max_chars = max(0, int(getattr(contract, "max_chars", 0) or 0))
+    if not max_chars:
+        return configured
+    char_bound = max(
+        _MIN_STANDARD_NUM_PREDICT,
+        (max_chars + _STANDARD_OUTPUT_CHARS_PER_PREDICT_TOKEN - 1)
+        // _STANDARD_OUTPUT_CHARS_PER_PREDICT_TOKEN,
+    )
+    return min(configured, char_bound)
 
 
 class ContractAwareProjectChatService(ContextAwareProjectChatService):
@@ -31,7 +57,8 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
         language_source = self._job_language_sources.get(job_id, "fallback")
         contract = self._effective_output_contract(job, effort)
         high_effort = str(effort or "").strip().lower() == "high"
-        generation_num_predict = max(contract.num_predict, 768) if high_effort else contract.num_predict
+        generation_num_predict = _bounded_generation_num_predict(contract, high_effort)
+        generation_temperature = None if high_effort else 0.0
 
         self._update(job_id, status="running")
         self._stage(
@@ -48,7 +75,8 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
             (
                 f"mode=chat language={job.language} language_source={language_source} "
                 f"effort={effort} uploads={len(uploads)} output_kind={contract.kind} "
-                f"num_predict={generation_num_predict}"
+                f"num_predict={generation_num_predict} "
+                f"sampling={'default' if generation_temperature is None else 'temperature0'}"
             ),
         )
 
@@ -73,6 +101,7 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                     prompt,
                     think=high_effort,
                     num_predict=generation_num_predict,
+                    temperature=generation_temperature,
                     trust_domain="workspace-local-chat",
                     template_version="workspace.chat.direct.v2",
                 )

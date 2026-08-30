@@ -107,14 +107,22 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(mode, CONTEXT_MODE_FOLLOW_UP)
         self.assertEqual(language, "ja")
 
-    def test_current_service_preserves_high_reasoning_and_dynamic_predict_budget(self):
+    def test_current_service_preserves_high_reasoning_and_bounds_standard_generation(self):
         text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('high_effort = str(effort or "").strip().lower() == "high"', text)
         self.assertIn("think=high_effort", text)
-        self.assertIn("generation_num_predict = max(contract.num_predict, 768) if high_effort else contract.num_predict", text)
+        self.assertIn("def _bounded_generation_num_predict", text)
+        self.assertIn("if high_effort:", text)
+        self.assertIn("return max(configured, 768)", text)
+        self.assertIn(
+            "generation_num_predict = _bounded_generation_num_predict(contract, high_effort)",
+            text,
+        )
+        self.assertIn("generation_temperature = None if high_effort else 0.0", text)
         self.assertIn("num_predict=generation_num_predict", text)
+        self.assertIn("temperature=generation_temperature", text)
         self.assertIn("contract.validate(answer)", text)
         self.assertIn("workspace.chat.direct.v2", text)
 
