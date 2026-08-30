@@ -58,13 +58,13 @@ jobs:
           "$VENV/bin/python" -m pip install -e .
           echo "WORKSPACE_ACCEPTANCE_VENV=$VENV" >> "$GITHUB_ENV"
 
-      - name: Resolve installed WorkSpace config without printing it
+      - name: Resolve WorkSpace acceptance config without printing it
         shell: bash
         env:
           CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
         run: |
           set -Eeuo pipefail
-          CONFIG_PATH="${CONFIG_OVERRIDE:-$HOME/3agent/config/workspace.secure.json}"
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
           test -f "$CONFIG_PATH"
           echo "WORKSPACE_ACCEPTANCE_CONFIG_PATH=$CONFIG_PATH" >> "$GITHUB_ENV"
 

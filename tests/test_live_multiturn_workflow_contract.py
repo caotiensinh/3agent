@@ -28,6 +28,15 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertIn("grep -c 'RTX 5090'", text)
         self.assertIn('test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c \'RTX 5090\')" -ge 2', text)
 
+    def test_acceptance_config_defaults_to_exact_checkout_not_runner_home(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$GITHUB_WORKSPACE/config/workspace.secure.json", text)
+        self.assertIn("CONFIG_OVERRIDE", text)
+        self.assertNotIn("$HOME/3agent/config/workspace.secure.json", text)
+        self.assertNotIn("cat $WORKSPACE_ACCEPTANCE_CONFIG_PATH", text)
+
     def test_live_workflow_is_read_only_to_host_runtime(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from .execution_budget import ExecutionBudgetExceeded, TaskExecutionBudgetState
+from .sqlite_budget_guard import run_budget_write
 from .store import TZ, TaskStore
 
 
@@ -106,7 +107,7 @@ class LinkedTaskExecutionBudgetState:
         now = datetime.now(TZ)
         now_text = now.isoformat()
 
-        try:
+        def reserve_transaction() -> None:
             with self.store.connect() as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 parent = conn.execute(
@@ -160,6 +161,9 @@ class LinkedTaskExecutionBudgetState:
                                 task_id,
                             ),
                         )
+
+        try:
+            run_budget_write(self.store, reserve_transaction)
         except ValueError as exc:
             code = str(exc)
             if code in _BUDGET_EXHAUSTION_CODES:
