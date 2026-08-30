@@ -27,6 +27,9 @@ MemoryDenyWriteExecute=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 ReadWritePaths=/var/lib/workspace-monitor
 ReadOnlyPaths=/etc/workspace/security-monitoring.json
+TimeoutStartSec=15min
+TimeoutStopSec=15s
+KillMode=control-group
 # Fail closed by default. Deployment must add an operator-reviewed drop-in with
 # IPAddressAllow= for the exact approved LAN subnet(s), while Internet stays denied.
 IPAddressDeny=any
