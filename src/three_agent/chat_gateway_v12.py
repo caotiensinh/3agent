@@ -4,89 +4,29 @@ import os
 import threading
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
-from typing import Any
 from urllib.parse import urlparse
 
-from .chat_gateway import SESSION_TTL_SECONDS, TelegramBridge, _lan_hint, _parse_allowed_ids
-from .chat_gateway_v10 import ExternalAuthApplication, FourWayLoginHTTPHandler
+from .chat_gateway import TelegramBridge, _lan_hint, _parse_allowed_ids
+from .chat_gateway_v11 import WorkflowStudioApplication, WorkflowStudioHTTPHandler
 from .chat_gateway_v8 import ProjectKnowledgeChatService
 from .config import load_config
 from .orchestrator import Orchestrator
-from .privacy import redact_sensitive_text
-from .workflow_design import WorkflowDesignCompiler, WorkflowDesignError
+from .prompt_compiler import PROMPT_COMPILER_VERSION
+from .public_query_compiler import PUBLIC_QUERY_COMPILER_VERSION
 from .workspace_external_identity import (
     ExternalAuthSettings,
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v8 import WORKSPACE_HTML_V8
 
 
-HTML_V11 = WORKSPACE_HTML_V8
+class PromptAwareWorkflowStudioHTTPHandler(WorkflowStudioHTTPHandler):
+    """Workflow Studio v11 plus deterministic prompt/query compiler observability."""
 
-
-class WorkflowStudioApplication(ExternalAuthApplication):
-    def __init__(
-        self,
-        service: Any,
-        auth: ExternalSessionAuthStore,
-        artifact_root,
-        external_store: ExternalIdentityStore,
-        external_settings: ExternalAuthSettings,
-    ) -> None:
-        super().__init__(
-            service,
-            auth,
-            artifact_root,
-            external_store,
-            external_settings,
-        )
-        self.workflow_designer = WorkflowDesignCompiler(service.orchestrator.llm)
-
-
-class WorkflowStudioHTTPHandler(FourWayLoginHTTPHandler):
-    server_version = "WorkSpaceChat/0.12"
-
-    def _compile_workflow(self) -> None:
-        if not self._authorized_local():
-            return
-        try:
-            payload = self._read_json_large(16 * 1024)
-            description = payload.get("description")
-            language = str(payload.get("language") or "ja").strip().lower()
-            if language not in {"ja", "vi", "en"}:
-                raise WorkflowDesignError("Unsupported workflow language")
-            if not isinstance(description, str):
-                raise WorkflowDesignError("description must be a string")
-            result = self.app.workflow_designer.compile(
-                description,
-                language=language,
-            )
-            self._json(HTTPStatus.OK, result.to_dict())
-        except WorkflowDesignError as exc:
-            self._json(
-                HTTPStatus.BAD_REQUEST,
-                {"error": redact_sensitive_text(str(exc))[:400]},
-            )
-        except (RuntimeError, TimeoutError) as exc:
-            self._json(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": redact_sensitive_text(f"{type(exc).__name__}: {exc}")[:400]},
-            )
+    server_version = "WorkSpaceChat/0.13"
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path == "/":
-            if not self._private_or_reject():
-                return
-            body = HTML_V11.encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-            return
         if path == "/api/health":
             if not self._private_or_reject():
                 return
@@ -96,7 +36,7 @@ class WorkflowStudioHTTPHandler(FourWayLoginHTTPHandler):
                 {
                     "status": "ok",
                     "service": "WorkSpace Chat",
-                    "version": "0.12",
+                    "version": "0.13",
                     "auth": "local_accounts_with_external_identity",
                     "auth_methods": methods,
                     "conversation_lifecycle": True,
@@ -105,16 +45,15 @@ class WorkflowStudioHTTPHandler(FourWayLoginHTTPHandler):
                     "workflow_studio": True,
                     "workflow_execution": False,
                     "workflow_diagrams": ["svg", "mermaid"],
+                    "prompt_compiler": PROMPT_COMPILER_VERSION,
+                    "prompt_compiler_authority": "user_task_only",
+                    "prompt_compiler_original_local": True,
+                    "public_query_compiler": PUBLIC_QUERY_COMPILER_VERSION,
+                    "public_query_final_dlp": True,
                 },
             )
             return
         super().do_GET()
-
-    def do_POST(self) -> None:
-        if urlparse(self.path).path == "/api/workflows/compile":
-            self._compile_workflow()
-            return
-        super().do_POST()
 
 
 def main() -> int:
@@ -181,7 +120,7 @@ def main() -> int:
     else:
         print("[WorkSpace] Telegram disabled (no bot token configured).", flush=True)
 
-    httpd = ThreadingHTTPServer((host, port), WorkflowStudioHTTPHandler)
+    httpd = ThreadingHTTPServer((host, port), PromptAwareWorkflowStudioHTTPHandler)
     httpd.app = app  # type: ignore[attr-defined]
     print(f"[WorkSpace] LAN UI: {_lan_hint(host, port)}", flush=True)
     print(
@@ -202,6 +141,14 @@ def main() -> int:
         )
     print(
         "[WorkSpace] Workflow Studio enabled in design-only mode; compile/diagram never grants execution authority.",
+        flush=True,
+    )
+    print(
+        f"[WorkSpace] Prompt compiler active: {PROMPT_COMPILER_VERSION}; original prompt remains local.",
+        flush=True,
+    )
+    print(
+        f"[WorkSpace] Public query compiler active: {PUBLIC_QUERY_COMPILER_VERSION}; strict egress DLP remains final authority.",
         flush=True,
     )
     try:
