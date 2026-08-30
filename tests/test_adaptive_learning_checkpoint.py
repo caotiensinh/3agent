@@ -100,13 +100,18 @@ def keyring(*, active: str = "key:v1", include_old: bool = True, include_new: bo
 
 
 class AdaptiveLearningCheckpointTests(unittest.TestCase):
-    def _environment(self, root: Path):
-        store = AdaptiveLearningStore(root / "learning.db")
-        authority = LearningCheckpointAuthority(
-            root / "checkpoint" / "learning-checkpoints.jsonl",
-            keyring(),
+    @staticmethod
+    def _authority(root: Path, ring: HmacCheckpointKeyring | None = None):
+        return LearningCheckpointAuthority(
+            root / "checkpoint-journal" / "learning-checkpoints.jsonl",
+            root / "trusted-head" / "learning-checkpoint-head.json",
+            ring or keyring(),
             store_id=STORE_ID,
         )
+
+    def _environment(self, root: Path):
+        store = AdaptiveLearningStore(root / "learning.db")
+        authority = self._authority(root)
         authority.bootstrap(store)
         return store, authority
 
@@ -145,19 +150,20 @@ class AdaptiveLearningCheckpointTests(unittest.TestCase):
             self.assertIsNotNone(store.active(candidate.candidate_id))
 
             journal = authority.journal_path.read_text(encoding="utf-8")
-            self.assertNotIn(candidate.content, journal)
-            self.assertNotIn("Verified passive read-only analysis sequence", journal)
-            self.assertNotIn(OLD_KEY.decode("ascii"), journal)
+            witness = authority.witness_path.read_text(encoding="utf-8")
+            for protected in (
+                candidate.content,
+                "Verified passive read-only analysis sequence",
+                OLD_KEY.decode("ascii"),
+            ):
+                self.assertNotIn(protected, journal)
+                self.assertNotIn(protected, witness)
 
     def test_startup_requires_authenticated_checkpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store = AdaptiveLearningStore(root / "learning.db")
-            authority = LearningCheckpointAuthority(
-                root / "checkpoint.jsonl",
-                keyring(),
-                store_id=STORE_ID,
-            )
+            authority = self._authority(root)
             with self.assertRaisesRegex(LearningCheckpointError, "CHECKPOINT_REQUIRED"):
                 LearningStagingGateway(store, authority)
             with self.assertRaisesRegex(LearningCheckpointError, "CHECKPOINT_REQUIRED"):
@@ -172,9 +178,7 @@ class AdaptiveLearningCheckpointTests(unittest.TestCase):
 
             with store.connect() as conn:
                 conn.execute("DROP TRIGGER learning_ledger_no_update")
-                conn.execute(
-                    "UPDATE learning_ledger SET reason_code='FORGED' WHERE seq=2"
-                )
+                conn.execute("UPDATE learning_ledger SET reason_code='FORGED' WHERE seq=1")
 
             with self.assertRaisesRegex(
                 LearningCheckpointError, "LEARNING_LEDGER_INTEGRITY_FAILED"
@@ -249,24 +253,55 @@ class AdaptiveLearningCheckpointTests(unittest.TestCase):
             ):
                 authority.verify(restored)
 
+    def test_stale_database_and_journal_replay_is_blocked_by_trusted_head_witness(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db_path = root / "learning.db"
+            stale_db = root / "stale-generation.db"
+            stale_journal = root / "stale-generation.jsonl"
+            store, authority = self._environment(root)
+
+            source = sqlite3.connect(db_path)
+            destination = sqlite3.connect(stale_db)
+            try:
+                source.backup(destination)
+            finally:
+                destination.close()
+                source.close()
+            shutil.copyfile(authority.journal_path, stale_journal)
+
+            candidate, _, _ = approved_candidate()
+            LearningStagingGateway(store, authority).stage(candidate)
+            current = authority.verify(store)
+            self.assertEqual(current.sequence, 2)
+
+            shutil.copyfile(stale_db, db_path)
+            shutil.copyfile(stale_journal, authority.journal_path)
+            authority.journal_path.chmod(0o600)
+            replayed = AdaptiveLearningStore(db_path)
+            self.assertTrue(replayed.verify_ledger()["passed"])
+
+            with self.assertRaisesRegex(
+                LearningCheckpointError, "CHECKPOINT_WITNESS_HEAD_MISMATCH"
+            ):
+                authority.verify(replayed)
+
     def test_wrong_and_missing_keys_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store, authority = self._environment(root)
             authority.verify(store)
 
-            wrong = LearningCheckpointAuthority(
-                authority.journal_path,
+            wrong = self._authority(
+                root,
                 HmacCheckpointKeyring({"key:v1": b"x" * 32}, active_key_id="key:v1"),
-                store_id=STORE_ID,
             )
             with self.assertRaisesRegex(LearningCheckpointError, "CHECKPOINT_MAC_MISMATCH"):
                 wrong.verify(store)
 
-            missing = LearningCheckpointAuthority(
-                authority.journal_path,
+            missing = self._authority(
+                root,
                 HmacCheckpointKeyring({"key:v2": NEW_KEY}, active_key_id="key:v2"),
-                store_id=STORE_ID,
             )
             with self.assertRaisesRegex(
                 LearningCheckpointError, "CHECKPOINT_KEY_MISSING:key:v1"
@@ -280,29 +315,29 @@ class AdaptiveLearningCheckpointTests(unittest.TestCase):
             candidate, _, _ = approved_candidate()
             LearningStagingGateway(store, old_authority).stage(candidate)
 
-            rotating = LearningCheckpointAuthority(
-                old_authority.journal_path,
+            rotating = self._authority(
+                root,
                 keyring(active="key:v2", include_old=True, include_new=True),
-                store_id=STORE_ID,
             )
             rotated = rotating.rotate_key(store)
             self.assertEqual(rotated.key_id, "key:v2")
             self.assertEqual(rotated.mutation_kind, "key_rotation")
 
-            new_only = LearningCheckpointAuthority(
-                old_authority.journal_path,
+            new_only = self._authority(
+                root,
                 keyring(active="key:v2", include_old=False, include_new=True),
-                store_id=STORE_ID,
             )
-            self.assertEqual(new_only.verify(store).checkpoint_sha256, rotated.checkpoint_sha256)
+            self.assertEqual(
+                new_only.verify(store).checkpoint_sha256,
+                rotated.checkpoint_sha256,
+            )
 
             lines = old_authority.journal_path.read_text(encoding="utf-8").splitlines()
             first = json.loads(lines[0])
             first["mutation_kind"] = "stage"
             lines[0] = json.dumps(first, sort_keys=True, separators=(",", ":"))
             old_authority.journal_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            if hasattr(old_authority.journal_path, "chmod"):
-                old_authority.journal_path.chmod(0o600)
+            old_authority.journal_path.chmod(0o600)
 
             with self.assertRaisesRegex(LearningCheckpointError, "CHECKPOINT_HASH_MISMATCH"):
                 new_only.verify(store)
@@ -324,7 +359,14 @@ class AdaptiveLearningCheckpointTests(unittest.TestCase):
             last = store.ledger()[-1]
             self.assertEqual(last["actor_id"], "learner:reflection")
             self.assertEqual(last["reason_code"], "CANDIDATE_STAGED")
-            for forbidden in ("promote", "verify", "rotate_key", "sign", "archive", "rollback"):
+            for forbidden in (
+                "promote",
+                "verify",
+                "rotate_key",
+                "sign",
+                "archive",
+                "rollback",
+            ):
                 self.assertFalse(hasattr(learner, forbidden))
 
 
