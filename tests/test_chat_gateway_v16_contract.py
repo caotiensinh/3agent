@@ -69,6 +69,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             '"conversation_context_completed_only": True',
             '"standalone_request_history_injected": False',
             '"follow_up_language_continuity": True',
+            '"follow_up_reference_anchoring": True',
         ):
             self.assertIn(token, source)
 
@@ -76,7 +77,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
         self.assertEqual(CONTEXT_MODE_FOLLOW_UP, "follow_up")
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
-            "deterministic-reference-gated/v1",
+            "deterministic-reference-gated/v2",
         )
 
     def test_missing_follow_up_context_is_rendered_as_unavailable_not_invented(self) -> None:
