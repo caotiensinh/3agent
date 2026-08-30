@@ -1,0 +1,3 @@
+<134>2026-08-30T12:00:00+00:00 switch-rnd-01 link: interface Gi1/0/1 changed state to down
+<131>2026-08-30T12:00:05+00:00 router-rnd-01 auth: repeated authentication failure
+this is malformed and must be quarantined
