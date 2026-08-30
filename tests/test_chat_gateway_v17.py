@@ -89,11 +89,12 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
             '"conversation_context_completed_only": True',
             '"standalone_request_history_injected": False',
             '"follow_up_language_continuity": True',
+            '"follow_up_reference_anchoring": True',
         ):
             self.assertIn(token, source)
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
-            "deterministic-reference-gated/v1",
+            "deterministic-reference-gated/v2",
         )
 
     def test_main_uses_contract_aware_service(self):
