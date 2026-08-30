@@ -80,8 +80,26 @@ class D502AWorkflowContractTests(unittest.TestCase):
         self.assertIn("baseline-legacy-48k/benchmark.json", self.text)
         self.assertIn("exact-dedupe-legacy-48k/benchmark.json", self.text)
 
+    def test_runtime_failure_is_preserved_as_sanitized_metadata_only_evidence(self):
+        run_step = self.text.split(
+            "Run baseline and exact-dedupe candidate in one isolated suite", 1
+        )[1].split("Independently recompute D5-02a evidence verdict", 1)[0]
+        self.assertIn('RUN_RESULT="$BENCH_ROOT/d502a-run-result.json"', run_step)
+        self.assertIn('FAILURE_RECEIPT="$BENCH_ROOT/d502a-failure.json"', run_step)
+        self.assertIn('> "$RUN_RESULT"', run_step)
+        self.assertNotIn(">/dev/null", run_step)
+        self.assertIn("workspace-d502a-sanitized-failure/v1", run_step)
+        self.assertIn("error_sha256", run_step)
+        self.assertIn("raw_prompt_logged", run_step)
+        self.assertIn("raw_evidence_logged", run_step)
+        self.assertIn('rm -f "$RUN_RESULT"', run_step)
+        self.assertIn("Write sanitized benchmark failure summary", self.text)
+
     def test_publishable_artifact_paths_do_not_include_raw_runtime_state(self):
         publish = self.text.split("Publish metadata-only D5-02a benchmark evidence", 1)[1]
+        self.assertIn("if: always()", publish)
+        self.assertIn("d502a-failure.json", publish)
+        self.assertNotIn("d502a-run-result.json", publish)
         self.assertNotIn("/data/", publish)
         self.assertNotIn("/state/", publish)
         self.assertNotIn("inference.jsonl", publish)
