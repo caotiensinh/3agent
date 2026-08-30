@@ -11,6 +11,11 @@
 # is that instrument for host RAM/VRAM/service-count, since that measurement can only be
 # taken on the physical dual-RTX5090 workstation, not in a CI runner or review sandbox.
 #
+# Every field is assembled through `jq`, never hand-rolled string concatenation: a first
+# version built the JSON by hand and broke on real hardware (nvidia-smi/systemctl output
+# containing bytes that are invalid unescaped inside a JSON string), a class of bug that
+# only jq's own escaping reliably rules out regardless of what those commands print.
+#
 # Privacy: only aggregate counters are captured. No hostname, GPU UUID/serial, process
 # command line, model name or file content is recorded, matching the metadata-only
 # discipline already used by evaluation/representative_hardware_closure_*.json.
@@ -19,85 +24,103 @@ set -Eeuo pipefail
 LABEL="${1:-snapshot}"
 
 log() { printf '[RAMBaseline] %s\n' "$*" >&2; }
+die() { printf '[RAMBaseline][ERROR] %s\n' "$*" >&2; exit 1; }
 
-ram_json() {
+command -v jq >/dev/null 2>&1 || die "jq is required"
+
+ram_snapshot() {
   local total_kib=0 avail_kib=0
   if [[ -r /proc/meminfo ]]; then
     total_kib="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)"
     avail_kib="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
   fi
   local used_kib=$(( total_kib - avail_kib ))
-  printf '"ram": {"total_kib": %d, "available_kib": %d, "used_kib": %d, "used_percent": %s}' \
-    "$total_kib" "$avail_kib" "$used_kib" \
-    "$(awk -v u="$used_kib" -v t="$total_kib" 'BEGIN { if (t > 0) printf "%.2f", (u / t) * 100; else print 0 }')"
+  jq -n --argjson total "$total_kib" --argjson avail "$avail_kib" --argjson used "$used_kib" '
+    {
+      total_kib: $total,
+      available_kib: $avail,
+      used_kib: $used,
+      used_percent: (if $total > 0 then (($used / $total * 100 * 100 | round) / 100) else 0 end)
+    }'
 }
 
-gpu_json() {
+# Raw CSV lines from nvidia-smi, each field jq-parsed and coerced to a number where
+# possible; a non-numeric field (nvidia-smi prints "[N/A]" for some metrics on some
+# driver/power states) becomes null instead of producing invalid JSON or aborting.
+gpu_snapshot() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then
-    printf '"gpus": null'
+    printf 'null'
     return
   fi
   local rows
   rows="$(nvidia-smi --query-gpu=index,memory.total,memory.used,utilization.gpu,temperature.gpu \
     --format=csv,noheader,nounits 2>/dev/null || true)"
   if [[ -z "$rows" ]]; then
-    printf '"gpus": null'
+    printf 'null'
     return
   fi
-  local first=1 out="["
-  while IFS=',' read -r index total used util temp; do
-    index="$(xargs <<<"$index")"; total="$(xargs <<<"$total")"
-    used="$(xargs <<<"$used")"; util="$(xargs <<<"$util")"; temp="$(xargs <<<"$temp")"
-    [[ -n "$index" ]] || continue
-    (( first )) || out+=","
-    first=0
-    out+="{\"index\": ${index}, \"memory_total_mib\": ${total}, \"memory_used_mib\": ${used}, \"util_percent\": ${util}, \"temp_c\": ${temp}}"
-  done <<<"$rows"
-  out+="]"
-  printf '"gpus": %s' "$out"
+  jq -Rn '
+    [inputs
+      | select(length > 0)
+      | split(",")
+      | map(gsub("^\\s+|\\s+$"; ""))
+      | select(length == 5)
+      | {
+          index: (.[0] | tonumber? // null),
+          memory_total_mib: (.[1] | tonumber? // null),
+          memory_used_mib: (.[2] | tonumber? // null),
+          util_percent: (.[3] | tonumber? // null),
+          temp_c: (.[4] | tonumber? // null)
+        }]' <<<"$rows"
 }
 
 service_state() {
   systemctl is-active "$1" 2>/dev/null || printf 'unknown'
 }
 
-services_json() {
-  local svc first=1 out="{"
+services_snapshot() {
+  local json='{}' svc
   for svc in ollama ollama-gpu0.service ollama-gpu1.service 3agent-chat.service; do
-    (( first )) || out+=","
-    first=0
-    out+="\"${svc}\": \"$(service_state "$svc")\""
+    json="$(jq -c --arg k "$svc" --arg v "$(service_state "$svc")" '. + {($k): $v}' <<<"$json")"
   done
-  out+="}"
-  printf '"services": %s' "$out"
+  printf '%s' "$json"
 }
 
-resident_models_json() {
-  local port label first=1 out="{"
+# Actual resident-model count per worker, parsed from Ollama's own /api/ps JSON rather
+# than substring-counting the raw response text.
+resident_models_snapshot() {
+  local json='{}' label_port label port count
   for label_port in "dual:11434" "gpu0:11435" "gpu1:11436"; do
     label="${label_port%%:*}"
     port="${label_port##*:}"
-    (( first )) || out+=","
-    first=0
-    local count
     count="$(curl -fsS --max-time 2 "http://127.0.0.1:${port}/api/ps" 2>/dev/null \
-      | grep -o '"name"' | wc -l | tr -d ' ' || true)"
-    [[ -n "$count" ]] || count="null"
-    out+="\"${label}\": ${count}"
+      | jq '[.models[]?] | length' 2>/dev/null || true)"
+    if [[ "$count" =~ ^[0-9]+$ ]]; then
+      json="$(jq -c --arg k "$label" --argjson v "$count" '. + {($k): $v}' <<<"$json")"
+    else
+      json="$(jq -c --arg k "$label" '. + {($k): null}' <<<"$json")"
+    fi
   done
-  out+="}"
-  printf '"resident_model_counts": %s' "$out"
+  printf '%s' "$json"
 }
 
-printf '{\n'
-printf '  "schema": "workspace-ram-baseline/v1",\n'
-printf '  "label": "%s",\n' "$LABEL"
-printf '  "timestamp": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-printf '  %s,\n' "$(ram_json)"
-printf '  %s,\n' "$(gpu_json)"
-printf '  %s,\n' "$(services_json)"
-printf '  %s\n' "$(resident_models_json)"
-printf '}\n'
+jq -n \
+  --arg schema "workspace-ram-baseline/v1" \
+  --arg label "$LABEL" \
+  --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --argjson ram "$(ram_snapshot)" \
+  --argjson gpus "$(gpu_snapshot)" \
+  --argjson services "$(services_snapshot)" \
+  --argjson resident_model_counts "$(resident_models_snapshot)" \
+  '{
+    schema: $schema,
+    label: $label,
+    timestamp: $timestamp,
+    ram: $ram,
+    gpus: $gpus,
+    services: $services,
+    resident_model_counts: $resident_model_counts
+  }'
 
 log "Snapshot '$LABEL' captured. Redirect stdout to a file and diff before/after a change, e.g.:"
 log "  scripts/measure_ram_baseline.sh before > /tmp/before.json"

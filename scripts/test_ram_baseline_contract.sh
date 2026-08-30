@@ -42,6 +42,34 @@ if grep -E -- '--query-gpu=' "$SCRIPT" | grep -Eiq 'uuid|serial'; then
   exit 1
 fi
 
+# Exercise the has-GPU branch with a mock nvidia-smi, since this review sandbox has no
+# real GPU and a hand-rolled-JSON version of this branch previously shipped broken: it
+# parsed fine here (gpus: null) but produced invalid JSON once real nvidia-smi CSV output
+# (with its leading spaces and occasional "[N/A]" fields) reached it on the actual
+# dual-RTX5090 workstation. Cover both the numeric case and the "[N/A]" case.
+MOCK_BIN_DIR="$(mktemp -d)"
+trap 'rm -rf "$MOCK_BIN_DIR"' EXIT
+cat >"$MOCK_BIN_DIR/nvidia-smi" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$*" == *"--query-gpu"* ]]; then
+  printf '0, 32607, 1067, 0, 51\n'
+  printf '1, 32607, 1171, [N/A], [N/A]\n'
+else
+  echo "mock nvidia-smi"
+fi
+MOCK
+chmod +x "$MOCK_BIN_DIR/nvidia-smi"
+
+GPU_OUTPUT="$(PATH="$MOCK_BIN_DIR:$PATH" bash "$SCRIPT" gpu-mock-check)"
+python3 -c "
+import json, sys
+doc = json.loads(sys.argv[1])
+gpus = doc['gpus']
+assert isinstance(gpus, list) and len(gpus) == 2, gpus
+assert gpus[0] == {'index': 0, 'memory_total_mib': 32607, 'memory_used_mib': 1067, 'util_percent': 0, 'temp_c': 51}, gpus[0]
+assert gpus[1]['util_percent'] is None and gpus[1]['temp_c'] is None, gpus[1]
+" "$GPU_OUTPUT"
+
 # Read-only: must never call systemctl start/stop/restart/enable/disable, nvidia-smi -pm,
 # or any other mutating command.
 if grep -Eq 'systemctl (start|stop|restart|enable|disable)|nvidia-smi[^|]*-pm|sudo ' "$SCRIPT"; then
