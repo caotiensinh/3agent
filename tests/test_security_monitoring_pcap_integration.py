@@ -20,8 +20,21 @@ class PcapRunnerBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "monitoring.json"
             config.write_text("{}", encoding="utf-8")
+            if runner.os.name != "posix":
+                # The dedicated capture runner is intentionally unavailable on
+                # non-POSIX hosts. The platform boundary must fail closed before
+                # any request parsing or capture authority can be exercised.
+                with self.assertRaisesRegex(RuntimeError, "INCIDENT_CAPTURE_POSIX_ONLY"):
+                    runner.run_capture(
+                        config_path=config.resolve(),
+                        approval_id="../../approval-deadbeef",
+                        confirmation=CAPTURE_CONFIRMATION,
+                    )
+                return
+
             with self.assertRaisesRegex(ValueError, "approval_id|invalid"):
-                # Normalize the implementation-specific contract exception to ValueError family.
+                # On the supported POSIX runner, arbitrary/traversal approval
+                # identifiers must be rejected before capture execution.
                 try:
                     runner.run_capture(
                         config_path=config.resolve(),
