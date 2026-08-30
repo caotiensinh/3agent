@@ -315,6 +315,8 @@ candidate
 
 This is intentionally separate from dataset extraction. The current WorkSpace skill loader already treats skills as small reviewed procedures rather than storage and enforces hashes and authority restrictions.
 
+**Candidate skill generation never edits `skills/registry.json` and never writes into an approved skill directory.** Promotion requires a separate explicit reviewed operation.
+
 ## Runtime reasoning: how the experience is used
 
 The preferred runtime is **case-based/evidence-based reasoning**, not raw-log retrieval.
