@@ -11,6 +11,8 @@ from .chat_fidelity import requested_language_neutral_format
 _BULLET_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S")
 _BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 _SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
+_BRIEF_PROSE_MAX_CHARS = 600
+_BRIEF_PROSE_NUM_PREDICT = 128
 STRICT_STRUCTURED_OUTPUT_KINDS = frozenset(
     {"bullets", "single_sentence", "single_number", "code_only"}
 )
@@ -213,6 +215,29 @@ def _requests_single_sentence(request: str) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
+def _requests_brief_response(request: str) -> bool:
+    """Detect explicit current-request brevity intent in supported chat languages."""
+
+    text = " ".join(str(request or "").casefold().split())
+    patterns = (
+        r"\bbriefly\b",
+        r"\bbe\s+brief\b",
+        r"\bconcise(?:ly)?\b",
+        r"\bin\s+brief\b",
+        r"\bbrief\s+(?:answer|response|introduction|intro|summary)\b",
+        r"\bshort\s+(?:answer|response|introduction|intro|summary)\b",
+        r"\bngắn\s+gọn\b",
+        r"\bngắn\s+thôi\b",
+        r"\btrả\s+lời\s+ngắn\b",
+        r"\btóm\s+tắt\s+ngắn\b",
+        r"簡単に",
+        r"簡潔に",
+        r"短く",
+        r"手短に",
+    )
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
 def compile_chat_output_contract(request: str, *, effort: str = "standard") -> ChatOutputContract:
     """Compile bounded response-shape rules from the current request only."""
 
@@ -262,6 +287,17 @@ def compile_chat_output_contract(request: str, *, effort: str = "standard") -> C
             max_chars=400,
             num_predict=128,
             instruction="Return exactly one concise sentence. Do not add a heading, bullets, notes, or a second sentence.",
+        )
+
+    if _requests_brief_response(request):
+        return ChatOutputContract(
+            kind="brief_prose",
+            max_chars=_BRIEF_PROSE_MAX_CHARS,
+            num_predict=_BRIEF_PROSE_NUM_PREDICT,
+            instruction=(
+                "Answer briefly and directly using only the minimum detail needed; normally use 2-4 short sentences. "
+                "Do not add headings, unrelated sections, or repeat the prompt."
+            ),
         )
 
     high = str(effort or "standard").strip().lower() == "high"
