@@ -61,7 +61,7 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
 
     def test_unconfigured_external_integrations_remain_fail_closed(self) -> None:
         html = WORKSPACE_HTML_V13
-        self.assertIn("if(!f.enabled){showToast", html)
+        self.assertIn("else unavailable(action)", html)
         features = workspace_ui_capabilities(config())["features"]
         for name in ("figma", "canva", "gmail"):
             with self.subTest(name=name):
