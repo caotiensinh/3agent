@@ -53,6 +53,12 @@ The authoritative raw prompt remains in the local `tasks.request` field. WorkSpa
 
 The compiled text is regenerated deterministically and checked against the immutable receipt.
 
+## Cross-platform SQLite lifecycle
+
+Prompt metadata uses `TaskStore.connect()` rather than creating an independent raw `sqlite3.Connection`. This is required for cross-platform correctness: Python's standard SQLite connection context manager commits or rolls back a transaction but does not itself close the database handle. The WorkSpace `TaskStore` connection factory closes the handle after every `with` scope.
+
+This matters especially on Windows, where an unclosed SQLite handle prevents cleanup or replacement of `tasks.db` with `WinError 32`. The prompt-ledger regression suite therefore verifies that a connection obtained by the ledger is unusable after its context scope exits. The same closing lifecycle is used on Linux and Windows.
+
 ## Optimization truthfulness
 
 A reduction in characters or UTF-8 bytes is **not** reported as token savings. Tokenization differs by model and language. `token_savings_measured=false` remains authoritative until a tokenizer/runtime measurement proves the actual change.
@@ -109,6 +115,10 @@ Only a bounded public-search query is eligible for egress.
 Prompt compilation does not enable networking. `workspace.secure.json` continues to keep confidential-mode public search disabled. Public search requires an already-authorized deployment lane with the separate egress boundary.
 
 This distinction is intentional: removing sensitive text from a string is not sufficient to grant network authority.
+
+## Main-line compatibility
+
+Prompt Compiler v1 is additive to the existing evaluation/control plane. During integration with main, WorkSpace preserves the D7 efficiency evaluator handoff entrypoint while advancing the chat entrypoint to the prompt-aware gateway. Prompt compilation does not reinterpret, manufacture, or satisfy any external D7 evaluator evidence requirement.
 
 ## Failure behavior
 
