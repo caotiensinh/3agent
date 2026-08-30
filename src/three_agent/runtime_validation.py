@@ -18,7 +18,7 @@ from .presentation_model import handoff_is_presentable
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
 from .route_planner import DeterministicRoutePlanner
 from .store import TaskStore
-from .task_contract import TaskContractCompiler
+from .task_contract import TaskContract, TaskContractCompiler
 from .validator_ledger import TaskVerificationState, ValidatorLedger
 
 
@@ -113,16 +113,42 @@ class RuntimeValidatorBridge:
             attempt=self._next_attempt(task_id, validator),
         )
 
-    def begin(self, task_id: str) -> RuntimeValidationAttempt:
-        """Bind contract, execution budget, model authority, policy and route."""
-        contract = self.compiler.compile(
-            task_id=task_id,
-            task_type="analysis",
-            sensitivity=self.sensitivity,
-            risk_level="low",
-            public_web=self.public_web,
-            output_schema=PRESENTATION_PLAN_SCHEMA_V1,
-        )
+    def begin(
+        self,
+        task_id: str,
+        *,
+        contract: TaskContract | None = None,
+    ) -> RuntimeValidationAttempt:
+        """Bind contract, execution budget, model authority, policy and route.
+
+        Callers may supply a precompiled contract only for the same bounded
+        low-risk analysis authority already owned by this bridge. This supports
+        durable workflow checkpoint deadlines without allowing callers to widen
+        data placement, egress, risk, task type, tools, or model authority.
+        """
+        if contract is None:
+            contract = self.compiler.compile(
+                task_id=task_id,
+                task_type="analysis",
+                sensitivity=self.sensitivity,
+                risk_level="low",
+                public_web=self.public_web,
+                output_schema=PRESENTATION_PLAN_SCHEMA_V1,
+            )
+        else:
+            contract.validate()
+            if contract.task_id != task_id:
+                raise RuntimeValidationError("TASK_CONTRACT_TASK_MISMATCH")
+            if contract.task_type != "analysis" or contract.risk_level != "low":
+                raise RuntimeValidationError("TASK_CONTRACT_AUTHORITY_EXPANSION_DENIED")
+            if contract.sensitivity != self.sensitivity:
+                raise RuntimeValidationError("TASK_CONTRACT_SENSITIVITY_MISMATCH")
+            if (
+                contract.network_scope == "allowlisted_egress"
+                or "web_gateway" in contract.allowed_tools
+            ) and not self.public_web:
+                raise RuntimeValidationError("TASK_CONTRACT_EGRESS_MISMATCH")
+
         try:
             digest = self.ledger.bind_contract(contract)
         except Exception as exc:
