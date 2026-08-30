@@ -1,0 +1,37 @@
+{
+  "schema_version": "workspace-benchmark-taskset/v1",
+  "task_set_id": "workspace-d502a-exact-dedupe-v1",
+  "tasks": [
+    {
+      "case_id": "exact-mirror-correctness",
+      "title": "D5-02a exact mirror correctness boundary",
+      "request": "Using only the attached documents, explain the exact-body duplicate suppression rule, why two byte-identical mirror sources must not count as independent corroboration, and which fail-closed conditions prevent a truncated or skipped source from suppressing later evidence. Preserve the distinction between source provenance and synthesis citation authority. Do not use web research or outside knowledge.",
+      "fixtures": [
+        "benchmarks/fixtures/d502a_exact_mirror_a.md",
+        "benchmarks/fixtures/d502a_exact_mirror_b.md",
+        "docs/D5_EXACT_BODY_DEDUPE.md",
+        "docs/D5_HARD_EVIDENCE_PACKING.md"
+      ],
+      "audience": "WorkSpace architecture review",
+      "purpose": "verify correctness boundary",
+      "language": "en",
+      "slide_count": 6
+    },
+    {
+      "case_id": "exact-mirror-promotion",
+      "title": "D5-02a measured promotion decision",
+      "request": "Using only the attached documents, explain how WorkSpace should decide whether exact-body duplicate suppression may become a production default. Connect the duplicate-body rule to Verified Task Success, First-Pass Verified Success, verified task count, Evidence Coverage, required validators, token efficiency, benchmark lineage, and the rule that a verified NO-GO is a valid engineering outcome. Do not use web research or outside knowledge.",
+      "fixtures": [
+        "benchmarks/fixtures/d502a_exact_mirror_a.md",
+        "benchmarks/fixtures/d502a_exact_mirror_b.md",
+        "docs/D5_EXACT_BODY_DEDUPE.md",
+        "docs/D3_METRICS.md",
+        "docs/BENCHMARK_ISOLATION.md"
+      ],
+      "audience": "WorkSpace optimization review",
+      "purpose": "evaluate promotion readiness",
+      "language": "en",
+      "slide_count": 6
+    }
+  ]
+}

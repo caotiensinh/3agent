@@ -25,6 +25,7 @@ _ENV_KEYS = (
     "WORKSPACE_RESOURCE_TELEMETRY",
     "WORKSPACE_EVIDENCE_PACKING_MODE",
     "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS",
+    "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE",
 )
 _ENV_LOCK = threading.Lock()
 
@@ -34,6 +35,7 @@ class BenchmarkVariantSpec:
     label: str
     evidence_packing_mode: str = LEGACY_PACKING_MODE
     synthesis_context_budget_chars: int = DEFAULT_SYNTHESIS_CONTEXT_BUDGET_CHARS
+    exact_body_dedupe: bool = False
 
     def validate(self) -> "BenchmarkVariantSpec":
         label = str(self.label or "").strip()
@@ -41,11 +43,16 @@ class BenchmarkVariantSpec:
             raise ValueError(
                 "benchmark variant label must be 1-80 characters using letters, digits, '.', '_' or '-'"
             )
+        if not isinstance(self.exact_body_dedupe, bool):
+            raise ValueError("benchmark exact_body_dedupe must be boolean")
         policy = resolve_evidence_packing_policy(
             {
                 "WORKSPACE_EVIDENCE_PACKING_MODE": str(self.evidence_packing_mode),
                 "WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS": str(
                     self.synthesis_context_budget_chars
+                ),
+                "WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE": (
+                    "true" if self.exact_body_dedupe else "false"
                 ),
             }
         )
@@ -53,6 +60,7 @@ class BenchmarkVariantSpec:
             label=label,
             evidence_packing_mode=policy.mode,
             synthesis_context_budget_chars=policy.budget_chars,
+            exact_body_dedupe=policy.exact_body_dedupe,
         )
 
     def policy(self) -> EvidencePackingPolicy:
@@ -60,6 +68,7 @@ class BenchmarkVariantSpec:
         return EvidencePackingPolicy(
             mode=validated.evidence_packing_mode,
             budget_chars=validated.synthesis_context_budget_chars,
+            exact_body_dedupe=validated.exact_body_dedupe,
         )
 
 
@@ -211,6 +220,9 @@ class BenchmarkIsolation:
             )
             os.environ["WORKSPACE_SYNTHESIS_CONTEXT_BUDGET_CHARS"] = str(
                 prepared.spec.synthesis_context_budget_chars
+            )
+            os.environ["WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE"] = (
+                "true" if prepared.spec.exact_body_dedupe else "false"
             )
             yield prepared
         finally:

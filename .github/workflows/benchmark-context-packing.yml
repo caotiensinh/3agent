@@ -15,14 +15,6 @@ on:
         description: 'Preinstalled local Ollama model used for every benchmark role'
         required: true
         default: 'qwen3:30b'
-      exact_body_dedupe:
-        description: 'D5-02a exact-body duplicate suppression candidate'
-        required: true
-        type: choice
-        default: 'false'
-        options:
-          - 'false'
-          - 'true'
 
 permissions:
   contents: read
@@ -45,7 +37,6 @@ jobs:
       WORKSPACE_DEEP_MODEL: ${{ inputs.model }}
       WORKSPACE_MODEL_KEEP_ALIVE: 20m
       WORKSPACE_SERIALIZE_GENERATION: 'true'
-      WORKSPACE_EVIDENCE_EXACT_BODY_DEDUPE: ${{ inputs.exact_body_dedupe }}
     steps:
       - name: Checkout exact benchmark source
         uses: actions/checkout@v4
@@ -133,7 +124,7 @@ jobs:
       - name: Publish metadata-only benchmark evidence
         uses: actions/upload-artifact@v4
         with:
-          name: context-packing-benchmark-${{ inputs.source_ref }}-dedupe-${{ inputs.exact_body_dedupe }}
+          name: context-packing-benchmark-${{ inputs.source_ref }}
           if-no-files-found: error
           retention-days: 14
           path: |
