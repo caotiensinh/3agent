@@ -59,7 +59,9 @@ class HourlyRunnerTests(unittest.TestCase):
 
             runner = HourlyMonitoringRunner(
                 store=store,
-                policy=MonitoringPolicy(profile_id="rnd", max_workers=2, max_retries=1),
+                policy=MonitoringPolicy(
+                    profile_id="rnd", max_workers=2, max_retries=1, allow_active_liveness=True
+                ),
                 execute_work_item=execute,
             )
             receipt = runner.run(scheduled_at="2020-01-01T00:05:00+09:00")
@@ -70,7 +72,6 @@ class HourlyRunnerTests(unittest.TestCase):
             self.assertEqual(len(calls), 3)
             self.assertEqual(store.count("hourly_runs"), 1)
             self.assertEqual(store.count("observations"), 3)
-            # Measurements use real execution time, never the historical scheduled timestamp.
             self.assertTrue(all(call[3] != receipt.scheduled_at for call in calls))
 
     def test_retry_is_bounded_to_one_and_recorded(self):
@@ -109,7 +110,7 @@ class HourlyRunnerTests(unittest.TestCase):
 
             receipt = HourlyMonitoringRunner(
                 store=store,
-                policy=MonitoringPolicy(max_retries=1),
+                policy=MonitoringPolicy(max_retries=1, allow_active_liveness=True),
                 execute_work_item=execute,
             ).run(scheduled_at="2026-08-30T21:05:00+09:00")
             self.assertEqual(count, 2)
@@ -140,7 +141,7 @@ class HourlyRunnerTests(unittest.TestCase):
 
             receipt = HourlyMonitoringRunner(
                 store=store,
-                policy=MonitoringPolicy(max_retries=0),
+                policy=MonitoringPolicy(max_retries=0, allow_active_liveness=True),
                 execute_work_item=execute,
             ).run(scheduled_at="2026-08-30T21:05:00+09:00")
             self.assertEqual(receipt.status, "partial")
@@ -203,7 +204,7 @@ class HourlyRunnerTests(unittest.TestCase):
 
             HourlyMonitoringRunner(
                 store=store,
-                policy=MonitoringPolicy(max_workers=2, max_retries=0),
+                policy=MonitoringPolicy(max_workers=2, max_retries=0, allow_active_liveness=True),
                 execute_work_item=execute,
             ).run(scheduled_at="2026-08-30T21:05:00+09:00")
             self.assertLessEqual(state["max"], 2)
