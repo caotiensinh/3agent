@@ -102,6 +102,12 @@ See `docs/WORKSPACE_DESIGN_PRINCIPLES.md`.
 
 This uses `/var/lib/workspace-public`, disables the execution gateway, and enables only brokered public research. It is never a substitute for the confidential config.
 
+### Lean profile — dual RTX 5090 + 32GB system RAM
+
+`config/workspace.lean-dual5090-32gb.json`
+
+Same security posture and model pool as Confidential Core; only the RAM/VRAM budget and worker-pool wiring are tuned for a host where GPU VRAM is abundant (2× RTX 5090) but system RAM is comparatively scarce (32GB). See `docs/WORKSPACE_LEAN_DUAL_5090_32GB_PROFILE.md` for the reasoning and `scripts/measure_ram_baseline.sh` to validate the effect on the real machine.
+
 ## CLI
 
 Primary commands:
