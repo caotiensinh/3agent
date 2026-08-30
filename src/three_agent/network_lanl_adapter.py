@@ -13,6 +13,7 @@ from .network_corpus_adapter import (
     NetworkAdapterIntegrityError,
     inspect_staged_source,
 )
+from .network_lanl_family import validate_lanl_source_family_ref
 
 LANL_DATASET_ID = "lanl-comprehensive"
 LANL_VARIANT = "events"
@@ -160,6 +161,7 @@ class LANLAuthAdapter:
             raise LANLAdapterSchemaError(
                 "adapter version in input contract does not match runtime adapter"
             )
+        validate_lanl_source_family_ref(contract.source_object_ref, self.source_family)
 
     def inspect(
         self,
