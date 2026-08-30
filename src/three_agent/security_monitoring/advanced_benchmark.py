@@ -145,7 +145,7 @@ def _baseline_state_bytes(case: BaselineBenchmarkCase) -> int:
     baseline = robust_baseline(case.history, min_samples=5)
     payload = {
         "median": baseline.median_value,
-        "mad": baseline.mad_value,
+        "mad": baseline.mad,
         "samples": baseline.sample_count,
         "version": baseline.version,
     }
@@ -205,6 +205,7 @@ def _profile_detector(
     cpu_started = time.process_time()
     tp = fp = tn = fn = 0
     stored = 0
+    peak = 0
     try:
         for case in cases:
             predicted = bool(predict(case))
