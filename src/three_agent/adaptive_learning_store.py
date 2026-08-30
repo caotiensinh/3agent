@@ -25,6 +25,8 @@ STORE_SCHEMA = "workspace-adaptive-learning-store/v1"
 LEDGER_SCHEMA = "workspace-adaptive-learning-ledger/v1"
 GENESIS_HASH = "sha256:" + "0" * 64
 ACTIVE_LEVELS = {"approved", "enterprise"}
+_LEVELS = {"candidate", "validated", "approved", "enterprise"}
+_DISPOSITIONS = {"staged", "active_snapshot"}
 _ALLOWED_EVENTS = {"stage", "validate", "activate", "enterprise", "archive", "rollback"}
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -196,10 +198,41 @@ class AdaptiveLearningStore:
         value = candidate.target_item_id if candidate.action != "create" else candidate.candidate_id
         return _compact_id(value, "item_id")
 
-    @staticmethod
-    def _candidate_from_row(row: sqlite3.Row) -> KnowledgeCandidate:
-        payload = json.loads(str(row["candidate_json"]))
-        return KnowledgeCandidate.from_payload(payload)
+    def _candidate_from_row(self, row: sqlite3.Row) -> KnowledgeCandidate:
+        """Recompute every immutable snapshot identity before trusting it."""
+        try:
+            payload = json.loads(str(row["candidate_json"]))
+            candidate = KnowledgeCandidate.from_payload(payload)
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
+            raise AdaptiveLearningStoreError(
+                "LEARNING_VERSION_INTEGRITY_FAILED:CANDIDATE_JSON_INVALID"
+            ) from exc
+
+        row_candidate_id = str(row["candidate_id"])
+        row_candidate_sha = str(row["candidate_sha256"])
+        row_item_id = str(row["item_id"])
+        row_knowledge_sha = str(row["knowledge_sha256"])
+        expected_item_id = self._item_id(candidate)
+        expected_knowledge_sha = _digest(_knowledge_payload(expected_item_id, candidate))
+
+        failures: list[str] = []
+        if candidate.candidate_id != row_candidate_id:
+            failures.append("CANDIDATE_ID_MISMATCH")
+        if candidate.sha256 != row_candidate_sha:
+            failures.append("CANDIDATE_SHA_MISMATCH")
+        if expected_item_id != row_item_id:
+            failures.append("ITEM_ID_MISMATCH")
+        if expected_knowledge_sha != row_knowledge_sha:
+            failures.append("KNOWLEDGE_SHA_MISMATCH")
+        if str(row["level"]) not in _LEVELS:
+            failures.append("LEVEL_INVALID")
+        if str(row["disposition"]) not in _DISPOSITIONS:
+            failures.append("DISPOSITION_INVALID")
+        if failures:
+            raise AdaptiveLearningStoreError(
+                "LEARNING_VERSION_INTEGRITY_FAILED:" + ",".join(failures)
+            )
+        return candidate
 
     def _active_row(self, conn: sqlite3.Connection, item_id: str) -> sqlite3.Row | None:
         event = conn.execute(
@@ -212,8 +245,9 @@ class AdaptiveLearningStore:
         ).fetchone()
         if event is None or str(event["event_type"]) == "archive" or event["after_sha256"] is None:
             return None
+
         candidate_id = str(event["candidate_id"] or "")
-        return conn.execute(
+        row = conn.execute(
             """
             SELECT * FROM learning_versions
             WHERE item_id=? AND candidate_id=? AND knowledge_sha256=?
@@ -222,11 +256,28 @@ class AdaptiveLearningStore:
             """,
             (item_id, candidate_id, str(event["after_sha256"])),
         ).fetchone()
+        if row is None:
+            raise AdaptiveLearningStoreError(
+                "LEARNING_VERSION_INTEGRITY_FAILED:ACTIVE_SNAPSHOT_MISSING"
+            )
+        self._candidate_from_row(row)
+        event_failures: list[str] = []
+        if str(event["candidate_sha256"] or "") != str(row["candidate_sha256"]):
+            event_failures.append("LEDGER_CANDIDATE_SHA_MISMATCH")
+        if str(event["knowledge_sha256"] or "") != str(row["knowledge_sha256"]):
+            event_failures.append("LEDGER_KNOWLEDGE_SHA_MISMATCH")
+        if str(event["after_sha256"] or "") != str(row["knowledge_sha256"]):
+            event_failures.append("LEDGER_AFTER_SHA_MISMATCH")
+        if event_failures:
+            raise AdaptiveLearningStoreError(
+                "LEARNING_VERSION_INTEGRITY_FAILED:" + ",".join(event_failures)
+            )
+        return row
 
     def _candidate_level_row(
         self, conn: sqlite3.Connection, candidate_id: str
     ) -> sqlite3.Row | None:
-        return conn.execute(
+        row = conn.execute(
             """
             SELECT * FROM learning_versions
             WHERE candidate_id=?
@@ -234,6 +285,9 @@ class AdaptiveLearningStore:
             """,
             (candidate_id,),
         ).fetchone()
+        if row is not None:
+            self._candidate_from_row(row)
+        return row
 
     def _append_ledger(
         self,
@@ -328,9 +382,7 @@ class AdaptiveLearningStore:
                 item["source_experience_hashes"] = json.loads(
                     str(item.pop("source_experience_hashes_json"))
                 )
-                item["evidence_hashes"] = json.loads(
-                    str(item.pop("evidence_hashes_json"))
-                )
+                item["evidence_hashes"] = json.loads(str(item.pop("evidence_hashes_json")))
             except (json.JSONDecodeError, TypeError):
                 item["source_experience_hashes"] = []
                 item["evidence_hashes"] = []
@@ -417,10 +469,8 @@ class AdaptiveLearningStore:
                 (candidate.candidate_id,),
             ).fetchone()
             if existing is not None:
-                if (
-                    str(existing["candidate_sha256"]) != candidate.sha256
-                    or str(existing["item_id"]) != item_id
-                ):
+                existing_candidate = self._candidate_from_row(existing)
+                if existing_candidate.sha256 != candidate.sha256 or str(existing["item_id"]) != item_id:
                     raise AdaptiveLearningStoreError("candidate_id is immutable")
                 return dict(existing)
             active = self._active_row(conn, item_id)
@@ -465,6 +515,7 @@ class AdaptiveLearningStore:
                 "SELECT * FROM learning_versions WHERE version_id=?",
                 (cursor.lastrowid,),
             ).fetchone()
+            self._candidate_from_row(row)
             return dict(row)
 
     def promote(
@@ -494,6 +545,7 @@ class AdaptiveLearningStore:
                 (candidate_id, target_level),
             ).fetchone()
             if existing is not None:
+                self._candidate_from_row(existing)
                 if str(existing["validation_receipt_sha256"] or "") != receipt_hash:
                     raise AdaptiveLearningStoreError("promotion receipt is immutable")
                 return dict(existing)
@@ -559,6 +611,7 @@ class AdaptiveLearningStore:
                 "SELECT * FROM learning_versions WHERE version_id=?",
                 (new_version_id,),
             ).fetchone()
+            self._candidate_from_row(row)
             return dict(row)
 
     def active(self, item_id: str) -> dict[str, Any] | None:
@@ -568,8 +621,9 @@ class AdaptiveLearningStore:
             row = self._active_row(conn, item_id)
             if row is None:
                 return None
+            candidate = self._candidate_from_row(row)
             result = dict(row)
-            result["candidate"] = json.loads(str(row["candidate_json"]))
+            result["candidate"] = candidate.to_payload()
             return result
 
     def archive(
@@ -656,7 +710,7 @@ class AdaptiveLearningStore:
                 timestamp=now,
             )
             result = dict(target_row)
-            result["candidate"] = json.loads(str(target_row["candidate_json"]))
+            result["candidate"] = candidate.to_payload()
             return result
 
     def ledger(self) -> list[dict[str, Any]]:
