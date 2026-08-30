@@ -16,11 +16,11 @@ html = _replace_once(
     "hide-session-language-selector",
 )
 
-# Match the compact one-plus-menu interaction expected by users. Integrations are
-# visible discovery points but remain fail-closed unless the local capability
-# registry explicitly enables them. Bind to the exact v12 GitHub row and add the
-# menuitem role while inserting the new discovery rows.
-figma_canva = r'''
+# Keep connector discovery rows together at the existing integration boundary.
+# They remain fail-closed unless the local capability registry explicitly enables
+# them. Binding all new rows to the exact v12 GitHub row reduces patch-chain drift
+# and avoids inserting Gmail into the unrelated workflow-options section.
+connector_rows = r'''
       <button class="menu-row" type="button" data-action="figma" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">F</span>
         <span><span class="menu-title">Figma</span><span class="menu-sub">Design-to-code workflows</span></span><span class="menu-state">Connect</span>
@@ -29,15 +29,6 @@ figma_canva = r'''
         <span class="menu-icon blue">C</span>
         <span><span class="menu-title">Canva</span><span class="menu-sub">Create, review, and edit designs</span></span><span class="menu-state">Connect</span>
       </button>
-'''
-html = _replace_once(
-    html,
-    '      <button class="menu-row" type="button" data-action="github">',
-    figma_canva + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
-    "integration-menu-before-github",
-)
-
-gmail = r'''
       <button class="menu-row" type="button" data-action="gmail" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">M</span>
         <span><span class="menu-title">Gmail</span><span class="menu-sub">Read and manage Gmail</span></span><span class="menu-state">Connect</span>
@@ -45,9 +36,9 @@ gmail = r'''
 '''
 html = _replace_once(
     html,
-    '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    gmail + '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    "integration-menu-gmail",
+    '      <button class="menu-row" type="button" data-action="github">',
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    "integration-menu-before-github",
 )
 
 # Preserve the existing capability lookup path. Connector discovery is display
