@@ -1,0 +1,157 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from three_agent.network_dataset_policy import (
+    CacheEntry,
+    NetworkDatasetDenied,
+    NetworkDatasetManager,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def manager() -> NetworkDatasetManager:
+    return NetworkDatasetManager.load(
+        policy_path=ROOT / "config/network-data-policy.json",
+        registry_path=ROOT / "config/network-datasets.registry.json",
+    )
+
+
+def test_enterprise_dataset_allowed_for_training():
+    plan = manager().plan(
+        "cse-cic-ids2018",
+        purpose="training",
+        variant="processed-ml",
+        estimated_bytes=1024 * 1024,
+        object_count=1,
+    )
+    assert plan.destination_class == "approved"
+    assert plan.variant == "processed-ml"
+    assert plan.allowlisted_hosts
+
+
+def test_research_only_dataset_denied_for_enterprise_training():
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        manager().plan(
+            "mawi",
+            purpose="training",
+            estimated_bytes=1024,
+        )
+    assert caught.value.reason_code == "ENTERPRISE_USE_NOT_ALLOWED"
+
+
+def test_research_only_dataset_stays_in_research_store():
+    plan = manager().plan(
+        "mawi",
+        purpose="research",
+        variant="sampled",
+        estimated_bytes=1024,
+    )
+    assert plan.destination_class == "research"
+
+
+def test_review_required_fails_closed():
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        manager().plan(
+            "ugr16",
+            purpose="research",
+            estimated_bytes=1024,
+        )
+    assert caught.value.reason_code == "DATASET_STATUS_DENIED"
+
+
+def test_full_sync_is_denied():
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        manager().plan(
+            "cse-cic-ids2018",
+            purpose="training",
+            estimated_bytes=1024,
+            full_sync=True,
+        )
+    assert caught.value.reason_code == "FULL_SYNC_DENIED"
+
+
+def test_per_job_byte_budget_is_enforced():
+    mgr = manager()
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        mgr.plan(
+            "cse-cic-ids2018",
+            purpose="training",
+            estimated_bytes=mgr.policy.max_job_bytes + 1,
+        )
+    assert caught.value.reason_code == "JOB_BYTE_BUDGET_EXCEEDED"
+
+
+def test_object_budget_is_enforced():
+    mgr = manager()
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        mgr.plan(
+            "splunk-bots-v2",
+            purpose="evaluation",
+            estimated_bytes=1024,
+            object_count=mgr.policy.max_objects_per_job + 1,
+        )
+    assert caught.value.reason_code == "OBJECT_BUDGET_EXCEEDED"
+
+
+def test_lru_eviction_never_selects_pinned_or_active():
+    mgr = manager()
+    one_third = mgr.policy.max_cache_bytes // 3
+    entries = [
+        CacheEntry("old", one_third, 1.0),
+        CacheEntry("pinned", one_third, 0.0, pinned=True),
+        CacheEntry("active", one_third, 0.5, active=True),
+    ]
+    selected = mgr.plan_evictions(entries, incoming_bytes=one_third)
+    assert selected == ("old",)
+
+
+def test_eviction_fails_when_only_protected_data_can_make_room():
+    mgr = manager()
+    entries = [
+        CacheEntry(
+            "pinned",
+            mgr.policy.max_cache_bytes,
+            0.0,
+            pinned=True,
+        )
+    ]
+    with pytest.raises(NetworkDatasetDenied) as caught:
+        mgr.plan_evictions(entries, incoming_bytes=1)
+    assert caught.value.reason_code == "CACHE_EVICTION_INSUFFICIENT"
+
+
+def test_plan_contains_stable_registry_and_policy_fingerprints():
+    plan = manager().plan(
+        "splunk-bots-v2",
+        purpose="evaluation",
+        variant="attack-only",
+        estimated_bytes=4096,
+    )
+    assert plan.registry_fingerprint.startswith("sha256:")
+    assert plan.policy_fingerprint.startswith("sha256:")
+
+
+def test_provenance_template_binds_license_and_policy():
+    mgr = manager()
+    plan = mgr.plan(
+        "lanl-comprehensive",
+        purpose="training",
+        estimated_bytes=1024,
+    )
+    provenance = mgr.provenance_template(
+        plan,
+        source_object="flows.txt.gz",
+        source_sha256="sha256:" + ("a" * 64),
+        source_size_bytes=1024,
+        fetched_at="2026-08-30T00:00:00Z",
+        parser_version="network-normalizer/0.1",
+        schema_version="workspace-network-event/v1",
+    )
+    assert provenance["dataset_id"] == "lanl-comprehensive"
+    assert provenance["license_source"].startswith("https://")
+    assert provenance["registry_fingerprint"] == mgr.registry_fingerprint
