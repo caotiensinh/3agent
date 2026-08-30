@@ -10,7 +10,10 @@ POLICY_SCHEMA = "workspace-network-data-policy/v1"
 REGISTRY_SCHEMA = "workspace-network-dataset-registry/v1"
 PLAN_SCHEMA = "workspace-network-acquisition-plan/v1"
 
-PURPOSES = {"training", "evaluation", "research"}
+# Public datasets are source evidence. The primary enterprise purpose is to
+# distill evidence-backed operational experience, not to retain raw logs.
+PURPOSES = {"experience_extraction", "training", "evaluation", "research"}
+ENTERPRISE_PURPOSES = {"experience_extraction", "training", "evaluation"}
 STATUSES = {"enterprise_approved", "research_only", "review_required", "blocked"}
 
 
@@ -167,17 +170,21 @@ class DataPlanePolicy:
     research_allowed_statuses: tuple[str, ...]
     deny_statuses: tuple[str, ...]
     incoming_cache_root: Path
-    approved_root: Path
+    normalized_staging_root: Path
+    experience_root: Path
+    candidate_skill_root: Path
     research_root: Path
     provenance_root: Path
+    raw_logs_durable: bool
+    normalized_events_durable: bool
+    candidate_skills_auto_approve: bool
+    minimum_independent_cases_for_pattern: int
     raw: dict[str, Any]
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "DataPlanePolicy":
         if value.get("schema_version") != POLICY_SCHEMA:
-            raise NetworkDatasetPolicyError(
-                f"policy schema must be {POLICY_SCHEMA}"
-            )
+            raise NetworkDatasetPolicyError(f"policy schema must be {POLICY_SCHEMA}")
         paths = value.get("paths")
         cache = value.get("cache")
         promotion = value.get("promotion")
@@ -186,8 +193,10 @@ class DataPlanePolicy:
                 "policy paths/cache/promotion sections must be objects"
             )
         if cache.get("raw_retention") != "ephemeral":
+            raise NetworkDatasetPolicyError("v1 requires cache.raw_retention=ephemeral")
+        if cache.get("normalized_retention") != "until_experience_extracted":
             raise NetworkDatasetPolicyError(
-                "v1 requires cache.raw_retention=ephemeral"
+                "v1 requires cache.normalized_retention=until_experience_extracted"
             )
         if cache.get("eviction_policy") != "lru_unpinned":
             raise NetworkDatasetPolicyError(
@@ -196,6 +205,24 @@ class DataPlanePolicy:
         if promotion.get("required_digest") != "sha256":
             raise NetworkDatasetPolicyError(
                 "v1 requires promotion.required_digest=sha256"
+            )
+        if promotion.get("raw_logs_durable") is not False:
+            raise NetworkDatasetPolicyError(
+                "v1 forbids durable raw logs; promotion.raw_logs_durable must be false"
+            )
+        if promotion.get("normalized_events_durable") is not False:
+            raise NetworkDatasetPolicyError(
+                "v1 forbids normalized event retention after experience extraction"
+            )
+        if promotion.get("candidate_skills_auto_approve") is not False:
+            raise NetworkDatasetPolicyError(
+                "dataset-derived skills must remain candidates until independent review"
+            )
+        durable_outputs = set(map(str, promotion.get("durable_outputs", [])))
+        required_outputs = {"experience_case", "evidence_pattern", "provenance"}
+        if not required_outputs.issubset(durable_outputs):
+            raise NetworkDatasetPolicyError(
+                "promotion.durable_outputs must include experience_case, evidence_pattern and provenance"
             )
 
         def statuses(field: str) -> tuple[str, ...]:
@@ -213,7 +240,9 @@ class DataPlanePolicy:
         parsed_paths: dict[str, Path] = {}
         for field in (
             "incoming_cache_root",
-            "approved_root",
+            "normalized_staging_root",
+            "experience_root",
+            "candidate_skill_root",
             "research_root",
             "provenance_root",
         ):
@@ -225,9 +254,7 @@ class DataPlanePolicy:
 
         return cls(
             max_cache_bytes=_positive_int(cache.get("max_bytes"), "cache.max_bytes"),
-            max_job_bytes=_positive_int(
-                cache.get("max_job_bytes"), "cache.max_job_bytes"
-            ),
+            max_job_bytes=_positive_int(cache.get("max_job_bytes"), "cache.max_job_bytes"),
             max_objects_per_job=_positive_int(
                 cache.get("max_objects_per_job"), "cache.max_objects_per_job"
             ),
@@ -236,9 +263,21 @@ class DataPlanePolicy:
             research_allowed_statuses=statuses("research_allowed_statuses"),
             deny_statuses=statuses("deny_statuses"),
             incoming_cache_root=parsed_paths["incoming_cache_root"],
-            approved_root=parsed_paths["approved_root"],
+            normalized_staging_root=parsed_paths["normalized_staging_root"],
+            experience_root=parsed_paths["experience_root"],
+            candidate_skill_root=parsed_paths["candidate_skill_root"],
             research_root=parsed_paths["research_root"],
             provenance_root=parsed_paths["provenance_root"],
+            raw_logs_durable=False,
+            normalized_events_durable=False,
+            candidate_skills_auto_approve=False,
+            minimum_independent_cases_for_pattern=max(
+                2,
+                _positive_int(
+                    promotion.get("minimum_independent_cases_for_pattern", 2),
+                    "promotion.minimum_independent_cases_for_pattern",
+                ),
+            ),
             raw=dict(value),
         )
 
@@ -289,10 +328,11 @@ class CacheEntry:
 
 
 class NetworkDatasetManager:
-    """Deterministic network-dataset admission and storage-budget control plane.
+    """Deterministic dataset admission and bounded temporary-storage control plane.
 
-    This class performs no network I/O. A future fetch worker must execute only
-    an AcquisitionPlan produced here and must remain in a separate OS trust zone.
+    This class performs no network I/O. Public bytes are acquired only as source
+    evidence. Raw and normalized logs are staging material; durable enterprise
+    outputs are compact evidence-backed experience artifacts produced later.
     """
 
     def __init__(
@@ -333,9 +373,7 @@ class NetworkDatasetManager:
                 )
             record = DatasetRecord.from_dict(value)
             if record.dataset_id in records:
-                raise NetworkDatasetPolicyError(
-                    f"duplicate dataset id {record.dataset_id}"
-                )
+                raise NetworkDatasetPolicyError(f"duplicate dataset id {record.dataset_id}")
             records[record.dataset_id] = record
 
         return cls(
@@ -353,7 +391,8 @@ class NetworkDatasetManager:
             return self.datasets[dataset_id]
         except KeyError as exc:
             raise NetworkDatasetDenied(
-                "DATASET_UNKNOWN", f"dataset {dataset_id!r} is not in the reviewed registry"
+                "DATASET_UNKNOWN",
+                f"dataset {dataset_id!r} is not in the reviewed registry",
             ) from exc
 
     def plan(
@@ -381,7 +420,7 @@ class NetworkDatasetManager:
                 f"{record.dataset_id} is {record.status}; operator review is required",
             )
 
-        if purpose in {"training", "evaluation"}:
+        if purpose in ENTERPRISE_PURPOSES:
             if record.status not in self.policy.enterprise_allowed_statuses:
                 raise NetworkDatasetDenied(
                     "ENTERPRISE_USE_NOT_ALLOWED",
@@ -392,16 +431,18 @@ class NetworkDatasetManager:
                     "COMMERCIAL_LICENSE_NOT_APPROVED",
                     f"{record.dataset_id} does not have an affirmative commercial-use decision",
                 )
-            destination_class = "approved"
+            destination_class = {
+                "experience_extraction": "experience_staging",
+                "training": "training_staging",
+                "evaluation": "evaluation_staging",
+            }[purpose]
         else:
             if record.status not in self.policy.research_allowed_statuses:
                 raise NetworkDatasetDenied(
                     "RESEARCH_USE_NOT_ALLOWED",
                     f"{record.dataset_id} status {record.status} is not allowed for research",
                 )
-            destination_class = (
-                "approved" if record.status == "enterprise_approved" else "research"
-            )
+            destination_class = "research"
 
         if full_sync and not self.policy.allow_full_sync:
             raise NetworkDatasetDenied(
@@ -535,17 +576,11 @@ class NetworkDatasetManager:
             "purpose": plan.purpose,
             "variant": plan.variant,
             "destination_class": plan.destination_class,
-            "source_object": _bounded_string(
-                source_object, "source_object", max_len=1024
-            ),
+            "source_object": _bounded_string(source_object, "source_object", max_len=1024),
             "source_sha256": source_sha256,
-            "source_size_bytes": _positive_int(
-                source_size_bytes, "source_size_bytes"
-            ),
+            "source_size_bytes": _positive_int(source_size_bytes, "source_size_bytes"),
             "fetched_at": _bounded_string(fetched_at, "fetched_at", max_len=80),
-            "parser_version": _bounded_string(
-                parser_version, "parser_version", max_len=128
-            ),
+            "parser_version": _bounded_string(parser_version, "parser_version", max_len=128),
             "normalized_schema_version": _bounded_string(
                 schema_version, "schema_version", max_len=128
             ),
@@ -553,4 +588,6 @@ class NetworkDatasetManager:
             "policy_fingerprint": self.policy_fingerprint,
             "license_source": record.license_source,
             "license_status": record.status,
+            "raw_retention": "ephemeral",
+            "normalized_retention": "until_experience_extracted",
         }
