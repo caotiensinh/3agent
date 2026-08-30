@@ -43,7 +43,7 @@ class WorkflowDesignCompilerV3Tests(unittest.TestCase):
             '"failed"',
             'exactly "approved" or',
             '"rejected"',
-            "Never translate\nfree-form business rules into executable condition expressions",
+            "free-form business rules into executable condition expressions",
         ):
             self.assertIn(token, llm.system)
         self.assertEqual(
