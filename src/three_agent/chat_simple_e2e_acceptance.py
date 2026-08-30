@@ -4,22 +4,34 @@ import argparse
 import importlib.metadata
 import json
 import os
+import secrets
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
+from http.cookiejar import CookieJar
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Sequence
+from urllib.error import HTTPError
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from .chat_acceptance import assert_local_model_endpoints
 from .chat_fidelity import response_language_matches
-from .chat_multiturn_acceptance import NoopStore, _sha256, _wait, isolated_config
+from .chat_gateway_v17 import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler
+from .chat_multiturn_acceptance import _sha256, _wait, isolated_config
 from .chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
 from .chat_service_fidelity_v2 import ContractAwareProjectChatService
 from .config import AppConfig, load_config
 from .orchestrator import Orchestrator
+from .workspace_external_identity import (
+    ExternalAuthSettings,
+    ExternalIdentityStore,
+    ExternalSessionAuthStore,
+)
 from .workspace_frontend_v12 import WORKSPACE_HTML_V12
 
-SCHEMA_VERSION = "workspace-simple-chat-e2e/v1"
+SCHEMA_VERSION = "workspace-simple-chat-e2e/v2"
 FORBIDDEN_WORKFLOW_STAGES = frozenset({"research", "presentation", "daily_report"})
 
 
@@ -50,11 +62,15 @@ CASES: tuple[SimpleChatCase, ...] = (
 
 
 def frontend_contract_errors(html: str = WORKSPACE_HTML_V12) -> tuple[str, ...]:
-    """Verify that the shipped UI keeps ordinary source chat on the direct-chat UX."""
+    """Verify the shipped browser request and ordinary-chat rendering contract."""
 
     checks = (
         ("requestMode:'chat'", "frontend_default_mode_not_chat"),
         ('<select id="fmt"><option value="source">', "frontend_default_output_not_source"),
+        ("api('/api/chat'", "frontend_chat_endpoint_missing"),
+        ("mode:state.requestMode", "frontend_request_mode_missing"),
+        ("poll(d.job_id", "frontend_job_poll_missing"),
+        ("api('/api/jobs/'+id)", "frontend_job_endpoint_missing"),
         (
             "const directUi=state.requestMode==='chat'&&document.getElementById('fmt').value==='source'",
             "frontend_direct_chat_route_marker_missing",
@@ -80,25 +96,103 @@ def validation_errors(cases: Sequence[SimpleChatCase] = CASES) -> tuple[str, ...
 
 
 def _stage_ids(job: Any) -> tuple[str, ...]:
+    stages = job.get("stages", []) if isinstance(job, dict) else getattr(job, "stages", None) or []
     return tuple(
         str(item.get("id") or "").strip()
-        for item in (getattr(job, "stages", None) or [])
+        for item in stages
         if isinstance(item, dict) and str(item.get("id") or "").strip()
     )
+
+
+def _job_value(job: Any, key: str, default: Any = "") -> Any:
+    if isinstance(job, dict):
+        return job.get(key, default)
+    return getattr(job, key, default)
 
 
 def _safe_failure_code(job: Any, calls: Sequence[Any]) -> str:
     failed = [call for call in calls if not bool(getattr(call, "succeeded", False))]
     if failed:
         return str(getattr(failed[-1], "failure_code", "") or "runtime_error")[:80]
-    if str(getattr(job, "status", "")) == "failed":
-        text = str(getattr(job, "error", "") or "")
+    if str(_job_value(job, "status")) == "failed":
+        text = str(_job_value(job, "error") or "")
         if "ResourceAdmissionError" in text or "resource admission" in text.lower():
             return "resource_admission"
         if "response rejected" in text.lower() or "response validation" in text.lower():
             return "response_validation"
         return "job_failed"
     return ""
+
+
+def _evaluate_result(
+    case: SimpleChatCase,
+    initial_job: Any,
+    final_job: Any,
+    calls: Sequence[Any],
+    *,
+    transport: str,
+    http_submit_status: int = 0,
+    http_poll_status: int = 0,
+) -> dict[str, Any]:
+    initial_stage_ids = _stage_ids(initial_job)
+    final_stage_ids = _stage_ids(final_job)
+    answer = str(_job_value(final_job, "answer") or "").strip()
+    actual_language = str(_job_value(final_job, "language") or "")
+    status = str(_job_value(final_job, "status") or "")
+    failures: list[str] = []
+
+    if http_submit_status and http_submit_status != 202:
+        failures.append(f"http:submit_status_{http_submit_status}")
+    if http_poll_status and http_poll_status != 200:
+        failures.append(f"http:poll_status_{http_poll_status}")
+    if status != "completed":
+        failures.append(f"job_status:{status}")
+    if any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in initial_stage_ids):
+        failures.append("route:workflow_stage_in_initial_response")
+    if any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in final_stage_ids):
+        failures.append("route:workflow_stage_in_final_response")
+    if "answer" not in initial_stage_ids:
+        failures.append("route:direct_answer_stage_missing")
+    if actual_language != case.expected_language:
+        failures.append(f"language:{actual_language}_not_{case.expected_language}")
+    if not answer:
+        failures.append("answer:empty")
+    elif not response_language_matches(answer, case.expected_language):
+        failures.append("answer:target_language_mismatch")
+    if not calls:
+        failures.append("model:not_called")
+    elif not any(bool(getattr(call, "succeeded", False)) for call in calls):
+        failures.append("model:no_successful_return")
+
+    failure_code = _safe_failure_code(final_job, calls)
+    if failure_code == "resource_admission":
+        failures.append("resource:admission_denied")
+
+    failures = list(dict.fromkeys(failures))
+    return {
+        "case_id": case.case_id,
+        "passed": not failures,
+        "transport": transport,
+        "route": (
+            "direct_chat"
+            if "answer" in initial_stage_ids
+            and not any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in initial_stage_ids)
+            else "unexpected"
+        ),
+        "expected_language": case.expected_language,
+        "actual_language": actual_language,
+        "status": status,
+        "initial_stage_ids": list(initial_stage_ids),
+        "final_stage_ids": list(final_stage_ids),
+        "model_call_count": len(calls),
+        "model_returned": any(bool(getattr(call, "succeeded", False)) for call in calls),
+        "failure_code": failure_code,
+        "response_chars": len(answer),
+        "response_sha256": _sha256(answer),
+        "http_submit_status": http_submit_status,
+        "http_poll_status": http_poll_status,
+        "failures": failures,
+    }
 
 
 def run_case(
@@ -108,6 +202,8 @@ def run_case(
     *,
     timeout_seconds: float,
 ) -> dict[str, Any]:
+    """Service-bound helper retained for deterministic unit tests."""
+
     before = len(recorder.calls)
     submitted = service.submit(
         case.prompt,
@@ -119,60 +215,93 @@ def run_case(
         effort="standard",
         conversation_id=None,
     )
-    initial_stage_ids = _stage_ids(submitted)
     job = _wait(service, submitted.job_id, timeout_seconds)
     calls = recorder.calls[before:]
-    final_stage_ids = _stage_ids(job)
-    answer = str(getattr(job, "answer", "") or "").strip()
-    failures: list[str] = []
+    return _evaluate_result(case, submitted, job, calls, transport="service")
 
-    if str(getattr(job, "status", "")) != "completed":
-        failures.append(f"job_status:{getattr(job, 'status', '')}")
-    if any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in initial_stage_ids):
-        failures.append("route:workflow_stage_in_initial_response")
-    if any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in final_stage_ids):
-        failures.append("route:workflow_stage_in_final_response")
-    if "answer" not in initial_stage_ids:
-        failures.append("route:direct_answer_stage_missing")
-    if str(getattr(job, "language", "")) != case.expected_language:
-        failures.append(
-            f"language:{getattr(job, 'language', '')}_not_{case.expected_language}"
+
+def _http_json(opener: Any, url: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
+    body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        method=method,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+    )
+    try:
+        response = opener.open(request, timeout=15)
+    except HTTPError as exc:
+        raw = exc.read()
+        try:
+            parsed = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed = {}
+        return int(exc.code), parsed if isinstance(parsed, dict) else {}
+    with response:
+        raw = response.read()
+        parsed = json.loads(raw.decode("utf-8")) if raw else {}
+        return int(response.status), parsed if isinstance(parsed, dict) else {}
+
+
+def run_http_case(
+    opener: Any,
+    base_url: str,
+    recorder: DiagnosticRecordingLLM,
+    case: SimpleChatCase,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Exercise the same POST /api/chat and GET /api/jobs path used by the browser."""
+
+    before = len(recorder.calls)
+    submit_status, submitted = _http_json(
+        opener,
+        base_url + "/api/chat",
+        method="POST",
+        payload={
+            "message": case.prompt,
+            "language": "auto",
+            "format": "source",
+            "upload_ids": [],
+            "mode": "chat",
+            "effort": "standard",
+            "conversation_id": "",
+        },
+    )
+    job_id = str(submitted.get("job_id") or "")
+    if submit_status != 202 or not job_id:
+        return _evaluate_result(
+            case,
+            submitted,
+            submitted,
+            recorder.calls[before:],
+            transport="http_api",
+            http_submit_status=submit_status,
         )
-    if not answer:
-        failures.append("answer:empty")
-    elif not response_language_matches(answer, case.expected_language):
-        failures.append("answer:target_language_mismatch")
-    if not calls:
-        failures.append("model:not_called")
-    elif not any(bool(getattr(call, "succeeded", False)) for call in calls):
-        failures.append("model:no_successful_return")
 
-    failure_code = _safe_failure_code(job, calls)
-    if failure_code == "resource_admission":
-        failures.append("resource:admission_denied")
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    poll_status = 0
+    final_job: dict[str, Any] = dict(submitted)
+    while time.monotonic() < deadline:
+        poll_status, final_job = _http_json(opener, base_url + "/api/jobs/" + job_id)
+        if poll_status != 200:
+            break
+        if str(final_job.get("status") or "") not in {"queued", "running"}:
+            break
+        time.sleep(0.05)
+    else:
+        final_job = dict(final_job)
+        final_job["status"] = "timeout"
 
-    failures = list(dict.fromkeys(failures))
-    return {
-        "case_id": case.case_id,
-        "passed": not failures,
-        "route": (
-            "direct_chat"
-            if "answer" in initial_stage_ids
-            and not any(stage in FORBIDDEN_WORKFLOW_STAGES for stage in initial_stage_ids)
-            else "unexpected"
-        ),
-        "expected_language": case.expected_language,
-        "actual_language": str(getattr(job, "language", "")),
-        "status": str(getattr(job, "status", "")),
-        "initial_stage_ids": list(initial_stage_ids),
-        "final_stage_ids": list(final_stage_ids),
-        "model_call_count": len(calls),
-        "model_returned": any(bool(getattr(call, "succeeded", False)) for call in calls),
-        "failure_code": failure_code,
-        "response_chars": len(answer),
-        "response_sha256": _sha256(answer),
-        "failures": failures,
-    }
+    return _evaluate_result(
+        case,
+        submitted,
+        final_job,
+        recorder.calls[before:],
+        transport="http_api",
+        http_submit_status=submit_status,
+        http_poll_status=poll_status,
+    )
 
 
 def contract_summary(cases: Sequence[SimpleChatCase] = CASES) -> dict[str, Any]:
@@ -182,6 +311,7 @@ def contract_summary(cases: Sequence[SimpleChatCase] = CASES) -> dict[str, Any]:
         "valid": not errors,
         "case_count": len(cases),
         "languages": [case.expected_language for case in cases],
+        "transport": "browser_contract_plus_http_api",
         "frontend_contract_passed": not frontend_contract_errors(),
         "validation_errors": list(errors),
         "privacy": {
@@ -211,21 +341,68 @@ def run_live_suite(
         orchestrator = Orchestrator(isolated)
         orchestrator.initialize()
         recorder = DiagnosticRecordingLLM(orchestrator.llm)
+        orchestrator.llm = recorder
         service = ContractAwareProjectChatService(
-            SimpleNamespace(
-                config=isolated,
-                knowledge_gateway=orchestrator.knowledge_gateway,
-                store=NoopStore(),
-                llm=recorder,
-            ),
+            orchestrator,
             default_language=os.getenv("THREE_AGENT_CHAT_LANGUAGE", "ja"),
         )
         service.start()
-        results = [
-            run_case(service, recorder, case, timeout_seconds=timeout_seconds)
-            for case in cases
-        ]
-        service._queue.join()
+
+        auth = ExternalSessionAuthStore(isolated.database_path)
+        auth.initialize()
+        access_token = secrets.token_urlsafe(32)
+        auth.bootstrap_admin(
+            "e2e-admin",
+            access_token,
+            display_name="E2E Administrator",
+            title="Administrator",
+        )
+        external_store = ExternalIdentityStore(auth)
+        external_store.initialize()
+        external_settings = ExternalAuthSettings.from_env()
+        app = WorkflowV4ContextApplication(
+            service,
+            auth,
+            isolated.artifact_root,
+            external_store,
+            external_settings,
+        )
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), WorkflowV4ContextHTTPHandler)
+        httpd.app = app  # type: ignore[attr-defined]
+        server_thread = threading.Thread(
+            target=httpd.serve_forever,
+            kwargs={"poll_interval": 0.05},
+            name="workspace-simple-chat-e2e-http",
+            daemon=True,
+        )
+        server_thread.start()
+        base_url = f"http://127.0.0.1:{httpd.server_address[1]}"
+        opener = build_opener(HTTPCookieProcessor(CookieJar()))
+        try:
+            login_status, _ = _http_json(
+                opener,
+                base_url + "/api/login",
+                method="POST",
+                payload={"username": "e2e-admin", "password": access_token},
+            )
+            if login_status != 200:
+                raise RuntimeError(f"local E2E login failed with HTTP {login_status}")
+            results = [
+                run_http_case(
+                    opener,
+                    base_url,
+                    recorder,
+                    case,
+                    timeout_seconds=timeout_seconds,
+                )
+                for case in cases
+            ]
+            service._queue.join()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            server_thread.join(timeout=5.0)
 
     try:
         package_version = importlib.metadata.version("workspace-local-ai")
@@ -243,6 +420,7 @@ def run_live_suite(
         "package_version": package_version,
         "case_count": len(cases),
         "languages": [case.expected_language for case in cases],
+        "transport": "browser_contract_plus_http_api",
         "frontend_contract_passed": True,
         "endpoint_policy": "localhost_private_link_local_only",
         "endpoint_count": len(endpoints),
@@ -259,7 +437,7 @@ def run_live_suite(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="WorkSpace multilingual simple-chat local-model E2E acceptance"
+        description="WorkSpace multilingual browser-contract + HTTP local-model E2E acceptance"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--contract", action="store_true")
