@@ -162,11 +162,21 @@ def _read_bounded_tail(path: Path, *, max_bytes: int) -> tuple[bytes, bool]:
     size = path.stat().st_size
     start = max(0, size - max_bytes)
     with path.open("rb") as handle:
-        if start:
-            handle.seek(start)
-            handle.readline()  # discard a partial JSONL record at the bounded tail edge
+        handle.seek(start)
         data = handle.read(max_bytes)
+    if start:
+        newline = data.find(b"\n")
+        data = b"" if newline < 0 else data[newline + 1 :]
     return data, start > 0
+
+
+def _latest_event_timestamp(events: list[CanonicalEvent]) -> str | None:
+    if not events:
+        return None
+    return max(
+        events,
+        key=lambda event: datetime.fromisoformat(event.observed_at.replace("Z", "+00:00")),
+    ).observed_at
 
 
 class PassiveJsonlSensorAdapter:
@@ -248,7 +258,7 @@ class PassiveJsonlSensorAdapter:
             else:
                 quarantined.append(parsed)
 
-        last_seen = max((event.observed_at for event in events), default=None)
+        last_seen = _latest_event_timestamp(events)
         freshness: SourceFreshness = evaluate_source_freshness(
             source_id=cfg.source_id,
             expected_interval_seconds=cfg.expected_interval_seconds,
