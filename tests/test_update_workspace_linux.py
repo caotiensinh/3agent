@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -9,6 +10,10 @@ SCRIPT = Path("scripts/update_workspace_linux.sh")
 
 
 class LinuxUpdateContractTests(unittest.TestCase):
+    @unittest.skipIf(
+        os.name == "nt",
+        "Linux updater bash syntax is exercised by Linux harness/portable-deploy lanes",
+    )
     def test_linux_update_script_has_valid_bash_syntax(self) -> None:
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
