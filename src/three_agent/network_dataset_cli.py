@@ -24,7 +24,10 @@ def _manager(args: argparse.Namespace) -> NetworkDatasetManager:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="workspace-network-data",
-        description="WorkSpace Network AI dataset admission/control plane (no network I/O).",
+        description=(
+            "WorkSpace Network AI dataset admission/control plane. Public logs are "
+            "temporary evidence used to derive compact experience; this command performs no network I/O."
+        ),
     )
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
@@ -37,8 +40,8 @@ def _parser() -> argparse.ArgumentParser:
     plan.add_argument("dataset_id")
     plan.add_argument(
         "--purpose",
-        choices=("training", "evaluation", "research"),
-        required=True,
+        choices=("experience_extraction", "training", "evaluation", "research"),
+        default="experience_extraction",
     )
     plan.add_argument("--estimated-bytes", type=int, required=True)
     plan.add_argument("--objects", type=int, default=1)
