@@ -70,15 +70,19 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("workflow_dispatch:", text)
 
-    def test_package_exposes_new_cli_without_replacing_chat_gateway(self):
+    def test_package_preserves_multiturn_cli_when_product_gateway_advances(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "0.18.0"', text)
+        self.assertIn('version = "1!0.0.1"', text)
         self.assertIn(
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v16:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v16:main"', text)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway_v17:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v17:main"', text)
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v16.py").is_file())
+        v17 = (ROOT / "src/three_agent/chat_gateway_v17.py").read_text(encoding="utf-8")
+        self.assertIn("ContextAwareProjectChatService", v17)
+        self.assertIn("ContextAwareWorkflowV3HTTPHandler", v17)
 
 
 if __name__ == "__main__":
