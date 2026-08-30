@@ -4,6 +4,7 @@ from dataclasses import replace
 from typing import Any
 
 from ..prompt_ledger import PromptCompilationLedger
+from ..public_query_compiler import compile_public_search_queries
 from .research_ranked import ResearchAgent as _RankedResearchAgent
 
 
@@ -31,12 +32,23 @@ class _CompiledTaskStoreView:
 
 
 class ResearchAgent(_RankedResearchAgent):
-    """Research path with deterministic local prompt compilation.
+    """Research path with local prompt compilation plus public-query declassification.
 
-    Credentials and other sensitive values are intentionally preserved here. This
-    class never performs egress sanitization; public-query compilation happens at
-    the web boundary after the local research plan is produced.
+    Credentials and other sensitive values are intentionally preserved in the local
+    compiled prompt. Only generated web-search queries cross the separate public
+    query compiler and the existing strict InternetGateway DLP gate.
     """
+
+    def _plan(self, title: str, request: str) -> tuple[str, list[str], list[str]]:
+        objective, queries, focus = super()._plan(title, request)
+        public_queries, _diagnostics = compile_public_search_queries(
+            queries,
+            fallback=f"{title} {request}",
+            max_queries=4,
+        )
+        # Empty is safer than falling back to a raw request. Upload/local evidence
+        # can still be processed; public search simply contributes no sources.
+        return objective, public_queries, focus
 
     def run(self, task_id: str, store: Any, artifacts: Any, live: bool = False):
         compilation = PromptCompilationLedger(store).compile_and_bind(task_id)
