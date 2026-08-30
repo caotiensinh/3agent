@@ -50,6 +50,19 @@ avoid > reuse > precompute > compact > parallelize > accelerate > scale hardware
 - Deep-model/dual-GPU escalation must be observable and evidence-based.
 - Benchmark on fixed tasks; never claim optimization without measurement.
 
+## Enterprise lean invariant
+
+WorkSpace is designed for constrained enterprise infrastructure by default, not for hardware abundance.
+
+- E2 Enterprise Confidential is the default product posture; higher assurance must not automatically mean more model calls or larger models.
+- Before adding compute, first remove work: reuse verified state, reduce context, use deterministic code, and choose the smallest sufficient model.
+- A new package, daemon, database, vector store, model server or framework requires measured benefit over the simpler baseline.
+- Optimize per **verified task**, never per token/s or GPU utilization alone.
+- Security boundaries are hard constraints: confidentiality, least privilege, evidence integrity and fail-closed behavior cannot be traded for benchmark gains.
+- Skill instructions are procedure, not storage. Keep default skill disclosure minimal and enforce hard prompt-size limits.
+- If two designs achieve equivalent verified quality and security, choose the one with lower peak RAM/VRAM, fewer model calls, fewer tokens, fewer services and simpler recovery.
+- See `docs/WORKSPACE_ENTERPRISE_LEAN_BASELINE.md`.
+
 ## Skills
 
 Skills describe capability; they do not grant authority. Instruction-only skills cannot enable network, shell, credentials, persistence, remote services or package installation. Third-party executable skills are disabled unless a separate supply-chain/security review approves them.

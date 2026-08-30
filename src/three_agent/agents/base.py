@@ -7,15 +7,19 @@ from ..skills import ApprovedSkillLoader
 from ..structured_output_policy import StructuredOutputPolicyClient
 
 
+# Default disclosure is intentionally minimal. Research keeps only the
+# cross-cutting untrusted-web boundary in every model call. Source credibility,
+# evidence synthesis and data-quality behavior are already encoded in their
+# stage prompts plus deterministic validators, so injecting those skills into
+# every call would spend tokens without adding authority or validation.
+#
+# Presentation and Daily Report already enforce their evidence boundaries in
+# deterministic code and explicit stage prompts, so their default skill payload
+# is empty. Approved skills remain available for explicit, task-specific use.
 _DEFAULT_AGENT_SKILLS: dict[str, tuple[str, ...]] = {
-    "research": (
-        "research-web-trust",
-        "research-source-credibility",
-        "research-evidence-synthesis",
-        "research-data-quality",
-    ),
-    "presentation": ("presentation-evidence-boundary",),
-    "daily_report": ("daily-report-evidence",),
+    "research": ("research-web-trust",),
+    "presentation": (),
+    "daily_report": (),
 }
 
 
