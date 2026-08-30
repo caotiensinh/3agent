@@ -31,7 +31,7 @@ figma_canva = r'''
 '''
 html = _replace_once(
     html,
-    '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    '      <button class="menu-row" type="button" data-action="github">',
     figma_canva + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
     "integration-menu-before-github",
 )
@@ -51,11 +51,12 @@ html = _replace_once(
 
 # For connector discovery rows that are not yet present in the runtime capability
 # registry, show `Connect` rather than a misleading generic `Unavailable`. Clicking
-# still fails closed and explains that the connector is not configured.
+# still follows the existing fail-closed `unavailable(action)` path and explains
+# that the connector is not configured.
 html = _replace_once(
     html,
-    "function feature(name){return state.capabilities?.features?.[name]||{enabled:false,reason:'Capability information is unavailable.'}}",
-    "function feature(name){const configured=state.capabilities?.features?.[name];if(configured)return configured;const connect=new Set(['figma','canva','gmail']);return{enabled:false,state_label:connect.has(name)?'Connect':'Unavailable',reason:connect.has(name)?'This connector is not configured for the local WorkSpace runtime.':'Capability information is unavailable.'}}",
+    "function cap(name){return state.capabilities&&state.capabilities.features&&state.capabilities.features[name]?state.capabilities.features[name]:{enabled:false,state_label:'Unavailable',reason:'Capability unavailable'}}",
+    "function cap(name){const configured=state.capabilities&&state.capabilities.features&&state.capabilities.features[name]?state.capabilities.features[name]:null;if(configured)return configured;const connect=new Set(['figma','canva','gmail']);return{enabled:false,state_label:connect.has(name)?'Connect':'Unavailable',reason:connect.has(name)?'This connector is not configured for the local WorkSpace runtime.':'Capability unavailable'}}",
     "connector-discovery-state",
 )
 
@@ -63,8 +64,8 @@ html = _replace_once(
 # without adding another control the user has to maintain per conversation.
 html = _replace_once(
     html,
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label><span class="menu-sub">Language follows each current request automatically.</span>',
+    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + Slide PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
+    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + Slide PDF</option><option value="all">Report + PPTX + PDF</option></select></label><span class="menu-sub">Language follows each current request automatically.</span>',
     "request-language-hint",
 )
 
