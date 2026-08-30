@@ -56,6 +56,18 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, text)
 
+    def test_live_workflow_isolates_resource_runtime_per_execution(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        runtime = 'RUNTIME_DIR="$RUNNER_TEMP/workspace-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"'
+        self.assertIn(runtime, text)
+        self.assertIn('install -d -m 700 "$RUNTIME_DIR"', text)
+        self.assertIn('THREE_AGENT_RUNTIME_DIR="$RUNTIME_DIR"', text)
+        self.assertGreaterEqual(text.count('rm -rf "$RUNTIME_DIR"'), 2)
+        self.assertIn("'src/three_agent/resource_budget.py'", text)
+        self.assertNotIn("chmod 777", text)
+
     def test_failure_report_path_is_exported_before_live_command(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
