@@ -17,8 +17,9 @@ The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Determinis
 - `ADAPTIVE_LEARNING_PHASE1.md` — implemented deterministic contracts for evidence, experience, candidate provenance, contradictions, validation receipts, classification monotonicity and knowledge-level promotion.
 - `ADAPTIVE_LEARNING_PHASE2.md` — implemented offline/synthetic Network/Security/Analyst evaluation corpus and metadata-only deterministic replay.
 - `ADAPTIVE_LEARNING_PHASE3.md` — implemented local immutable version store, append-only hash-chained audit ledger, staged/active lifecycle, enterprise-baseline protection, archive, and exact-version rollback.
+- `ADAPTIVE_LEARNING_PHASE3_1.md` — authenticated checkpoint journal plus independent trusted-head freshness witness, exact store-state binding, stale/full-rewrite/replay detection, key rotation, and a learner-facing `stage()`-only gateway.
 
-The current implementation still has **no background LLM learner**. Phase 1 through Phase 3 establish the deterministic contract, evaluation, persistence, audit, and rollback boundaries that must exist first.
+The current implementation still has **no background LLM learner**. Phase 1 through Phase 3 establish deterministic contract, evaluation, persistence, audit, and rollback. Phase 3.1 adds the authenticated external integrity/freshness boundary that must be deployed before unattended Reflection is permitted.
 
 ## Provenance
 
@@ -45,4 +46,4 @@ Experience
   -> Curation / rollback
 ```
 
-For Network and Security domains, autonomous learning is proposal-oriented by default. Learned material can improve diagnosis and analysis, but it cannot grant itself execution, network, credential, remediation, or deployment authority.
+For Network and Security domains, autonomous learning is proposal-oriented by default. Learned material can improve diagnosis and analysis, but it cannot grant itself execution, network, credential, remediation, deployment, promotion, checkpoint-signing, witness-write, or Git authority.

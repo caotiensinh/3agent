@@ -184,7 +184,8 @@ Phase 3 tests cover at minimum:
 12. audit export contains hashes, not raw procedure/evidence content;
 13. SQL UPDATE/DELETE of ledger/version snapshots is rejected;
 14. hash-chain verification detects injected forged rows;
-15. state and ledger survive store reopen/restart.
+15. state and ledger survive store reopen/restart;
+16. active/version reads recompute candidate and knowledge identity and fail closed on version-table tamper.
 
 ## Still intentionally absent
 
@@ -201,9 +202,32 @@ Phase 3 still does **not** implement:
 
 Those capabilities must not be added merely because a persistent store now exists.
 
-## Next phase
+## Phase 3.1 gate before Reflection
 
-Phase 4 may add a constrained Reflection Worker, but its output boundary should be:
+Phase 3's unkeyed SHA-256 chain is tamper-evident, but it is not an authenticated freshness guarantee. A principal with unrestricted database rewrite authority could rebuild a complete internally consistent DB and hash chain.
+
+Therefore Phase 3.1 is required before Phase 4. It adds:
+
+```text
+Phase 3 store
+   |
+   v
+authenticated checkpoint journal
+   |
+   v
+trusted current-head witness
+   |
+   v
+stage-only learner gateway
+```
+
+The checkpoint key and witness-write authority remain outside learner authority. The witness provides an independently protected newest-generation anchor so replaying an older valid DB+journal pair fails closed.
+
+See `ADAPTIVE_LEARNING_PHASE3_1.md`.
+
+## Phase 4 boundary
+
+Only after the Phase 3.1 boundary is deployed may Phase 4 add a constrained Reflection Worker:
 
 ```text
 completed task/evidence summary
@@ -221,7 +245,7 @@ Phase 1 contract
 Phase 2 offline/domain validation
         |
         v
-Phase 3 STAGE ONLY
+Phase 3.1 STAGE-ONLY GATEWAY
 ```
 
-The first Reflection Worker must have proposal authority only. It must not receive a direct activation/promotion API.
+The first Reflection Worker has proposal authority only. It does not receive promotion, checkpoint signing, witness writing, shell, network, credential, remediation, deployment, or Git authority.
