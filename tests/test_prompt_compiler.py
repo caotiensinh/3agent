@@ -66,6 +66,14 @@ class PromptCompilationLedgerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
+    def test_ledger_connection_is_closed_after_context_scope(self) -> None:
+        ledger = PromptCompilationLedger(self.store)
+        conn = ledger.connect()
+        with conn as active:
+            active.execute("SELECT 1").fetchone()
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
     def test_receipt_is_metadata_only_and_original_task_stays_unchanged(self) -> None:
         raw = "password: LocalOnlySecret-12345\n\nAnalyze authentication failure."
         task = self.store.create_task("Auth", raw)
