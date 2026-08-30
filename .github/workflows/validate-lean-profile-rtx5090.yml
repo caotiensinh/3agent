@@ -19,12 +19,12 @@ jobs:
     runs-on: [self-hosted]
     timeout-minutes: 20
     env:
-      CANDIDATE_SHA: d61faeb4fd00217ff616c70bb7e405d1bc590ca5
+      CANDIDATE_SHA: 37e8480e3f19a1740190181ed52f5721e3363819
     steps:
       - name: Checkout exact candidate commit
         uses: actions/checkout@v4
         with:
-          ref: d61faeb4fd00217ff616c70bb7e405d1bc590ca5
+          ref: 37e8480e3f19a1740190181ed52f5721e3363819
           persist-credentials: false
           fetch-depth: 1
 
@@ -59,6 +59,8 @@ jobs:
             scripts/measure_ram_baseline.sh
             scripts/test_gpu_worker_pool_contract.sh
             scripts/test_ram_baseline_contract.sh
+            scripts/setup_runner_pool.sh
+            scripts/test_runner_pool_contract.sh
           )
           for f in "${FILES[@]}"; do
             echo "::group::bash -n $f"
@@ -79,6 +81,7 @@ jobs:
           set -Eeuo pipefail
           bash scripts/test_gpu_worker_pool_contract.sh
           bash scripts/test_ram_baseline_contract.sh
+          bash scripts/test_runner_pool_contract.sh
 
       - name: Capture a real RAM/GPU/service baseline on this machine
         shell: bash
