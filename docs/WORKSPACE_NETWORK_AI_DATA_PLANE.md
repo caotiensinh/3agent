@@ -1,25 +1,98 @@
-# WorkSpace Network AI Data Plane
+# WorkSpace Network AI Experience Data Plane
 
 ## Status
 
-Design and control-plane contract for Network AI datasets. This document defines the trust boundaries that must exist before any remote dataset adapter is enabled.
+Design and control-plane contract for using public network/security/operations datasets as **temporary evidence** from which WorkSpace derives reusable diagnostic experience, evidence patterns and reviewed operational skills.
 
-## Objective
+The purpose of this subsystem is **not** to build a permanent raw-log warehouse.
 
-WorkSpace needs large, realistic network/security/operations corpora without mirroring hundreds of gigabytes or terabytes onto the confidential AI server. The system therefore treats public datasets as remotely retrievable source material, keeps only a bounded scratch cache, and promotes only verified, license-approved, normalized artifacts into a local read-only knowledge/training store.
+## Primary objective
 
-This is **not** a runtime bridge from Confidential Core to the Internet.
+WorkSpace should learn how experienced network engineers reason:
 
-## Non-negotiable invariants
+```text
+symptom
+  -> collect evidence
+  -> correlate events across layers/time
+  -> form candidate causes
+  -> eliminate alternatives
+  -> identify the most likely/confirmed cause
+  -> select a remediation only when it has a valid basis
+  -> verify the outcome
+```
 
-1. `workspace-core` never receives Internet or LAN egress authority.
-2. A process with public Internet access can never read `/var/lib/workspace` or the approved dataset store.
-3. Raw remote data is untrusted and cannot grant authority through text, packets, metadata, filenames or embedded instructions.
-4. License status is a deterministic registry decision, never an LLM inference.
-5. Whole-corpus sync is denied by default.
-6. Every promoted artifact is bound to source SHA-256, registry fingerprint, policy fingerprint, parser/schema version and license source.
-7. Research-only data can never silently enter the enterprise training/evaluation corpus.
-8. Fetch and parse/normalize run under different OS identities.
+Public datasets are source material for that process. The durable product is compact, evidence-backed operational knowledge.
+
+### Durable outputs
+
+1. **Experience Case** — one bounded incident/failure/security case with symptoms, evidence references, candidate causes, confirmed cause when supported, remediation when supported, outcome and provenance.
+2. **Evidence Pattern** — a repeated diagnostic pattern supported by multiple independent cases, including discriminators and false-positive checks.
+3. **Evaluation Case** — held-out evidence used to test whether WorkSpace reaches the right conclusion without seeing the answer.
+4. **Candidate Skill** — a compact advisory procedure derived from reviewed evidence patterns. It is never automatically trusted or loaded.
+5. **Provenance** — immutable hashes and lineage proving where each retained conclusion came from.
+
+### Explicit non-goals
+
+- permanent storage of public raw PCAP/log corpora;
+- permanent storage of normalized event streams after experience extraction;
+- asking an LLM to memorize billions of log lines;
+- treating a dataset label as a complete operational procedure;
+- inventing remediation that is absent from evidence or authoritative/verified operational knowledge;
+- automatically promoting model-generated procedures into WorkSpace's approved skill registry.
+
+## Core principle
+
+```text
+RAW LOGS ARE EVIDENCE, NOT KNOWLEDGE.
+NORMALIZED EVENTS ARE WORKING MATERIAL, NOT THE PRODUCT.
+EXPERIENCE + PATTERNS + REVIEWED SKILLS ARE THE PRODUCT.
+```
+
+This matches the WorkSpace design principle that context is working memory, not storage, and that deterministic constraints and compact handoffs should eliminate unnecessary data movement.
+
+## End-to-end lifecycle
+
+```text
+PUBLIC DATASET
+     |
+     v
+BOUNDED FETCH
+     |
+     v
+RAW SCRATCH CACHE                 <- temporary
+     |
+     v
+VERIFY SHA-256 / LICENSE / TYPE
+     |
+     v
+NORMALIZED EVIDENCE STAGING       <- temporary
+     |
+     v
+CORRELATE + SEGMENT INCIDENTS
+     |
+     v
+EXPERIENCE CASES                  <- durable compact knowledge
+     |
+     +--------------------+
+     |                    |
+     v                    v
+EVIDENCE PATTERNS      EVALUATION CASES
+     |
+     v
+CANDIDATE SKILLS                  <- advisory, untrusted candidate
+     |
+     v
+INDEPENDENT REVIEW / TEST / HASH
+     |
+     v
+APPROVED WORKSPACE SKILL          <- existing skill trust path
+
+After successful extraction:
+RAW SCRATCH -> DELETE
+NORMALIZED STAGING -> DELETE
+```
+
+The same architecture applies to enterprise-local telemetry, except confidential telemetry never enters the public fetch zone.
 
 ## Trust-zone design
 
@@ -32,83 +105,325 @@ This is **not** a runtime bridge from Confidential Core to the Internet.
                     | Zone D1: FETCH        |
                     | workspace-dataset-fetch|
                     |                       |
-                    | - no Core access      |
-                    | - no approved access  |
-                    | - host/path allowlist |
+                    | no Core access        |
+                    | reviewed URL allowlist|
                     +-----------+-----------+
                                 |
-                                | raw public objects only
                                 v
               /var/cache/workspace-datasets/incoming
+                       RAW / TEMPORARY
                                 |
-                                | local filesystem handoff
                                 v
                     +-----------+-----------+
                     | Zone D2: PROCESS      |
                     | workspace-dataset     |
                     |                       |
                     | NO Internet           |
-                    | license/checksum gate |
-                    | parser/schema limits  |
-                    | normalize/feature     |
-                    +-----+-------------+---+
-                          |             |
-               research-only           | enterprise-approved
-                          |             |
-                          v             v
- /var/lib/workspace-datasets/research  /var/lib/workspace-datasets/approved
-                                                |
-                                                | read-only
-                                                v
-                                      +---------+---------+
-                                      | Confidential Core |
-                                      | workspace-core    |
-                                      | NO Internet       |
-                                      +-------------------+
+                    | verify / normalize    |
+                    | correlate / extract   |
+                    +-----------+-----------+
+                                |
+                                v
+             /var/cache/workspace-datasets/normalized
+                    NORMALIZED / TEMPORARY
+                                |
+                                v
+               EXPERIENCE CONTRACT VALIDATION
+                                |
+              +-----------------+-----------------+
+              |                                   |
+              v                                   v
+ /var/lib/workspace-network-experience/approved   research-only store
+       cases / patterns / eval / provenance
+              |
+              | read-only
+              v
+      +-------+--------+
+      | WorkSpace Core |
+      | NO Internet    |
+      +-------+--------+
+              |
+              v
+      evidence-first reasoning
 ```
 
-`workspace-public` is not reused for dataset ingestion. Public research and dataset acquisition have different data volumes, parser risks and authority requirements.
+`workspace-public` is not reused for dataset ingestion. Dataset acquisition has different parser, volume and lifecycle risks.
 
-## OS identities
-
-| Identity | Read confidential | Internet | Incoming cache | Approved store | Research store |
-| --- | --- | --- | --- | --- | --- |
-| `workspace-core` | YES | NO | NO | READ ONLY | NO |
-| `workspace-public` | NO | brokered research only | NO | NO | NO |
-| `workspace-egress` | NO | HTTPS broker | NO | NO | NO |
-| `workspace-dataset-fetch` | NO | allowlisted HTTPS | WRITE | NO | NO |
-| `workspace-dataset` | NO | NO | READ/DELETE | WRITE | WRITE |
-
-The future boundary installer must enforce these permissions with separate UIDs/groups, systemd hardening and nftables owner rules. Do not add `workspace-core` to a dataset-fetch group.
-
-## Storage model
+## Storage contract
 
 ```text
 /var/cache/workspace-datasets/incoming/
-    bounded scratch data; safe to delete/re-fetch
+    raw public objects
+    ephemeral
+    re-fetchable
 
-/var/lib/workspace-datasets/approved/
-    normalized artifacts approved for enterprise training/evaluation
+/var/cache/workspace-datasets/normalized/
+    normalized flow/event staging
+    exists only until experience extraction completes
+
+/var/lib/workspace-network-experience/approved/
+    compact approved experience cases, evidence patterns and evaluation artifacts
+
+/var/lib/workspace-network-experience/candidate-skills/
+    advisory skill drafts awaiting independent review
+    not visible to ApprovedSkillLoader
+
+/var/lib/workspace-network-experience/provenance/
+    immutable source/transform/output lineage
 
 /var/lib/workspace-datasets/research/
-    research-only artifacts; never visible to enterprise training by default
-
-/var/lib/workspace-datasets/provenance/
-    immutable manifests, hashes, policy/registry fingerprints and lineage
+    research-only material isolated from enterprise experience and skills
 ```
 
 Default V1 budgets:
 
-- scratch cache: 80 GiB;
+- raw scratch cache: 80 GiB;
 - one acquisition job: at most 20 GiB;
 - one job: at most 32 objects;
-- raw retention: ephemeral;
-- eviction: least-recently-used, but never active or pinned;
-- full remote sync: denied.
+- full remote sync: denied;
+- raw retention: `ephemeral`;
+- normalized retention: `until_experience_extracted`;
+- raw logs durable: `false`;
+- normalized events durable: `false`;
+- candidate skills auto-approve: `false`.
 
-These are operational defaults, not dataset-size claims. Operators may change them only through reviewed policy.
+## Experience Case contract
 
-## Admission lifecycle
+A retained case is deliberately compact. It stores observations and references to evidence, never an arbitrary raw log dump.
+
+Conceptual form:
+
+```text
+case_id
+incident_class
+symptoms[]
+
+evidence[]
+  evidence_id
+  role: supporting | contradicting | discriminator | outcome
+  observation
+  source_ref
+  source_sha256
+
+candidate_causes[]
+confirmed_cause | null
+cause_basis: ground_truth | operator_verified | unknown
+
+remediation[]
+  action
+  basis: observed_outcome | ground_truth | authoritative_reference | operator_verified
+  evidence_ids[]
+
+outcome | null
+confidence
+provenance_refs[]
+```
+
+### Cause rule
+
+A model may propose candidate causes, but `confirmed_cause` may be stored only when the case has an accepted basis such as dataset ground truth or operator verification.
+
+If the source does not support a confirmed cause:
+
+```text
+confirmed_cause = null
+cause_basis = unknown
+```
+
+That is preferable to false certainty.
+
+### Remediation rule
+
+Logs often show what happened but do **not** show the correct fix. Therefore a remediation step may become durable only when its basis is one of:
+
+- a successful observed outcome;
+- ground truth provided with the case;
+- an authoritative reviewed operational reference;
+- operator verification from a real incident/test.
+
+`model_inference`, unsupported guesswork or generic Internet advice is not an allowed remediation basis.
+
+If no valid remediation evidence exists, the retained case has an empty remediation list.
+
+## From cases to patterns
+
+One incident is an anecdote. WorkSpace should not promote it directly into general knowledge.
+
+A durable `EvidencePattern` requires multiple independent supporting cases.
+
+Example:
+
+```text
+Pattern: physical Ethernet link degradation
+
+Symptoms:
+- packet loss increases
+- RTSP reconnects increase
+
+Evidence requirements:
+- interface CRC/input error trend
+- packet loss measurement
+- scope of affected endpoints
+
+Discriminators:
+- errors rise on one local switch port
+- WAN path remains healthy
+- service process remains healthy
+
+Likely causes:
+- cable/connector degradation
+- faulty PHY/switch port
+
+False-positive checks:
+- upstream congestion
+- camera/server CPU saturation
+- remote service outage
+```
+
+The pattern does not preserve millions of packets. It preserves the **relationship between useful evidence and diagnostic conclusions**.
+
+## From patterns to skills
+
+Dataset-derived procedures are created only as `SkillCandidate` objects.
+
+A candidate contains:
+
+```text
+name
+description
+derived_pattern_ids[]
+evidence_requirements[]
+procedure_steps[]
+stop_conditions[]
+authority = advisory
+auto_promotable = false
+```
+
+It cannot grant itself network, shell, credential or write authority.
+
+Before it becomes an approved WorkSpace skill it must pass the existing WorkSpace skill path:
+
+```text
+candidate
+   -> independent content/security review
+   -> evaluation against held-out incidents
+   -> compact instruction-only SKILL.md
+   -> SHA-256 recorded in skill registry
+   -> ApprovedSkillLoader validation
+   -> usable by a task only when task authority also permits it
+```
+
+This is intentionally separate from dataset extraction. The current WorkSpace skill loader already treats skills as small reviewed procedures rather than storage and enforces hashes and authority restrictions.
+
+## Runtime reasoning: how the experience is used
+
+The preferred runtime is **case-based/evidence-based reasoning**, not raw-log retrieval.
+
+```text
+LIVE NETWORK EVIDENCE
+        |
+        v
+NORMALIZE CURRENT OBSERVATIONS
+        |
+        v
+RETRIEVE SIMILAR EXPERIENCE CASES + PATTERNS
+        |
+        v
+BUILD CANDIDATE CAUSES
+        |
+        v
+COMPARE REQUIRED EVIDENCE / DISCRIMINATORS
+        |
+        +---- missing evidence ----> ask collector for bounded evidence
+        |
+        v
+RANK CAUSES WITH EXPLICIT SUPPORT / CONTRADICTION
+        |
+        v
+DIAGNOSIS + CONFIDENCE
+        |
+        v
+RETRIEVE REVIEWED SKILL, IF ONE MATCHES
+        |
+        v
+RECOMMEND VERIFIED ACTION + VERIFICATION STEP
+```
+
+Example final reasoning artifact:
+
+```text
+Observed:
+- Gi1/0/12 CRC errors rose sharply
+- packet loss affects only CAM-12 path
+- RTSP reconnects rose at the same timestamps
+- WAN RTT and loss remained normal
+
+Candidate causes:
+1. local physical link degradation   HIGH
+2. camera overload                   LOW
+3. WAN congestion                    REJECTED
+
+Why:
+- local interface error counter is a strong discriminator
+- WAN evidence contradicts congestion hypothesis
+- temporal correlation matches prior verified link-failure cases
+
+Recommended next action:
+- run the approved physical-link verification skill
+- do not replace hardware automatically
+```
+
+The AI should always be able to expose **which evidence supported or contradicted a cause**.
+
+## Public dataset selection strategy
+
+WorkSpace should fetch only shards that add diagnostic information.
+
+High-value examples:
+
+- LANL: authentication/process/DNS/flow correlation -> multi-source incident chains;
+- CSE-CIC-IDS2018: labeled flow/attack evidence -> discriminative attack patterns;
+- BOTS v2: cross-source enterprise logs -> incident correlation reasoning.
+
+Raw PCAP is fetched only when packet-level detail is required to validate a pattern/extractor. It is not a default retention target.
+
+Research-only datasets remain isolated and cannot produce enterprise-approved patterns or skills under a research-only license state.
+
+## Own-network learning
+
+Public datasets provide broad experience. The highest-value operational experience eventually comes from the company's own verified incidents:
+
+```text
+switch/router syslog
+SNMP/interface counters
+NetFlow/IPFIX
+DNS/DHCP
+VPN
+Windows/Linux events
+camera/RTSP events
+server/container events
+latency/loss/jitter
+operator incident notes
+verified remediation outcome
+```
+
+For local incidents the ideal closed loop is:
+
+```text
+incident evidence
+  -> diagnosis
+  -> operator action
+  -> verification
+  -> outcome
+  -> reviewed Experience Case
+  -> repeated cases
+  -> Evidence Pattern
+  -> reviewed Skill
+```
+
+This allows WorkSpace to accumulate enterprise-specific operational experience without exporting confidential data.
+
+## Admission and license lifecycle
 
 ```text
 REQUEST
@@ -131,238 +446,111 @@ VARIANT / PURPOSE GATE
   v
 BYTE + OBJECT BUDGET
   |
-  +-- over budget ------> DENY
+  v
+FETCH -> VERIFY -> TEMP NORMALIZE
   |
   v
-BOUNDED ACQUISITION PLAN
+EXPERIENCE EXTRACTION
   |
   v
-FETCH WORKER
+EXPERIENCE CONTRACT VALIDATION
+  |
+  +-- unsupported cause/remediation --> retain as unknown, never fabricate
   |
   v
-SHA-256 + SIZE + TYPE VERIFICATION
+PROMOTE COMPACT EXPERIENCE / PATTERN / EVAL
   |
   v
-OFFLINE NORMALIZER
-  |
-  v
-PROVENANCE MANIFEST
-  |
-  v
-PROMOTION
-  +--> research/
-  +--> approved/
+DELETE RAW + NORMALIZED STAGING WHEN NO LONGER REQUIRED
 ```
 
-The `NetworkDatasetManager` performs the deterministic decision phase and intentionally performs **no network I/O**.
-
-## License states
-
-`enterprise_approved`
-: Explicitly reviewed for the intended enterprise training/evaluation use.
-
-`research_only`
-: May be acquired only for research. Output stays in the research store.
-
-`review_required`
-: Fail closed until a human review updates the registry.
-
-`blocked`
-: Acquisition and promotion denied.
-
-Changing a registry state is a security/compliance change and requires review.
-
-## Initial registry
-
-The V1 registry includes:
-
-- LANL Comprehensive Multi-Source — enterprise-approved; operator enrollment/direct-link bootstrap may be required.
-- CSE-CIC-IDS2018 — enterprise-approved; public unsigned S3 acquisition; prefer processed ML traffic for V1.
-- Splunk BOTS v2 — enterprise-approved; prefer attack-only for the first incident-correlation experiments.
-- MAWI — research-only in the WorkSpace registry.
-- TON_IoT — research-only unless commercial permission is recorded.
-- UGR'16 — review-required and fail-closed.
-
-The registry is deliberately conservative. A dataset being publicly downloadable does not imply enterprise training rights.
-
-## Provenance contract
-
-Each normalized artifact must be traceable through a manifest containing at least:
-
-```text
-dataset_id
-purpose
-variant
-destination_class
-source_object
-source_sha256
-source_size_bytes
-fetched_at
-parser_version
-normalized_schema_version
-registry_fingerprint
-policy_fingerprint
-license_source
-license_status
-output_sha256          # required before promotion
-parent_source_hashes   # when one output combines multiple inputs
-transform_settings     # canonicalized
-promotion_decision
-```
-
-V1 code creates the source-side provenance template. The normalizer/promotion phase must append output digest and transformation metadata before making an artifact visible to Core.
-
-## Network policy for the future fetch worker
-
-The fetch process must support only:
-
-- HTTPS;
-- `GET` and `HEAD`;
-- reviewed hostnames and path prefixes from the registry;
-- bounded redirects;
-- no request body;
-- no caller-provided cookies, Authorization header or arbitrary headers;
-- no credentials in V1;
-- no private, loopback, link-local, CGNAT, multicast or special-use destination after DNS resolution;
-- bounded response/object size and bounded total job bytes.
-
-The fetch worker receives an immutable acquisition plan. It does not accept arbitrary URLs from the LLM.
-
-## Normalization strategy
-
-Raw packet capture is evidence, not model context. Preferred pipeline:
-
-```text
-PCAP / NetFlow / CSV / host logs
-              |
-      deterministic parser
-              |
-    Flow / DNS / Auth / Host / IDS events
-              |
-       normalized schema
-              |
-      Parquet/Arrow shards
-              |
-     features/time windows
-              |
-        ML/DL/AI layers
-```
-
-Parquet/Arrow support is a later adapter because the current WorkSpace base package deliberately has a small dependency set. Do not add `pyarrow`, Zeek or other heavy dependencies to the Confidential Core package without a separate dependency/security review.
-
-## Common network event schema
-
-Target normalized fields should include, where available:
-
-```text
-timestamp
-dataset_id
-site
-device_id
-device_role
-src_ip
-dst_ip
-src_port
-dst_port
-protocol
-packets
-bytes
-duration
-rtt
-event_family
-event_type
-service
-severity
-user
-host
-process
-label
-attack_family
-source_sha256
-source_dataset
-source_license
-```
-
-Not every source must populate every field. Missing values are explicit nulls, not fabricated values.
-
-## Own-network data
-
-Public datasets provide general experience. Enterprise accuracy must eventually be calibrated with local network observations such as switch/router syslog, SNMP, NetFlow/IPFIX, DNS, DHCP, VPN, Windows Event, Linux journal, RTSP/camera events, server/container logs, latency, loss and jitter.
-
-Internal telemetry follows a separate path and **never enters Zone D1**. It is already confidential and must be ingested locally under Core-side policy.
+`experience_extraction` is the primary enterprise acquisition purpose. `training` remains available only as a secondary bounded experiment path; it does not change the no-raw-retention rule.
 
 ## CLI V1
 
+Primary use:
+
 ```bash
-workspace-network-data list
-
-workspace-network-data fingerprint
-
 workspace-network-data plan cse-cic-ids2018 \
-  --purpose training \
+  --purpose experience_extraction \
   --variant processed-ml \
   --estimated-bytes 1073741824 \
   --objects 2
 ```
 
-The command emits an acquisition plan or a machine-readable deny reason. It never downloads data.
+`experience_extraction` is also the CLI default purpose.
 
-Examples of fail-closed reasons:
+The command creates an immutable bounded plan and performs no network I/O.
 
-```text
-DATASET_UNKNOWN
-DATASET_STATUS_DENIED
-ENTERPRISE_USE_NOT_ALLOWED
-COMMERCIAL_LICENSE_NOT_APPROVED
-FULL_SYNC_DENIED
-JOB_BYTE_BUDGET_EXCEEDED
-OBJECT_BUDGET_EXCEEDED
-VARIANT_PURPOSE_DENIED
-NO_NETWORK_ALLOWLIST
-```
+## Security invariants
+
+1. `workspace-core` has no Internet/LAN egress.
+2. Internet-capable dataset fetch code cannot read confidential WorkSpace data.
+3. Fetch and parse/extract use separate OS identities.
+4. Raw public bytes are untrusted.
+5. License state is deterministic policy, never LLM inference.
+6. Whole-corpus sync is denied by default.
+7. Raw and normalized logs are temporary staging material.
+8. Durable causes/remediation require explicit evidence basis.
+9. A single case cannot become a general evidence pattern.
+10. Dataset-derived skills remain advisory candidates and cannot auto-promote.
+11. Approved skills retain the existing WorkSpace hash/review/authority boundary.
+12. Every durable experience artifact is traceable to source hashes and transformation provenance.
 
 ## Implementation phases
 
-### V1 — control plane
+### V1 — control plane and experience contract
 
-Implemented in this branch:
+Implemented on this branch:
 
 - reviewed dataset registry;
 - license/purpose/status admission;
-- byte/object/full-sync budget enforcement;
-- LRU eviction planning with active/pinned protection;
+- `experience_extraction` acquisition purpose;
+- bounded scratch policy;
+- explicit prohibition on durable raw/normalized log retention;
 - stable policy/registry fingerprints;
-- source provenance template;
-- CLI for list/fingerprint/plan;
+- source provenance templates;
+- `ExperienceCase`, `EvidencePattern` and `SkillCandidate` validation contracts;
+- prohibition on unsupported confirmed causes/remediation;
+- prohibition on candidate-skill self-approval;
 - unit tests.
 
-### V2 — acquisition boundary
+### V2 — isolated acquisition/extraction boundary
 
-Add a separate `workspace-dataset-fetch` service and `workspace-dataset` processor, OS permissions, nftables rules, host/path enforcement, streamed SHA-256 and an append-only acquisition ledger.
+Add `workspace-dataset-fetch` and offline `workspace-dataset` services, systemd/nftables/filesystem boundary, streamed SHA-256 and append-only acquisition ledger.
 
-### V3 — normalizers
+### V3 — evidence normalizers and case extraction
 
-Add source adapters and deterministic normalizers for CIC processed CSV, LANL gzip text and BOTS artifacts. Introduce Parquet/Arrow only after dependency review.
+Add bounded adapters for CIC processed CSV, LANL event streams and BOTS. Build deterministic event references and incident segmentation. Raw/normalized staging must be deleted after successful extraction unless explicitly pinned for an active audit/evaluation job.
 
-### V4 — Network AI integration
+### V4 — pattern miner and candidate-skill compiler
 
-Expose approved normalized shards read-only through the WorkSpace knowledge/retrieval plane. Add network-specific evaluation sets, anomaly/failure taxonomy and model-training pipelines.
+Aggregate independently supported cases, mine discriminators/false-positive checks, and create advisory candidate skills. No auto-promotion.
 
-## Security review triggers
+### V5 — runtime Network AI reasoning
 
-A fresh security review is mandatory if any of these change:
+Connect the approved Experience Store to deterministic retrieval and the WorkSpace reasoning harness so new incidents are diagnosed through evidence-backed case/pattern comparison before an LLM produces a human explanation.
 
-- a dataset registry status or license decision;
-- acquisition hostname/path allowlists;
-- credential support;
-- HTTP methods/headers/redirect policy;
-- dataset-fetch UID/group membership;
-- access from fetch worker to approved/Core data;
-- Core network rules;
-- cache/approved-store filesystem permissions;
-- parser execution model;
-- auto-promotion behavior;
-- new remote model/cloud processing;
-- telemetry or upload behavior.
+## Final design statement
 
-The architectural objective is simple: **public bytes may flow inward after deterministic verification; confidential bytes never gain an outward path.**
+The data plane exists to turn large external log collections into **small, auditable operational experience**.
+
+The intended compression is conceptual:
+
+```text
+TERABYTES OF RE-FETCHABLE PUBLIC LOGS
+                  |
+                  v
+       BOUNDED TEMPORARY EVIDENCE
+                  |
+                  v
+       VERIFIED INCIDENT CASES
+                  |
+                  v
+        REPEATED PATTERNS
+                  |
+                  v
+       REVIEWED DIAGNOSTIC SKILLS
+```
+
+WorkSpace should remember **how evidence leads to a diagnosis**, not remember every packet that ever passed through a network.
