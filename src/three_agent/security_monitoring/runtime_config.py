@@ -19,7 +19,7 @@ _FORBIDDEN_SECRET_KEYS = {
     "secret",
     "api_key",
 }
-_TOP_LEVEL_KEYS = {"enabled", "allow_real_network", "database_path", "policy", "assets"}
+_TOP_LEVEL_KEYS = {"enabled", "allow_real_network", "database_path", "secret_directory", "policy", "assets"}
 _ASSET_KEYS = {
     "asset_id",
     "role",
@@ -59,12 +59,15 @@ class MonitoringRuntimeConfig:
     enabled: bool
     allow_real_network: bool
     database_path: Path
+    secret_directory: Path | None
     policy: MonitoringPolicy
     assets: tuple[AssetInventoryRecord, ...]
 
     def validate(self) -> "MonitoringRuntimeConfig":
         if not self.database_path.is_absolute():
             raise MonitoringContractError("database_path must be absolute")
+        if self.secret_directory is not None and not self.secret_directory.is_absolute():
+            raise MonitoringContractError("secret_directory must be absolute")
         self.policy.validate()
         asset_ids: set[str] = set()
         for asset in self.assets:
@@ -121,10 +124,13 @@ def load_runtime_config(path: str | Path) -> MonitoringRuntimeConfig:
         )
 
     database_path = Path(str(payload.get("database_path") or ""))
+    raw_secret_directory = payload.get("secret_directory")
+    secret_directory = Path(str(raw_secret_directory)) if raw_secret_directory else None
     return MonitoringRuntimeConfig(
         enabled=bool(payload.get("enabled", False)),
         allow_real_network=bool(payload.get("allow_real_network", False)),
         database_path=database_path,
+        secret_directory=secret_directory,
         policy=policy,
         assets=tuple(assets),
     ).validate()
