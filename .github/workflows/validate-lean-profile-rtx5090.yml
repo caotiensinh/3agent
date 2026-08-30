@@ -19,12 +19,12 @@ jobs:
     runs-on: [self-hosted]
     timeout-minutes: 20
     env:
-      CANDIDATE_SHA: 4a290dc77dbda26c90a21713fe400f5975172c6c
+      CANDIDATE_SHA: d603cbe050200ec6119069e29f128bee32ec96fa
     steps:
       - name: Checkout exact candidate commit
         uses: actions/checkout@v4
         with:
-          ref: 4a290dc77dbda26c90a21713fe400f5975172c6c
+          ref: d603cbe050200ec6119069e29f128bee32ec96fa
           persist-credentials: false
           fetch-depth: 1
 
