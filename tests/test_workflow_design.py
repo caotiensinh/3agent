@@ -55,6 +55,12 @@ class WorkflowDesignTests(unittest.TestCase):
         self.assertEqual(kwargs["schema_id"], "workspace-workflow-contract/v1")
         self.assertLessEqual(kwargs["num_predict"], 1400)
 
+    def test_validation_is_idempotent_after_normalization(self):
+        once = validate_contract(sample_contract())
+        twice = validate_contract(once)
+        self.assertEqual(twice, once)
+        self.assertIsNone(once["nodes"][0]["condition"])
+
     def test_cycle_is_rejected_deterministically(self):
         payload = sample_contract()
         payload["nodes"][0]["depends_on"] = ["done"]
@@ -69,12 +75,13 @@ class WorkflowDesignTests(unittest.TestCase):
 
     def test_svg_and_mermaid_escape_untrusted_labels(self):
         payload = sample_contract()
-        payload["nodes"][1]["label"] = '<script>alert("x")</script> [danger]'
+        payload["nodes"][1]["label"] = '<script>alert("x")</script> [danger] | {edge};'
         svg = render_svg(payload)
         mermaid = render_mermaid(payload)
         self.assertNotIn("<script>", svg)
         self.assertIn("&lt;script&gt;", svg)
-        self.assertNotIn("[danger]", mermaid)
+        for token in ("[danger]", "|", "{edge}", ";"):
+            self.assertNotIn(token, mermaid)
         self.assertNotIn('"x"', mermaid)
 
     def test_schedule_trigger_is_design_only_and_adds_warning(self):
