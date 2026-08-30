@@ -12,17 +12,20 @@ from three_agent.chat_simple_e2e_acceptance import (
 
 
 class _Recorder:
-    def __init__(self, calls=None):
-        self.calls = list(calls or [])
+    def __init__(self):
+        self.calls = []
 
 
 class _ImmediateService:
-    def __init__(self, job):
+    def __init__(self, job, recorder, call):
         self.job = job
+        self.recorder = recorder
+        self.call = call
         self.submitted_kwargs = None
 
     def submit(self, message, **kwargs):
         self.submitted_kwargs = {"message": message, **kwargs}
+        self.recorder.calls.append(self.call)
         return SimpleNamespace(job_id=self.job.job_id, stages=list(self.job.stages))
 
     def get(self, job_id):
@@ -60,8 +63,12 @@ class SimpleChatE2EAcceptanceTests(unittest.TestCase):
             error=None,
             stages=[{"id": "answer", "label": "Direct local answer", "status": "completed"}],
         )
-        service = _ImmediateService(job)
-        recorder = _Recorder([SimpleNamespace(succeeded=True, failure_code="")])
+        recorder = _Recorder()
+        service = _ImmediateService(
+            job,
+            recorder,
+            SimpleNamespace(succeeded=True, failure_code=""),
+        )
 
         result = run_case(service, recorder, CASES[0], timeout_seconds=1.0)
 
@@ -85,9 +92,11 @@ class SimpleChatE2EAcceptanceTests(unittest.TestCase):
                 {"id": "daily_report", "label": "Human Report", "status": "failed"},
             ],
         )
-        service = _ImmediateService(job)
-        recorder = _Recorder(
-            [SimpleNamespace(succeeded=False, failure_code="resource_admission")]
+        recorder = _Recorder()
+        service = _ImmediateService(
+            job,
+            recorder,
+            SimpleNamespace(succeeded=False, failure_code="resource_admission"),
         )
 
         result = run_case(service, recorder, CASES[0], timeout_seconds=1.0)
