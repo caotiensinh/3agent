@@ -19,6 +19,7 @@ from .chat_context import (
 from .chat_fidelity import parse_chat_request
 from .chat_gateway import TelegramBridge, _lan_hint, _parse_allowed_ids
 from .chat_gateway_v5 import _history_owner_key
+from .chat_gateway_v14 import IntentAwareProjectChatService
 from .chat_gateway_v15 import WorkflowV3Application, WorkflowV3HTTPHandler
 from .config import load_config
 from .orchestrator import Orchestrator
@@ -32,14 +33,6 @@ from .workspace_external_identity import (
 )
 
 CONVERSATION_CONTEXT_POLICY_VERSION = "deterministic-reference-gated/v1"
-
-
-class ContextAwareWorkflowV3ChatService(WorkflowV3HTTPHandler.__mro__[1].__mro__[0] if False else object):
-    """Type marker replaced below; kept out of runtime inheritance."""
-
-
-# Import through the established v14 service boundary instead of duplicating it.
-from .chat_gateway_v14 import IntentAwareProjectChatService  # noqa: E402
 
 
 class ContextAwareProjectChatService(IntentAwareProjectChatService):
