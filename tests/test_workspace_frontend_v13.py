@@ -1,8 +1,20 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
+from three_agent.chat_gateway_v18 import workspace_ui_capabilities
 from three_agent.workspace_frontend_v13 import WORKSPACE_HTML_V13
+
+
+def config() -> SimpleNamespace:
+    return SimpleNamespace(
+        product_name="WorkSpace",
+        environment="secure-local",
+        confidentiality_mode="confidential",
+        internet_gateway=SimpleNamespace(enabled=True, public_search_enabled=False),
+        raw={"github": {"enabled": False}},
+    )
 
 
 class WorkspaceFrontendV13Tests(unittest.TestCase):
@@ -47,9 +59,13 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
 
     def test_unconfigured_external_integrations_remain_fail_closed(self) -> None:
         html = WORKSPACE_HTML_V13
-        self.assertIn("This connector is not configured for the local WorkSpace runtime.", html)
-        self.assertIn("['figma','canva','gmail']", html)
         self.assertIn("if(!f.enabled){showToast", html)
+        features = workspace_ui_capabilities(config())["features"]
+        for name in ("figma", "canva", "gmail"):
+            with self.subTest(name=name):
+                self.assertFalse(features[name]["enabled"])
+                self.assertEqual(features[name]["state_label"], "Connect")
+                self.assertIn("No connector authority has been granted", features[name]["reason"])
 
 
 if __name__ == "__main__":
