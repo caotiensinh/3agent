@@ -1,0 +1,144 @@
+name: live-simple-chat-e2e
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN to execute multilingual simple-chat E2E on the trusted RTX 5090 runner'
+        required: true
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - 'src/three_agent/chat_fidelity.py'
+      - 'src/three_agent/chat_gateway_v14.py'
+      - 'src/three_agent/chat_gateway_v16.py'
+      - 'src/three_agent/chat_gateway_v17.py'
+      - 'src/three_agent/chat_output_contract.py'
+      - 'src/three_agent/chat_service_fidelity_v2.py'
+      - 'src/three_agent/chat_multiturn_acceptance.py'
+      - 'src/three_agent/chat_multiturn_acceptance_v2.py'
+      - 'src/three_agent/chat_simple_e2e_acceptance.py'
+      - 'src/three_agent/resource_budget.py'
+      - 'src/three_agent/workspace_frontend_v12.py'
+      - 'tests/test_simple_chat_e2e_acceptance.py'
+      - '.github/workflows/live-simple-chat-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-live-local-chat-rtx5090
+  cancel-in-progress: false
+
+jobs:
+  multilingual-simple-chat:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.confirm == 'RUN')
+    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
+    timeout-minutes: 30
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact source and RTX 5090 inventory read-only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          command -v nvidia-smi >/dev/null 2>&1
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -ge 2
+
+      - name: Create ephemeral acceptance environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-simple-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install -e .
+          echo "WORKSPACE_SIMPLE_E2E_VENV=$VENV" >> "$GITHUB_ENV"
+
+      - name: Resolve WorkSpace acceptance config without printing it
+        shell: bash
+        env:
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "WORKSPACE_SIMPLE_E2E_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+
+      - name: Run Vietnamese Japanese English direct-chat E2E
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          REPORT="$RUNNER_TEMP/workspace-simple-chat-e2e-${GITHUB_SHA}.json"
+          RUNTIME_DIR="$RUNNER_TEMP/workspace-simple-e2e-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$RUNTIME_DIR"
+          install -d -m 700 "$RUNTIME_DIR"
+          echo "WORKSPACE_SIMPLE_E2E_REPORT=$REPORT" >> "$GITHUB_ENV"
+          set +e
+          THREE_AGENT_RUNTIME_DIR="$RUNTIME_DIR" \
+          WORKSPACE_CONFIG="$WORKSPACE_SIMPLE_E2E_CONFIG" \
+            "$WORKSPACE_SIMPLE_E2E_VENV/bin/python" -m three_agent.chat_simple_e2e_acceptance \
+              --live \
+              --source-sha "$GITHUB_SHA" \
+              --output "$REPORT"
+          rc=$?
+          set -e
+          rm -rf "$RUNTIME_DIR"
+          exit "$rc"
+
+      - name: Publish non-sensitive E2E summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test -n "${WORKSPACE_SIMPLE_E2E_REPORT:-}" && test -f "$WORKSPACE_SIMPLE_E2E_REPORT"; then
+            "$WORKSPACE_SIMPLE_E2E_VENV/bin/python" - "$WORKSPACE_SIMPLE_E2E_REPORT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## WorkSpace multilingual simple-chat E2E')
+          print()
+          print(f"- source SHA: `{p.get('source_sha', 'unknown')}`")
+          print(f"- package: `{p.get('package_version', 'unknown')}`")
+          print(f"- result: `{'PASS' if p.get('passed') else 'FAIL'}`")
+          print(f"- cases: `{p.get('case_count', 0)}`")
+          print(f"- languages: `{','.join(p.get('languages', []))}`")
+          print(f"- frontend direct-chat contract: `{p.get('frontend_contract_passed', False)}`")
+          print('- raw prompts/answers: `not persisted`')
+          print()
+          print('| case | route | status | language | model returned | response chars | failure code |')
+          print('|---|---|---|---|---:|---:|---|')
+          for item in p.get('results', []):
+              print('| {case} | {route} | {status} | {lang} | {returned} | {chars} | {failure} |'.format(
+                  case=item.get('case_id', ''),
+                  route=item.get('route', ''),
+                  status=item.get('status', ''),
+                  lang=item.get('actual_language', ''),
+                  returned=str(bool(item.get('model_returned'))).lower(),
+                  chars=item.get('response_chars', 0),
+                  failure=item.get('failure_code', ''),
+              ))
+          PY
+          else
+            echo '## WorkSpace multilingual simple-chat E2E' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '- result: `NO_REPORT`' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload sanitized E2E evidence
+        if: always() && env.WORKSPACE_SIMPLE_E2E_REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-simple-chat-e2e-${{ github.sha }}
+          path: ${{ env.WORKSPACE_SIMPLE_E2E_REPORT }}
+          if-no-files-found: error
+          retention-days: 14

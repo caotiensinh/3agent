@@ -8,6 +8,9 @@ from .chat_gateway_v16 import ContextAwareProjectChatService
 from .chat_output_contract import (
     compile_chat_output_contract,
     render_output_contract,
+    render_strict_structured_answer,
+    strict_structured_schema,
+    strict_structured_schema_id,
     tighten_for_missing_reference,
 )
 from .privacy import redact_sensitive_text
@@ -42,6 +45,16 @@ def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
     return min(configured, char_bound)
 
 
+def _strict_structured_mode(llm: Any, contract: Any, high_effort: bool) -> bool:
+    """Use decoder-time shape control only where it cannot steal reasoning budget."""
+
+    return bool(
+        not high_effort
+        and strict_structured_schema(contract) is not None
+        and callable(getattr(llm, "generate_json", None))
+    )
+
+
 class ContractAwareProjectChatService(ContextAwareProjectChatService):
     """Reference-gated local chat plus deterministic response-shape enforcement."""
 
@@ -59,6 +72,11 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
         high_effort = str(effort or "").strip().lower() == "high"
         generation_num_predict = _bounded_generation_num_predict(contract, high_effort)
         generation_temperature = None if high_effort else 0.0
+        structured_mode = _strict_structured_mode(
+            self.orchestrator.llm,
+            contract,
+            high_effort,
+        )
 
         self._update(job_id, status="running")
         self._stage(
@@ -76,7 +94,8 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 f"mode=chat language={job.language} language_source={language_source} "
                 f"effort={effort} uploads={len(uploads)} output_kind={contract.kind} "
                 f"num_predict={generation_num_predict} "
-                f"sampling={'default' if generation_temperature is None else 'temperature0'}"
+                f"sampling={'default' if generation_temperature is None else 'temperature0'} "
+                f"structured={str(structured_mode).lower()}"
             ),
         )
 
@@ -96,15 +115,36 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                         repair_reason=last_reason if attempt > 0 else "",
                     )
                 )
-                answer = self.orchestrator.llm.generate(
-                    system_prompt,
-                    prompt,
-                    think=high_effort,
-                    num_predict=generation_num_predict,
-                    temperature=generation_temperature,
-                    trust_domain="workspace-local-chat",
-                    template_version="workspace.chat.direct.v2",
-                )
+                if structured_mode:
+                    system_prompt += (
+                        "\n\nINTERNAL STRUCTURED DECODING (mandatory for this generation):\n"
+                        "- The decoder returns an internal JSON object, not the final user-visible format.\n"
+                        "- Fill every required value with only the requested answer content.\n"
+                        "- Keep explanatory text in the target response language.\n"
+                        "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
+                        "- A deterministic local renderer will convert these values to the user's requested final shape."
+                    )
+                    payload = self.orchestrator.llm.generate_json(
+                        system_prompt,
+                        prompt,
+                        schema=strict_structured_schema(contract),
+                        schema_id=strict_structured_schema_id(contract),
+                        think=False,
+                        num_predict=generation_num_predict,
+                        trust_domain="workspace-local-chat",
+                        template_version="workspace.chat.direct.structured.v1",
+                    )
+                    answer = render_strict_structured_answer(contract, payload)
+                else:
+                    answer = self.orchestrator.llm.generate(
+                        system_prompt,
+                        prompt,
+                        think=high_effort,
+                        num_predict=generation_num_predict,
+                        temperature=generation_temperature,
+                        trust_domain="workspace-local-chat",
+                        template_version="workspace.chat.direct.v2",
+                    )
 
                 valid, reason = direct_chat_answer_valid(answer, job.language, job.message)
                 if valid:

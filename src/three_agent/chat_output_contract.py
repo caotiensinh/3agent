@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from .chat_fidelity import requested_language_neutral_format
 
 
 _BULLET_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S")
+_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 _SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
+STRICT_STRUCTURED_OUTPUT_KINDS = frozenset(
+    {"bullets", "single_sentence", "single_number", "code_only"}
+)
 
 
 def _sentence_terminator_count(text: str) -> int:
@@ -70,6 +75,114 @@ class ChatOutputContract:
             # command/code shape check. This layer only enforces bounded size.
             pass
         return True, "ok"
+
+
+def strict_structured_schema(contract: ChatOutputContract) -> dict[str, Any] | None:
+    """Return a decoder-time intermediate schema for strict standard-chat shapes.
+
+    The intermediate representation exists only in memory. It is rendered into
+    the user's requested plain-text shape before the existing language/format
+    and output-contract validators run. It does not relax any validator or
+    persist model output.
+    """
+
+    if contract.kind == "bullets" and contract.exact_items > 0:
+        properties = {
+            f"item_{index}": {
+                "type": "string",
+                "description": (
+                    f"Content for bullet {index} only. Do not include a bullet marker, heading, "
+                    "preface, or suffix."
+                ),
+            }
+            for index in range(1, contract.exact_items + 1)
+        }
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+    if contract.kind == "single_sentence":
+        return {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": "Exactly one concise answer sentence and no heading or note.",
+                }
+            },
+            "required": ["answer"],
+            "additionalProperties": False,
+        }
+    if contract.kind == "single_number":
+        return {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "number",
+                    "description": "The requested numeric value only.",
+                }
+            },
+            "required": ["value"],
+            "additionalProperties": False,
+        }
+    if contract.kind == "code_only":
+        return {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Requested code or command only, without explanatory prose.",
+                }
+            },
+            "required": ["code"],
+            "additionalProperties": False,
+        }
+    return None
+
+
+def strict_structured_schema_id(contract: ChatOutputContract) -> str:
+    if contract.kind == "bullets":
+        return f"workspace.chat.strict.bullets.{contract.exact_items}.v1"
+    return f"workspace.chat.strict.{contract.kind}.v1"
+
+
+def _single_line(value: object, *, strip_bullet_prefix: bool = False) -> str:
+    body = " ".join(str(value or "").split()).strip()
+    if strip_bullet_prefix:
+        body = _BULLET_PREFIX_RE.sub("", body, count=1).strip()
+    return body
+
+
+def render_strict_structured_answer(
+    contract: ChatOutputContract,
+    payload: dict[str, Any],
+) -> str:
+    """Render the intermediate object into the exact user-visible text family."""
+
+    if contract.kind == "bullets":
+        items = [
+            _single_line(payload.get(f"item_{index}"), strip_bullet_prefix=True)
+            for index in range(1, contract.exact_items + 1)
+        ]
+        return "\n".join(f"- {item}" for item in items if item).strip()
+    if contract.kind == "single_sentence":
+        return _single_line(payload.get("answer"))
+    if contract.kind == "single_number":
+        value = payload.get("value")
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        if isinstance(value, float):
+            return format(value, ".15g")
+        return str(value or "").strip()
+    if contract.kind == "code_only":
+        return str(payload.get("code") or "").strip()
+    raise ValueError(f"Unsupported strict structured output kind: {contract.kind}")
 
 
 def _exact_bullet_count(request: str) -> int:
