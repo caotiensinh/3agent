@@ -30,6 +30,12 @@ class ChatGatewayV15ContractTests(unittest.TestCase):
         names = ContextAwareProjectChatService._direct_prompt.__code__.co_names
         self.assertIn("_context_plan", names)
         self.assertIn("_upload_context", names)
+        constants = "\n".join(
+            value for value in ContextAwareProjectChatService._direct_prompt.__code__.co_consts
+            if isinstance(value, str)
+        )
+        self.assertIn('available="false"', constants)
+        self.assertIn("Do not invent the missing referenced content", constants)
 
     def test_package_entrypoints_use_gateway_v15(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
