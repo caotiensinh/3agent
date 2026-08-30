@@ -47,6 +47,31 @@ class WorkflowDispatchApplication(WorkflowStudioApplication):
 class WorkflowDispatchHTTPHandler(WorkflowStudioHTTPHandler):
     server_version = "WorkSpaceChat/0.13"
 
+    @staticmethod
+    def _public_dispatch_result(payload: dict[str, Any]) -> dict[str, Any]:
+        """Return only browser-safe dispatch metadata; never expose server paths."""
+        raw_result = payload.get("result")
+        result = raw_result if isinstance(raw_result, dict) else {}
+        raw_error = result.get("error")
+        public_result = {
+            "task_id": str(payload.get("task_id") or ""),
+            "status": str(result.get("status") or "unknown"),
+            "task_status": str(result.get("task_status") or "unknown"),
+            "stage": str(result.get("stage") or "unknown"),
+            "error": (
+                redact_sensitive_text(str(raw_error))[:400]
+                if raw_error not in {None, ""}
+                else None
+            ),
+        }
+        return {
+            "schema_version": str(payload.get("schema_version") or ""),
+            "task_id": str(payload.get("task_id") or ""),
+            "dispatch_status": str(payload.get("dispatch_status") or "unknown"),
+            "execution_profile": str(payload.get("execution_profile") or ""),
+            "result": public_result,
+        }
+
     def _prepare_dispatch(self) -> None:
         admin = self._require_admin()
         if admin is None:
@@ -91,7 +116,7 @@ class WorkflowDispatchHTTPHandler(WorkflowStudioHTTPHandler):
                 confirmation=str(payload.get("confirmation") or ""),
                 approver_id=str(admin["user_id"]),
             )
-            self._json(HTTPStatus.OK, result)
+            self._json(HTTPStatus.OK, self._public_dispatch_result(result))
         except WorkflowDispatchError as exc:
             self._json(
                 HTTPStatus.CONFLICT,
@@ -150,7 +175,12 @@ class WorkflowDispatchHTTPHandler(WorkflowStudioHTTPHandler):
             return
         if path.startswith("/api/workflows/") and path.endswith("/execute"):
             parts = [part for part in path.split("/") if part]
-            if len(parts) == 4 and parts[0] == "api" and parts[1] == "workflows" and parts[3] == "execute":
+            if (
+                len(parts) == 4
+                and parts[0] == "api"
+                and parts[1] == "workflows"
+                and parts[3] == "execute"
+            ):
                 self._execute_dispatch(parts[2])
                 return
         super().do_POST()
