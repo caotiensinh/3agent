@@ -111,13 +111,13 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
         )
         self.assertEqual(language, "vi")
 
-    def test_package_entrypoints_use_gateway_v16_and_keep_acceptance_clis(self) -> None:
+    def test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v17(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('version = "0.18.0"', pyproject)
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v16:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v16:main"', pyproject)
+        self.assertIn('version = "1!0.0.1"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway_v17:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v17:main"', pyproject)
         self.assertIn(
             'workspace-chat-acceptance = "three_agent.chat_acceptance:main"',
             pyproject,
