@@ -54,7 +54,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
         conversation_id: str | None,
     ) -> str | None:
         selected = str(language or "auto").strip().lower()
-        if selected not in {"", "auto"} or not conversation_id:
+        if selected not in {"", "auto"}:
             return language
         controls = parse_chat_request(
             message,
@@ -66,8 +66,11 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
         mode, _, cue_language = classify_context_request(controls.text)
         if mode != CONTEXT_MODE_FOLLOW_UP:
             return language
+        # The current cue itself has precedence over older conversation language.
         if cue_language in {"vi", "ja", "en"}:
             return cue_language
+        if not conversation_id:
+            return language
 
         try:
             owner_key = _history_owner_key(channel, sender)
@@ -192,7 +195,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
                 "",
                 '<CONVERSATION_CONTEXT_POLICY mode="standalone">',
                 "No earlier conversation is supplied because the current request contains no explicit cross-turn reference.",
-                "Answer only the CURRENT USER_REQUEST.",
+                "Answer only the CURRENT USER REQUEST.",
                 "</CONVERSATION_CONTEXT_POLICY>",
             ]
 
