@@ -51,6 +51,7 @@ jobs:
     env:
       EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
       MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      PYTHONPATH: ${{ github.workspace }}/src
       WORKSPACE_CONFIG: config/workspace.secure.json
       WORKSPACE_FAST_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
       WORKSPACE_RESEARCH_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
@@ -76,14 +77,15 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test -z "$(git status --porcelain --untracked-files=no)"
 
-      - name: Install exact WorkSpace source without network dependency resolution
+      - name: Validate exact WorkSpace source without package installation
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 -m pip install --no-deps -e .
-          workspace --help >/dev/null
+          test "$PYTHONPATH" = "$GITHUB_WORKSPACE/src"
+          test -d "$PYTHONPATH/three_agent"
+          python3 -c 'import three_agent.benchmark_readiness, three_agent.d502a_benchmark'
           python3 -m three_agent.d502a_benchmark --help >/dev/null
-          workspace-benchmark-readiness --help >/dev/null
+          python3 -m three_agent.benchmark_readiness --help >/dev/null
 
       - name: Capture metadata-only benchmark readiness receipt
         shell: bash
@@ -91,7 +93,7 @@ jobs:
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
           mkdir -p "$BENCH_ROOT"
-          workspace-benchmark-readiness \
+          python3 -m three_agent.benchmark_readiness \
             --source-ref "$EXPECTED_SHA" \
             --repo-root "$GITHUB_WORKSPACE" \
             --model "$MODEL" \
