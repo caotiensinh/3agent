@@ -1,6 +1,7 @@
 import unittest
+from types import SimpleNamespace
 
-from three_agent.chat_gateway_v6 import HTML_V6
+from three_agent.chat_gateway_v6 import HTML_V6, _job_is_owned
 
 
 class ChatGatewayV6Tests(unittest.TestCase):
@@ -37,6 +38,18 @@ class ChatGatewayV6Tests(unittest.TestCase):
             "/api/chat",
         ):
             self.assertIn(marker, HTML_V6)
+
+    def test_job_and_artifact_ownership_is_exact_account_scoped(self):
+        identity = "workspace-user:usr_0123456789abcdef"
+        own = SimpleNamespace(channel="web", sender=identity)
+        other = SimpleNamespace(
+            channel="web", sender="workspace-user:usr_fedcba9876543210"
+        )
+        telegram = SimpleNamespace(channel="telegram", sender=identity)
+        self.assertTrue(_job_is_owned(own, identity))
+        self.assertFalse(_job_is_owned(other, identity))
+        self.assertFalse(_job_is_owned(telegram, identity))
+        self.assertFalse(_job_is_owned(None, identity))
 
 
 if __name__ == "__main__":
