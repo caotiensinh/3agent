@@ -31,6 +31,7 @@ from .workspace_external_identity import (
 
 
 HTML_V18 = HTML_V17
+PCAP_APPROVAL_CONFIRMATION = "APPROVE_PCAP"
 
 
 class SecurityApprovalApplication(WorkflowV4ContextApplication):
@@ -74,6 +75,7 @@ class SecurityApprovalHTTPHandler(WorkflowV4ContextHTTPHandler):
                 "enabled": bool(policy.enabled) if policy is not None else False,
                 "approved_interface_count": len(policy.approved_interfaces) if policy else 0,
                 "admin_approval_required": True,
+                "approval_confirmation": PCAP_APPROVAL_CONFIRMATION,
                 "execution_in_web": False,
                 "dedicated_runner_required": True,
                 "model_authority": False,
@@ -106,6 +108,9 @@ class SecurityApprovalHTTPHandler(WorkflowV4ContextHTTPHandler):
             return
         try:
             payload = self._read_json_large(16 * 1024)
+            confirmation = str(payload.pop("confirmation", ""))
+            if confirmation != PCAP_APPROVAL_CONFIRMATION:
+                raise PermissionError("PCAP_APPROVAL_CONFIRMATION_REQUIRED")
             approval = approve_capture_request(
                 payload,
                 approver_user_id=str(admin["user_id"]),
