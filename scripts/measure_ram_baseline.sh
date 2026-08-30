@@ -75,7 +75,17 @@ gpu_snapshot() {
 }
 
 service_state() {
-  systemctl is-active "$1" 2>/dev/null || printf 'unknown'
+  # `systemctl is-active` exits non-zero for every state except "active" (inactive,
+  # failed, unknown, ...) while still printing that state name to stdout, so gating the
+  # fallback on exit status via `||` runs it even when the real state was already
+  # printed, concatenating both into one garbled value. Gate on captured output instead.
+  local state
+  state="$(systemctl is-active "$1" 2>/dev/null)"
+  if [[ -n "$state" ]]; then
+    printf '%s' "$state"
+  else
+    printf 'unknown'
+  fi
 }
 
 services_snapshot() {

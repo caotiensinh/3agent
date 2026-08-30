@@ -70,6 +70,32 @@ assert gpus[0] == {'index': 0, 'memory_total_mib': 32607, 'memory_used_mib': 106
 assert gpus[1]['util_percent'] is None and gpus[1]['temp_c'] is None, gpus[1]
 " "$GPU_OUTPUT"
 
+# `systemctl is-active` exits non-zero for every non-"active" state (inactive, failed,
+# unknown) while still printing that state to stdout. Real hardware caught a version of
+# this script whose fallback was gated on exit status (`cmd || fallback`), so it ran the
+# fallback even when the real state was already printed, garbling the value into
+# "inactive\nunknown". Mock systemctl to reproduce that exact shape and assert it no
+# longer happens.
+MOCK_BIN_DIR2="$(mktemp -d)"
+trap 'rm -rf "$MOCK_BIN_DIR" "$MOCK_BIN_DIR2"' EXIT
+cat >"$MOCK_BIN_DIR2/systemctl" <<'MOCK'
+#!/usr/bin/env bash
+if [[ "$1" == "is-active" ]]; then
+  echo "inactive"
+  exit 3
+fi
+exit 1
+MOCK
+chmod +x "$MOCK_BIN_DIR2/systemctl"
+
+SVC_OUTPUT="$(PATH="$MOCK_BIN_DIR2:$PATH" bash "$SCRIPT" svc-mock-check)"
+python3 -c "
+import json, sys
+doc = json.loads(sys.argv[1])
+for name, state in doc['services'].items():
+    assert state == 'inactive', f'{name} should be exactly \"inactive\", got {state!r}'
+" "$SVC_OUTPUT"
+
 # Read-only: must never call systemctl start/stop/restart/enable/disable, nvidia-smi -pm,
 # or any other mutating command.
 if grep -Eq 'systemctl (start|stop|restart|enable|disable)|nvidia-smi[^|]*-pm|sudo ' "$SCRIPT"; then
