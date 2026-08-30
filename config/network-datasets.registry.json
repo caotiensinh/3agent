@@ -19,12 +19,12 @@
       },
       "variants": {
         "events": {
-          "purpose": ["training", "evaluation", "research"],
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
           "recommended": true
         }
       },
       "formats": ["gzip", "text"],
-      "notes": "Direct file URLs may require an operator-provided link obtained through the publisher's access workflow."
+      "notes": "Primary WorkSpace use is evidence-chain and incident-experience extraction. Direct file URLs may require an operator-provided link obtained through the publisher's access workflow."
     },
     {
       "id": "cse-cic-ids2018",
@@ -44,16 +44,16 @@
       },
       "variants": {
         "processed-ml": {
-          "purpose": ["training", "evaluation", "research"],
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
           "recommended": true
         },
         "raw": {
-          "purpose": ["evaluation", "research"],
+          "purpose": ["experience_extraction", "evaluation", "research"],
           "recommended": false
         }
       },
       "formats": ["csv", "pcap", "logs"],
-      "notes": "Prefer processed ML traffic for baseline V1; fetch raw PCAP only for feature-extractor validation."
+      "notes": "Prefer processed traffic for evidence-pattern extraction. Fetch raw PCAP only when packet-level evidence is necessary to validate a case or extractor."
     },
     {
       "id": "splunk-bots-v2",
@@ -72,16 +72,16 @@
       },
       "variants": {
         "attack-only": {
-          "purpose": ["training", "evaluation", "research"],
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
           "recommended": true
         },
         "full": {
-          "purpose": ["training", "evaluation", "research"],
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
           "recommended": false
         }
       },
       "formats": ["splunk-index", "archive"],
-      "notes": "Prefer attack-only for first incident-correlation experiments; full corpus is optional."
+      "notes": "High-value source for cross-log incident correlation and evidence-chain extraction; attack-only is the preferred first corpus."
     },
     {
       "id": "mawi",
@@ -105,7 +105,7 @@
         }
       },
       "formats": ["pcap"],
-      "notes": "Never promote to enterprise training corpus under this registry state."
+      "notes": "Research-only baseline studies. Never promote derived enterprise experience or skills under this registry state."
     },
     {
       "id": "ton-iot",
@@ -129,7 +129,7 @@
         }
       },
       "formats": ["pcap", "csv", "zeek", "telemetry"],
-      "notes": "Research store only until commercial permission is recorded."
+      "notes": "Research store only until commercial permission is recorded; no enterprise experience/skill promotion."
     },
     {
       "id": "ugr16",
