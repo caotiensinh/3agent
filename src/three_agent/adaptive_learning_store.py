@@ -77,7 +77,7 @@ def _reason(value: Any) -> str:
 
 
 def _knowledge_payload(item_id: str, candidate: KnowledgeCandidate) -> dict[str, Any]:
-    """Return the reusable knowledge identity without task-specific provenance."""
+    """Return reusable content identity without task-specific provenance."""
     return {
         "schema_version": STORE_SCHEMA,
         "item_id": item_id,
@@ -202,7 +202,6 @@ class AdaptiveLearningStore:
         return KnowledgeCandidate.from_payload(payload)
 
     def _active_row(self, conn: sqlite3.Connection, item_id: str) -> sqlite3.Row | None:
-        """Derive active state from the append-only ledger; no mutable pointer exists."""
         event = conn.execute(
             """
             SELECT * FROM learning_ledger
@@ -320,6 +319,80 @@ class AdaptiveLearningStore:
         )
         return entry_hash
 
+    def _ledger_rows(self, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+        rows = conn.execute("SELECT * FROM learning_ledger ORDER BY seq").fetchall()
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item["source_experience_hashes"] = json.loads(
+                    str(item.pop("source_experience_hashes_json"))
+                )
+                item["evidence_hashes"] = json.loads(
+                    str(item.pop("evidence_hashes_json"))
+                )
+            except (json.JSONDecodeError, TypeError):
+                item["source_experience_hashes"] = []
+                item["evidence_hashes"] = []
+                item["_decode_failed"] = True
+            result.append(item)
+        return result
+
+    def _verify_ledger_conn(self, conn: sqlite3.Connection) -> dict[str, Any]:
+        rows = self._ledger_rows(conn)
+        previous = GENESIS_HASH
+        failures: list[str] = []
+        for expected_seq, row in enumerate(rows, start=1):
+            seq = int(row["seq"])
+            if seq != expected_seq:
+                failures.append(f"SEQ_GAP:{expected_seq}:{seq}")
+            if row["schema_version"] != LEDGER_SCHEMA:
+                failures.append(f"SCHEMA_MISMATCH:{seq}")
+            if row["event_type"] not in _ALLOWED_EVENTS:
+                failures.append(f"EVENT_TYPE_INVALID:{seq}")
+            if row.pop("_decode_failed", False):
+                failures.append(f"LEDGER_JSON_INVALID:{seq}")
+            if row["previous_entry_sha256"] != previous:
+                failures.append(f"CHAIN_PREVIOUS_MISMATCH:{seq}")
+            payload = {
+                "schema_version": row["schema_version"],
+                "seq": seq,
+                "event_id": row["event_id"],
+                "event_type": row["event_type"],
+                "item_id": row["item_id"],
+                "candidate_id": row["candidate_id"],
+                "candidate_sha256": row["candidate_sha256"],
+                "knowledge_sha256": row["knowledge_sha256"],
+                "before_sha256": row["before_sha256"],
+                "after_sha256": row["after_sha256"],
+                "validation_receipt_sha256": row["validation_receipt_sha256"],
+                "source_experience_hashes": row["source_experience_hashes"],
+                "evidence_hashes": row["evidence_hashes"],
+                "actor_id": row["actor_id"],
+                "reason_code": row["reason_code"],
+                "timestamp": row["timestamp"],
+                "previous_entry_sha256": row["previous_entry_sha256"],
+            }
+            actual = _digest(payload)
+            if actual != row["entry_sha256"]:
+                failures.append(f"ENTRY_HASH_MISMATCH:{seq}")
+            previous = str(row["entry_sha256"])
+        return {
+            "schema_version": "workspace-adaptive-learning-ledger-verification/v1",
+            "entry_count": len(rows),
+            "passed": not failures,
+            "failures": failures,
+            "head_sha256": previous,
+        }
+
+    def _assert_ledger_integrity(self, conn: sqlite3.Connection) -> None:
+        verification = self._verify_ledger_conn(conn)
+        if not verification["passed"]:
+            raise AdaptiveLearningStoreError(
+                "LEARNING_LEDGER_INTEGRITY_FAILED:"
+                + ",".join(verification["failures"][:8])
+            )
+
     def stage(
         self,
         candidate: KnowledgeCandidate,
@@ -338,6 +411,7 @@ class AdaptiveLearningStore:
         knowledge_hash = _digest(_knowledge_payload(item_id, candidate))
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._assert_ledger_integrity(conn)
             existing = conn.execute(
                 "SELECT * FROM learning_versions WHERE candidate_id=? AND level='candidate'",
                 (candidate.candidate_id,),
@@ -408,6 +482,7 @@ class AdaptiveLearningStore:
         now = _now()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._assert_ledger_integrity(conn)
             latest = self._candidate_level_row(conn, candidate_id)
             if latest is None:
                 raise AdaptiveLearningStoreError("CANDIDATE_NOT_STAGED")
@@ -489,6 +564,7 @@ class AdaptiveLearningStore:
     def active(self, item_id: str) -> dict[str, Any] | None:
         item_id = _compact_id(item_id, "item_id")
         with self.connect() as conn:
+            self._assert_ledger_integrity(conn)
             row = self._active_row(conn, item_id)
             if row is None:
                 return None
@@ -509,6 +585,7 @@ class AdaptiveLearningStore:
         now = _now()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._assert_ledger_integrity(conn)
             active = self._active_row(conn, item_id)
             if active is None:
                 raise AdaptiveLearningStoreError("ACTIVE_ITEM_NOT_FOUND")
@@ -549,6 +626,7 @@ class AdaptiveLearningStore:
         now = _now()
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._assert_ledger_integrity(conn)
             active = self._active_row(conn, item_id)
             current = str(active["knowledge_sha256"]) if active else None
             if current != expected:
@@ -583,56 +661,8 @@ class AdaptiveLearningStore:
 
     def ledger(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
-            rows = conn.execute("SELECT * FROM learning_ledger ORDER BY seq").fetchall()
-        result: list[dict[str, Any]] = []
-        for row in rows:
-            item = dict(row)
-            item["source_experience_hashes"] = json.loads(
-                str(item.pop("source_experience_hashes_json"))
-            )
-            item["evidence_hashes"] = json.loads(str(item.pop("evidence_hashes_json")))
-            result.append(item)
-        return result
+            return self._ledger_rows(conn)
 
     def verify_ledger(self) -> dict[str, Any]:
-        rows = self.ledger()
-        previous = GENESIS_HASH
-        failures: list[str] = []
-        for expected_seq, row in enumerate(rows, start=1):
-            seq = int(row["seq"])
-            if seq != expected_seq:
-                failures.append(f"SEQ_GAP:{expected_seq}:{seq}")
-            if row["schema_version"] != LEDGER_SCHEMA:
-                failures.append(f"SCHEMA_MISMATCH:{seq}")
-            if row["previous_entry_sha256"] != previous:
-                failures.append(f"CHAIN_PREVIOUS_MISMATCH:{seq}")
-            payload = {
-                "schema_version": row["schema_version"],
-                "seq": seq,
-                "event_id": row["event_id"],
-                "event_type": row["event_type"],
-                "item_id": row["item_id"],
-                "candidate_id": row["candidate_id"],
-                "candidate_sha256": row["candidate_sha256"],
-                "knowledge_sha256": row["knowledge_sha256"],
-                "before_sha256": row["before_sha256"],
-                "after_sha256": row["after_sha256"],
-                "validation_receipt_sha256": row["validation_receipt_sha256"],
-                "source_experience_hashes": row["source_experience_hashes"],
-                "evidence_hashes": row["evidence_hashes"],
-                "actor_id": row["actor_id"],
-                "reason_code": row["reason_code"],
-                "timestamp": row["timestamp"],
-                "previous_entry_sha256": row["previous_entry_sha256"],
-            }
-            actual = _digest(payload)
-            if actual != row["entry_sha256"]:
-                failures.append(f"ENTRY_HASH_MISMATCH:{seq}")
-            previous = str(row["entry_sha256"])
-        return {
-            "schema_version": "workspace-adaptive-learning-ledger-verification/v1",
-            "entry_count": len(rows),
-            "passed": not failures,
-            "failures": failures,
-            "head_sha256": previous,
-        }
+        with self.connect() as conn:
+            return self._verify_ledger_conn(conn)
