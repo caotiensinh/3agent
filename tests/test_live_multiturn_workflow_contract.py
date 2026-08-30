@@ -12,10 +12,21 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64]", text)
+        self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("group: workspace-live-chat-multiturn-main-v2", text)
+        self.assertNotIn("group: workspace-live-chat-multiturn-main\n", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
         self.assertNotIn("pull_request:", text)
+
+    def test_gpu_inventory_is_verified_inside_the_trusted_job(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("command -v nvidia-smi", text)
+        self.assertIn("grep -c 'RTX 5090'", text)
+        self.assertIn('test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c \'RTX 5090\')" -ge 2', text)
 
     def test_live_workflow_is_read_only_to_host_runtime(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
@@ -44,6 +55,20 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertIn("raw prompts/answers: `not persisted`", text)
         self.assertIn("actions/upload-artifact@v4", text)
         self.assertIn("retention-days: 14", text)
+
+    def test_portable_gate_tracks_live_acceptance_contract_changes(self):
+        text = (ROOT / ".github/workflows/portable-deploy-ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertGreaterEqual(
+            text.count("'.github/workflows/live-chat-multiturn-acceptance.yml'"),
+            2,
+        )
+        self.assertGreaterEqual(
+            text.count("'tests/test_live_multiturn_workflow_contract.py'"),
+            2,
+        )
+        self.assertIn("workflow_dispatch:", text)
 
     def test_package_exposes_new_cli_without_replacing_chat_gateway(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
