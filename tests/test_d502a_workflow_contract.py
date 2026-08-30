@@ -49,7 +49,16 @@ class D502AWorkflowContractTests(unittest.TestCase):
         self.assertIn("ref: ${{ env.EXPECTED_SHA }}", self.text)
         self.assertIn("persist-credentials: false", self.text)
         self.assertIn("test \"$(git rev-parse HEAD)\" = \"$EXPECTED_SHA\"", self.text)
-        self.assertIn("python3 -m pip install --no-deps -e .", self.text)
+
+    def test_benchmark_executes_exact_checkout_directly_without_mutating_system_python(self):
+        self.assertIn("PYTHONPATH: ${{ github.workspace }}/src", self.text)
+        self.assertIn("Validate exact WorkSpace source without package installation", self.text)
+        self.assertIn("python3 -m three_agent.benchmark_readiness --help", self.text)
+        self.assertIn("python3 -m three_agent.benchmark_readiness \\", self.text)
+        self.assertNotIn("pip install", self.text)
+        self.assertNotIn("--break-system-packages", self.text)
+        self.assertNotIn("apt install", self.text)
+        self.assertNotIn("python3 -m venv", self.text)
 
     def test_one_click_lane_runs_both_variants_and_independent_verification(self):
         self.assertIn("three_agent.d502a_benchmark run", self.text)
