@@ -191,7 +191,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
                 "",
                 '<CONVERSATION_CONTEXT_POLICY mode="standalone">',
                 "No earlier conversation is supplied because the current request contains no explicit cross-turn reference.",
-                "Answer only the CURRENT USER_REQUEST if present; otherwise answer only the CURRENT USER REQUEST.",
+                "Answer only the CURRENT USER REQUEST.",
                 "</CONVERSATION_CONTEXT_POLICY>",
             ]
 
