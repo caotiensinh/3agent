@@ -4,7 +4,9 @@ import unittest
 
 from three_agent.chat_fidelity import (
     direct_chat_answer_valid,
+    language_neutral_response_matches_request,
     parse_chat_request,
+    requested_language_neutral_format,
     response_language_matches,
 )
 
@@ -110,6 +112,50 @@ class ChatResponseLanguageTests(unittest.TestCase):
         )
         self.assertFalse(ok)
         self.assertEqual(reason, "workflow_wrapper_leak")
+
+
+class LanguageNeutralFormatTests(unittest.TestCase):
+    def test_number_only_request_accepts_exact_number_without_forcing_prose(self) -> None:
+        request = "Hãy chỉ trả lời bằng một số duy nhất: cổng HTTPS mặc định là bao nhiêu?"
+        self.assertEqual(requested_language_neutral_format(request), "number")
+        self.assertTrue(language_neutral_response_matches_request("443", request))
+        self.assertEqual(direct_chat_answer_valid("443", "vi", request), (True, "ok"))
+
+    def test_json_only_request_requires_whole_answer_to_be_json(self) -> None:
+        request = "Hãy chỉ trả lời JSON thôi: đưa protocol và port của HTTPS."
+        self.assertEqual(requested_language_neutral_format(request), "json")
+        self.assertEqual(
+            direct_chat_answer_valid('{"protocol":"HTTPS","port":443}', "vi", request),
+            (True, "ok"),
+        )
+        ok, reason = direct_chat_answer_valid(
+            'Kết quả: {"protocol":"HTTPS","port":443}', "vi", request
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "requested_format_mismatch")
+
+    def test_japanese_code_only_request_accepts_one_fenced_block(self) -> None:
+        request = (
+            "LinuxでIPアドレスを表示するコマンドをコードブロックだけで返してください。"
+            "日本語の説明文は不要です。"
+        )
+        answer = "```bash\nip addr\n```"
+        self.assertEqual(requested_language_neutral_format(request), "code")
+        self.assertEqual(direct_chat_answer_valid(answer, "ja", request), (True, "ok"))
+
+    def test_command_only_request_accepts_one_shell_command(self) -> None:
+        request = "Command only, no explanation: show listening TCP sockets on Linux."
+        self.assertEqual(requested_language_neutral_format(request), "code")
+        self.assertEqual(direct_chat_answer_valid("ss -lnt", "en", request), (True, "ok"))
+
+    def test_explain_code_request_does_not_bypass_vietnamese_language_gate(self) -> None:
+        request = "Hãy trả lời bằng tiếng Việt và giải thích đoạn code này hoạt động thế nào."
+        self.assertEqual(requested_language_neutral_format(request), "")
+        ok, reason = direct_chat_answer_valid(
+            "This code opens a socket and waits for a connection.", "vi", request
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "target_language_mismatch")
 
 
 if __name__ == "__main__":
