@@ -32,7 +32,7 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
                 self.assertIn(f'data-action="{action}"', html)
 
         for label in (
-            "Add photos &amp; files",
+            "Add photos & files",
             "Add from library",
             "Create image",
             "Web search",
@@ -48,8 +48,12 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
     def test_unconfigured_external_integrations_remain_fail_closed(self) -> None:
         html = WORKSPACE_HTML_V13
         self.assertIn("This connector is not configured for the local WorkSpace runtime.", html)
-        self.assertIn("['figma','canva','gmail']", html)
-        self.assertIn("if(!f.enabled){showToast", html)
+        self.assertIn("new Set(['figma','canva','gmail'])", html)
+        self.assertIn(
+            "function unavailable(name){const f=cap(name);showToast(f.reason||'This feature is not available')}",
+            html,
+        )
+        self.assertIn("else unavailable(action)", html)
 
 
 if __name__ == "__main__":
