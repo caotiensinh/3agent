@@ -3,7 +3,7 @@ set -Eeuo pipefail
 set +x
 umask 077
 
-# WorkSpace transactional application updater for an existing Ubuntu 24.04 install.
+# WorkSpace transactional updater for an existing Ubuntu 24.04 install.
 # Deliberate non-goals: NVIDIA driver/kernel, apt packages, Docker/databases,
 # Ollama/model installation, GitHub Actions runner configuration.
 
@@ -18,10 +18,11 @@ STATE_ROOT="${WORKSPACE_UPDATE_STATE_ROOT:-$HOME/.local/state/workspace}"
 CACHE_ROOT="${WORKSPACE_UPDATE_CACHE_ROOT:-$HOME/.cache/workspace-update}"
 DRY_RUN=0
 
+UPDATE_STAGE="preflight"
 log()  { printf '[WorkSpace-Update] %s\n' "$*"; }
 pass() { printf '[WorkSpace-Update][PASS] %s\n' "$*"; }
 warn() { printf '[WorkSpace-Update][WARN] %s\n' "$*" >&2; }
-die()  { printf '[WorkSpace-Update][ERROR] %s\n' "$*" >&2; exit 1; }
+die()  { printf '[WorkSpace-Update][ERROR][%s] %s\n' "$UPDATE_STAGE" "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
@@ -63,7 +64,7 @@ fi
 [[ "$OLLAMA_URL" == "http://127.0.0.1:11434" ]] \
   || die "Updater only accepts the local Ollama boundary http://127.0.0.1:11434."
 
-for cmd in git python3 nvidia-smi curl flock sha256sum systemctl; do
+for cmd in git python3 nvidia-smi curl flock systemctl; do
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 done
 
@@ -116,11 +117,10 @@ CHAT_INSTALLED=0
 CHAT_WAS_ACTIVE=0
 if systemctl --user cat "$CHAT_SERVICE" >/dev/null 2>&1; then
   CHAT_INSTALLED=1
-  if systemctl --user is-active --quiet "$CHAT_SERVICE"; then
-    CHAT_WAS_ACTIVE=1
-  fi
+  systemctl --user is-active --quiet "$CHAT_SERVICE" && CHAT_WAS_ACTIVE=1
 fi
 
+UPDATE_STAGE="target_resolution"
 log "Fetching trusted origin/$TARGET_REF (application source only)."
 git fetch --no-tags --prune origin "$TARGET_REF"
 REMOTE_REF_SHA="$(git rev-parse FETCH_HEAD)"
@@ -137,7 +137,6 @@ if [[ -n "$TARGET_SHA_OVERRIDE" ]]; then
 else
   TARGET_SHA="$REMOTE_REF_SHA"
 fi
-[[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || die "Resolved target SHA is invalid."
 git merge-base --is-ancestor "$BEFORE_SHA" "$TARGET_SHA" \
   || die "Refusing non-fast-forward update from $BEFORE_SHA to $TARGET_SHA."
 
@@ -150,21 +149,19 @@ VENV_SWAPPED=0
 COMMITTED=0
 ROLLBACK_STATUS="not_required"
 DEPS_CHANGED=0
+PYPROJECT_CHANGED=0
+VENV_REPLACEMENT_REQUIRED=0
 
 write_receipt() {
-  local status="$1"
-  local final_sha="$2"
-  local rollback="$3"
+  local status="$1" final_sha="$2" rollback="$3" failure_stage="${4:-}"
   python3 - "$RECEIPT" "$status" "$BEFORE_SHA" "$TARGET_SHA" "$final_sha" \
-    "$GPU_COUNT_BEFORE" "$DEPS_CHANGED" "$rollback" "$CHAT_WAS_ACTIVE" <<'PY'
-import json
-import sys
+    "$GPU_COUNT_BEFORE" "$DEPS_CHANGED" "$PYPROJECT_CHANGED" "$rollback" \
+    "$CHAT_WAS_ACTIVE" "$failure_stage" <<'PY'
+import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
-
-out = Path(sys.argv[1])
 payload = {
-    "schema_version": "workspace-linux-update/v2",
+    "schema_version": "workspace-linux-update/v3",
     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     "status": sys.argv[2],
     "from_sha": sys.argv[3],
@@ -172,13 +169,15 @@ payload = {
     "final_sha": sys.argv[5],
     "gpu_count": int(sys.argv[6]),
     "dependencies_changed": sys.argv[7] == "1",
-    "rollback": sys.argv[8],
-    "chat_was_active": sys.argv[9] == "1",
+    "pyproject_changed": sys.argv[8] == "1",
+    "rollback": sys.argv[9],
+    "chat_was_active": sys.argv[10] == "1",
+    "failure_stage": sys.argv[11] or None,
     "system_python_mutated": False,
     "driver_or_kernel_mutated": False,
     "runner_service_mutated": False,
 }
-out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+Path(sys.argv[1]).write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
   chmod 600 "$RECEIPT"
 }
@@ -194,11 +193,11 @@ cleanup_stage() {
 }
 
 rollback() {
-  local rc="$1"
+  local rc="$1" failed_stage="$UPDATE_STAGE"
   trap - EXIT ERR INT TERM
   set +e
   if [[ "$MUTATED" == "1" && "$COMMITTED" == "0" ]]; then
-    warn "Update failed after mutation; rolling back to $BEFORE_SHA."
+    warn "Update failed at stage '$failed_stage'; rolling back to $BEFORE_SHA."
     cd "$ROOT" || true
     git reset --hard "$BEFORE_SHA" >/dev/null 2>&1 || true
     if [[ "$VENV_SWAPPED" == "1" && -n "$OLD_VENV" && -d "$OLD_VENV" ]]; then
@@ -214,7 +213,7 @@ rollback() {
     if [[ "$final_sha" == "$BEFORE_SHA" && -x "$ROOT/.venv/bin/python" ]]; then
       ROLLBACK_STATUS="restored"
     fi
-    write_receipt "rolled_back" "$final_sha" "$ROLLBACK_STATUS" || true
+    write_receipt "rolled_back" "$final_sha" "$ROLLBACK_STATUS" "$failed_stage" || true
   fi
   cleanup_stage
   exit "$rc"
@@ -223,38 +222,50 @@ trap 'rollback $?' EXIT
 trap 'exit 130' INT TERM
 
 if [[ "$TARGET_SHA" == "$BEFORE_SHA" ]]; then
-  log "Already at target SHA; running validation only."
+  UPDATE_STAGE="already_current_validation"
   PYTHONPATH="$ROOT/src" "$ROOT/.venv/bin/python" -c 'import three_agent' \
     || die "Existing WorkSpace import check failed."
-  write_receipt "already_current" "$BEFORE_SHA" "not_required"
+  write_receipt "already_current" "$BEFORE_SHA" "not_required" ""
   COMMITTED=1
-  echo
-  echo "=========================================="
-  echo "        WorkSpace ALREADY CURRENT"
-  echo "=========================================="
-  printf 'SHA:        %s\n' "$BEFORE_SHA"
-  printf 'GPU count:  %s\n' "$GPU_COUNT_BEFORE"
-  printf 'Receipt:    %s\n' "$RECEIPT"
-  echo "=========================================="
+  printf '\nWorkSpace ALREADY CURRENT\nSHA: %s\nGPU count: %s\nReceipt: %s\n' \
+    "$BEFORE_SHA" "$GPU_COUNT_BEFORE" "$RECEIPT"
   exit 0
 fi
 
+UPDATE_STAGE="staged_source"
 STAGE_ROOT="$(mktemp -d "$CACHE_ROOT/source.XXXXXX")"
 rmdir "$STAGE_ROOT"
 git worktree add --detach "$STAGE_ROOT" "$TARGET_SHA" >/dev/null
 
-CURRENT_PYPROJECT_SHA="$(git show "$BEFORE_SHA:pyproject.toml" | sha256sum | awk '{print $1}')"
-TARGET_PYPROJECT_SHA="$(git show "$TARGET_SHA:pyproject.toml" | sha256sum | awk '{print $1}')"
-if [[ "$CURRENT_PYPROJECT_SHA" != "$TARGET_PYPROJECT_SHA" ]]; then
-  DEPS_CHANGED=1
-fi
+dependency_contract_sha() {
+  local ref="$1"
+  git show "$ref:pyproject.toml" | python3 -c '
+import hashlib, json, sys, tomllib
+d = tomllib.loads(sys.stdin.read())
+p = d.get("project", {})
+b = d.get("build-system", {})
+contract = {
+    "requires-python": p.get("requires-python"),
+    "dependencies": p.get("dependencies", []),
+    "build_requires": b.get("requires", []),
+    "build_backend": b.get("build-backend"),
+}
+blob = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+print(hashlib.sha256(blob).hexdigest())
+'
+}
 
-if [[ "$DEPS_CHANGED" == "0" ]]; then
-  log "Dependency contract unchanged: reusing existing .venv (zero dependency install)."
-  PYTHONPATH="$STAGE_ROOT/src" "$ROOT/.venv/bin/python" -c \
-    'import three_agent; import three_agent.chat_gateway_v17' \
-    || die "Target source failed staged import validation with the existing venv."
-else
+UPDATE_STAGE="dependency_contract"
+CURRENT_DEP_SHA="$(dependency_contract_sha "$BEFORE_SHA")"
+TARGET_DEP_SHA="$(dependency_contract_sha "$TARGET_SHA")"
+[[ "$CURRENT_DEP_SHA" == "$TARGET_DEP_SHA" ]] || DEPS_CHANGED=1
+CURRENT_PYPROJECT_SHA="$(git show "$BEFORE_SHA:pyproject.toml" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+TARGET_PYPROJECT_SHA="$(git show "$TARGET_SHA:pyproject.toml" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+[[ "$CURRENT_PYPROJECT_SHA" == "$TARGET_PYPROJECT_SHA" ]] || PYPROJECT_CHANGED=1
+
+if [[ "$DEPS_CHANGED" == "1" ]]; then
+  UPDATE_STAGE="staged_dependency_install"
+  VENV_REPLACEMENT_REQUIRED=1
   log "Dependency contract changed: preparing isolated replacement venv before checkout mutation."
   NEXT_VENV="$ROOT/.venv.next-$TARGET_SHA"
   rm -rf "$NEXT_VENV"
@@ -266,42 +277,66 @@ else
   PYTHONPATH="$STAGE_ROOT/src" "$NEXT_VENV/bin/python" -c \
     'import three_agent; import three_agent.chat_gateway_v17' \
     || die "Target source failed staged import validation."
+elif [[ "$PYPROJECT_CHANGED" == "1" ]]; then
+  UPDATE_STAGE="staged_binding_clone"
+  VENV_REPLACEMENT_REQUIRED=1
+  log "Dependency contract unchanged but package metadata changed: cloning existing .venv without dependency resolution."
+  NEXT_VENV="$ROOT/.venv.next-$TARGET_SHA"
+  rm -rf "$NEXT_VENV"
+  cp -a --reflink=auto "$ROOT/.venv" "$NEXT_VENV" \
+    || die "Unable to stage rollback-safe venv clone."
+  PYTHONPATH="$STAGE_ROOT/src" "$NEXT_VENV/bin/python" -c \
+    'import three_agent; import three_agent.chat_gateway_v17' \
+    || die "Target source failed staged import validation with cloned venv."
+else
+  UPDATE_STAGE="staged_import_existing_venv"
+  log "Dependency and package contracts unchanged: reusing existing .venv with zero install/copy."
+  PYTHONPATH="$STAGE_ROOT/src" "$ROOT/.venv/bin/python" -c \
+    'import three_agent; import three_agent.chat_gateway_v17' \
+    || die "Target source failed staged import validation with the existing venv."
 fi
 pass "Target SHA staged validation: $TARGET_SHA"
 
 if [[ "$DRY_RUN" == "1" ]]; then
-  write_receipt "dry_run_pass" "$BEFORE_SHA" "not_required"
+  write_receipt "dry_run_pass" "$BEFORE_SHA" "not_required" ""
   COMMITTED=1
   log "DRY-RUN PASS: no checkout, venv, service, driver, kernel or runner mutation performed."
   exit 0
 fi
 
-log "Fast-forwarding checkout to exact target SHA $TARGET_SHA"
+UPDATE_STAGE="source_fast_forward"
 MUTATED=1
 git merge --ff-only "$TARGET_SHA" >/dev/null
 [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]] || die "Exact target checkout verification failed."
 
-if [[ "$DEPS_CHANGED" == "1" ]]; then
-  log "Binding staged venv to the committed WorkSpace checkout without dependency re-resolution."
-  PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 \
-    "$NEXT_VENV/bin/python" -m pip install --no-deps -e "$ROOT" \
-    || die "Unable to bind staged venv to committed checkout."
-  [[ -x "$NEXT_VENV/bin/workspace-chat" ]] || die "workspace-chat entrypoint missing in staged venv."
+if [[ "$VENV_REPLACEMENT_REQUIRED" == "1" ]]; then
+  UPDATE_STAGE="venv_swap"
   OLD_VENV="$ROOT/.venv.rollback-$BEFORE_SHA"
   rm -rf "$OLD_VENV"
   mv "$ROOT/.venv" "$OLD_VENV"
   mv "$NEXT_VENV" "$ROOT/.venv"
   NEXT_VENV=""
   VENV_SWAPPED=1
-else
-  [[ -x "$ROOT/.venv/bin/workspace-chat" ]] || die "workspace-chat entrypoint missing after source update."
+
+  UPDATE_STAGE="venv_rebind_after_swap"
+  PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 \
+    "$ROOT/.venv/bin/python" -m pip install --no-deps --force-reinstall -e "$ROOT" \
+    || die "Unable to rebind replacement venv to committed checkout."
 fi
 
+UPDATE_STAGE="entrypoint_validation"
+[[ -x "$ROOT/.venv/bin/workspace-chat" ]] || die "workspace-chat entrypoint missing after update."
+first_line="$(head -n 1 "$ROOT/.venv/bin/workspace-chat" 2>/dev/null || true)"
+[[ "$first_line" == "#!$ROOT/.venv/bin/python" ]] \
+  || die "workspace-chat entrypoint is bound to an unexpected Python path."
+
+UPDATE_STAGE="post_update_import"
 PYTHONPATH="$ROOT/src" "$ROOT/.venv/bin/python" -c \
   'import three_agent; import three_agent.chat_gateway_v17' \
   || die "Post-update WorkSpace import validation failed."
 
 if [[ "$CHAT_INSTALLED" == "1" && "$CHAT_WAS_ACTIVE" == "1" ]]; then
+  UPDATE_STAGE="service_restart"
   log "Restarting the previously-active WorkSpace chat service only: $CHAT_SERVICE"
   systemctl --user restart "$CHAT_SERVICE"
   sleep 2
@@ -313,13 +348,17 @@ else
   log "Chat service is not installed; preserving service topology."
 fi
 
+UPDATE_STAGE="gpu_postflight"
 GPU_AFTER="$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader,nounits 2>/dev/null)" \
   || die "nvidia-smi failed after update."
 [[ "$GPU_AFTER" == "$GPU_BEFORE" ]] \
   || die "GPU name/driver inventory changed during an application-only update."
+
+UPDATE_STAGE="ollama_postflight"
 curl -fsS --max-time 5 "$OLLAMA_URL/api/tags" >/dev/null \
   || die "Local Ollama became unreachable after update."
 
+UPDATE_STAGE="runner_postflight"
 RUNNERS_AFTER="$(systemctl list-units --type=service --all 'actions.runner.*' --no-legend --no-pager 2>/dev/null || true)"
 [[ "$RUNNERS_AFTER" == "$RUNNERS_BEFORE" ]] \
   || die "GitHub runner service inventory changed during update; refusing to commit transaction."
@@ -332,7 +371,9 @@ if [[ -f "$CHAT_ENV" ]]; then
   [[ -n "$configured_port" ]] && PORT="$configured_port"
 fi
 [[ "$PORT" =~ ^[0-9]{1,5}$ ]] || die "Invalid chat port in $CHAT_ENV."
+
 if [[ "$CHAT_WAS_ACTIVE" == "1" ]]; then
+  UPDATE_STAGE="health_postflight"
   case "$HOST" in
     ""|0.0.0.0|::|"[::]") HEALTH_HOST="127.0.0.1" ;;
     127.0.0.1|localhost) HEALTH_HOST="$HOST" ;;
@@ -344,9 +385,10 @@ if [[ "$CHAT_WAS_ACTIVE" == "1" ]]; then
     || die "WorkSpace health response did not report status=ok."
 fi
 
+UPDATE_STAGE="lineage_postflight"
 AFTER_SHA="$(git rev-parse HEAD)"
 [[ "$AFTER_SHA" == "$TARGET_SHA" ]] || die "Final source lineage mismatch."
-write_receipt "updated" "$AFTER_SHA" "not_required"
+write_receipt "updated" "$AFTER_SHA" "not_required" ""
 COMMITTED=1
 
 if [[ "$VENV_SWAPPED" == "1" && -n "$OLD_VENV" ]]; then
@@ -360,11 +402,12 @@ echo
 echo "=========================================="
 echo "         WorkSpace UPDATE COMPLETE"
 echo "=========================================="
-printf 'Before SHA: %s\n' "$BEFORE_SHA"
-printf 'After SHA:  %s\n' "$AFTER_SHA"
-printf 'GPU count:  %s\n' "$GPU_COUNT_BEFORE"
-printf 'Deps changed:%s\n' " $([[ "$DEPS_CHANGED" == "1" ]] && echo yes || echo no)"
-printf 'Chat state: %s\n' "$(systemctl --user is-active "$CHAT_SERVICE" 2>/dev/null || echo not-installed)"
-printf 'Receipt:    %s\n' "$RECEIPT"
+printf 'Before SHA:   %s\n' "$BEFORE_SHA"
+printf 'After SHA:    %s\n' "$AFTER_SHA"
+printf 'GPU count:    %s\n' "$GPU_COUNT_BEFORE"
+printf 'Deps changed: %s\n' "$([[ "$DEPS_CHANGED" == "1" ]] && echo yes || echo no)"
+printf 'Pyproject:    %s\n' "$([[ "$PYPROJECT_CHANGED" == "1" ]] && echo changed || echo unchanged)"
+printf 'Chat state:   %s\n' "$(systemctl --user is-active "$CHAT_SERVICE" 2>/dev/null || echo not-installed)"
+printf 'Receipt:      %s\n' "$RECEIPT"
 printf '%s\n' "NVIDIA driver/kernel and GitHub runner services were not modified."
 echo "=========================================="

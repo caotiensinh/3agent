@@ -45,27 +45,63 @@ class LinuxUpdateContractTests(unittest.TestCase):
         self.assertIn("Refusing untrusted origin", text)
         self.assertIn("Tracked WorkSpace files are modified", text)
 
+    def test_dependency_change_detection_uses_dependency_contract_not_whole_pyproject(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("dependency_contract_sha()", text)
+        self.assertIn("tomllib", text)
+        self.assertIn('"requires-python"', text)
+        self.assertIn('"dependencies"', text)
+        self.assertIn('"build_requires"', text)
+        self.assertIn('"build_backend"', text)
+        self.assertIn('[[ "$CURRENT_DEP_SHA" == "$TARGET_DEP_SHA" ]] || DEPS_CHANGED=1', text)
+        self.assertIn('[[ "$CURRENT_PYPROJECT_SHA" == "$TARGET_PYPROJECT_SHA" ]] || PYPROJECT_CHANGED=1', text)
+        self.assertNotIn(
+            'if [[ "$CURRENT_PYPROJECT_SHA" != "$TARGET_PYPROJECT_SHA" ]]; then\n  DEPS_CHANGED=1',
+            text,
+        )
+
     def test_updater_reuses_git_objects_and_existing_venv_when_possible(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('git worktree add --detach "$STAGE_ROOT" "$TARGET_SHA"', text)
         self.assertNotIn("git clone", text)
-        self.assertIn("Dependency contract unchanged: reusing existing .venv", text)
-        self.assertIn('if [[ "$CURRENT_PYPROJECT_SHA" != "$TARGET_PYPROJECT_SHA" ]]', text)
+        self.assertIn("Dependency and package contracts unchanged: reusing existing .venv", text)
         self.assertIn('PYTHONPATH="$STAGE_ROOT/src" "$ROOT/.venv/bin/python"', text)
         self.assertIn('python3 -m venv "$NEXT_VENV"', text)
-        self.assertIn('"$NEXT_VENV/bin/python" -m pip install --no-deps -e "$ROOT"', text)
+        self.assertIn('cp -a --reflink=auto "$ROOT/.venv" "$NEXT_VENV"', text)
+        self.assertIn('"$ROOT/.venv/bin/python" -m pip install --no-deps --force-reinstall -e "$ROOT"', text)
 
-    def test_update_is_transactional_and_rolls_back_code_venv_and_service(self) -> None:
+    def test_replacement_venv_is_rebound_only_after_final_path_swap(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
-        self.assertIn('flock -n 9', text)
+        swap = text.index('mv "$NEXT_VENV" "$ROOT/.venv"')
+        rebind = text.index(
+            '"$ROOT/.venv/bin/python" -m pip install --no-deps --force-reinstall -e "$ROOT"'
+        )
+        entrypoint_check = text.index(
+            '[[ "$first_line" == "#!$ROOT/.venv/bin/python" ]]'
+        )
+        self.assertLess(swap, rebind)
+        self.assertLess(rebind, entrypoint_check)
+        self.assertNotIn(
+            '"$NEXT_VENV/bin/python" -m pip install --no-deps -e "$ROOT"',
+            text,
+        )
+        self.assertNotIn(
+            'UPDATE_STAGE="existing_venv_rebind"',
+            text,
+        )
+
+    def test_update_is_transactional_and_records_failure_stage(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("flock -n 9", text)
         self.assertIn("rollback()", text)
         self.assertIn('git reset --hard "$BEFORE_SHA"', text)
         self.assertIn('mv "$OLD_VENV" "$ROOT/.venv"', text)
         self.assertIn('systemctl --user restart "$CHAT_SERVICE"', text)
-        self.assertIn('VENV_SWAPPED=1', text)
-        self.assertIn('COMMITTED=1', text)
-        self.assertIn('workspace-linux-update/v2', text)
-        self.assertIn('"status": sys.argv[2]', text)
+        self.assertIn("VENV_SWAPPED=1", text)
+        self.assertIn("COMMITTED=1", text)
+        self.assertIn("workspace-linux-update/v3", text)
+        self.assertIn('"failure_stage": sys.argv[11] or None', text)
+        self.assertIn('failed_stage="$UPDATE_STAGE"', text)
         self.assertIn('"driver_or_kernel_mutated": False', text)
         self.assertIn('"runner_service_mutated": False', text)
 
@@ -73,7 +109,7 @@ class LinuxUpdateContractTests(unittest.TestCase):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("actions.runner.*", text)
         self.assertIn('"$RUNNERS_AFTER" == "$RUNNERS_BEFORE"', text)
-        self.assertIn('CHAT_WAS_ACTIVE', text)
+        self.assertIn("CHAT_WAS_ACTIVE", text)
         self.assertIn("preserving inactive state", text)
         self.assertNotIn("restart actions.runner", text)
         self.assertNotIn("stop actions.runner", text)
