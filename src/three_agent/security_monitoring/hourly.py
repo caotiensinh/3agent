@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -49,6 +50,31 @@ class HourlyMonitoringRunner:
             ).fetchone()
             return int(row["n"]) + 1
 
+    def _latest_terminal_receipt(self, slot_key: str) -> HourlyRunReceipt | None:
+        """Return a durable completed slot so replay never recollects the same hour."""
+        with self.store.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM hourly_runs WHERE slot_key=? ORDER BY attempt DESC LIMIT 1",
+                (slot_key,),
+            ).fetchone()
+        if row is None or row["completed_at"] is None:
+            return None
+        return HourlyRunReceipt(
+            run_id=row["run_id"],
+            slot_key=row["slot_key"],
+            attempt=int(row["attempt"]),
+            scheduled_at=row["scheduled_at"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            status=row["status"],
+            inventory_fingerprint=row["inventory_fingerprint"],
+            policy_fingerprint=row["policy_fingerprint"],
+            expected_assets=int(row["expected_assets"]),
+            observed_assets=int(row["observed_assets"]),
+            coverage_pct=float(row["coverage_pct"]),
+            failure_codes=tuple(json.loads(row["failure_codes_json"])),
+        ).validate()
+
     @staticmethod
     def _inventory_fingerprint(assets: tuple[AssetInventoryRecord, ...]) -> str:
         return sha256_fingerprint([asset.fingerprint for asset in assets])
@@ -80,6 +106,12 @@ class HourlyMonitoringRunner:
         started_at = datetime.now(timezone.utc).isoformat()
         lock = self.locks.acquire(slot_key=slot_key, owner_id=owner_id, acquired_at=started_at)
         try:
+            # Replay of an already finalized hour is read-only and returns the exact
+            # durable receipt. Policy/inventory changes take effect on the next slot.
+            previous = self._latest_terminal_receipt(slot_key)
+            if previous is not None:
+                return previous
+
             attempt = self._next_attempt(slot_key)
             run_id = "run-" + sha256_fingerprint([slot_key, attempt, owner_id]).split(":", 1)[1][:24]
             inventory_fingerprint = self._inventory_fingerprint(assets)
