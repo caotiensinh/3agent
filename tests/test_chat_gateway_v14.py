@@ -42,8 +42,14 @@ class DirectChatGatewayTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.db = Path(self.temp.name) / "workspace.db"
+        self.services = []
 
     def tearDown(self):
+        # Terminal job status may become visible just before the background worker
+        # finishes owner-scoped history persistence. Wait for the actual worker
+        # lifecycle instead of racing Windows file locking during temp cleanup.
+        for service in self.services:
+            service._queue.join()
         self.temp.cleanup()
 
     def _service(self, responses):
@@ -55,6 +61,7 @@ class DirectChatGatewayTests(unittest.TestCase):
         )
         service = IntentAwareProjectChatService(orchestrator, default_language="ja")
         service.start()
+        self.services.append(service)
         return service, orchestrator
 
     @staticmethod
