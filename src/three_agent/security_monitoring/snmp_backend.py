@@ -34,14 +34,26 @@ class SnmpV3Credential:
 
 
 class FileSecretResolver:
-    """Resolve `secret-ref:<id>` from a locked-down directory, never from argv/config output."""
+    """Resolve `secret-ref:<id>` from a POSIX permission-protected directory.
+
+    ver.0.0.1 deliberately supports this file-secret backend only where POSIX mode
+    bits are authoritative. Windows ACLs are a different security model; pretending
+    that ``st_mode`` proves equivalent protection would weaken the credential
+    boundary. Non-POSIX hosts therefore fail closed before any secret file is read.
+    """
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
         if not self.root.is_absolute():
             raise MonitoringContractError("secret directory must be absolute")
 
+    @staticmethod
+    def _require_supported_permission_model() -> None:
+        if os.name != "posix":
+            raise MonitoringContractError("SNMP_FILE_SECRET_BACKEND_REQUIRES_POSIX_PERMISSIONS")
+
     def resolve_snmpv3(self, ref: SecretReference) -> SnmpV3Credential:
+        self._require_supported_permission_model()
         ref.validate()
         suffix = ref.handle.removeprefix("secret-ref:")
         path = self.root / f"{suffix}.json"
