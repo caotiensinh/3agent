@@ -111,13 +111,17 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
         )
         self.assertEqual(language, "vi")
 
-    def test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v17(self) -> None:
-        pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
-            encoding="utf-8"
-        )
+    def test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v18(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('version = "1!0.0.1"', pyproject)
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v17:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v17:main"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway_v18:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v18:main"', pyproject)
+        self.assertTrue((root / "src/three_agent/chat_gateway_v17.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway_v18.py").is_file())
+        v18 = (root / "src/three_agent/chat_gateway_v18.py").read_text(encoding="utf-8")
+        self.assertIn("from .chat_gateway_v17 import (", v18)
+        self.assertIn("WorkflowV4ContextHTTPHandler", v18)
         self.assertIn(
             'workspace-chat-acceptance = "three_agent.chat_acceptance:main"',
             pyproject,
