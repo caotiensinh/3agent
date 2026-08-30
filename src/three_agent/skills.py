@@ -11,6 +11,13 @@ class SkillSecurityError(RuntimeError):
     pass
 
 
+# Enterprise-lean hard limits. Skill text is procedure, not storage.
+# If a procedure needs more than this, move stable reference material out of the
+# always-loaded skill path or implement the rule deterministically in code.
+MAX_SKILL_BYTES = 3072
+MAX_SKILLS_PER_LOAD = 2
+MAX_LOADED_SKILL_BYTES = 4096
+
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _FORBIDDEN_FRONTMATTER = {"allowed-tools", "hooks", "mcp", "mcp-servers"}
 _DANGEROUS_FENCE_RE = re.compile(
@@ -86,12 +93,60 @@ def _scan_instruction_text(name: str, text: str) -> None:
             raise SkillSecurityError(f"Skill {name} contains a risky executable command block")
 
 
+def _validate_enterprise_baseline(payload: dict) -> None:
+    """Reject a declared enterprise baseline that weakens hard WorkSpace limits.
+
+    Older isolated fixtures may omit the optional baseline and remain compatible.
+    Production registry metadata is therefore descriptive plus fail-closed when
+    present; the code constants above remain the absolute upper bounds.
+    """
+
+    baseline = payload.get("enterprise_baseline")
+    if baseline is None:
+        return
+    if not isinstance(baseline, dict):
+        raise SkillSecurityError("Invalid enterprise skill baseline")
+
+    required_false = (
+        "network_access",
+        "credential_access",
+        "persistent_self_modify",
+        "external_code_vendored",
+        "raw_sensitive_logging",
+    )
+    if baseline.get("instruction_only") is not True:
+        raise SkillSecurityError("Enterprise skill baseline must remain instruction_only=true")
+    for field in required_false:
+        if baseline.get(field) is not False:
+            raise SkillSecurityError(f"Enterprise skill baseline must declare {field}=false")
+    if baseline.get("model_authority") != "advisory":
+        raise SkillSecurityError("Enterprise skill baseline model_authority must be advisory")
+    if baseline.get("enterprise_tier") != "E2":
+        raise SkillSecurityError("Production enterprise skill baseline must be E2")
+
+    limits = {
+        "max_skill_bytes": MAX_SKILL_BYTES,
+        "max_skills_per_load": MAX_SKILLS_PER_LOAD,
+        "max_loaded_skill_bytes": MAX_LOADED_SKILL_BYTES,
+    }
+    for field, hard_limit in limits.items():
+        value = baseline.get(field)
+        if not isinstance(value, int) or value < 1 or value > hard_limit:
+            raise SkillSecurityError(
+                f"Enterprise skill baseline {field} must be between 1 and {hard_limit}"
+            )
+
+
 class ApprovedSkillLoader:
     """Load only repository-local skills that passed the recorded security review.
 
     The loader deliberately supports instruction-only skills. Any skill that asks
     for direct network, credential, persistent self-modification, or vendored
     executable authority is outside this trust tier and is rejected.
+
+    Skill disclosure is also resource-bounded: at most two compact skill bodies
+    may enter one model profile. This keeps reviewed procedure useful without
+    turning the context window into a policy/document store.
     """
 
     def __init__(self, root: Path):
@@ -104,6 +159,7 @@ class ApprovedSkillLoader:
         payload = json.loads(self.registry_path.read_text(encoding="utf-8"))
         if payload.get("schema_version") != 1 or not isinstance(payload.get("skills"), dict):
             raise SkillSecurityError("Unsupported or invalid skill registry")
+        _validate_enterprise_baseline(payload)
         return payload
 
     def _review_path(self, entry: dict, name: str) -> Path:
@@ -161,8 +217,10 @@ class ApprovedSkillLoader:
         if not path.is_file():
             raise SkillSecurityError(f"Approved SKILL.md is missing: {name}")
         raw = path.read_bytes()
-        if len(raw) > 65536:
-            raise SkillSecurityError(f"Skill exceeds 64 KiB review limit: {name}")
+        if len(raw) > MAX_SKILL_BYTES:
+            raise SkillSecurityError(
+                f"Skill exceeds enterprise-lean {MAX_SKILL_BYTES}-byte review limit: {name}"
+            )
         actual = _skill_digest(raw)
         expected = str(entry.get("sha256", ""))
         if not expected or actual != expected:
@@ -212,9 +270,17 @@ class ApprovedSkillLoader:
     def load_for_agent(self, agent_id: str, names: Iterable[str]) -> list[str]:
         registry = self._registry()
         approved = registry["skills"]
-        blocks: list[str] = []
+        ordered_names = tuple(dict.fromkeys(names))
+        if len(ordered_names) > MAX_SKILLS_PER_LOAD:
+            raise SkillSecurityError(
+                f"Skill load exceeds enterprise-lean limit of {MAX_SKILLS_PER_LOAD}: "
+                + ", ".join(ordered_names)
+            )
 
-        for name in names:
+        blocks: list[str] = []
+        loaded_bytes = 0
+
+        for name in ordered_names:
             if not _SKILL_NAME_RE.fullmatch(name):
                 raise SkillSecurityError(f"Invalid skill name: {name}")
             entry = approved.get(name)
@@ -224,6 +290,12 @@ class ApprovedSkillLoader:
                 raise SkillSecurityError(f"Skill {name} is not approved for agent {agent_id}")
 
             body = self._validate_skill(name, entry)
-            blocks.append(f"## Approved local skill: {name}\n\n{body}")
+            block = f"## Approved local skill: {name}\n\n{body}"
+            loaded_bytes += len(block.encode("utf-8"))
+            if loaded_bytes > MAX_LOADED_SKILL_BYTES:
+                raise SkillSecurityError(
+                    f"Loaded skill text exceeds enterprise-lean {MAX_LOADED_SKILL_BYTES}-byte prompt budget"
+                )
+            blocks.append(block)
 
         return blocks

@@ -1,6 +1,21 @@
 {
   "schema_version": 1,
   "policy": "approved-local-instruction-only",
+  "enterprise_baseline": {
+    "enterprise_tier": "E2",
+    "profile": "enterprise-confidential-lean",
+    "instruction_only": true,
+    "network_access": false,
+    "credential_access": false,
+    "persistent_self_modify": false,
+    "external_code_vendored": false,
+    "raw_sensitive_logging": false,
+    "model_authority": "advisory",
+    "max_skill_bytes": 3072,
+    "max_skills_per_load": 2,
+    "max_loaded_skill_bytes": 4096,
+    "resource_doctrine": "avoid>reuse>precompute>compact>parallelize>accelerate>scale-hardware"
+  },
   "skills": {
     "research-evidence-synthesis": {
       "enabled": true,
@@ -181,6 +196,48 @@
       "sha256": "5351f4d521e3f7afa58abf66448238a2edb6bbf645430750a7b70631a0e1a817",
       "review": "docs/SKILL_SECURITY_REVIEW_2026-08-29.md",
       "provenance": ["seb1n/awesome-ai-agent-skills@75865a5d037a4cdaa7f409a4ec14ab9b0292920b:documents-and-files/pdf-processing/SKILL.md:concept-adaptation-only", "jsvine/pdfplumber:MIT-library-candidate-review"]
+    },
+    "enterprise-delivery": {
+      "enabled": true,
+      "agent_ids": ["research", "presentation", "daily_report"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "b36b07506b0bcda0720a23d6313d0fec0d4bf468e7059c55ba36a1dc6e7b5c9f",
+      "review": "docs/SKILL_SECURITY_REVIEW_2026-08-30.md",
+      "provenance": ["WorkSpace project-owned clean-room synthesis of general enterprise delivery, change-control, risk, and verification principles."],
+      "enterprise_tier": "E2",
+      "risk_class": "medium"
+    },
+    "security-engineering": {
+      "enabled": true,
+      "agent_ids": ["research"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "5d7a5416a0c83487cf00bb9e4c466b89aaa47160c9389314f1194246156f9020",
+      "review": "docs/SKILL_SECURITY_REVIEW_2026-08-30.md",
+      "provenance": ["WorkSpace project-owned clean-room synthesis of threat-modeling, least-privilege, differential-review, misuse-resistance, and supply-chain principles."],
+      "enterprise_tier": "E2",
+      "risk_class": "high"
+    },
+    "verified-completion": {
+      "enabled": true,
+      "agent_ids": ["research", "presentation", "daily_report"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "970f88673b2824c908bd98ec95f5a3bff361bea927fe7bac52d0e8134d825878",
+      "review": "docs/SKILL_SECURITY_REVIEW_2026-08-30.md",
+      "provenance": ["WorkSpace project-owned clean-room synthesis of exact-candidate, deterministic-validator, and evidence-gate principles."],
+      "enterprise_tier": "E2",
+      "risk_class": "medium"
     }
   }
 }
