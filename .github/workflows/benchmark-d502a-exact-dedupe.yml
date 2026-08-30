@@ -1,0 +1,165 @@
+name: benchmark-d502a-exact-dedupe
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type BENCHMARK to authorize local D5-02a execution'
+        required: true
+        default: ''
+      source_ref:
+        description: 'Exact 40-hex WorkSpace commit SHA to benchmark'
+        required: true
+        default: ''
+      model:
+        description: 'Preinstalled local Ollama model used for every benchmark role'
+        required: true
+        default: 'qwen3:30b'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/three_agent/evidence_packing.py'
+      - 'src/three_agent/agents/research.py'
+      - 'src/three_agent/agents/research_ranked.py'
+      - 'src/three_agent/agents/research_compiled.py'
+      - 'src/three_agent/research_quality.py'
+      - 'src/three_agent/benchmark_isolation.py'
+      - 'src/three_agent/benchmark_snapshot.py'
+      - 'src/three_agent/benchmark_suite.py'
+      - 'src/three_agent/d502a_benchmark.py'
+      - 'src/three_agent/optimization_gate.py'
+      - 'src/three_agent/metrics_snapshot.py'
+      - 'benchmarks/d502a_exact_body_dedupe_task_set_v1.json'
+      - 'benchmarks/fixtures/d502a_exact_mirror_a.md'
+      - 'benchmarks/fixtures/d502a_exact_mirror_b.md'
+      - 'config/workspace.secure.json'
+      - '.github/workflows/benchmark-d502a-exact-dedupe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-d502a-exact-dedupe-benchmark
+  cancel-in-progress: false
+
+jobs:
+  representative-benchmark:
+    if: ${{ github.event_name == 'push' || inputs.confirm == 'BENCHMARK' }}
+    runs-on: [self-hosted, Linux, X64, rtx5090, workspace-benchmark]
+    timeout-minutes: 180
+    env:
+      EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.sha }}
+      MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_CONFIG: config/workspace.secure.json
+      WORKSPACE_FAST_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_RESEARCH_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_PRESENTATION_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_REPORT_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_DEEP_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'qwen3:30b' }}
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - name: Checkout exact benchmark source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SHA }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source lineage before setup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$EXPECTED_SHA" = "$(printf '%s' "$EXPECTED_SHA" | tr 'A-F' 'a-f')"
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Install exact WorkSpace source without network dependency resolution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --no-deps -e .
+          workspace --help >/dev/null
+          python3 -m three_agent.d502a_benchmark --help >/dev/null
+          workspace-benchmark-readiness --help >/dev/null
+
+      - name: Capture metadata-only benchmark readiness receipt
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
+          mkdir -p "$BENCH_ROOT"
+          workspace-benchmark-readiness \
+            --source-ref "$EXPECTED_SHA" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --model "$MODEL" \
+            --output "$BENCH_ROOT/environment.json"
+          test -s "$BENCH_ROOT/environment.json"
+
+      - name: Run baseline and exact-dedupe candidate in one isolated suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
+          python3 -m three_agent.d502a_benchmark run \
+            --source-ref "$EXPECTED_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/d502a_exact_body_dedupe_task_set_v1.json" \
+            --config "$GITHUB_WORKSPACE/config/workspace.secure.json" \
+            >/dev/null
+          test -s "$BENCH_ROOT/suite.json"
+          test -s "$BENCH_ROOT/d502a-decision.json"
+          test -z "$(grep -F "$RUNNER_TEMP" "$BENCH_ROOT/suite.json" || true)"
+
+      - name: Independently recompute D5-02a evidence verdict
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
+          python3 -m three_agent.d502a_benchmark verify \
+            --source-ref "$EXPECTED_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --task-set "$GITHUB_WORKSPACE/benchmarks/d502a_exact_body_dedupe_task_set_v1.json" \
+            >/dev/null
+          test -s "$BENCH_ROOT/d502a-verification.json"
+
+      - name: Write metadata-only decision summary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
+          python3 - "$BENCH_ROOT/d502a-decision.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          print("## D5-02a exact-body dedupe")
+          print(f"- source_ref: `{payload['source_ref']}`")
+          print(f"- promotion_eligible: `{str(payload['promotion_eligible']).lower()}`")
+          print(f"- token_reduction_pct: `{payload['token_reduction_pct']}`")
+          print(f"- quality_preserved: `{str(payload['quality_preserved']).lower()}`")
+          print(f"- required_validators_passed: `{str(payload['required_validators_passed']).lower()}`")
+          if payload.get("failures"):
+              print("- failures: `" + ", ".join(payload["failures"]) + "`")
+          PY
+
+      - name: Publish metadata-only D5-02a benchmark evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: d502a-exact-dedupe-${{ env.EXPECTED_SHA }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/suite.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/d502a-decision.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/d502a-verification.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/baseline-legacy-48k/benchmark.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/baseline-legacy-48k/isolation.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/exact-dedupe-legacy-48k/benchmark.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/exact-dedupe-legacy-48k/isolation.json
