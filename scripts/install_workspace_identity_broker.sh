@@ -18,7 +18,9 @@ REDEEM_PORT="${WORKSPACE_IDENTITY_REDEEM_PORT:-8791}"
 [[ -f "$BROKER_SOURCE" ]] || fail "Identity broker source not found: $BROKER_SOURCE"
 [[ -n "$CORE_USER" && "$CORE_USER" != "root" ]] || fail "Set WORKSPACE_CORE_USER or run via sudo from the WorkSpace account."
 CORE_HOME="$(getent passwd "$CORE_USER" | cut -d: -f6)"
+CORE_GROUP="$(id -gn "$CORE_USER")"
 [[ -n "$CORE_HOME" && -d "$CORE_HOME" ]] || fail "Unable to resolve WorkSpace core home."
+[[ -n "$CORE_GROUP" ]] || fail "Unable to resolve WorkSpace core primary group."
 
 [[ "$PUBLIC_BASE" == https://* ]] || fail "WORKSPACE_IDENTITY_PUBLIC_BASE_URL must be HTTPS."
 [[ -n "$RETURN_ORIGINS" ]] || fail "WORKSPACE_IDENTITY_ALLOWED_RETURN_ORIGINS is required."
@@ -116,9 +118,9 @@ UNIT
 
 CORE_ENV_DIR="$CORE_HOME/.config/3agent"
 CORE_ENV="$CORE_ENV_DIR/chat.env"
-install -d -m 0700 -o "$CORE_USER" -g "$CORE_USER" "$CORE_ENV_DIR"
+install -d -m 0700 -o "$CORE_USER" -g "$CORE_GROUP" "$CORE_ENV_DIR"
 touch "$CORE_ENV"
-chown "$CORE_USER:$CORE_USER" "$CORE_ENV"
+chown "$CORE_USER:$CORE_GROUP" "$CORE_ENV"
 chmod 0600 "$CORE_ENV"
 
 PROVIDER_CSV="$(IFS=,; printf '%s' "${providers[*]}")"
@@ -149,7 +151,7 @@ for key, value in values.items():
         out.append(f"{key}={value}")
 path.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
 PY
-chown "$CORE_USER:$CORE_USER" "$CORE_ENV"
+chown "$CORE_USER:$CORE_GROUP" "$CORE_ENV"
 chmod 0600 "$CORE_ENV"
 
 systemd-analyze verify /etc/systemd/system/workspace-identity-broker.service
