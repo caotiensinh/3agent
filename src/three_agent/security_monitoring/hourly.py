@@ -110,7 +110,7 @@ class HourlyMonitoringRunner:
                 return final
 
             assets_by_id = {asset.asset_id: asset for asset in assets}
-            plan = compile_collection_plan(assets)
+            plan = compile_collection_plan(assets, policy=self.policy)
             results: list[tuple[CollectorWorkItem, CollectorResult, int]] = []
             observed_at = datetime.now(timezone.utc).isoformat()
 
