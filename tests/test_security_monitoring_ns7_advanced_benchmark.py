@@ -107,7 +107,7 @@ class FixedAdvancedBenchmarkTests(unittest.TestCase):
 
             nonfinite = json.loads(json.dumps(original))
             nonfinite["cases"][0]["current_value"] = float("inf")
-            path.write_text(json.dumps(nonfinite), encoding="utf-8", allow_nan=True)
+            path.write_text(json.dumps(nonfinite, allow_nan=True), encoding="utf-8")
             with self.assertRaises(MonitoringContractError):
                 load_fixed_benchmark(path)
 
