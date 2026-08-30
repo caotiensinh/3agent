@@ -14,8 +14,11 @@ from .chat_gateway import TelegramBridge, _lan_hint, _parse_allowed_ids
 from .chat_gateway_v15 import WorkflowV3Application
 from .chat_gateway_v16 import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
-    ContextAwareProjectChatService,
     ContextAwareWorkflowV3HTTPHandler,
+)
+from .chat_service_fidelity_v2 import (
+    OUTPUT_CONTRACT_POLICY_VERSION,
+    ContractAwareProjectChatService,
 )
 from .config import load_config
 from .orchestrator import Orchestrator
@@ -70,9 +73,9 @@ class WorkflowV4ContextApplication(WorkflowV3Application):
 
 
 class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
-    """ver.0.0.1: multi-turn context fidelity plus bounded budgeted Workflow V4."""
+    """ver.0.0.2: V4 plus current-request output-contract fidelity."""
 
-    server_version = "WorkSpaceChat/ver.0.0.1"
+    server_version = "WorkSpaceChat/ver.0.0.2"
 
     def _prepare_dispatch(self) -> None:
         if self._require_admin() is None:
@@ -192,6 +195,9 @@ class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
                     "response_language_auto": True,
                     "response_language_current_request_precedence": True,
                     "response_language_validation": True,
+                    "response_output_contract": OUTPUT_CONTRACT_POLICY_VERSION,
+                    "response_output_contract_current_request_only": True,
+                    "response_generation_bounded": True,
                     "conversation_context_policy": CONVERSATION_CONTEXT_POLICY_VERSION,
                     "conversation_context_reference_gated": True,
                     "conversation_context_completed_only": True,
@@ -235,7 +241,7 @@ def main() -> int:
     external_store.initialize()
     external_settings = ExternalAuthSettings.from_env()
 
-    service = ContextAwareProjectChatService(orchestrator, default_language=language)
+    service = ContractAwareProjectChatService(orchestrator, default_language=language)
     service.start()
     app = WorkflowV4ContextApplication(
         service, auth, config.artifact_root, external_store, external_settings
@@ -285,6 +291,10 @@ def main() -> int:
         )
     print(
         f"[WorkSpace {DISPLAY_VERSION}] Conversation context remains reference-gated and current-request authoritative ({CONVERSATION_CONTEXT_POLICY_VERSION}).",
+        flush=True,
+    )
+    print(
+        f"[WorkSpace {DISPLAY_VERSION}] Direct chat output is bounded by {OUTPUT_CONTRACT_POLICY_VERSION}.",
         flush=True,
     )
     print(
