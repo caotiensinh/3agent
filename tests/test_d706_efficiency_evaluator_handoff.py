@@ -53,7 +53,7 @@ def benchmark_tuple(ref, *, quality=None):
         "task_scope_sha256": lineage["task_scope_sha256"],
         "configuration_sha256": lineage["configuration_sha256"],
     }
-    return {"schema_version": "workspace-benchmark-snapshot/v1"}, quality, lineage, binding
+    return quality, lineage, binding
 
 
 def observation(ref):
