@@ -89,8 +89,32 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertIn("do not invent", tightened.instruction)
         self.assertFalse(tightened.validate("Bạn muốn tiếp phần nào? Hãy cho tôi nội dung trước.")[0])
 
+    def test_explicit_multilingual_brevity_is_a_hard_current_request_bound(self):
+        prompts = (
+            "Hãy giới thiệu ngắn gọn về bạn bằng tiếng Việt.",
+            "日本語で簡単に自己紹介してください。",
+            "Please introduce yourself briefly in English.",
+            "Explain DNSSEC concisely.",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                contract = compile_chat_output_contract(prompt, effort="standard")
+                self.assertEqual(contract.kind, "brief_prose")
+                self.assertEqual(contract.max_chars, 600)
+                self.assertLessEqual(contract.num_predict, 128)
+                self.assertTrue(contract.validate("A" * 600)[0])
+                self.assertFalse(contract.validate("A" * 601)[0])
+
+    def test_brief_topic_word_does_not_accidentally_shrink_detailed_request(self):
+        contract = compile_chat_output_contract(
+            "Provide a detailed analysis of brief packet-loss incidents in this trace.",
+            effort="standard",
+        )
+        self.assertEqual(contract.kind, "prose")
+        self.assertEqual(contract.max_chars, 2800)
+
     def test_standard_default_no_longer_has_4096_token_budget(self):
-        contract = compile_chat_output_contract("Explain DNSSEC briefly.", effort="standard")
+        contract = compile_chat_output_contract("Explain DNSSEC with practical details.", effort="standard")
         self.assertEqual(contract.kind, "prose")
         self.assertLess(contract.num_predict, 4096)
         self.assertLessEqual(contract.max_chars, 2800)
