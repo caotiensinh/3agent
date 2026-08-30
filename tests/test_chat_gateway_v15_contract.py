@@ -3,10 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from three_agent.chat_context import (
-    CONTEXT_MODE_FOLLOW_UP,
-    CONVERSATION_CONTEXT_POLICY_VERSION if False else CONTEXT_MODE_FOLLOW_UP,
-)
+from three_agent.chat_context import CONTEXT_MODE_FOLLOW_UP
 from three_agent.chat_gateway_v14 import (
     IntentAwareProjectChatService,
     IntentAwareWorkflowDispatchHTTPHandler,
