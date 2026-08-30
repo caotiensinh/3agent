@@ -31,6 +31,32 @@ class WorkflowDispatchGatewayTests(unittest.TestCase):
         self.assertIn("self._require_admin()", execute_source)
         self.assertIn('admin["user_id"]', execute_source)
 
+    def test_public_dispatch_result_never_exposes_server_paths_or_artifact_lists(self):
+        public = WorkflowDispatchHTTPHandler._public_dispatch_result(
+            {
+                "schema_version": "workspace-workflow-dispatch/v2",
+                "task_id": "TASK-1",
+                "dispatch_status": "completed",
+                "execution_profile": "workspace-fixed-analysis/v1",
+                "result": {
+                    "task_id": "TASK-1",
+                    "status": "completed",
+                    "task_status": "done",
+                    "stage": "daily_report_completed",
+                    "manifest_path": "/srv/workspace/secret/workflow.json",
+                    "research_artifacts": ["/srv/workspace/secret/research.json"],
+                    "presentation_artifacts": ["/srv/workspace/secret/deck.pptx"],
+                    "daily_report_artifacts": ["/srv/workspace/secret/daily.json"],
+                    "error": None,
+                },
+            }
+        )
+        encoded = repr(public)
+        self.assertNotIn("/srv/", encoded)
+        self.assertNotIn("manifest_path", encoded)
+        self.assertNotIn("research_artifacts", encoded)
+        self.assertEqual(public["result"]["status"], "completed")
+
     def test_health_contract_declares_bounded_execution_not_general_authority(self):
         source = inspect.getsource(WorkflowDispatchHTTPHandler.do_GET)
         self.assertIn('"workflow_execution": True', source)
