@@ -13,6 +13,7 @@ from three_agent.chat_gateway_v17 import (
     WorkflowV4ContextApplication,
     WorkflowV4ContextHTTPHandler,
 )
+from three_agent.chat_service_fidelity_v2 import ContractAwareProjectChatService
 from three_agent.version import DISPLAY_VERSION
 
 
@@ -23,7 +24,7 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
         )
         self.assertEqual(
             WorkflowV4ContextHTTPHandler.server_version,
-            "WorkSpaceChat/ver.0.0.1",
+            "WorkSpaceChat/ver.0.0.2",
         )
         self.assertIn(DISPLAY_VERSION, HTML_V17)
         self.assertIn("Workflow Studio", HTML_V17)
@@ -85,6 +86,7 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
             '"conversation_context_completed_only": True',
             '"standalone_request_history_injected": False',
             '"follow_up_language_continuity": True',
+            '"chat_output_contract": OUTPUT_CONTRACT_POLICY_VERSION',
         ):
             self.assertIn(token, source)
         self.assertEqual(
@@ -92,13 +94,15 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
             "deterministic-reference-gated/v1",
         )
 
-    def test_main_uses_context_aware_service_not_legacy_direct_chat_service(self):
+    def test_main_uses_contract_aware_service(self):
         from three_agent import chat_gateway_v17
 
         source = inspect.getsource(chat_gateway_v17.main)
-        self.assertIn("ContextAwareProjectChatService", source)
+        self.assertIn("ContractAwareProjectChatService", source)
+        self.assertNotIn("ContextAwareProjectChatService(orchestrator", source)
         self.assertIn("WorkflowV4ContextApplication", source)
         self.assertIn("WorkflowV4ContextHTTPHandler", source)
+        self.assertTrue(issubclass(ContractAwareProjectChatService, object))
 
 
 if __name__ == "__main__":
