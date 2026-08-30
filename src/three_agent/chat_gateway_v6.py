@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hmac
 import os
 import threading
 from http import HTTPStatus
@@ -40,8 +41,17 @@ from .workspace_frontend_v3 import WORKSPACE_HTML_V3
 HTML_V6 = WORKSPACE_HTML_V3
 
 
+def _job_is_owned(job: Any, identity: str) -> bool:
+    """Require exact web-account ownership for job and artifact reads."""
+    return bool(
+        job is not None
+        and str(getattr(job, "channel", "")) == "web"
+        and hmac.compare_digest(str(getattr(job, "sender", "")), str(identity))
+    )
+
+
 class AccountKnowledgeHTTPHandler(SidebarKnowledgeHTTPHandler):
-    server_version = "WorkSpaceChat/0.7"
+    server_version = "WorkSpaceChat/0.8"
 
     @property
     def auth(self) -> WorkspaceAuthStore:
@@ -153,7 +163,7 @@ class AccountKnowledgeHTTPHandler(SidebarKnowledgeHTTPHandler):
                 {
                     "status": "ok",
                     "service": "WorkSpace Chat",
-                    "version": "0.7",
+                    "version": "0.8",
                     "auth": "local_accounts",
                 },
             )
@@ -193,6 +203,37 @@ class AccountKnowledgeHTTPHandler(SidebarKnowledgeHTTPHandler):
                     )
                 },
             )
+            return
+        if path == "/api/recent":
+            if not self._authorized_local():
+                return
+            identity = self._identity()
+            jobs = [
+                job.public_dict()
+                for job in self.app.service.recent(80)
+                if _job_is_owned(job, identity)
+            ][:20]
+            self._json(HTTPStatus.OK, {"jobs": jobs})
+            return
+        if path.startswith("/api/jobs/"):
+            if not self._authorized_local():
+                return
+            job_id = path.rsplit("/", 1)[-1]
+            job = self.app.service.get(job_id)
+            if not _job_is_owned(job, self._identity()):
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown job"})
+                return
+            self._json(HTTPStatus.OK, job.public_dict())
+            return
+        if path.startswith("/api/artifacts/"):
+            if not self._authorized_local():
+                return
+            parts = path.split("/")
+            job = self.app.service.get(parts[3]) if len(parts) == 5 else None
+            if not _job_is_owned(job, self._identity()):
+                self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown artifact"})
+                return
+            super().do_GET()
             return
         super().do_GET()
 
@@ -453,7 +494,7 @@ def main() -> int:
         flush=True,
     )
     print(
-        "[WorkSpace] User chat history and upload ownership are account-scoped.",
+        "[WorkSpace] User chat history, jobs, artifacts and upload ownership are account-scoped.",
         flush=True,
     )
     try:
