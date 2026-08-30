@@ -35,15 +35,15 @@ class ResearchAgent(_RankedResearchAgent):
     """Research path with local prompt compilation plus public-query declassification.
 
     Credentials and other sensitive values are intentionally preserved in the local
-    compiled prompt. Only generated web-search queries cross the separate public
-    query compiler and the existing strict InternetGateway DLP gate.
+    compiled prompt. Only model-generated web-search queries cross the separate
+    public query compiler and the existing strict InternetGateway DLP gate. The raw
+    user request is never used as an automatic egress fallback.
     """
 
     def _plan(self, title: str, request: str) -> tuple[str, list[str], list[str]]:
         objective, queries, focus = super()._plan(title, request)
         public_queries, _diagnostics = compile_public_search_queries(
             queries,
-            fallback=f"{title} {request}",
             max_queries=4,
         )
         # Empty is safer than falling back to a raw request. Upload/local evidence
