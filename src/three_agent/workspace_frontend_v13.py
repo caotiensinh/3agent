@@ -41,13 +41,4 @@ html = _replace_once(
     "integration-menu-boundary",
 )
 
-# Make request-driven language behavior explicit without adding another control
-# users must maintain for the whole conversation.
-html = _replace_once(
-    html,
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label><span class="menu-sub">Language follows each current request automatically.</span>',
-    "request-language-hint",
-)
-
 WORKSPACE_HTML_V13 = html
