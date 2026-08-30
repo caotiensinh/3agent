@@ -38,8 +38,8 @@ class LogPipelineTests(unittest.TestCase):
     def test_spool_rotates_and_applies_backpressure_without_deleting_unprocessed_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "spool"
-            spool = BoundedLogSpool(root, max_total_bytes=4096, max_file_bytes=512)
-            for _ in range(5):
+            spool = BoundedLogSpool(root, max_total_bytes=4096, max_file_bytes=1024)
+            for _ in range(8):
                 spool.append(source_id="syslog-1", raw_line="x" * 200)
             self.assertGreaterEqual(len(spool.ready_files()), 1)
             before = sum(p.stat().st_size for p in root.iterdir())
