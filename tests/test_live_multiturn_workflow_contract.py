@@ -14,6 +14,8 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("runs-on: [self-hosted, Linux, X64]", text)
         self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("group: workspace-live-chat-multiturn-main-v2", text)
+        self.assertNotIn("group: workspace-live-chat-multiturn-main\n", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
         self.assertNotIn("pull_request:", text)
