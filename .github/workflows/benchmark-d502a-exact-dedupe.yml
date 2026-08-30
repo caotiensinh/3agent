@@ -170,13 +170,57 @@ jobs:
         run: |
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
+          RUN_RESULT="$BENCH_ROOT/d502a-run-result.json"
+          FAILURE_RECEIPT="$BENCH_ROOT/d502a-failure.json"
+
+          set +e
           "$BENCH_PYTHON" -m three_agent.d502a_benchmark run \
             --source-ref "$EXPECTED_SHA" \
             --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE" \
             --task-set "$GITHUB_WORKSPACE/benchmarks/d502a_exact_body_dedupe_task_set_v1.json" \
             --config "$GITHUB_WORKSPACE/config/workspace.secure.json" \
-            >/dev/null
+            > "$RUN_RESULT"
+          rc=$?
+          set -e
+          test -s "$RUN_RESULT"
+
+          if (( rc != 0 )); then
+            "$BENCH_PYTHON" - "$RUN_RESULT" "$FAILURE_RECEIPT" "$EXPECTED_SHA" <<'PY'
+          import hashlib
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          source = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          source_ref = sys.argv[3]
+          payload = json.loads(source.read_text(encoding="utf-8"))
+          raw = str(payload.get("error") or "UNKNOWN_BENCHMARK_FAILURE")
+          summary = " ".join(raw.replace("\x00", "").split())
+          summary = re.sub(r"https?://\S+", "<url>", summary)
+          summary = re.sub(r"(?i)(authorization|password|secret|token)\s*[:=]\s*\S+", r"\1=<redacted>", summary)
+          summary = re.sub(r"/(?:[^\s/:]+/)+[^\s:]*", "<path>", summary)
+          summary = summary[:400]
+          error_class = raw.split(":", 1)[0].strip()[:80] or "UNKNOWN"
+          receipt = {
+              "schema_version": "workspace-d502a-sanitized-failure/v1",
+              "completed": False,
+              "source_ref": source_ref,
+              "error_class": error_class,
+              "error_summary": summary,
+              "error_sha256": "sha256:" + hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest(),
+              "raw_prompt_logged": False,
+              "raw_evidence_logged": False,
+          }
+          destination.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+            rm -f "$RUN_RESULT"
+            exit "$rc"
+          fi
+
+          rm -f "$RUN_RESULT"
           test -s "$BENCH_ROOT/suite.json"
           test -s "$BENCH_ROOT/d502a-decision.json"
           test -z "$(grep -F "$RUNNER_TEMP" "$BENCH_ROOT/suite.json" || true)"
@@ -195,6 +239,7 @@ jobs:
           test -s "$BENCH_ROOT/d502a-verification.json"
 
       - name: Write metadata-only decision summary
+        if: success()
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -215,14 +260,37 @@ jobs:
               print("- failures: `" + ", ".join(payload["failures"]) + "`")
           PY
 
+      - name: Write sanitized benchmark failure summary
+        if: failure()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          FAILURE_RECEIPT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID/d502a-failure.json"
+          if [[ -s "$FAILURE_RECEIPT" ]]; then
+            "$BENCH_PYTHON" - "$FAILURE_RECEIPT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          print("## D5-02a benchmark failure")
+          print(f"- source_ref: `{payload['source_ref']}`")
+          print(f"- error_class: `{payload['error_class']}`")
+          print(f"- error_summary: `{payload['error_summary']}`")
+          print(f"- error_sha256: `{payload['error_sha256']}`")
+          PY
+          fi
+
       - name: Publish metadata-only D5-02a benchmark evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: d502a-exact-dedupe-${{ env.EXPECTED_SHA }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
           path: |
             ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/d502a-failure.json
             ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/suite.json
             ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/d502a-decision.json
             ${{ runner.temp }}/workspace-d502a-${{ github.run_id }}/d502a-verification.json
