@@ -148,7 +148,9 @@ def _normalize_timestamp(raw: str) -> str:
             parsed = datetime.strptime(value, fmt)
         except ValueError:
             continue
-        return parsed.isoformat(timespec="seconds") + "Z"
+        # The processed CSV does not carry an explicit timezone. Preserve that
+        # uncertainty instead of inventing UTC with a trailing "Z".
+        return parsed.isoformat(timespec="seconds")
     raise CICAdapterSchemaError("invalid required Timestamp value")
 
 
