@@ -4,9 +4,9 @@ This directory contains architecture knowledge and engineering doctrine for Work
 
 ## Status
 
-**Knowledge only. Not runtime authority. Not an implementation.**
+**Knowledge does not grant runtime authority.**
 
-Documents in this directory describe principles, contracts, review criteria, and future implementation boundaries. They do not grant capabilities, enable network access, authorize shell execution, change security policy, or modify production behavior.
+Documents in this directory describe principles, contracts, review criteria, and implementation boundaries. They do not enable network access, authorize shell execution, change security policy, or modify production infrastructure merely by existing.
 
 The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Deterministic policy and operator-approved configuration always outrank learned knowledge, skills, model output, and external content.
 
@@ -14,6 +14,10 @@ The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Determinis
 
 - `SELF_IMPROVEMENT_DOCTRINE.md` — canonical WorkSpace interpretation of experience-driven learning, memory, procedural skills, validation, curation, rollback, and safe self-improvement.
 - `NETWORK_SECURITY_ANALYST_LEARNING.md` — domain-specific application for Network Monitoring, Security Analysis, and general Analyst work, where evidence quality and false-positive control are critical.
+- `ADAPTIVE_LEARNING_PHASE1.md` — implemented deterministic contracts for evidence, experience, candidate provenance, contradictions, validation receipts, classification monotonicity and knowledge-level promotion.
+- `ADAPTIVE_LEARNING_PHASE2.md` — implemented offline/synthetic Network/Security/Analyst evaluation corpus and metadata-only deterministic replay.
+
+The current implementation still has **no background LLM learner**. Phase 1 and Phase 2 establish the deterministic control plane and fixed evaluation gate that must exist first.
 
 ## Provenance
 
