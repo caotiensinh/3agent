@@ -36,6 +36,7 @@ workspace-identity-broker = "three_agent.workspace_identity_broker:main"
 workspace-knowledge = "three_agent.knowledge_cli:main"
 workspace-promotion = "three_agent.promotion_gate:main"
 workspace-retrieval = "three_agent.deterministic_retrieval_cli:main"
+workspace-security-monitor = "three_agent.security_monitoring_cli:main"
 three-agent = "three_agent.cli:main"
 three-agent-chat = "three_agent.chat_gateway_v17:main"
 
