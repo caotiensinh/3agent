@@ -18,20 +18,21 @@ html = _replace_once(
 
 # Match the compact one-plus-menu interaction expected by users. Integrations are
 # visible discovery points but remain fail-closed unless the local capability
-# registry explicitly enables them.
+# registry explicitly enables them. Bind to the exact v12 GitHub row and add the
+# menuitem role while inserting the new discovery rows.
 figma_canva = r'''
       <button class="menu-row" type="button" data-action="figma" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">F</span>
-        <span><div class="menu-title">Figma</div><div class="menu-sub">Design-to-code workflows</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Figma</span><span class="menu-sub">Design-to-code workflows</span></span><span class="menu-state">Connect</span>
       </button>
       <button class="menu-row" type="button" data-action="canva" data-connect-action="true" role="menuitem">
         <span class="menu-icon blue">C</span>
-        <span><div class="menu-title">Canva</div><div class="menu-sub">Create, review, and edit designs</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Canva</span><span class="menu-sub">Create, review, and edit designs</span></span><span class="menu-state">Connect</span>
       </button>
 '''
 html = _replace_once(
     html,
-    '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    '      <button class="menu-row" type="button" data-action="github">',
     figma_canva + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
     "integration-menu-before-github",
 )
@@ -39,7 +40,7 @@ html = _replace_once(
 gmail = r'''
       <button class="menu-row" type="button" data-action="gmail" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">M</span>
-        <span><div class="menu-title">Gmail</div><div class="menu-sub">Read and manage Gmail</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Gmail</span><span class="menu-sub">Read and manage Gmail</span></span><span class="menu-state">Connect</span>
       </button>
 '''
 html = _replace_once(
@@ -49,22 +50,23 @@ html = _replace_once(
     "integration-menu-gmail",
 )
 
-# For connector discovery rows that are not yet present in the runtime capability
-# registry, show `Connect` rather than a misleading generic `Unavailable`. Clicking
-# still fails closed and explains that the connector is not configured.
+# Preserve the existing capability lookup path. Connector discovery is display
+# only: an absent registry entry is still disabled and clicking it follows the
+# existing `unavailable(action)` path rather than receiving a synthetic capability.
 html = _replace_once(
     html,
-    "function feature(name){return state.capabilities?.features?.[name]||{enabled:false,reason:'Capability information is unavailable.'}}",
-    "function feature(name){const configured=state.capabilities?.features?.[name];if(configured)return configured;const connect=new Set(['figma','canva','gmail']);return{enabled:false,state_label:connect.has(name)?'Connect':'Unavailable',reason:connect.has(name)?'This connector is not configured for the local WorkSpace runtime.':'Capability information is unavailable.'}}",
+    "function cap(name){return state.capabilities&&state.capabilities.features&&state.capabilities.features[name]?state.capabilities.features[name]:{enabled:false,state_label:'Unavailable',reason:'Capability unavailable'}}",
+    "function cap(name){const configured=state.capabilities&&state.capabilities.features&&state.capabilities.features[name];if(configured)return configured;const connect=new Set(['figma','canva','gmail']);return{enabled:false,state_label:connect.has(name)?'Connect':'Unavailable',reason:connect.has(name)?'This connector is not configured for the local WorkSpace runtime.':'Capability unavailable'}}",
     "connector-discovery-state",
 )
 
 # Make the request-driven language behavior explicit in the output selector area
-# without adding another control the user has to maintain per conversation.
+# without adding another control the user has to maintain per conversation. Keep
+# the exact existing v12 output labels, including "Slide PDF".
 html = _replace_once(
     html,
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
-    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + PDF</option><option value="all">Report + PPTX + PDF</option></select></label><span class="menu-sub">Language follows each current request automatically.</span>',
+    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + Slide PDF</option><option value="all">Report + PPTX + PDF</option></select></label>',
+    '<label>Output<select id="fmt"><option value="source">Report</option><option value="pptx">Report + PPTX</option><option value="pdf">Report + Slide PDF</option><option value="all">Report + PPTX + PDF</option></select></label><span class="menu-sub">Language follows each current request automatically.</span>',
     "request-language-hint",
 )
 
