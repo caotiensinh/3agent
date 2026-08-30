@@ -16,6 +16,11 @@ dependencies = [
   "tzdata>=2024.1",
 ]
 
+[project.optional-dependencies]
+monitoring-snmp = [
+  "pysnmp>=7.1.29,<7.2",
+]
+
 [project.scripts]
 workspace = "three_agent.cli:main"
 workspace-benchmark = "three_agent.benchmark_suite:main"
