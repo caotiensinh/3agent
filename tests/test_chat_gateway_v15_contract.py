@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from three_agent.chat_context import CONTEXT_MODE_FOLLOW_UP
+from three_agent.chat_context import (
+    CONTEXT_MODE_FOLLOW_UP,
+    ConversationContextPlan,
+)
 from three_agent.chat_gateway_v14 import (
     IntentAwareProjectChatService,
     IntentAwareWorkflowDispatchHTTPHandler,
@@ -30,12 +35,39 @@ class ChatGatewayV15ContractTests(unittest.TestCase):
         names = ContextAwareProjectChatService._direct_prompt.__code__.co_names
         self.assertIn("_context_plan", names)
         self.assertIn("_upload_context", names)
-        constants = "\n".join(
-            value for value in ContextAwareProjectChatService._direct_prompt.__code__.co_consts
-            if isinstance(value, str)
+
+    def test_missing_follow_up_context_is_rendered_as_unavailable_not_invented(self) -> None:
+        service = object.__new__(ContextAwareProjectChatService)
+        service._lock = threading.RLock()
+        service._job_context_plans = {}
+        service._context_plan = lambda job: ConversationContextPlan(
+            mode=CONTEXT_MODE_FOLLOW_UP,
+            reason="test",
+            text="",
+            message_count=0,
+            source_chars=0,
+            language_hint="vi",
         )
-        self.assertIn('available="false"', constants)
-        self.assertIn("Do not invent the missing referenced content", constants)
+        service._upload_context = lambda upload_ids: ""
+        prompt = service._direct_prompt(
+            SimpleNamespace(job_id="job-test", message="tiếp theo ?"),
+            [],
+        )
+        self.assertIn('available="false"', prompt)
+        self.assertIn("Do not invent the missing referenced content", prompt)
+        self.assertNotIn("[PRIOR USER]", prompt)
+
+    def test_short_follow_up_cue_keeps_language_even_without_conversation_id(self) -> None:
+        service = object.__new__(ContextAwareProjectChatService)
+        service.default_language = "ja"
+        language = service._language_for_follow_up(
+            "tiếp theo ?",
+            channel="web",
+            sender="workspace-user:test",
+            language="auto",
+            conversation_id=None,
+        )
+        self.assertEqual(language, "vi")
 
     def test_package_entrypoints_use_gateway_v15(self) -> None:
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
