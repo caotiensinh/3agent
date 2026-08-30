@@ -9,15 +9,21 @@ bash "$SCRIPT" --self-test >/dev/null
 bash "$SCRIPT" --self-test --general-count=3 --gpu-count=2 >/dev/null
 
 # Missing token/PAT and no TTY to prompt on must fail closed, not silently proceed.
-if env -u GH_PAT -u GITHUB_TOKEN bash "$SCRIPT" </dev/null >/dev/null 2>&1; then
+# Wrapped in `timeout` as a hard backstop: a real run on real hardware once hung here
+# for minutes because a curl call with no timeout of its own stalled on a network that
+# did not fail fast on an unreachable host, tying up a job/runner slot instead of erroring.
+if timeout 30 env -u GH_PAT -u GITHUB_TOKEN bash "$SCRIPT" </dev/null >/dev/null 2>&1; then
   echo "setup_runner_pool.sh must fail without --token/GH_PAT and no TTY to prompt" >&2
   exit 1
 fi
 
 # The fully manual path (explicit --token/--tarball-url/--tarball-sha256) must never
-# read GH_PAT — it should fail at the network download, not at a PAT check.
-MANUAL_OUTPUT="$(env -u GH_PAT -u GITHUB_TOKEN bash "$SCRIPT" \
-  --token=faketoken --tarball-url=https://example.invalid/runner.tar.gz \
+# read GH_PAT — it should fail at the network download, not at a PAT check. Target
+# 127.0.0.1 on a near-certainly-closed port rather than a placeholder hostname: loopback
+# never depends on DNS, and a closed port refuses the connection immediately instead of
+# depending on how a given network happens to handle an unregistered domain.
+MANUAL_OUTPUT="$(timeout 30 env -u GH_PAT -u GITHUB_TOKEN bash "$SCRIPT" \
+  --token=faketoken --tarball-url=http://127.0.0.1:1/runner.tar.gz \
   --tarball-sha256=deadbeef --general-count=1 --gpu-count=0 </dev/null 2>&1 || true)"
 grep -qi 'PAT' <<<"$MANUAL_OUTPUT" && {
   echo "Manual --token/--tarball-url/--tarball-sha256 path must never mention GH_PAT" >&2

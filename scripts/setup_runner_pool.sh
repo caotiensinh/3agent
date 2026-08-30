@@ -44,6 +44,14 @@ DEFAULT_EXISTING_DIR="$HOME/actions-runner"
 ACTION="setup"
 SELF_TEST=0
 
+# Every curl call below carries an explicit connect/overall timeout. Without one, a
+# DNS/network hiccup (or, as observed, some networks not failing fast on a clearly
+# invalid host) hangs `curl -fsSL` indefinitely instead of erroring, since curl has no
+# default timeout of its own. API calls are small and fast; only the tarball download
+# gets a longer overall budget since it is a real multi-hundred-MB transfer.
+CURL_API_OPTS=(--connect-timeout 10 --max-time 20)
+CURL_DOWNLOAD_OPTS=(--connect-timeout 10 --max-time 180)
+
 log() { printf '[RunnerPool] %s\n' "$*"; }
 warn() { printf '[RunnerPool][WARN] %s\n' "$*" >&2; }
 die() { printf '[RunnerPool][ERROR] %s\n' "$*" >&2; exit 1; }
@@ -156,11 +164,11 @@ mint_token() {
   local purpose="$1" # "registration" or "remove"
   ensure_pat "$purpose"
   local resp
-  resp="$(curl -fsS -X POST \
+  resp="$(curl -fsS "${CURL_API_OPTS[@]}" -X POST \
     -H "Authorization: Bearer ${GH_PAT}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/$(owner_repo)/actions/runners/${purpose}-token")" \
-    || die "Failed to mint a ${purpose} token via the GitHub API (check GH_PAT scope/expiry)"
+    || die "Failed to mint a ${purpose} token via the GitHub API (check GH_PAT scope/expiry, or network/DNS reachability of api.github.com)"
   jq -r '.token' <<<"$resp"
 }
 
@@ -176,8 +184,8 @@ resolve_release() {
   esac
   local -a auth_header=()
   [[ -n "$GH_PAT" ]] && auth_header=(-H "Authorization: Bearer ${GH_PAT}")
-  latest="$(curl -fsSL "${auth_header[@]}" https://api.github.com/repos/actions/runner/releases/latest)" \
-    || die "Failed to query the actions/runner releases API (an unauthenticated IP can hit GitHub's rate limit; set GH_PAT to raise it, or pass --tarball-url/--tarball-sha256 manually)"
+  latest="$(curl -fsSL "${CURL_API_OPTS[@]}" "${auth_header[@]}" https://api.github.com/repos/actions/runner/releases/latest)" \
+    || die "Failed to query the actions/runner releases API (an unauthenticated IP can hit GitHub's rate limit, or the network/DNS didn't respond within ${CURL_API_OPTS[3]}s; set GH_PAT to raise the rate limit, or pass --tarball-url/--tarball-sha256 manually)"
   local version
   version="$(jq -r '.tag_name' <<<"$latest" | sed 's/^v//')"
   [[ -n "$version" && "$version" != "null" ]] || die "Could not resolve the latest runner version"
@@ -234,7 +242,7 @@ if [[ -n "$TARBALL_SHA256" ]]; then
     log "Reusing already-downloaded, checksum-verified runner tarball: $CACHE_TARBALL"
   else
     log "Downloading runner release once for reuse across all $((GENERAL_COUNT + GPU_COUNT)) instances"
-    curl -fsSL -o "$CACHE_TARBALL" "$TARBALL_URL"
+    curl -fsSL "${CURL_DOWNLOAD_OPTS[@]}" -o "$CACHE_TARBALL" "$TARBALL_URL"
     echo "${TARBALL_SHA256}  ${CACHE_TARBALL}" | sha256sum -c - \
       || die "Checksum mismatch for $CACHE_TARBALL; refusing to extract an unverified runner binary"
   fi
@@ -243,7 +251,7 @@ else
     log "Reusing already-downloaded runner tarball: $CACHE_TARBALL"
   else
     log "Downloading runner release once (over HTTPS from github.com) for reuse across all $((GENERAL_COUNT + GPU_COUNT)) instances"
-    curl -fsSL -o "$CACHE_TARBALL" "$TARBALL_URL"
+    curl -fsSL "${CURL_DOWNLOAD_OPTS[@]}" -o "$CACHE_TARBALL" "$TARBALL_URL"
     log "Downloaded $(sha256sum "$CACHE_TARBALL" | cut -d' ' -f1)  $(basename "$CACHE_TARBALL")"
   fi
 fi
