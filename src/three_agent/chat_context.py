@@ -31,14 +31,15 @@ _VI_FOLLOW_UP_PATTERNS = (
     r"\b(?:cái|phần|mục|ý|lựa\s+chọn)\s+(?:thứ\s+)?(?:hai|2)\b",
     r"\b(?:phần|đoạn|nội\s+dung|cấu\s+hình|lệnh|code)\s+(?:ở\s+)?(?:trên|bên\s+trên|vừa\s+(?:nói|nêu|đề\s+cập))\b",
     r"\b(?:như|theo)\s+(?:trên|vừa\s+(?:nói|nêu|đề\s+cập))\b",
-    r"\b(?:cái|việc|phần|đó|này)\s+(?:đó|này)\b",
+    r"\b(?:cái|việc|phần)\s+(?:đó|này)\b",
     r"^(?:thế|vậy)\s+(?:còn|thì)\b",
     r"^còn\b.{0,80}\bthì\s+sao\b",
     r"^(?:tại\s+sao|vì\s+sao)\s*[?？!]*$",
     r"\b(?:sửa|đổi|dùng|áp\s+dụng|giữ)\b.{0,60}\b(?:phần\s+trên|ở\s+trên|vừa\s+(?:nói|nêu)|cấu\s+hình\s+vừa\s+nói|cái\s+đó)\b",
 )
 _EN_FOLLOW_UP_PATTERNS = (
-    r"^(?:please\s+)?(?:continue|go\s+on|next)(?:\b|\s|[?.!,;:])",
+    r"^(?:please\s+)?(?:continue|go\s+on)(?:\b|\s|[?.!,;:])",
+    r"^(?:please\s+)?next(?:\s+(?:one|step|part|item|option))?(?:\s*,?\s*please)?\s*[?!.]*$",
     r"\b(?:the\s+)?(?:second|2nd)\s+(?:one|item|option|part|point)\b",
     r"\b(?:the\s+)?(?:above|previous|prior)\s+(?:part|section|answer|config(?:uration)?|command|code|item|one)\b",
     r"\b(?:as|like)\s+(?:above|discussed|mentioned|noted)\b",
@@ -103,15 +104,15 @@ def infer_recent_user_language(messages: Sequence[dict[str, Any]]) -> str:
 
 def _compact_message(text: str, limit: int) -> str:
     body = str(text or "").strip()
-    maximum = max(160, int(limit))
+    maximum = max(40, int(limit))
     if len(body) <= maximum:
         return body
     marker = "\n…[deterministically compacted]…\n"
     remaining = maximum - len(marker)
-    if remaining <= 80:
+    if remaining <= 24:
         return body[:maximum]
-    front = max(40, remaining // 2)
-    tail = max(40, remaining - front)
+    front = max(12, remaining // 2)
+    tail = max(12, remaining - front)
     return body[:front].rstrip() + marker + body[-tail:].lstrip()
 
 
@@ -159,7 +160,7 @@ def build_conversation_context(
 
     total_budget = max(256, int(max_chars))
     message_limit = max(1, min(12, int(max_messages)))
-    per_message_limit = max(160, min(total_budget, int(per_message_chars)))
+    per_message_limit = max(40, min(total_budget, int(per_message_chars)))
     eligible = _eligible_messages(messages, current_job_id=current_job_id)
     selected = eligible[-message_limit:]
 
@@ -170,9 +171,14 @@ def build_conversation_context(
     for item in reversed(selected):
         role = "PRIOR USER" if str(item.get("role")) == "user" else "PRIOR ASSISTANT"
         raw_content = str(item.get("content") or "").strip()
-        content = _compact_message(raw_content, per_message_limit)
-        row = f"[{role}]\n{content}"
-        cost = len(row) + (2 if packed_reversed else 0)
+        separator_cost = 2 if packed_reversed else 0
+        header = f"[{role}]\n"
+        available = total_budget - used - separator_cost - len(header)
+        if available < 40:
+            continue
+        content = _compact_message(raw_content, min(per_message_limit, available))
+        row = header + content
+        cost = len(row) + separator_cost
         if used + cost > total_budget:
             continue
         packed_reversed.append((role, content, len(raw_content)))
