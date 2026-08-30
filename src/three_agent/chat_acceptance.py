@@ -320,6 +320,8 @@ def endpoint_is_local(url: str) -> bool:
         address = ipaddress.ip_address(host)
     except ValueError:
         return False
+    if address.is_unspecified:
+        return False
     return bool(address.is_loopback or address.is_private or address.is_link_local)
 
 
@@ -462,10 +464,23 @@ def build_parser() -> argparse.ArgumentParser:
         prog="workspace-chat-acceptance",
         description="Deterministic multilingual WorkSpace chat-fidelity acceptance harness.",
     )
-    parser.add_argument("--live", action="store_true", help="Run the corpus against the configured local WorkSpace model route")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Run the corpus against the configured local WorkSpace model route",
+    )
     parser.add_argument("--config", help="WorkSpace config path used only with --live")
-    parser.add_argument("--case", action="append", dest="case_ids", help="Run/select one case id; repeat to select multiple cases")
-    parser.add_argument("--show-responses", action="store_true", help="Print synthetic live responses to stdout; never persisted by this tool")
+    parser.add_argument(
+        "--case",
+        action="append",
+        dest="case_ids",
+        help="Run/select one case id; repeat to select multiple cases",
+    )
+    parser.add_argument(
+        "--show-responses",
+        action="store_true",
+        help="Print synthetic live responses to stdout; never persisted by this tool",
+    )
     return parser
 
 
@@ -474,7 +489,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         cases = select_cases(args.case_ids)
     except ValueError as exc:
-        print(json.dumps({"schema_version": ACCEPTANCE_SCHEMA_VERSION, "error": str(exc)}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {"schema_version": ACCEPTANCE_SCHEMA_VERSION, "error": str(exc)},
+                ensure_ascii=False,
+            )
+        )
         return 2
 
     if not args.live:
@@ -484,7 +504,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     errors = corpus_validation_errors(CHAT_ACCEPTANCE_CORPUS)
     if errors:
-        print(json.dumps({"schema_version": ACCEPTANCE_SCHEMA_VERSION, "error": "corpus_validation_failed", "failures": list(errors)}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "schema_version": ACCEPTANCE_SCHEMA_VERSION,
+                    "error": "corpus_validation_failed",
+                    "failures": list(errors),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 3
 
     try:
