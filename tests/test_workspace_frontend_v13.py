@@ -23,8 +23,10 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
         self.assertNotIn("<label>Response language", html)
         self.assertIn('<select id="lang" hidden aria-hidden="true">', html)
         self.assertIn('<option value="auto" selected>Auto</option>', html)
-        self.assertIn("Language follows each current request automatically.", html)
         self.assertIn("language:document.getElementById('lang').value", html)
+        self.assertNotIn('<option value="ja">日本語</option>', html)
+        self.assertNotIn('<option value="vi">Tiếng Việt</option>', html)
+        self.assertNotIn('<option value="en">English</option>', html)
 
     def test_plus_menu_contains_requested_primary_tools_and_integrations(self) -> None:
         html = WORKSPACE_HTML_V13
