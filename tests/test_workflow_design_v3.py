@@ -38,14 +38,14 @@ class WorkflowDesignCompilerV3Tests(unittest.TestCase):
         llm = FakeLLM()
         result = WorkflowDesignCompilerV3(llm).compile("validate and approve", language="en")
         self.assertEqual(result.contract["nodes"][3]["condition"], "passed")
+        normalized = " ".join(llm.system.split())
         for token in (
-            'exactly "passed" or',
-            '"failed"',
-            'exactly "approved" or',
-            '"rejected"',
+            'condition MUST be exactly "passed" or "failed"',
+            'condition MUST be exactly "approved" or "rejected"',
             "free-form business rules into executable condition expressions",
+            "failed` or `rejected` branch is terminal",
         ):
-            self.assertIn(token, llm.system)
+            self.assertIn(token, normalized)
         self.assertEqual(
             llm.kwargs["template_version"],
             "workspace.workflow-design.v3",
