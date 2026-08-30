@@ -77,15 +77,80 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test -z "$(git status --porcelain --untracked-files=no)"
 
-      - name: Validate exact WorkSpace source without package installation
+      - name: Prepare isolated cached benchmark dependency runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          CACHE_ROOT="${WORKSPACE_BENCHMARK_ENV_ROOT:-$HOME/.cache/workspace-benchmark}"
+          mkdir -p "$CACHE_ROOT"
+
+          PYTHON_ID="$(python3 - <<'PY'
+          import sys
+          print(f"{sys.implementation.name}-{sys.version_info.major}.{sys.version_info.minor}")
+          PY
+          )"
+          DEP_SHA="$(python3 - <<'PY'
+          import hashlib
+          import json
+          import tomllib
+          from pathlib import Path
+
+          payload = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          deps = payload.get("project", {}).get("dependencies", [])
+          if not isinstance(deps, list) or not deps or not all(isinstance(dep, str) for dep in deps):
+              raise SystemExit("project.dependencies must be a non-empty string list")
+          raw = json.dumps(deps, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+          print(hashlib.sha256(raw).hexdigest())
+          PY
+          )"
+          ENV_KEY="${PYTHON_ID}-${DEP_SHA}"
+          VENV="$CACHE_ROOT/$ENV_KEY"
+          MARKER="$VENV/.workspace-dependency-fingerprint"
+
+          if [[ ! -x "$VENV/bin/python" || ! -f "$MARKER" || "$(cat "$MARKER" 2>/dev/null || true)" != "$ENV_KEY" ]]; then
+            TMP_VENV="$CACHE_ROOT/.tmp-$ENV_KEY-$GITHUB_RUN_ID"
+            rm -rf "$TMP_VENV"
+            if ! python3 -m venv "$TMP_VENV"; then
+              echo '::error::python3-venv is required on the self-hosted benchmark runner.'
+              exit 1
+            fi
+
+            mapfile -t DEPS < <(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          payload = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          deps = payload.get("project", {}).get("dependencies", [])
+          for dep in deps:
+              dep = str(dep)
+              if not dep or "\n" in dep or "\r" in dep or dep.startswith("-"):
+                  raise SystemExit("unsafe project dependency specification")
+              print(dep)
+          PY
+            )
+            ((${#DEPS[@]} > 0)) || { echo '::error::No benchmark dependencies resolved.'; exit 1; }
+            PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1 \
+              "$TMP_VENV/bin/python" -m pip install --only-binary=:all: "${DEPS[@]}"
+            printf '%s\n' "$ENV_KEY" > "$TMP_VENV/.workspace-dependency-fingerprint"
+            rm -rf "$VENV"
+            mv "$TMP_VENV" "$VENV"
+          fi
+
+          test -x "$VENV/bin/python"
+          test "$(cat "$MARKER")" = "$ENV_KEY"
+          "$VENV/bin/python" -c 'import PIL, docx, pptx, reportlab'
+          printf 'BENCH_PYTHON=%s\n' "$VENV/bin/python" >> "$GITHUB_ENV"
+
+      - name: Validate exact WorkSpace source in isolated runtime
         shell: bash
         run: |
           set -Eeuo pipefail
           test "$PYTHONPATH" = "$GITHUB_WORKSPACE/src"
           test -d "$PYTHONPATH/three_agent"
-          python3 -c 'import three_agent.benchmark_readiness, three_agent.d502a_benchmark'
-          python3 -m three_agent.d502a_benchmark --help >/dev/null
-          python3 -m three_agent.benchmark_readiness --help >/dev/null
+          test -x "$BENCH_PYTHON"
+          "$BENCH_PYTHON" -c 'import three_agent.benchmark_readiness, three_agent.d502a_benchmark'
+          "$BENCH_PYTHON" -m three_agent.d502a_benchmark --help >/dev/null
+          "$BENCH_PYTHON" -m three_agent.benchmark_readiness --help >/dev/null
 
       - name: Capture metadata-only benchmark readiness receipt
         shell: bash
@@ -93,7 +158,7 @@ jobs:
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
           mkdir -p "$BENCH_ROOT"
-          python3 -m three_agent.benchmark_readiness \
+          "$BENCH_PYTHON" -m three_agent.benchmark_readiness \
             --source-ref "$EXPECTED_SHA" \
             --repo-root "$GITHUB_WORKSPACE" \
             --model "$MODEL" \
@@ -105,7 +170,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
-          python3 -m three_agent.d502a_benchmark run \
+          "$BENCH_PYTHON" -m three_agent.d502a_benchmark run \
             --source-ref "$EXPECTED_SHA" \
             --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE" \
@@ -121,7 +186,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
-          python3 -m three_agent.d502a_benchmark verify \
+          "$BENCH_PYTHON" -m three_agent.d502a_benchmark verify \
             --source-ref "$EXPECTED_SHA" \
             --root "$BENCH_ROOT" \
             --repo-root "$GITHUB_WORKSPACE" \
@@ -134,7 +199,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           BENCH_ROOT="$RUNNER_TEMP/workspace-d502a-$GITHUB_RUN_ID"
-          python3 - "$BENCH_ROOT/d502a-decision.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          "$BENCH_PYTHON" - "$BENCH_ROOT/d502a-decision.json" >> "$GITHUB_STEP_SUMMARY" <<'PY'
           import json
           import sys
           from pathlib import Path
