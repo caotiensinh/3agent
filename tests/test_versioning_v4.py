@@ -38,6 +38,8 @@ class WorkSpaceV4VersioningTests(unittest.TestCase):
             scripts["workspace-chat-multiturn-acceptance"],
             "three_agent.chat_multiturn_acceptance_v2:main",
         )
+        self.assertTrue((root / "src/three_agent/chat_gateway_v17.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway_v18.py").is_file())
 
 
 if __name__ == "__main__":

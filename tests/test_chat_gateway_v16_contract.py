@@ -128,6 +128,9 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
             pyproject,
         )
+        self.assertTrue(
+            (Path(__file__).resolve().parents[1] / "src/three_agent/chat_gateway_v17.py").is_file()
+        )
 
     def test_v15_remains_workflow_v3_rollback_boundary(self) -> None:
         self.assertEqual(WorkflowV3HTTPHandler.server_version, "WorkSpaceChat/0.16")
