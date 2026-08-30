@@ -1,0 +1,122 @@
+name: validate-lean-profile-rtx5090
+
+on:
+  push:
+    branches:
+      - evidence/lean-profile-validate-20260830
+    paths:
+      - '.github/workflows/validate-lean-profile-rtx5090.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-validate-lean-profile-rtx5090
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: [self-hosted]
+    timeout-minutes: 20
+    env:
+      CANDIDATE_SHA: d61faeb4fd00217ff616c70bb7e405d1bc590ca5
+    steps:
+      - name: Checkout exact candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: d61faeb4fd00217ff616c70bb7e405d1bc590ca5
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Environment fingerprint (read-only)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "::group::uname"
+          uname -a
+          echo "::endgroup::"
+          echo "::group::bash version"
+          bash --version | head -1
+          echo "::endgroup::"
+          echo "::group::nvidia-smi"
+          nvidia-smi || echo "nvidia-smi not available or GPUs not visible to this runner"
+          echo "::endgroup::"
+
+      - name: Bash syntax + shellcheck on the new/changed scripts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          FILES=(
+            scripts/enable_gpu_worker_pool.sh
+            scripts/enable_model_pool.sh
+            scripts/setup_ai_stack_ubuntu2404.sh
+            scripts/measure_ram_baseline.sh
+            scripts/test_gpu_worker_pool_contract.sh
+            scripts/test_ram_baseline_contract.sh
+          )
+          for f in "${FILES[@]}"; do
+            echo "::group::bash -n $f"
+            bash -n "$f"
+            echo "::endgroup::"
+          done
+          if command -v shellcheck >/dev/null 2>&1; then
+            echo "::group::shellcheck"
+            shellcheck "${FILES[@]}"
+            echo "::endgroup::"
+          else
+            echo "shellcheck not installed on this runner; skipping (already covered by installer-ci.yml on hosted runners)"
+          fi
+
+      - name: Run the new contract tests for real, on the target OS/bash
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/test_gpu_worker_pool_contract.sh
+          bash scripts/test_ram_baseline_contract.sh
+
+      - name: Capture a real RAM/GPU/service baseline on this machine
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/lean-profile-evidence"
+          bash scripts/measure_ram_baseline.sh live-machine-check \
+            | tee "$RUNNER_TEMP/lean-profile-evidence/ram-baseline.json"
+
+      - name: Current install-state probe (read-only, never mutates the host)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            echo "== free -h =="
+            free -h || true
+            echo
+            echo "== systemd units (ollama / worker-pool / chat gateway) =="
+            for unit in ollama ollama-gpu0.service ollama-gpu1.service 3agent-chat.service; do
+              printf '%s: ' "$unit"
+              systemctl is-active "$unit" 2>/dev/null || echo "not-found-or-inactive"
+            done
+            echo
+            echo "== ollama list (model pool on disk, if ollama is installed) =="
+            ollama list 2>/dev/null || echo "ollama CLI not on PATH for this runner user"
+            echo
+            echo "== nvidia-smi summary =="
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu \
+              --format=csv 2>/dev/null || echo "nvidia-smi not available"
+          } | tee "$RUNNER_TEMP/lean-profile-evidence/install-state.txt"
+
+      - name: Publish evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lean-profile-validation-${{ env.CANDIDATE_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/lean-profile-evidence/ram-baseline.json
+            ${{ runner.temp }}/lean-profile-evidence/install-state.txt
