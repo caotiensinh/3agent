@@ -2,7 +2,9 @@
 
 The learner-facing surface can stage candidates, but it never receives a raw
 signing primitive. Checkpoints bind the recomputed local learning-store state
-and are authenticated by a key held by a higher-trust process.
+and are authenticated by a key held by a higher-trust process. A separate
+trusted head witness prevents replay of an older but otherwise valid checkpoint
+journal generation.
 """
 from __future__ import annotations
 
@@ -27,10 +29,12 @@ if TYPE_CHECKING:
     from .adaptive_learning_store import AdaptiveLearningStore
 
 CHECKPOINT_SCHEMA = "workspace-adaptive-learning-checkpoint/v1"
+WITNESS_SCHEMA = "workspace-adaptive-learning-checkpoint-witness/v1"
 STATE_SCHEMA = "workspace-adaptive-learning-state/v1"
 VERSIONS_SCHEMA = "workspace-adaptive-learning-versions/v1"
 GENESIS_CHECKPOINT_SHA256 = "sha256:" + "0" * 64
 _MAX_JOURNAL_BYTES = 16 * 1024 * 1024
+_MAX_WITNESS_BYTES = 16 * 1024
 _MAX_KEY_BYTES = 4096
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -101,6 +105,20 @@ def _decode_key(raw: bytes) -> bytes:
     return key
 
 
+def _require_private_regular_file(path: Path, *, prefix: str, max_bytes: int) -> os.stat_result:
+    try:
+        info = path.lstat()
+    except OSError as exc:
+        raise LearningCheckpointError(f"{prefix}_MISSING") from exc
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise LearningCheckpointError(f"{prefix}_PATH_INVALID")
+    if info.st_size > max_bytes:
+        raise LearningCheckpointError(f"{prefix}_TOO_LARGE")
+    if os.name == "posix" and stat.S_IMODE(info.st_mode) & 0o077:
+        raise LearningCheckpointError(f"{prefix}_PERMISSIONS")
+    return info
+
+
 class HmacCheckpointKeyring:
     """Secret keyring for the trusted checkpoint process only."""
 
@@ -130,14 +148,11 @@ class HmacCheckpointKeyring:
         for raw_id, raw_path in dict(key_files).items():
             key_id = _id(raw_id, "key_id")
             path = Path(raw_path)
-            try:
-                info = path.lstat()
-            except OSError as exc:
-                raise LearningCheckpointError(f"CHECKPOINT_KEY_MISSING:{key_id}") from exc
-            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-                raise LearningCheckpointError(f"CHECKPOINT_KEY_PATH_INVALID:{key_id}")
-            if stat.S_IMODE(info.st_mode) & 0o077:
-                raise LearningCheckpointError(f"CHECKPOINT_KEY_PERMISSIONS:{key_id}")
+            _require_private_regular_file(
+                path,
+                prefix=f"CHECKPOINT_KEY:{key_id}",
+                max_bytes=_MAX_KEY_BYTES,
+            )
             try:
                 keys[key_id] = _decode_key(path.read_bytes())
             except OSError as exc:
@@ -270,6 +285,60 @@ class LearningCheckpoint:
         return cls(**payload)
 
 
+@dataclass(frozen=True)
+class CheckpointHeadWitness:
+    store_id: str
+    sequence: int
+    checkpoint_sha256: str
+    key_id: str
+    created_at: str
+    mac: str
+    schema_version: str = WITNESS_SCHEMA
+
+    FIELDS = {
+        "schema_version",
+        "store_id",
+        "sequence",
+        "checkpoint_sha256",
+        "key_id",
+        "created_at",
+        "mac",
+    }
+
+    def signing_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "store_id": self.store_id,
+            "sequence": self.sequence,
+            "checkpoint_sha256": self.checkpoint_sha256,
+            "key_id": self.key_id,
+            "created_at": self.created_at,
+        }
+
+    def to_payload(self) -> dict[str, Any]:
+        return {**self.signing_payload(), "mac": self.mac}
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "CheckpointHeadWitness":
+        if not isinstance(payload, dict) or set(payload) != cls.FIELDS:
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_NON_STRICT")
+        if payload.get("schema_version") != WITNESS_SCHEMA:
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_SCHEMA_MISMATCH")
+        if (
+            not isinstance(payload.get("sequence"), int)
+            or isinstance(payload.get("sequence"), bool)
+            or payload["sequence"] < 1
+        ):
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_SEQUENCE_INVALID")
+        _id(payload.get("store_id"), "store_id")
+        _id(payload.get("key_id"), "key_id")
+        _sha(payload.get("checkpoint_sha256"), "checkpoint_sha256")
+        _checked(payload.get("mac"), _MAC, "mac")
+        if not _UTC.fullmatch(str(payload.get("created_at") or "")):
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_TIME_INVALID")
+        return cls(**payload)
+
+
 def capture_learning_store_state(
     store: "AdaptiveLearningStore", *, store_id: str
 ) -> dict[str, Any]:
@@ -293,7 +362,10 @@ def capture_learning_store_state(
         ).fetchall()
         versions = []
         for row in rows:
-            candidate = store._candidate_from_row(row)
+            try:
+                candidate = store._candidate_from_row(row)
+            except ValueError as exc:
+                raise LearningCheckpointError(str(exc)) from exc
             versions.append(
                 {
                     "version_id": int(row["version_id"]),
@@ -340,16 +412,25 @@ def capture_learning_store_state(
 
 
 class LearningCheckpointAuthority:
-    """Trusted authority that authenticates only exact current store state."""
+    """Trusted authority that authenticates only exact current store state.
+
+    ``journal_path`` and ``witness_path`` are separate persistence boundaries.
+    Production deployment must place the witness outside the learner/learning-DB
+    backup authority so replaying an older DB+journal cannot roll back freshness.
+    """
 
     def __init__(
         self,
         journal_path: Path,
+        witness_path: Path,
         keyring: HmacCheckpointKeyring,
         *,
         store_id: str,
     ):
         self.journal_path = Path(journal_path)
+        self.witness_path = Path(witness_path)
+        if self.journal_path.resolve(strict=False) == self.witness_path.resolve(strict=False):
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_MUST_BE_SEPARATE")
         self.store_id = _id(store_id, "store_id")
         self.__keyring = keyring
         self.__lock = threading.RLock()
@@ -358,13 +439,11 @@ class LearningCheckpointAuthority:
         path = self.journal_path
         if not path.exists():
             return []
-        info = path.lstat()
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-            raise LearningCheckpointError("CHECKPOINT_JOURNAL_PATH_INVALID")
-        if info.st_size > _MAX_JOURNAL_BYTES:
-            raise LearningCheckpointError("CHECKPOINT_JOURNAL_TOO_LARGE")
-        if os.name == "posix" and stat.S_IMODE(info.st_mode) & 0o077:
-            raise LearningCheckpointError("CHECKPOINT_JOURNAL_PERMISSIONS")
+        _require_private_regular_file(
+            path,
+            prefix="CHECKPOINT_JOURNAL",
+            max_bytes=_MAX_JOURNAL_BYTES,
+        )
         try:
             raw = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
@@ -375,14 +454,94 @@ class LearningCheckpointAuthority:
         if any(not line.strip() for line in lines):
             raise LearningCheckpointError("CHECKPOINT_JOURNAL_INVALID")
         try:
-            return [
-                LearningCheckpoint.from_payload(json.loads(line)) for line in lines
-            ]
+            return [LearningCheckpoint.from_payload(json.loads(line)) for line in lines]
         except (json.JSONDecodeError, TypeError) as exc:
             raise LearningCheckpointError("CHECKPOINT_JOURNAL_INVALID") from exc
 
+    def _load_witness(self, *, required: bool) -> CheckpointHeadWitness | None:
+        path = self.witness_path
+        if not path.exists():
+            if required:
+                raise LearningCheckpointError("CHECKPOINT_WITNESS_REQUIRED")
+            return None
+        _require_private_regular_file(
+            path,
+            prefix="CHECKPOINT_WITNESS",
+            max_bytes=_MAX_WITNESS_BYTES,
+        )
+        try:
+            raw = path.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_INVALID") from exc
+        witness = CheckpointHeadWitness.from_payload(payload)
+        if witness.store_id != self.store_id:
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_STORE_ID_MISMATCH")
+        if not self.__keyring._verify(
+            witness.key_id,
+            witness.signing_payload(),
+            witness.mac,
+        ):
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_MAC_MISMATCH")
+        return witness
+
+    def _write_witness(self, record: LearningCheckpoint) -> CheckpointHeadWitness:
+        base = {
+            "schema_version": WITNESS_SCHEMA,
+            "store_id": self.store_id,
+            "sequence": record.sequence,
+            "checkpoint_sha256": record.checkpoint_sha256,
+            "key_id": self.__keyring.active_key_id,
+            "created_at": _now(),
+        }
+        witness = CheckpointHeadWitness(
+            store_id=self.store_id,
+            sequence=record.sequence,
+            checkpoint_sha256=record.checkpoint_sha256,
+            key_id=self.__keyring.active_key_id,
+            created_at=base["created_at"],
+            mac=self.__keyring._compute(self.__keyring.active_key_id, base),
+        )
+        path = self.witness_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp = path.with_name(
+            f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            fd = os.open(temp, flags, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(_canonical(witness.to_payload()) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp, path)
+            if os.name == "posix":
+                path.chmod(0o600)
+                try:
+                    dir_fd = os.open(path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+                except OSError:
+                    pass
+        except OSError as exc:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_WRITE_FAILED") from exc
+        return witness
+
     def _verify_journal(self) -> list[LearningCheckpoint]:
         records = self._load()
+        if not records:
+            if self._load_witness(required=False) is not None:
+                raise LearningCheckpointError("CHECKPOINT_JOURNAL_REQUIRED")
+            return []
+
         previous = GENESIS_CHECKPOINT_SHA256
         for sequence, record in enumerate(records, start=1):
             if record.sequence != sequence:
@@ -394,14 +553,22 @@ class LearningCheckpointAuthority:
             if _sha256(record.hash_payload()) != record.checkpoint_sha256:
                 raise LearningCheckpointError("CHECKPOINT_HASH_MISMATCH")
             previous = record.checkpoint_sha256
-        if records:
-            latest = records[-1]
-            if not self.__keyring._verify(
-                latest.key_id,
-                latest.signing_payload(),
-                latest.mac,
-            ):
-                raise LearningCheckpointError("CHECKPOINT_MAC_MISMATCH")
+
+        latest = records[-1]
+        if not self.__keyring._verify(
+            latest.key_id,
+            latest.signing_payload(),
+            latest.mac,
+        ):
+            raise LearningCheckpointError("CHECKPOINT_MAC_MISMATCH")
+        witness = self._load_witness(required=True)
+        assert witness is not None
+        if (
+            witness.sequence != latest.sequence
+            or witness.checkpoint_sha256 != latest.checkpoint_sha256
+            or witness.key_id != latest.key_id
+        ):
+            raise LearningCheckpointError("CHECKPOINT_WITNESS_HEAD_MISMATCH")
         return records
 
     @staticmethod
@@ -447,6 +614,13 @@ class LearningCheckpointAuthority:
                 self.journal_path.chmod(0o600)
         except OSError as exc:
             raise LearningCheckpointError("CHECKPOINT_JOURNAL_WRITE_FAILED") from exc
+
+        try:
+            self._write_witness(record)
+        except Exception as exc:
+            raise LearningCheckpointError(
+                "CHECKPOINT_WITNESS_ADVANCE_FAILED_AFTER_JOURNAL_APPEND"
+            ) from exc
         return record
 
     def _verify_store(self, store: "AdaptiveLearningStore") -> LearningCheckpoint:
@@ -461,7 +635,7 @@ class LearningCheckpointAuthority:
 
     def bootstrap(self, store: "AdaptiveLearningStore") -> LearningCheckpoint:
         with self.__lock:
-            if self._verify_journal():
+            if self._load() or self._load_witness(required=False) is not None:
                 raise LearningCheckpointError("CHECKPOINT_ALREADY_BOOTSTRAPPED")
             state = capture_learning_store_state(store, store_id=self.store_id)
             record = self._append(
