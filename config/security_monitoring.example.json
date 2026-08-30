@@ -1,0 +1,41 @@
+{
+  "enabled": false,
+  "allow_real_network": false,
+  "database_path": "/var/lib/workspace-monitor/monitoring.sqlite3",
+  "policy": {
+    "profile_id": "default",
+    "network_scope": "approved_inventory_only",
+    "read_only": true,
+    "max_workers": 4,
+    "timeout_seconds": 3.0,
+    "max_retries": 1,
+    "max_catch_up_runs": 1,
+    "allowed_capabilities": [
+      "icmp_echo",
+      "tcp_connect",
+      "snmpv3_read",
+      "local_net_read"
+    ]
+  },
+  "assets": [
+    {
+      "asset_id": "example-router",
+      "role": "router",
+      "management_host": "192.0.2.1",
+      "collector_capabilities": ["icmp_echo", "tcp_connect"],
+      "allowed_tcp_ports": [443],
+      "data_class": "confidential",
+      "enabled": true
+    },
+    {
+      "asset_id": "example-switch",
+      "role": "switch",
+      "management_host": "192.0.2.2",
+      "collector_capabilities": ["icmp_echo", "snmpv3_read"],
+      "allowed_tcp_ports": [],
+      "data_class": "confidential",
+      "enabled": true,
+      "credential_ref": "secret-ref:example-snmpv3-switch"
+    }
+  ]
+}
