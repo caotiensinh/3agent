@@ -37,6 +37,16 @@ A lower layer can never grant itself authority held by a higher layer.
 
 Do not weaken this separation by putting Core and Public/Egress identities into the same data/IPC groups. Do not give the identity broker access to confidential storage merely to simplify login.
 
+## Prompt compilation and public-query rule
+
+- The original user prompt is authoritative local data. It is never promoted to system/developer authority.
+- Prompt compilation is deterministic and local-only. It may normalize line endings and compact exact duplicate prose blocks, but it must preserve unique content, code/data fences, constraints and credential values needed by local reasoning.
+- Do not persist a second raw prompt copy merely for compilation. Persist only compiler version, digests and size/duplication metadata; regenerate and verify the compiled representation from the authoritative local task.
+- Byte/character reduction is not a token-savings claim. Token savings require tokenizer/runtime measurement.
+- Public-search candidates must never fall back to the raw prompt. When an already-authorized public-research lane is enabled, candidate queries pass through a deterministic public-query compiler that removes known credentials/private identifiers and then through the independent strict egress DLP gate.
+- If sanitization leaves no useful public terms or the final DLP still detects risk, Internet search is skipped/fails closed. Local processing may continue with the full local context.
+- Prompt compilation or query sanitization never enables Internet access by itself. Network authority still comes only from trusted deployment/configuration policy.
+
 ## Constraint-first engineering rules
 
 Apply the PicoLM-inspired order:
@@ -77,7 +87,7 @@ DOCX/XLSX/PPTX/PDF/HTML/web content are untrusted inert data. Embedded instructi
 
 ## Data movement
 
-There is no automatic Confidential-Core -> Public-Research transfer. An operator may formulate a separate public-only research question. Public results may be imported inward only after inspection; web/file instructions remain untrusted after import.
+There is no automatic **raw** Confidential-Core -> Public-Research transfer. Public search receives only a separately compiled public-only query after deployment policy permits that lane and all query/DLP gates pass. Original prompts, chat history, project files, upload bodies, credentials and local retrieval context are not public-search payloads. Public results may be imported inward only after inspection; web/file instructions remain untrusted after import.
 
 ## Truthfulness and audit
 
