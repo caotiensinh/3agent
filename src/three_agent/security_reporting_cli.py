@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -16,6 +16,24 @@ from .security_monitoring.report_orchestrator import (
 TOKYO = ZoneInfo("Asia/Tokyo")
 
 
+def latest_canonical_cutoff(now: datetime | None = None) -> datetime:
+    """Return the latest 17:30 Asia/Tokyo reporting slot that has already occurred.
+
+    This is used by the persistent systemd timer after downtime. It never fabricates
+    a measurement timestamp: it only selects the deterministic report cutoff over
+    evidence that already exists in the monitoring store.
+    """
+
+    current = now or datetime.now(TOKYO)
+    if current.tzinfo is None:
+        raise ValueError("now must include timezone")
+    current = current.astimezone(TOKYO)
+    cutoff = current.replace(hour=17, minute=30, second=0, microsecond=0)
+    if current < cutoff:
+        cutoff -= timedelta(days=1)
+    return cutoff
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workspace-security-report")
     parser.add_argument("--config", required=True, type=Path)
@@ -23,12 +41,19 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("validate-config")
     daily = sub.add_parser("run-daily")
     daily.add_argument("--cutoff-at")
+    sub.add_parser("run-canonical")
     retry = sub.add_parser("retry-nas")
     retry.add_argument("--report-id", required=True)
     retry.add_argument("--period-kind", required=True, choices=("daily", "weekly", "monthly"))
     retry.add_argument("--period-key", required=True)
     retry.add_argument("--attempt", required=True, type=int)
     return parser
+
+
+def _emit_cycle(config, cutoff: datetime) -> int:
+    receipts = run_reporting_cycle(config, cutoff_at=cutoff.isoformat())
+    print(json.dumps([asdict(receipt) for receipt in receipts], ensure_ascii=False, sort_keys=True))
+    return 0 if all(receipt.status == "completed" for receipt in receipts) else 3
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,10 +76,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "run-daily":
-        cutoff = args.cutoff_at or datetime.now(TOKYO).replace(second=0, microsecond=0).isoformat()
-        receipts = run_reporting_cycle(config, cutoff_at=cutoff)
-        print(json.dumps([asdict(receipt) for receipt in receipts], ensure_ascii=False, sort_keys=True))
-        return 0 if all(receipt.status == "completed" for receipt in receipts) else 3
+        cutoff = datetime.fromisoformat(args.cutoff_at.replace("Z", "+00:00")) if args.cutoff_at else latest_canonical_cutoff()
+        if cutoff.tzinfo is None:
+            raise ValueError("cutoff-at must include timezone")
+        return _emit_cycle(config, cutoff.astimezone(TOKYO))
+    if args.command == "run-canonical":
+        return _emit_cycle(config, latest_canonical_cutoff())
     if args.command == "retry-nas":
         receipt = retry_pending_archive(
             config,
