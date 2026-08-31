@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 from ..adaptive_learning_contract import DOMAINS
+from ..adaptive_learning_effectiveness import record_learning_reuse
 from ..adaptive_learning_retrieval import (
     LearningContext,
     LearningRetrievalGateway,
@@ -63,6 +64,11 @@ class ResearchAgent(_RankedResearchAgent):
     The retrieval domain is trusted agent configuration. The task sensitivity is
     never a constructor default: it is read from the exact bound TaskContract for
     each task immediately before retrieval, preventing learned-context downgrade.
+
+    Phase 4H records a metadata-only exact-version reuse receipt before learned
+    context is exposed to synthesis. If that receipt cannot be bound safely to the
+    current TaskContract, learned context is withheld rather than reused without an
+    auditable effectiveness observation.
     """
 
     def __init__(
@@ -146,10 +152,15 @@ class ResearchAgent(_RankedResearchAgent):
                     task_sensitivity=task_sensitivity,
                 )
                 context = self.learning_retrieval.retrieve(query)
+                if context.items:
+                    # Phase 4H: no learned reference is exposed unless its exact
+                    # item/version set is first bound to this authoritative task.
+                    record_learning_reuse(store, task_id, context)
             except Exception as exc:
-                # Retrieval is optional reference context. Integrity/policy failure
-                # therefore fails closed to NO learned context while preserving the
-                # pre-Phase-4C research workflow. Never log raw learned/request text.
+                # Retrieval is optional reference context. Integrity/policy/receipt
+                # failure therefore fails closed to NO learned context while
+                # preserving the pre-Phase-4C research workflow. Never log raw
+                # learned/request text.
                 store.record_activity(
                     task_id,
                     self.agent_id,
