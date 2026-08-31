@@ -10,7 +10,7 @@ Runtime implementation exists separately on stacked PR #105 (`feature/security-a
 
 Current integration revalidation base:
 
-- `main`: `3fc2411cd3cc900d6ebe2cce1dfd33accf28cc44`
+- `main`: `1cedda91012568a813ddaac014dd641c41ace77b`
 - `main` advanced again after the previous PR #102 merge-ref verification, so all earlier merge-ref readiness evidence is historical only until fresh validation completes;
 - CI infrastructure fix #143 remains on `main`; CIC real-source pull-request execution is scoped to explicit CIC material dependencies while exact-head provenance remains unchanged;
 - this Security Analyst documentation namespace remains intentionally outside the CIC real-source trigger scope;
