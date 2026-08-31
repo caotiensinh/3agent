@@ -123,9 +123,7 @@ class _StreamFingerprint:
     def __init__(self, domain: str):
         if not isinstance(domain, str) or not domain.strip():
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_STREAM_DOMAIN_INVALID",
-                "stream domain invalid",
+                FAIL_SCHEMA, "RUNNER_STREAM_DOMAIN_INVALID", "stream domain invalid"
             )
         self._digest = hashlib.sha256()
         self._digest.update(STREAM_SCHEMA.encode("ascii"))
@@ -135,9 +133,9 @@ class _StreamFingerprint:
         self.count = 0
 
     def add_record(self, record: EvidenceRecord | TruthRecord) -> None:
-        record_hash = adapter_canonical_sha256(record.as_dict()).encode("ascii")
-        self._digest.update(len(record_hash).to_bytes(4, "big"))
-        self._digest.update(record_hash)
+        encoded = adapter_canonical_sha256(record.as_dict()).encode("ascii")
+        self._digest.update(len(encoded).to_bytes(4, "big"))
+        self._digest.update(encoded)
         self.count += 1
 
     def finish(self) -> str:
@@ -179,24 +177,18 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
 def _require_sha(value: Any, field: str) -> str:
     if not isinstance(value, str):
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be sha256",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be sha256"
         )
     text = value.strip().lower()
     if len(text) != 71 or not text.startswith("sha256:"):
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be sha256",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be sha256"
         )
     try:
         int(text[7:], 16)
     except ValueError as exc:
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be sha256",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be sha256"
         ) from exc
     return text
 
@@ -204,23 +196,17 @@ def _require_sha(value: Any, field: str) -> str:
 def _require_positive_int(value: Any, field: str) -> int:
     if isinstance(value, bool):
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be integer",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be integer"
         )
     try:
         parsed = int(value)
     except (TypeError, ValueError) as exc:
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be integer",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be integer"
         ) from exc
     if parsed <= 0:
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be > 0",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be > 0"
         )
     return parsed
 
@@ -228,9 +214,7 @@ def _require_positive_int(value: Any, field: str) -> int:
 def _require_mapping(value: Any, field: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise RealSourceRunnerError(
-            FAIL_SCHEMA,
-            "RUNNER_BINDING_INVALID",
-            f"{field} must be object",
+            FAIL_SCHEMA, "RUNNER_BINDING_INVALID", f"{field} must be object"
         )
     return value
 
@@ -259,22 +243,29 @@ class OfflineRealSourceRunner:
             if isinstance(item, Mapping)
         }
 
+    @staticmethod
+    def _runtime_identity(runtime_class: type) -> tuple[str | None, str | None]:
+        runtime_id = getattr(
+            runtime_class, "adapter_id", getattr(runtime_class, "matcher_id", None)
+        )
+        version = getattr(
+            runtime_class,
+            "adapter_version",
+            getattr(runtime_class, "matcher_version", None),
+        )
+        return runtime_id, version
+
     def _validate_runner_contracts(self) -> None:
         if self.profile.get("schema_version") != RUNNER_PROFILE_SCHEMA:
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_PROFILE_INVALID",
-                "runner profile schema invalid",
+                FAIL_SCHEMA, "RUNNER_PROFILE_INVALID", "runner profile schema invalid"
             )
         if self.binding.get("schema_version") != RUNNER_BINDING_SCHEMA:
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_BINDING_INVALID",
-                "runner binding schema invalid",
+                FAIL_SCHEMA, "RUNNER_BINDING_INVALID", "runner binding schema invalid"
             )
         authority = _require_mapping(
-            self.profile.get("execution_authority"),
-            "execution_authority",
+            self.profile.get("execution_authority"), "execution_authority"
         )
         for field in (
             "network_calls",
@@ -284,9 +275,7 @@ class OfflineRealSourceRunner:
         ):
             if authority.get(field) != 0:
                 raise RealSourceRunnerError(
-                    FAIL_SECURITY,
-                    "RUNNER_AUTHORITY_INVALID",
-                    f"{field} must be zero",
+                    FAIL_SECURITY, "RUNNER_AUTHORITY_INVALID", f"{field} must be zero"
                 )
         if authority.get("dynamic_imports_from_manifest") is not False:
             raise RealSourceRunnerError(
@@ -304,14 +293,10 @@ class OfflineRealSourceRunner:
         lanes = self.profile.get("authorized_lanes")
         if not isinstance(lanes, list) or not lanes:
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_PROFILE_INVALID",
-                "authorized lanes missing",
+                FAIL_SCHEMA, "RUNNER_PROFILE_INVALID", "authorized lanes missing"
             )
         actual_ids = {
-            str(item.get("lane_id"))
-            for item in lanes
-            if isinstance(item, Mapping)
+            str(item.get("lane_id")) for item in lanes if isinstance(item, Mapping)
         }
         if actual_ids != set(self._STATIC_RUNTIME_CLASSES):
             raise RealSourceRunnerError(
@@ -321,22 +306,13 @@ class OfflineRealSourceRunner:
             )
         for lane_id, lane in self._profile_lane_index().items():
             runtime_class = self._STATIC_RUNTIME_CLASSES[lane_id]
+            runtime_id, runtime_version = self._runtime_identity(runtime_class)
             if lane.get("runtime_class") != runtime_class.__name__:
                 raise RealSourceRunnerError(
                     FAIL_SECURITY,
                     "RUNNER_ADAPTER_NOT_AUTHORIZED",
                     "runtime class binding drifted",
                 )
-            runtime_id = getattr(
-                runtime_class,
-                "adapter_id",
-                getattr(runtime_class, "matcher_id", None),
-            )
-            runtime_version = getattr(
-                runtime_class,
-                "adapter_version",
-                getattr(runtime_class, "matcher_version", None),
-            )
             if lane.get("adapter_id") != runtime_id:
                 raise RealSourceRunnerError(
                     FAIL_SECURITY,
@@ -351,8 +327,7 @@ class OfflineRealSourceRunner:
                 )
 
         exclusions = _require_mapping(
-            self.profile.get("explicit_exclusions"),
-            "explicit_exclusions",
+            self.profile.get("explicit_exclusions"), "explicit_exclusions"
         )
         if exclusions.get("splunk-bots-v2") != "BLOCKED_DEPENDENCY_COST":
             raise RealSourceRunnerError(
@@ -366,6 +341,43 @@ class OfflineRealSourceRunner:
                 "RUNNER_BINDING_INVALID",
                 "V1 requires one source per lane",
             )
+
+    def _preflight_manifest_authority(self, manifest: Mapping[str, Any]) -> None:
+        """Reject unauthorized adapter authority before general manifest scoring.
+
+        This is metadata-only. It intentionally does not touch source paths or bytes.
+        """
+        sources = manifest.get("sources") if isinstance(manifest, Mapping) else None
+        if not isinstance(sources, list):
+            return
+        by_adapter = {
+            str(lane.get("adapter_id")): lane
+            for lane in self._profile_lane_index().values()
+        }
+        for source in sources:
+            if not isinstance(source, Mapping):
+                continue
+            dataset_id = str(source.get("dataset_id") or "").strip()
+            adapter_id = str(source.get("adapter_id") or "").strip()
+            if dataset_id == "splunk-bots-v2" or adapter_id.startswith("splunk-bots"):
+                raise RealSourceRunnerError(
+                    FAIL_SECURITY,
+                    "BOTS_DIRECT_ADAPTER_ATTEMPT",
+                    "BOTS direct execution is blocked",
+                )
+            lane = by_adapter.get(adapter_id)
+            if lane is None:
+                raise RealSourceRunnerError(
+                    FAIL_SECURITY,
+                    "RUNNER_ADAPTER_NOT_AUTHORIZED",
+                    "manifest requests an unauthorized adapter",
+                )
+            if source.get("adapter_version") != lane.get("adapter_version"):
+                raise RealSourceRunnerError(
+                    FAIL_SCHEMA,
+                    "RUNNER_ADAPTER_VERSION_MISMATCH",
+                    "manifest adapter version is not authorized",
+                )
 
     def _manifest_source_lane(self, source: Mapping[str, Any]) -> str:
         matches: list[str] = []
@@ -390,23 +402,17 @@ class OfflineRealSourceRunner:
         raw = Path(value)
         if raw.is_symlink():
             raise RealSourceRunnerError(
-                FAIL_SECURITY,
-                gate,
-                "root must not be a symlink",
+                FAIL_SECURITY, gate, "root must not be a symlink"
             )
         try:
             resolved = raw.resolve(strict=True)
         except OSError as exc:
             raise RealSourceRunnerError(
-                FAIL_SECURITY,
-                gate,
-                "root does not exist",
+                FAIL_SECURITY, gate, "root does not exist"
             ) from exc
         if not resolved.is_dir():
             raise RealSourceRunnerError(
-                FAIL_SECURITY,
-                gate,
-                "root must be a directory",
+                FAIL_SECURITY, gate, "root must be a directory"
             )
         return resolved
 
@@ -418,12 +424,10 @@ class OfflineRealSourceRunner:
         acceptance_id: str,
     ) -> tuple[Path, Path, Path]:
         source_root = self._validate_root(
-            authorized_root,
-            "RUNNER_AUTHORIZED_ROOT_INVALID",
+            authorized_root, "RUNNER_AUTHORIZED_ROOT_INVALID"
         )
         scratch = self._validate_root(
-            scratch_root,
-            "RUNNER_SCRATCH_ROOT_INVALID",
+            scratch_root, "RUNNER_SCRATCH_ROOT_INVALID"
         )
         if (
             source_root == scratch
@@ -481,9 +485,7 @@ class OfflineRealSourceRunner:
         candidate = root / relative
         if candidate.is_symlink():
             raise RealSourceRunnerError(
-                FAIL_SECURITY,
-                "RUNNER_SOURCE_SYMLINK",
-                "source must not be a symlink",
+                FAIL_SECURITY, "RUNNER_SOURCE_SYMLINK", "source must not be a symlink"
             )
         try:
             resolved = candidate.resolve(strict=True)
@@ -518,9 +520,7 @@ class OfflineRealSourceRunner:
         sources_raw = manifest.get("sources")
         if not isinstance(sources_raw, list):
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_MANIFEST_INVALID",
-                "manifest sources missing",
+                FAIL_SCHEMA, "RUNNER_MANIFEST_INVALID", "manifest sources missing"
             )
         source_by_id: dict[str, Mapping[str, Any]] = {}
         lane_to_source: dict[str, Mapping[str, Any]] = {}
@@ -566,28 +566,21 @@ class OfflineRealSourceRunner:
             )
 
         resource = _require_mapping(
-            self.profile.get("resource_contract"),
-            "resource_contract",
+            self.profile.get("resource_contract"), "resource_contract"
         )
         max_each = _require_positive_int(
-            resource.get("max_bytes_per_source_object"),
-            "max_bytes_per_source_object",
+            resource.get("max_bytes_per_source_object"), "max_bytes_per_source_object"
         )
         hash_chunk = _require_positive_int(
-            resource.get("hash_chunk_bytes"),
-            "hash_chunk_bytes",
+            resource.get("hash_chunk_bytes"), "hash_chunk_bytes"
         )
         bound: dict[str, VerifiedRunnerSource] = {}
         for lane_id in validated.expected_lanes:
             source = lane_to_source[lane_id]
             source_id = str(source["source_id"])
-            path = self._resolve_source_path(
-                source_root,
-                source_paths[source_id],
-            )
+            path = self._resolve_source_path(source_root, source_paths[source_id])
             expected_size = _require_positive_int(
-                source.get("bounded_source_size_bytes"),
-                "bounded_source_size_bytes",
+                source.get("bounded_source_size_bytes"), "bounded_source_size_bytes"
             )
             observed_size = path.stat().st_size
             if observed_size != expected_size:
@@ -597,8 +590,7 @@ class OfflineRealSourceRunner:
                     "bounded source size mismatch",
                 )
             expected_sha = _require_sha(
-                source.get("bounded_source_sha256"),
-                "bounded_source_sha256",
+                source.get("bounded_source_sha256"), "bounded_source_sha256"
             )
             if _sha256_file(path, chunk_bytes=hash_chunk) != expected_sha:
                 raise RealSourceRunnerError(
@@ -644,8 +636,7 @@ class OfflineRealSourceRunner:
         return bound
 
     def _new_adapter(self, lane_id: str):
-        lane = self._profile_lane_index().get(lane_id)
-        if lane is None or lane_id not in self._STATIC_RUNTIME_CLASSES:
+        if lane_id not in self._STATIC_RUNTIME_CLASSES:
             raise RealSourceRunnerError(
                 FAIL_SECURITY,
                 "RUNNER_ADAPTER_NOT_AUTHORIZED",
@@ -669,10 +660,7 @@ class OfflineRealSourceRunner:
         return runtime_class(max_visible_records=maximum)
 
     def _execute_visible_lane(
-        self,
-        source: VerifiedRunnerSource,
-        *,
-        source_root: Path,
+        self, source: VerifiedRunnerSource, *, source_root: Path
     ) -> LaneExecution:
         adapter = self._new_adapter(source.lane_id)
         inspection = adapter.inspect(
@@ -686,10 +674,7 @@ class OfflineRealSourceRunner:
         auth_evidence: list[EvidenceRecord] = []
 
         if source.lane_id == "cic_processed_ml":
-            for output in adapter.iterate(
-                source.source_path,
-                inspection=inspection,
-            ):
+            for output in adapter.iterate(source.source_path, inspection=inspection):
                 evidence_hash.add_record(output.evidence)
                 truth_hash.add_record(output.truth)
                 attack_class = output.truth.truth_fields.get("attack_class")
@@ -706,15 +691,10 @@ class OfflineRealSourceRunner:
                 records_rejected=counters.records_rejected,
                 truth_records_emitted=counters.truth_records_emitted,
                 first_error_code=counters.first_error_code,
-                truth_classes=tuple(
-                    sorted(truth_classes, key=str.casefold)
-                ),
+                truth_classes=tuple(sorted(truth_classes, key=str.casefold)),
             )
 
-        for evidence in adapter.iterate(
-            source.source_path,
-            inspection=inspection,
-        ):
+        for evidence in adapter.iterate(source.source_path, inspection=inspection):
             evidence_hash.add_record(evidence)
             if source.lane_id == "lanl_authentication":
                 auth_evidence.append(evidence)
@@ -792,14 +772,11 @@ class OfflineRealSourceRunner:
                             "red-team execution lacks auth evidence",
                         )
                     output[lane_id] = self._execute_redteam_lane(
-                        bound[lane_id],
-                        source_root=source_root,
-                        auth=auth,
+                        bound[lane_id], source_root=source_root, auth=auth
                     )
                 else:
                     output[lane_id] = self._execute_visible_lane(
-                        bound[lane_id],
-                        source_root=source_root,
+                        bound[lane_id], source_root=source_root
                     )
         except RealSourceRunnerError:
             raise
@@ -840,15 +817,10 @@ class OfflineRealSourceRunner:
     ) -> None:
         if set(first) != set(second):
             raise RealSourceRunnerError(
-                FAIL_INTEGRITY,
-                "RUNNER_REPLAY_MISMATCH",
-                "replay lane set differs",
+                FAIL_INTEGRITY, "RUNNER_REPLAY_MISMATCH", "replay lane set differs"
             )
         for lane_id in sorted(first):
-            if (
-                first[lane_id].replay_identity()
-                != second[lane_id].replay_identity()
-            ):
+            if first[lane_id].replay_identity() != second[lane_id].replay_identity():
                 raise RealSourceRunnerError(
                     FAIL_INTEGRITY,
                     "RUNNER_REPLAY_MISMATCH",
@@ -893,11 +865,7 @@ class OfflineRealSourceRunner:
         peak_rss_delta_bytes: int,
     ) -> dict[str, Any]:
         publisher_fp = acceptance_canonical_sha256(
-            {
-                "publisher_reference": source.source_manifest.get(
-                    "publisher_reference"
-                )
-            }
+            {"publisher_reference": source.source_manifest.get("publisher_reference")}
         )
         receipt = {
             "schema_version": "workspace-network-real-source-acceptance-receipt/v1",
@@ -913,23 +881,17 @@ class OfflineRealSourceRunner:
             "acquisition_receipt_fingerprint": source.source_manifest.get(
                 "acquisition_receipt_fingerprint"
             ),
-            "parent_source_sha256": source.source_manifest.get(
-                "parent_source_sha256"
-            ),
-            "bounded_source_sha256": source.source_manifest.get(
-                "bounded_source_sha256"
-            ),
+            "parent_source_sha256": source.source_manifest.get("parent_source_sha256"),
+            "bounded_source_sha256": source.source_manifest.get("bounded_source_sha256"),
             "adapter_id": source.source_manifest.get("adapter_id"),
             "adapter_version": source.source_manifest.get("adapter_version"),
             "records_seen": execution.records_seen,
             "records_emitted": execution.records_emitted,
             "records_rejected": execution.records_rejected,
             "truth_records_emitted": execution.truth_records_emitted,
-            "evidence_fingerprint": (
-                execution.evidence_fingerprint
-                or acceptance_canonical_sha256(
-                    {"lane": execution.lane_id, "evidence": "none"}
-                )
+            "evidence_fingerprint": execution.evidence_fingerprint
+            or acceptance_canonical_sha256(
+                {"lane": execution.lane_id, "evidence": "none"}
             ),
             "truth_fingerprint": execution.truth_fingerprint,
             "deterministic_replay_pass": True,
@@ -961,7 +923,9 @@ class OfflineRealSourceRunner:
         exact_head_sha: str,
         spec_fingerprint: str,
     ) -> RunnerResult:
-        # Security ordering: validate metadata before opening source bytes.
+        # Authority preflight and manifest validation are metadata-only. No source
+        # bytes are opened before both checks complete.
+        self._preflight_manifest_authority(manifest)
         try:
             validated = validate_manifest(
                 manifest,
@@ -977,22 +941,18 @@ class OfflineRealSourceRunner:
             ) from exc
 
         _require_sha(spec_fingerprint, "spec_fingerprint")
-        if (
-            not isinstance(exact_head_sha, str)
-            or len(exact_head_sha.strip()) not in {40, 64}
-        ):
+        if not isinstance(exact_head_sha, str) or len(exact_head_sha.strip()) not in {
+            40,
+            64,
+        }:
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_BINDING_INVALID",
-                "exact_head_sha invalid",
+                FAIL_SCHEMA, "RUNNER_BINDING_INVALID", "exact_head_sha invalid"
             )
         try:
             int(exact_head_sha.strip(), 16)
         except ValueError as exc:
             raise RealSourceRunnerError(
-                FAIL_SCHEMA,
-                "RUNNER_BINDING_INVALID",
-                "exact_head_sha invalid",
+                FAIL_SCHEMA, "RUNNER_BINDING_INVALID", "exact_head_sha invalid"
             ) from exc
 
         source_root, scratch, session = self._prepare_roots(
@@ -1015,14 +975,10 @@ class OfflineRealSourceRunner:
                 source_paths=source_paths,
             )
             first = self._execute_pass(
-                validated=validated,
-                bound=bound,
-                source_root=source_root,
+                validated=validated, bound=bound, source_root=source_root
             )
             second = self._execute_pass(
-                validated=validated,
-                bound=bound,
-                source_root=source_root,
+                validated=validated, bound=bound, source_root=source_root
             )
             self._compare_replay(first, second)
             after_rss = _peak_rss_bytes()
@@ -1081,13 +1037,10 @@ class OfflineRealSourceRunner:
 
         bound, executions, peak_delta = result_payload
         observations = self._lane_observations(
-            executions,
-            peak_rss_delta_bytes=peak_delta,
+            executions, peak_rss_delta_bytes=peak_delta
         )
         decision = evaluate_coverage(
-            validated,
-            profile=acceptance_profile,
-            observations=observations,
+            validated, profile=acceptance_profile, observations=observations
         )
         receipts = tuple(
             self._build_lane_receipt(
@@ -1101,17 +1054,15 @@ class OfflineRealSourceRunner:
             for lane_id in validated.expected_lanes
         )
 
-        # Content identity intentionally excludes runtime resource measurements
-        # and receipt hashes, because those may vary across otherwise identical
-        # hosts/runs. Evidence/truth/replay identities remain deterministic.
+        # Content identity excludes runtime resource measurements and receipt
+        # hashes. Evidence/truth/replay identity remains deterministic.
         deterministic_identity = {
             "runner_version": RUNNER_VERSION,
             "acceptance_id": validated.acceptance_id,
             "manifest_fingerprint": validated.fingerprint,
             "exact_head_sha": exact_head_sha.strip().lower(),
             "lane_replay_identities": [
-                executions[lane].replay_identity()
-                for lane in validated.expected_lanes
+                executions[lane].replay_identity() for lane in validated.expected_lanes
             ],
             "decision_fingerprint": decision.fingerprint,
             "cleanup_pass": True,
@@ -1128,7 +1079,5 @@ class OfflineRealSourceRunner:
             receipts=receipts,
             peak_rss_delta_bytes=peak_delta,
             cleanup_pass=True,
-            runner_fingerprint=acceptance_canonical_sha256(
-                deterministic_identity
-            ),
+            runner_fingerprint=acceptance_canonical_sha256(deterministic_identity),
         )
