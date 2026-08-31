@@ -138,6 +138,28 @@ class DiagnosticRecordingLLM:
         self.calls.append(self._evidence(user_prompt, succeeded=True))
         return answer
 
+    def generate_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Preserve metadata-only model evidence for structured decoding calls."""
+
+        try:
+            answer = self.delegate.generate_json(system_prompt, user_prompt, **kwargs)
+        except Exception as exc:
+            self.calls.append(
+                self._evidence(
+                    user_prompt,
+                    succeeded=False,
+                    failure_code=safe_runtime_failure_code(exc),
+                )
+            )
+            raise
+        self.calls.append(self._evidence(user_prompt, succeeded=True))
+        return answer
+
 
 class DiagnosticContractAwareProjectChatService(ContractAwareProjectChatService):
     """Production chat service with metadata-only terminal validator observation."""

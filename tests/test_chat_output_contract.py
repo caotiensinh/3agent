@@ -89,8 +89,32 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertIn("do not invent", tightened.instruction)
         self.assertFalse(tightened.validate("Bạn muốn tiếp phần nào? Hãy cho tôi nội dung trước.")[0])
 
+    def test_explicit_multilingual_brevity_is_a_hard_current_request_bound(self):
+        prompts = (
+            "Hãy giới thiệu ngắn gọn về bạn bằng tiếng Việt.",
+            "日本語で簡単に自己紹介してください。",
+            "Please introduce yourself briefly in English.",
+            "Explain DNSSEC concisely.",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                contract = compile_chat_output_contract(prompt, effort="standard")
+                self.assertEqual(contract.kind, "brief_prose")
+                self.assertEqual(contract.max_chars, 600)
+                self.assertLessEqual(contract.num_predict, 128)
+                self.assertTrue(contract.validate("A" * 600)[0])
+                self.assertFalse(contract.validate("A" * 601)[0])
+
+    def test_brief_topic_word_does_not_accidentally_shrink_detailed_request(self):
+        contract = compile_chat_output_contract(
+            "Provide a detailed analysis of brief packet-loss incidents in this trace.",
+            effort="standard",
+        )
+        self.assertEqual(contract.kind, "prose")
+        self.assertEqual(contract.max_chars, 2800)
+
     def test_standard_default_no_longer_has_4096_token_budget(self):
-        contract = compile_chat_output_contract("Explain DNSSEC briefly.", effort="standard")
+        contract = compile_chat_output_contract("Explain DNSSEC with practical details.", effort="standard")
         self.assertEqual(contract.kind, "prose")
         self.assertLess(contract.num_predict, 4096)
         self.assertLessEqual(contract.max_chars, 2800)
@@ -107,14 +131,22 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(mode, CONTEXT_MODE_FOLLOW_UP)
         self.assertEqual(language, "ja")
 
-    def test_current_service_preserves_high_reasoning_and_dynamic_predict_budget(self):
+    def test_current_service_preserves_high_reasoning_and_bounds_standard_generation(self):
         text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('high_effort = str(effort or "").strip().lower() == "high"', text)
         self.assertIn("think=high_effort", text)
-        self.assertIn("generation_num_predict = max(contract.num_predict, 768) if high_effort else contract.num_predict", text)
+        self.assertIn("def _bounded_generation_num_predict", text)
+        self.assertIn("if high_effort:", text)
+        self.assertIn("return max(configured, 768)", text)
+        self.assertIn(
+            "generation_num_predict = _bounded_generation_num_predict(contract, high_effort)",
+            text,
+        )
+        self.assertIn("generation_temperature = None if high_effort else 0.0", text)
         self.assertIn("num_predict=generation_num_predict", text)
+        self.assertIn("temperature=generation_temperature", text)
         self.assertIn("contract.validate(answer)", text)
         self.assertIn("workspace.chat.direct.v2", text)
 

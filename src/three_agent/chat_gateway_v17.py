@@ -205,6 +205,7 @@ class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
                     "conversation_context_max_chars": DEFAULT_CONTEXT_MAX_CHARS,
                     "standalone_request_history_injected": False,
                     "follow_up_language_continuity": True,
+                    "follow_up_reference_anchoring": True,
                 },
             )
             return

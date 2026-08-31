@@ -97,6 +97,7 @@ class OllamaClient:
         schema_id: str | None = None,
         think: bool = False,
         num_predict: int = 4096,
+        temperature: float | None = None,
         trust_domain: str = "workspace-local",
         template_version: str = "workspace.prompt.v1",
     ) -> dict[str, Any]:
@@ -117,6 +118,8 @@ class OllamaClient:
             "keep_alive": self.config.keep_alive,
             "options": {"num_predict": num_predict},
         }
+        if temperature is not None:
+            request_body["options"]["temperature"] = float(temperature)
         if json_mode:
             authoritative_schema = format_schema or DEFAULT_OBJECT_SCHEMA
             request_body["format"] = _ollama_transport_schema(authoritative_schema)
@@ -202,6 +205,7 @@ class OllamaClient:
         *,
         think: bool = False,
         num_predict: int = 4096,
+        temperature: float | None = None,
         trust_domain: str = "workspace-local",
         template_version: str = "workspace.prompt.v1",
     ) -> str:
@@ -211,6 +215,7 @@ class OllamaClient:
             json_mode=False,
             think=think,
             num_predict=num_predict,
+            temperature=temperature,
             trust_domain=trust_domain,
             template_version=template_version,
         )

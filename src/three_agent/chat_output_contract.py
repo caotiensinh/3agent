@@ -3,12 +3,19 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from .chat_fidelity import requested_language_neutral_format
 
 
 _BULLET_LINE_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+\S")
+_BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 _SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
+_BRIEF_PROSE_MAX_CHARS = 600
+_BRIEF_PROSE_NUM_PREDICT = 128
+STRICT_STRUCTURED_OUTPUT_KINDS = frozenset(
+    {"bullets", "single_sentence", "single_number", "code_only", "brief_prose"}
+)
 
 
 def _sentence_terminator_count(text: str) -> int:
@@ -36,6 +43,7 @@ class ChatOutputContract:
     max_chars: int = 0
     num_predict: int = 0
     instruction: str = ""
+    structured_decoding: bool = True
 
     def validate(self, answer: str) -> tuple[bool, str]:
         body = str(answer or "").strip()
@@ -72,6 +80,124 @@ class ChatOutputContract:
         return True, "ok"
 
 
+def strict_structured_schema(contract: ChatOutputContract) -> dict[str, Any] | None:
+    """Return a decoder-time intermediate schema for strict standard-chat shapes.
+
+    The intermediate representation exists only in memory. It is rendered into
+    the user's requested plain-text shape before the existing language/format
+    and output-contract validators run. It does not relax any validator or
+    persist model output.
+    """
+
+    if not contract.structured_decoding:
+        return None
+    if contract.kind == "bullets" and contract.exact_items > 0:
+        properties = {
+            f"item_{index}": {
+                "type": "string",
+                "description": (
+                    f"Content for bullet {index} only. Do not include a bullet marker, heading, "
+                    "preface, or suffix."
+                ),
+            }
+            for index in range(1, contract.exact_items + 1)
+        }
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(properties),
+            "additionalProperties": False,
+        }
+    if contract.kind in {"single_sentence", "brief_prose"}:
+        description = (
+            "Exactly one concise answer sentence and no heading or note."
+            if contract.kind == "single_sentence"
+            else (
+                "Concise answer prose in the target response language. Preserve the semantic label "
+                "of any ordinal or pronoun referent resolved from eligible recent context."
+            )
+        )
+        return {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": description,
+                }
+            },
+            "required": ["answer"],
+            "additionalProperties": False,
+        }
+    if contract.kind == "single_number":
+        return {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "number",
+                    "description": "The requested numeric value only.",
+                }
+            },
+            "required": ["value"],
+            "additionalProperties": False,
+        }
+    if contract.kind == "code_only":
+        return {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Requested code or command only, without explanatory prose.",
+                }
+            },
+            "required": ["code"],
+            "additionalProperties": False,
+        }
+    return None
+
+
+def strict_structured_schema_id(contract: ChatOutputContract) -> str:
+    if contract.kind == "bullets":
+        return f"workspace.chat.strict.bullets.{contract.exact_items}.v1"
+    return f"workspace.chat.strict.{contract.kind}.v1"
+
+
+def _single_line(value: object, *, strip_bullet_prefix: bool = False) -> str:
+    body = " ".join(str(value or "").split()).strip()
+    if strip_bullet_prefix:
+        body = _BULLET_PREFIX_RE.sub("", body, count=1).strip()
+    return body
+
+
+def render_strict_structured_answer(
+    contract: ChatOutputContract,
+    payload: dict[str, Any],
+) -> str:
+    """Render the intermediate object into the exact user-visible text family."""
+
+    if contract.kind == "bullets":
+        items = [
+            _single_line(payload.get(f"item_{index}"), strip_bullet_prefix=True)
+            for index in range(1, contract.exact_items + 1)
+        ]
+        return "\n".join(f"- {item}" for item in items if item).strip()
+    if contract.kind in {"single_sentence", "brief_prose"}:
+        return _single_line(payload.get("answer"))
+    if contract.kind == "single_number":
+        value = payload.get("value")
+        if isinstance(value, bool):
+            return str(value).lower()
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        if isinstance(value, float):
+            return format(value, ".15g")
+        return str(value or "").strip()
+    if contract.kind == "code_only":
+        return str(payload.get("code") or "").strip()
+    raise ValueError(f"Unsupported strict structured output kind: {contract.kind}")
+
+
 def _exact_bullet_count(request: str) -> int:
     text = " ".join(str(request or "").split())
     patterns = (
@@ -96,6 +222,29 @@ def _requests_single_sentence(request: str) -> bool:
         r"\b(?:in\s+)?(?:exactly\s+)?(?:one|1)\s+sentence\b",
         r"(?:đúng|dung|chỉ|chi)?\s*(?:một|mot|1)\s+câu\b(?!\s+hỏi)",
         r"(?:一文|1文)(?:で|だけ|のみ|に|。|$)",
+    )
+    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
+def _requests_brief_response(request: str) -> bool:
+    """Detect explicit current-request brevity intent in supported chat languages."""
+
+    text = " ".join(str(request or "").casefold().split())
+    patterns = (
+        r"\bbriefly\b",
+        r"\bbe\s+brief\b",
+        r"\bconcise(?:ly)?\b",
+        r"\bin\s+brief\b",
+        r"\bbrief\s+(?:answer|response|introduction|intro|summary)\b",
+        r"\bshort\s+(?:answer|response|introduction|intro|summary)\b",
+        r"\bngắn\s+gọn\b",
+        r"\bngắn\s+thôi\b",
+        r"\btrả\s+lời\s+ngắn\b",
+        r"\btóm\s+tắt\s+ngắn\b",
+        r"簡単に",
+        r"簡潔に",
+        r"短く",
+        r"手短に",
     )
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
@@ -151,6 +300,17 @@ def compile_chat_output_contract(request: str, *, effort: str = "standard") -> C
             instruction="Return exactly one concise sentence. Do not add a heading, bullets, notes, or a second sentence.",
         )
 
+    if _requests_brief_response(request):
+        return ChatOutputContract(
+            kind="brief_prose",
+            max_chars=_BRIEF_PROSE_MAX_CHARS,
+            num_predict=_BRIEF_PROSE_NUM_PREDICT,
+            instruction=(
+                "Answer briefly and directly using only the minimum detail needed; normally use 2-4 short sentences. "
+                "Do not add headings, unrelated sections, or repeat the prompt."
+            ),
+        )
+
     high = str(effort or "standard").strip().lower() == "high"
     return ChatOutputContract(
         kind="prose",
@@ -176,6 +336,7 @@ def tighten_for_missing_reference(contract: ChatOutputContract) -> ChatOutputCon
             "The current request references missing prior context. Ask one concise clarification sentence; "
             "do not invent the missing referenced content."
         ),
+        structured_decoding=False,
     )
 
 
