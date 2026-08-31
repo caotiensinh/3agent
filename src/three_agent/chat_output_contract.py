@@ -43,6 +43,7 @@ class ChatOutputContract:
     max_chars: int = 0
     num_predict: int = 0
     instruction: str = ""
+    structured_decoding: bool = True
 
     def validate(self, answer: str) -> tuple[bool, str]:
         body = str(answer or "").strip()
@@ -88,6 +89,8 @@ def strict_structured_schema(contract: ChatOutputContract) -> dict[str, Any] | N
     persist model output.
     """
 
+    if not contract.structured_decoding:
+        return None
     if contract.kind == "bullets" and contract.exact_items > 0:
         properties = {
             f"item_{index}": {
@@ -325,6 +328,7 @@ def tighten_for_missing_reference(contract: ChatOutputContract) -> ChatOutputCon
             "The current request references missing prior context. Ask one concise clarification sentence; "
             "do not invent the missing referenced content."
         ),
+        structured_decoding=False,
     )
 
 
