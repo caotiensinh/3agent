@@ -19,42 +19,48 @@
       "dataset_id": "cse-cic-ids2018",
       "variant": "processed-ml",
       "source_family": null,
-      "adapter_id": "cse-cic-ids2018-processed-ml"
+      "adapter_id": "cse-cic-ids2018-processed-ml",
+      "adapter_version": "cse-cic-ids2018-processed-ml/0.1"
     },
     {
       "lane_id": "lanl_authentication",
       "dataset_id": "lanl-comprehensive",
       "variant": "events",
       "source_family": "auth",
-      "adapter_id": "lanl-auth"
+      "adapter_id": "lanl-comprehensive-auth",
+      "adapter_version": "lanl-comprehensive-auth/0.1"
     },
     {
       "lane_id": "lanl_process",
       "dataset_id": "lanl-comprehensive",
       "variant": "events",
       "source_family": "process",
-      "adapter_id": "lanl-process"
+      "adapter_id": "lanl-comprehensive-process",
+      "adapter_version": "lanl-comprehensive-process/0.1"
     },
     {
       "lane_id": "lanl_dns",
       "dataset_id": "lanl-comprehensive",
       "variant": "events",
       "source_family": "dns",
-      "adapter_id": "lanl-dns"
+      "adapter_id": "lanl-comprehensive-dns",
+      "adapter_version": "lanl-comprehensive-dns/0.1"
     },
     {
       "lane_id": "lanl_flow",
       "dataset_id": "lanl-comprehensive",
       "variant": "events",
       "source_family": "flow",
-      "adapter_id": "lanl-flow"
+      "adapter_id": "lanl-comprehensive-flow",
+      "adapter_version": "lanl-comprehensive-flow/0.1"
     },
     {
       "lane_id": "lanl_redteam_truth",
       "dataset_id": "lanl-comprehensive",
       "variant": "events",
       "source_family": "redteam",
-      "adapter_id": "lanl-redteam-matcher",
+      "adapter_id": "lanl-comprehensive-redteam-truth-matcher",
+      "adapter_version": "lanl-comprehensive-redteam-truth-matcher/0.1",
       "scorer_only": true
     }
   ],
@@ -66,102 +72,6 @@
     "cic_raw_pcap": false,
     "research_only_sources": false,
     "review_required_sources": false
-  },
-  "manifest_contract": {
-    "schema_version": "workspace-network-real-source-acceptance-manifest/v1",
-    "required_top_level_fields": [
-      "schema_version",
-      "acceptance_id",
-      "spec_version",
-      "created_by_role",
-      "registry_fingerprint",
-      "policy_fingerprint",
-      "sources",
-      "expected_lanes",
-      "bots_direct_adapter_authorized"
-    ],
-    "required_source_fields": [
-      "source_id",
-      "dataset_id",
-      "variant",
-      "source_family",
-      "real_source",
-      "publisher_reference",
-      "acquisition_mode",
-      "acquisition_receipt_fingerprint",
-      "parent_source_object_ref",
-      "parent_source_sha256",
-      "parent_source_size_bytes",
-      "bounded_source_object_ref",
-      "bounded_source_sha256",
-      "bounded_source_size_bytes",
-      "derivation",
-      "adapter_id",
-      "adapter_version",
-      "provenance_ref"
-    ],
-    "real_source_must_be_true": true,
-    "bots_direct_adapter_authorized_must_be_false": true,
-    "forbidden_durable_fields": [
-      "raw_line",
-      "raw_record",
-      "raw_payload",
-      "password",
-      "credential",
-      "signed_url",
-      "cookie",
-      "token",
-      "secret"
-    ]
-  },
-  "receipt_contract": {
-    "schema_version": "workspace-network-real-source-acceptance-receipt/v1",
-    "required_fields": [
-      "schema_version",
-      "acceptance_id",
-      "exact_head_sha",
-      "spec_fingerprint",
-      "manifest_fingerprint",
-      "dataset_id",
-      "variant",
-      "source_family",
-      "real_source_verified",
-      "publisher_reference_fingerprint",
-      "acquisition_receipt_fingerprint",
-      "parent_source_sha256",
-      "bounded_source_sha256",
-      "adapter_id",
-      "adapter_version",
-      "records_seen",
-      "records_emitted",
-      "records_rejected",
-      "truth_records_emitted",
-      "evidence_fingerprint",
-      "truth_fingerprint",
-      "deterministic_replay_pass",
-      "visible_schema_pass",
-      "truth_separation_pass",
-      "provenance_pass",
-      "resource_pass",
-      "cleanup_pass",
-      "network_calls",
-      "model_calls",
-      "subprocess_calls",
-      "peak_rss_delta_bytes",
-      "verdict",
-      "failed_gate_ids"
-    ],
-    "forbidden_fields": [
-      "raw_line",
-      "raw_record",
-      "raw_payload",
-      "exception_text",
-      "signed_url",
-      "credential",
-      "cookie",
-      "token",
-      "secret"
-    ]
   },
   "resource_contract": {
     "max_source_objects": 8,
@@ -180,18 +90,10 @@
       "requires_benign_truth": true,
       "requires_non_benign_truth": true
     },
-    "lanl_authentication": {
-      "minimum_valid_records": 100
-    },
-    "lanl_process": {
-      "minimum_valid_records": 100
-    },
-    "lanl_dns": {
-      "minimum_valid_records": 100
-    },
-    "lanl_flow": {
-      "minimum_valid_records": 100
-    },
+    "lanl_authentication": {"minimum_valid_records": 100},
+    "lanl_process": {"minimum_valid_records": 100},
+    "lanl_dns": {"minimum_valid_records": 100},
+    "lanl_flow": {"minimum_valid_records": 100},
     "lanl_redteam_truth": {
       "minimum_exact_auth_matches": 1,
       "zero_match_must_not_resolve": true,
@@ -255,7 +157,7 @@
     "CIC_VALID_RECORDS_BELOW_MINIMUM",
     "CIC_MISSING_BENIGN_TRUTH",
     "CIC_MISSING_NON_BENIGN_TRUTH",
-    "LANL_AUTH_RECORDS_BELOW_MINIMUM",
+    "LANL_AUTHENTICATION_RECORDS_BELOW_MINIMUM",
     "LANL_PROCESS_RECORDS_BELOW_MINIMUM",
     "LANL_DNS_RECORDS_BELOW_MINIMUM",
     "LANL_FLOW_RECORDS_BELOW_MINIMUM",
