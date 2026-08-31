@@ -1,0 +1,38 @@
+{
+  "schema_version": "workspace-network-real-source-runner-binding/v1",
+  "status": "FROZEN_BEFORE_RUNNER_IMPLEMENTATION",
+  "acceptance_manifest_schema": "workspace-network-real-source-acceptance-manifest/v1",
+  "adapter_contract_schema": "workspace-network-adapter-input-contract/v1-semantic",
+  "one_source_per_expected_lane": true,
+  "source_mapping": {
+    "mode": "caller_supplied_exact_source_id_map",
+    "extra_mapping_keys_allowed": false,
+    "missing_mapping_keys_allowed": false,
+    "recursive_discovery_allowed": false
+  },
+  "adapter_input_binding": {
+    "dataset_id": "source.dataset_id",
+    "variant": "source.variant",
+    "source_object_ref": "source.bounded_source_object_ref",
+    "source_sha256": "source.bounded_source_sha256",
+    "actual_source_size_bytes": "source.bounded_source_size_bytes",
+    "max_plan_bytes": "runner_profile.resource_contract.max_bytes_per_source_object",
+    "acquisition_plan_fingerprint": "validated_manifest.fingerprint",
+    "registry_fingerprint": "manifest.registry_fingerprint",
+    "policy_fingerprint": "manifest.policy_fingerprint",
+    "provenance_ref": "source.provenance_ref",
+    "adapter_version": "source.adapter_version"
+  },
+  "separate_provenance_binding": {
+    "acquisition_receipt_fingerprint": "source.acquisition_receipt_fingerprint",
+    "parent_source_sha256": "source.parent_source_sha256",
+    "bounded_source_sha256": "source.bounded_source_sha256"
+  },
+  "prohibitions": [
+    "DO_NOT_ALIAS_ACQUISITION_RECEIPT_AS_HISTORICAL_PLAN",
+    "DO_NOT_SYNTHESIZE_HISTORICAL_ACQUISITION_PLAN_FINGERPRINT",
+    "DO_NOT_AGGREGATE_MULTIPLE_SOURCES_PER_LANE_IN_V1",
+    "DO_NOT_DISCOVER_FILES_FROM_DIRECTORY_CONTENTS",
+    "DO_NOT_USE_RUNTIME_TIME_IN_CONTENT_IDENTITY"
+  ]
+}

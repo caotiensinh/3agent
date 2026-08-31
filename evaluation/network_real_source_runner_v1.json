@@ -1,0 +1,285 @@
+{
+  "schema_version": "workspace-network-real-source-runner-profile/v1",
+  "phase": "V3-02E-RUNNER",
+  "status": "HARNESS_PROFILE_FROZEN_BEFORE_RUNNER_CODE",
+  "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_RUNNER_SPEC_V1.md",
+  "main_prerequisite": {
+    "required_main_sha": "7cedbbc06c9ffa947085015b3ceea4a9b063bf13",
+    "required_checkpoint": "V3-02E-CONTRACT-HARNESS",
+    "required_ci_families": [
+      "harness-ci",
+      "installer-ci",
+      "portable-deploy-ci",
+      "windows-deploy-ci"
+    ]
+  },
+  "execution_authority": {
+    "network_calls": 0,
+    "model_calls": 0,
+    "subprocess_calls": 0,
+    "package_installs": 0,
+    "dynamic_imports_from_manifest": false,
+    "recursive_source_discovery": false,
+    "operator_source_deletion": false
+  },
+  "authorized_lanes": [
+    {
+      "lane_id": "cic_processed_ml",
+      "dataset_id": "cse-cic-ids2018",
+      "variant": "processed-ml",
+      "source_family": null,
+      "adapter_id": "cse-cic-ids2018-processed-ml",
+      "adapter_version": "cse-cic-ids2018-processed-ml/0.1",
+      "runtime_class": "CSECICIDS2018Adapter",
+      "output_mode": "evidence_plus_truth"
+    },
+    {
+      "lane_id": "lanl_authentication",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "auth",
+      "adapter_id": "lanl-comprehensive-auth",
+      "adapter_version": "lanl-comprehensive-auth/0.1",
+      "runtime_class": "LANLAuthAdapter",
+      "output_mode": "evidence",
+      "retain_in_memory_for": ["lanl_redteam_truth"]
+    },
+    {
+      "lane_id": "lanl_process",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "process",
+      "adapter_id": "lanl-comprehensive-process",
+      "adapter_version": "lanl-comprehensive-process/0.1",
+      "runtime_class": "LANLProcessAdapter",
+      "output_mode": "evidence"
+    },
+    {
+      "lane_id": "lanl_dns",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "dns",
+      "adapter_id": "lanl-comprehensive-dns",
+      "adapter_version": "lanl-comprehensive-dns/0.1",
+      "runtime_class": "LANLDNSAdapter",
+      "output_mode": "evidence"
+    },
+    {
+      "lane_id": "lanl_flow",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "flow",
+      "adapter_id": "lanl-comprehensive-flow",
+      "adapter_version": "lanl-comprehensive-flow/0.1",
+      "runtime_class": "LANLFlowAdapter",
+      "output_mode": "evidence"
+    },
+    {
+      "lane_id": "lanl_redteam_truth",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "redteam",
+      "adapter_id": "lanl-comprehensive-redteam-truth-matcher",
+      "adapter_version": "lanl-comprehensive-redteam-truth-matcher/0.1",
+      "runtime_class": "LANLRedTeamTruthMatcher",
+      "output_mode": "truth_only",
+      "scorer_only": true,
+      "requires_lane": "lanl_authentication"
+    }
+  ],
+  "explicit_exclusions": {
+    "splunk-bots-v2": "BLOCKED_DEPENDENCY_COST",
+    "cic_raw_pcap": false,
+    "dynamic_adapter_plugin": false,
+    "network_fetch": false,
+    "shell_hashing": false,
+    "model_truth_inference": false
+  },
+  "source_open_contract": {
+    "manifest_validation_before_file_open": true,
+    "caller_supplied_source_mapping_only": true,
+    "recursive_discovery": false,
+    "symlink_source_allowed": false,
+    "resolved_source_must_be_below_authorized_root": true,
+    "regular_file_required": true,
+    "size_must_match_manifest": true,
+    "sha256_must_match_manifest": true,
+    "operator_source_read_only": true
+  },
+  "scratch_contract": {
+    "must_be_distinct_from_authorized_root": true,
+    "acceptance_specific_subdirectory_required": true,
+    "unrelated_nonempty_scratch_rejected": true,
+    "track_every_created_path": true,
+    "default_cleanup_on_success": true,
+    "default_cleanup_on_failure": true,
+    "pass_requires_zero_harness_owned_leftovers": true
+  },
+  "resource_contract": {
+    "max_source_objects": 8,
+    "max_bytes_per_source_object": 268435456,
+    "max_total_bounded_input_bytes": 536870912,
+    "max_visible_records_per_adapter_invocation": 250000,
+    "max_lanl_auth_evidence_for_redteam_matcher": 250000,
+    "max_durable_generated_object_bytes": 1048576,
+    "max_linux_peak_rss_delta_bytes": 536870912,
+    "hash_chunk_bytes": 1048576,
+    "network_calls": 0,
+    "model_calls": 0,
+    "subprocess_calls": 0
+  },
+  "stream_fingerprint_contract": {
+    "canonical_record_hash": "sha256(canonical_json(record.as_dict()))",
+    "ordered": true,
+    "whole_stream_materialization_for_hashing": false,
+    "domain_separated": true,
+    "includes_record_count": true
+  },
+  "replay_contract": {
+    "fresh_adapter_instance_each_pass": true,
+    "passes": 2,
+    "required_equal_fields": [
+      "inspection_fingerprint",
+      "evidence_fingerprint",
+      "truth_fingerprint",
+      "records_seen",
+      "records_emitted",
+      "records_rejected",
+      "truth_records_emitted",
+      "first_error_code",
+      "truth_class_summary",
+      "redteam_unmatched",
+      "redteam_ambiguous",
+      "redteam_exact_matches"
+    ],
+    "mismatch_verdict": "FAIL_INTEGRITY",
+    "mismatch_gate": "RUNNER_REPLAY_MISMATCH"
+  },
+  "coverage_contract": {
+    "cic_processed_ml": {
+      "minimum_valid_records": 1000,
+      "requires_benign_truth": true,
+      "requires_non_benign_truth": true
+    },
+    "lanl_authentication": {"minimum_valid_records": 100},
+    "lanl_process": {"minimum_valid_records": 100},
+    "lanl_dns": {"minimum_valid_records": 100},
+    "lanl_flow": {"minimum_valid_records": 100},
+    "lanl_redteam_truth": {
+      "minimum_exact_auth_matches": 1,
+      "zero_match_must_emit_truth": false,
+      "ambiguous_match_must_emit_truth": false
+    }
+  },
+  "runner_error_codes": [
+    "RUNNER_MANIFEST_INVALID",
+    "RUNNER_AUTHORIZED_ROOT_INVALID",
+    "RUNNER_SCRATCH_ROOT_INVALID",
+    "RUNNER_SOURCE_MAPPING_INVALID",
+    "RUNNER_SOURCE_MISSING",
+    "RUNNER_SOURCE_SYMLINK",
+    "RUNNER_SOURCE_ESCAPE",
+    "RUNNER_SOURCE_SIZE_MISMATCH",
+    "RUNNER_SOURCE_DIGEST_MISMATCH",
+    "RUNNER_ADAPTER_NOT_AUTHORIZED",
+    "RUNNER_ADAPTER_VERSION_MISMATCH",
+    "RUNNER_ADAPTER_SCHEMA_FAILURE",
+    "RUNNER_ADAPTER_INTEGRITY_FAILURE",
+    "RUNNER_ADAPTER_RESOURCE_FAILURE",
+    "RUNNER_VISIBLE_TRUTH_LEAKAGE",
+    "RUNNER_REPLAY_MISMATCH",
+    "RUNNER_RESOURCE_MEASUREMENT_UNAVAILABLE",
+    "RUNNER_CLEANUP_FAILED"
+  ],
+  "zero_tolerance_gates": [
+    "MANIFEST_NOT_VALIDATED_BEFORE_SOURCE_OPEN",
+    "OUT_OF_MANIFEST_SOURCE_READ",
+    "PATH_OR_SYMLINK_ESCAPE",
+    "SOURCE_SIZE_MISMATCH_ACCEPTED",
+    "SOURCE_DIGEST_MISMATCH_ACCEPTED",
+    "DYNAMIC_OR_UNAUTHORIZED_ADAPTER_EXECUTED",
+    "PRODUCTION_INSPECT_BYPASSED",
+    "HIDDEN_TRUTH_LEAKAGE",
+    "REDTEAM_ZERO_MATCH_FORCED_TO_TRUTH",
+    "REDTEAM_AMBIGUOUS_MATCH_FORCED_TO_TRUTH",
+    "DETERMINISTIC_REPLAY_MISMATCH",
+    "INTERNET_CALL_OBSERVED",
+    "MODEL_CALL_OBSERVED",
+    "SUBPROCESS_CALL_OBSERVED",
+    "RESOURCE_BOUND_EXCEEDED",
+    "RAW_SOURCE_CONTENT_IN_DURABLE_RECEIPT",
+    "OPERATOR_SOURCE_DELETED",
+    "HARNESS_OWNED_LEFTOVER_AFTER_PASS",
+    "BOTS_DIRECT_ADAPTER_ATTEMPT"
+  ],
+  "fixture_matrix": [
+    {"id": "valid_cic_staged_source", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "cic_digest_mismatch", "expected": "FAIL_INTEGRITY"},
+    {"id": "cic_size_mismatch", "expected": "FAIL_INTEGRITY"},
+    {"id": "cic_symlink_source", "expected": "FAIL_SECURITY"},
+    {"id": "cic_source_outside_root", "expected": "FAIL_SECURITY"},
+    {"id": "cic_benign_only", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"},
+    {"id": "cic_benign_and_attack", "expected": "PASS"},
+    {"id": "cic_replay_equality", "expected": "PASS"},
+    {"id": "lanl_auth_valid", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "lanl_process_valid", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "lanl_dns_valid", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "lanl_flow_valid", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "lanl_redteam_exact_match", "expected": "PASS_RUNNER_EXECUTION"},
+    {"id": "lanl_redteam_zero_match", "expected": "NO_TRUTH_EMITTED"},
+    {"id": "lanl_redteam_ambiguous_match", "expected": "NO_TRUTH_EMITTED"},
+    {"id": "lanl_replay_equality", "expected": "PASS"},
+    {"id": "unknown_adapter_id", "expected": "FAIL_SECURITY"},
+    {"id": "adapter_version_mismatch", "expected": "FAIL_SCHEMA"},
+    {"id": "bots_direct_request", "expected": "FAIL_SECURITY"},
+    {"id": "unmanifested_extra_file_not_opened", "expected": "PASS"},
+    {"id": "unrelated_nonempty_scratch", "expected": "FAIL_SECURITY"},
+    {"id": "cleanup_success", "expected": "PASS"},
+    {"id": "cleanup_injected_failure", "expected": "FAIL_SECURITY"},
+    {"id": "receipt_raw_content_rejected", "expected": "FAIL_SECURITY"},
+    {"id": "resource_bound_overflow", "expected": "FAIL_RESOURCE"}
+  ],
+  "pass_contract": {
+    "manifest_validated_before_source_open_percent": 100,
+    "manifest_bound_source_open_percent": 100,
+    "production_inspect_used_percent": 100,
+    "deterministic_replay_percent": 100,
+    "visible_schema_validity_percent": 100,
+    "truth_separation_percent": 100,
+    "path_escape_accepted_count": 0,
+    "digest_mismatch_accepted_count": 0,
+    "unmanifested_file_open_count": 0,
+    "dynamic_adapter_execution_count": 0,
+    "forced_redteam_zero_or_ambiguous_truth_count": 0,
+    "network_call_count": 0,
+    "model_call_count": 0,
+    "subprocess_call_count": 0,
+    "operator_source_delete_count": 0,
+    "raw_source_content_in_receipt_count": 0,
+    "cleanup_validity_percent": 100
+  },
+  "verdicts": [
+    "PASS",
+    "FAIL_SCHEMA",
+    "FAIL_INTEGRITY",
+    "FAIL_SECURITY",
+    "FAIL_PROVENANCE",
+    "FAIL_LICENSE",
+    "FAIL_RESOURCE",
+    "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+  ],
+  "real_source_completion_rule": {
+    "synthetic_runner_tests_are_sufficient_for_runner_checkpoint": true,
+    "synthetic_runner_tests_are_sufficient_for_real_source_acceptance": false,
+    "missing_real_publisher_bytes_result": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+    "fake_real_data_allowed": false
+  },
+  "definition_of_done": [
+    "RUNNER_SYNTHETIC_FILESYSTEM_HARNESS_PASS",
+    "RUNNER_PRODUCTION_ADAPTER_REPLAY_PASS",
+    "RUNNER_SECURITY_ZERO_TOLERANCE_PASS",
+    "EXACT_HEAD_4_FAMILY_CI_GREEN",
+    "RUNNER_CHECKPOINT_MERGED_TO_MAIN",
+    "REAL_SOURCE_STATUS_RECORDED_TRUTHFULLY"
+  ]
+}
