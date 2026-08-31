@@ -147,6 +147,37 @@ class PublicCorpusFetcher:
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "max_redirects must be 0..5")
         self._opener_override = opener
 
+    def _source_suffixes(self, plan: AcquisitionPlan) -> tuple[str, ...]:
+        try:
+            record = self.manager.datasets[plan.dataset_id]
+        except KeyError as exc:
+            raise PublicCorpusAcquisitionError("DATASET_UNKNOWN", "dataset disappeared from reviewed registry") from exc
+        acquisition = record.raw.get("acquisition", {})
+        if not isinstance(acquisition, dict):
+            raise PublicCorpusAcquisitionError("REGISTRY_ACQUISITION_INVALID", "dataset acquisition metadata is invalid")
+        raw_suffixes = acquisition.get("allowlisted_source_suffixes", [])
+        if not isinstance(raw_suffixes, list):
+            raise PublicCorpusAcquisitionError(
+                "REGISTRY_SUFFIX_ALLOWLIST_INVALID",
+                "allowlisted_source_suffixes must be a list",
+            )
+        suffixes: list[str] = []
+        for raw in raw_suffixes:
+            suffix = str(raw or "").strip().casefold()
+            if not suffix or len(suffix) > 32 or not suffix.startswith("."):
+                raise PublicCorpusAcquisitionError(
+                    "REGISTRY_SUFFIX_ALLOWLIST_INVALID",
+                    "source suffix allowlist entries must be bounded dot-prefixed suffixes",
+                )
+            if any(char in suffix for char in ("/", "\\", "?", "#")):
+                raise PublicCorpusAcquisitionError(
+                    "REGISTRY_SUFFIX_ALLOWLIST_INVALID",
+                    "source suffix allowlist entry contains forbidden characters",
+                )
+            if suffix not in suffixes:
+                suffixes.append(suffix)
+        return tuple(suffixes)
+
     def _validate_url(self, plan: AcquisitionPlan, raw_url: str) -> urllib.parse.SplitResult:
         try:
             parsed = urllib.parse.urlsplit(raw_url)
@@ -171,6 +202,12 @@ class PublicCorpusFetcher:
             path.startswith(prefix) for prefix in plan.allowlisted_path_prefixes
         ):
             raise PublicCorpusAcquisitionError("SOURCE_PATH_DENIED", "source path is outside the reviewed dataset allowlist")
+        suffixes = self._source_suffixes(plan)
+        if suffixes and not path.casefold().endswith(suffixes):
+            raise PublicCorpusAcquisitionError(
+                "SOURCE_SUFFIX_DENIED",
+                "source path does not end with a reviewed dataset file suffix",
+            )
         if self._deny_private:
             try:
                 answers = tuple(self._resolver(host, 443, type=socket.SOCK_STREAM))
@@ -228,6 +265,12 @@ class PublicCorpusFetcher:
 
         self._validate_url(plan, source_url)
         name = _safe_output_name(output_name)
+        suffixes = self._source_suffixes(plan)
+        if suffixes and not name.casefold().endswith(suffixes):
+            raise PublicCorpusAcquisitionError(
+                "OUTPUT_SUFFIX_DENIED",
+                "output filename does not end with a reviewed dataset file suffix",
+            )
         root = self.manager.policy.incoming_cache_root
         root.mkdir(parents=True, exist_ok=True)
         root = root.resolve(strict=True)
