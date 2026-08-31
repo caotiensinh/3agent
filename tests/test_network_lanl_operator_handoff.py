@@ -117,10 +117,16 @@ class LANLOperatorHandoffTests(unittest.TestCase):
         validator.assert_not_called()
 
     def test_reviewed_validator_is_called_once_after_all_five_handles(self) -> None:
+        captured_keys: list[tuple[str, ...]] = []
+
+        def capturing_validator(handles, *, profile):
+            captured_keys.append(tuple(handles))
+            return access.evaluate_access_handles(handles, profile=profile)
+
         with patch.object(
             handoff,
             "evaluate_access_handles",
-            wraps=access.evaluate_access_handles,
+            side_effect=capturing_validator,
         ) as validator:
             decision = handoff.collect_and_validate_handles(
                 load_profile(),
@@ -129,8 +135,7 @@ class LANLOperatorHandoffTests(unittest.TestCase):
             )
         self.assertEqual(decision.readiness, access.READY)
         validator.assert_called_once()
-        supplied = validator.call_args.args[0]
-        self.assertEqual(tuple(supplied), access.SOURCE_FAMILIES)
+        self.assertEqual(captured_keys, [access.SOURCE_FAMILIES])
 
     def _hard_failure(self, replacement: str, readiness: str, gate: str) -> None:
         values = exact_handles()
