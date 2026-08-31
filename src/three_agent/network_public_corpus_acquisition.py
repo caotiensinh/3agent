@@ -54,6 +54,19 @@ def _safe_output_name(value: str) -> str:
     return name
 
 
+def _canonical_source_path(raw_path: str) -> str:
+    try:
+        decoded = urllib.parse.unquote(raw_path or "/", errors="strict")
+    except UnicodeError as exc:
+        raise PublicCorpusAcquisitionError("SOURCE_PATH_INVALID", "source path has invalid encoding") from exc
+    if not decoded.startswith("/") or "\\" in decoded or any(ord(char) < 32 for char in decoded):
+        raise PublicCorpusAcquisitionError("SOURCE_PATH_INVALID", "source path is not a canonical URL path")
+    segments = decoded.split("/")
+    if any(segment in {".", ".."} for segment in segments):
+        raise PublicCorpusAcquisitionError("SOURCE_PATH_TRAVERSAL_DENIED", "source path contains dot traversal segments")
+    return decoded
+
+
 def _validate_public_ip(ip_text: str) -> None:
     try:
         address = ipaddress.ip_address(ip_text)
@@ -197,7 +210,7 @@ class PublicCorpusFetcher:
         host = parsed.hostname.casefold().rstrip(".")
         if host not in set(plan.allowlisted_hosts):
             raise PublicCorpusAcquisitionError("SOURCE_HOST_DENIED", "source host is not in the reviewed dataset allowlist")
-        path = parsed.path or "/"
+        path = _canonical_source_path(parsed.path or "/")
         if plan.allowlisted_path_prefixes and not any(
             path.startswith(prefix) for prefix in plan.allowlisted_path_prefixes
         ):
