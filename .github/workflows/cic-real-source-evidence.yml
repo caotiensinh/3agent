@@ -2,6 +2,25 @@ name: cic-real-source-evidence
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/cic-real-source-evidence.yml'
+      - 'src/three_agent/network_cic_real_source_evidence.py'
+      - 'src/three_agent/network_cic_adapter.py'
+      - 'src/three_agent/network_corpus_adapter.py'
+      - 'src/three_agent/network_real_source_runner.py'
+      - 'src/three_agent/network_real_source_acceptance_contract.py'
+      - 'src/three_agent/network_lanl_adapter.py'
+      - 'src/three_agent/network_lanl_dns_adapter.py'
+      - 'src/three_agent/network_lanl_flow_adapter.py'
+      - 'src/three_agent/network_lanl_process_adapter.py'
+      - 'src/three_agent/network_lanl_redteam_matcher.py'
+      - 'evaluation/network_v3_02e_cic_real_source_ci_v1.json'
+      - 'config/network-datasets.registry.json'
+      - 'config/network-data-policy.json'
+      - 'docs/WORKSPACE_NETWORK_V3_02E_CIC_REAL_SOURCE_CI_SPEC_V1.md'
+      - 'tests/test_network_cic_real_source_evidence.py'
+      - 'tests/test_cic_real_source_trigger_scope.py'
+      - 'pyproject.toml'
   push:
     branches: [main]
   workflow_dispatch:
