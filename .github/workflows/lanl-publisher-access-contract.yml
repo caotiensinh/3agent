@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/lanl-publisher-access-contract.yml'
       - 'tests/test_network_lanl_publisher_access.py'
+      - 'tests/test_network_lanl_publisher_access_workflow_scope.py'
       - 'evaluation/network_v3_02e_lanl_publisher_access_v1.json'
       - 'pyproject.toml'
       - 'src/three_agent/__init__.py'
