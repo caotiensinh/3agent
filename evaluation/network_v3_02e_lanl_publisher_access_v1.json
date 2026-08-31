@@ -1,0 +1,228 @@
+{
+  "schema_version": "workspace-network-v3-02e-lanl-publisher-access/v1",
+  "phase": "V3-02E-LANL-PUBLISHER-ACCESS",
+  "status": "HARNESS_FROZEN_BEFORE_ACCESS_VALIDATOR_CODE",
+  "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_LANL_PUBLISHER_ACCESS_SPEC_V1.md",
+  "prerequisite_main_sha": "18ddedf8b5c714fb3144bc051133fab9d8e3d49f",
+  "publisher": {
+    "landing_page": "https://csr.lanl.gov/data/cyber1/",
+    "scheme": "https",
+    "host": "csr.lanl.gov",
+    "allowed_port": 443,
+    "path_prefix": "/data/",
+    "enrollment_required": true,
+    "automated_form_submission_authorized": false,
+    "operator_email_required_by_publisher": true,
+    "operator_intended_use_required_by_publisher": true,
+    "operator_identity_or_form_content_may_be_fabricated": false,
+    "operator_form_content_may_be_durable": false
+  },
+  "required_sources": [
+    {
+      "source_family": "auth",
+      "filename": "auth.txt.gz",
+      "publisher_listed_size": "7.2G",
+      "scorer_only": false,
+      "adapter_id": "lanl-comprehensive-auth",
+      "adapter_version": "lanl-comprehensive-auth/0.1"
+    },
+    {
+      "source_family": "process",
+      "filename": "proc.txt.gz",
+      "publisher_listed_size": "2.2G",
+      "scorer_only": false,
+      "adapter_id": "lanl-comprehensive-process",
+      "adapter_version": "lanl-comprehensive-process/0.1"
+    },
+    {
+      "source_family": "flow",
+      "filename": "flows.txt.gz",
+      "publisher_listed_size": "1.1G",
+      "scorer_only": false,
+      "adapter_id": "lanl-comprehensive-flow",
+      "adapter_version": "lanl-comprehensive-flow/0.1"
+    },
+    {
+      "source_family": "dns",
+      "filename": "dns.txt.gz",
+      "publisher_listed_size": "177M",
+      "scorer_only": false,
+      "adapter_id": "lanl-comprehensive-dns",
+      "adapter_version": "lanl-comprehensive-dns/0.1"
+    },
+    {
+      "source_family": "redteam",
+      "filename": "redteam.txt.gz",
+      "publisher_listed_size": "4.8K",
+      "scorer_only": true,
+      "adapter_id": "lanl-comprehensive-redteam-truth-matcher",
+      "adapter_version": "lanl-comprehensive-redteam-truth-matcher/0.1"
+    }
+  ],
+  "access_handle_contract": {
+    "input_is_ephemeral_only": true,
+    "raw_handle_may_be_committed": false,
+    "raw_handle_may_be_logged": false,
+    "raw_handle_may_be_artifacted": false,
+    "required_scheme": "https",
+    "required_host": "csr.lanl.gov",
+    "required_path_prefix": "/data/",
+    "embedded_userinfo_allowed": false,
+    "query_allowed": false,
+    "fragment_allowed": false,
+    "redirect_to_alternate_host_allowed": false,
+    "all_five_families_required_for_readiness": true
+  },
+  "durable_output": {
+    "allowed_keys": [
+      "schema_version",
+      "phase",
+      "readiness",
+      "failed_gate_ids",
+      "publisher_reference",
+      "validated_source_families",
+      "missing_source_families",
+      "contract_fingerprint",
+      "receipt_fingerprint"
+    ],
+    "forbidden_keys": [
+      "email",
+      "email_address",
+      "intended_use",
+      "purpose",
+      "form_content",
+      "access_url",
+      "download_url",
+      "direct_url",
+      "raw_url",
+      "query",
+      "fragment",
+      "credential",
+      "credentials",
+      "password",
+      "token",
+      "cookie",
+      "session",
+      "authorization"
+    ],
+    "max_bytes": 65536
+  },
+  "readiness_states": [
+    "READY_FOR_LANL_EXECUTION_SPEC",
+    "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+    "FAIL_SECURITY",
+    "FAIL_PROVENANCE",
+    "FAIL_SCHEMA",
+    "FAIL_LICENSE"
+  ],
+  "not_enough_rules": [
+    "LANL_ACCESS_HANDLE_MISSING",
+    "LANL_SOURCE_FAMILY_MISSING"
+  ],
+  "zero_tolerance_gates": [
+    "LANL_ENROLLMENT_BYPASS_ATTEMPT",
+    "LANL_OPERATOR_IDENTITY_FABRICATED",
+    "LANL_OPERATOR_FORM_CONTENT_PERSISTED",
+    "LANL_MIRROR_OR_ALTERNATE_HOST",
+    "LANL_FILENAME_MISMATCH",
+    "LANL_ACCESS_HANDLE_HAS_CREDENTIAL_AUTHORITY",
+    "LANL_UNREVIEWED_QUERY_OR_FRAGMENT",
+    "LANL_ACCESS_HANDLE_IN_DURABLE_OUTPUT",
+    "LANL_ACQUISITION_ATTEMPT_BEFORE_EXECUTION_SPEC",
+    "LANL_REDTEAM_TRUTH_USED_TO_SELECT_VISIBLE_SOURCE",
+    "BOTS_DIRECT_ADAPTER_ATTEMPT",
+    "V3_03_STARTED_BEFORE_LANL_REAL_SOURCE_PASS"
+  ],
+  "fixture_matrix": [
+    {
+      "id": "no_operator_access_handles",
+      "expected_readiness": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+      "expected_gate": "LANL_ACCESS_HANDLE_MISSING"
+    },
+    {
+      "id": "partial_four_of_five_handles",
+      "expected_readiness": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+      "expected_gate": "LANL_SOURCE_FAMILY_MISSING"
+    },
+    {
+      "id": "all_five_valid_exact_publisher_handles",
+      "expected_readiness": "READY_FOR_LANL_EXECUTION_SPEC"
+    },
+    {
+      "id": "http_not_https",
+      "expected_readiness": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "alternate_or_mirror_host",
+      "expected_readiness": "FAIL_PROVENANCE",
+      "expected_gate": "LANL_MIRROR_OR_ALTERNATE_HOST"
+    },
+    {
+      "id": "embedded_userinfo",
+      "expected_readiness": "FAIL_SECURITY",
+      "expected_gate": "LANL_ACCESS_HANDLE_HAS_CREDENTIAL_AUTHORITY"
+    },
+    {
+      "id": "query_or_fragment",
+      "expected_readiness": "FAIL_SECURITY",
+      "expected_gate": "LANL_UNREVIEWED_QUERY_OR_FRAGMENT"
+    },
+    {
+      "id": "filename_family_mismatch",
+      "expected_readiness": "FAIL_PROVENANCE",
+      "expected_gate": "LANL_FILENAME_MISMATCH"
+    },
+    {
+      "id": "path_outside_data_prefix",
+      "expected_readiness": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "path_traversal_or_encoded_traversal",
+      "expected_readiness": "FAIL_SECURITY"
+    },
+    {
+      "id": "operator_email_or_form_text_in_receipt",
+      "expected_readiness": "FAIL_SECURITY",
+      "expected_gate": "LANL_OPERATOR_FORM_CONTENT_PERSISTED"
+    },
+    {
+      "id": "raw_access_handle_in_receipt",
+      "expected_readiness": "FAIL_SECURITY",
+      "expected_gate": "LANL_ACCESS_HANDLE_IN_DURABLE_OUTPUT"
+    },
+    {
+      "id": "redteam_driven_visible_slice_request",
+      "expected_readiness": "FAIL_SECURITY",
+      "expected_gate": "LANL_REDTEAM_TRUTH_USED_TO_SELECT_VISIBLE_SOURCE"
+    }
+  ],
+  "execution_authority": {
+    "network_acquisition_authorized_in_this_checkpoint": false,
+    "corpus_download_authorized_in_this_checkpoint": false,
+    "bounded_derivation_authorized_in_this_checkpoint": false,
+    "production_runner_authorized_in_this_checkpoint": false,
+    "v3_03_authorized": false
+  },
+  "next_phase_requirements": {
+    "requires_readiness": "READY_FOR_LANL_EXECUTION_SPEC",
+    "freeze_new_goal_spec_harness_pass_fail_fixtures_before_acquisition_code": true,
+    "must_define_parent_gzip_integrity": true,
+    "must_define_deterministic_bounded_derivation": true,
+    "must_define_relative_time_semantics": true,
+    "must_define_question_mark_missing_semantics": true,
+    "must_define_redteam_auth_exact_match_without_truth_driven_visible_selection": true,
+    "must_define_parent_and_bounded_cleanup": true
+  },
+  "promotion_gate": {
+    "required_ci_families": [
+      "lanl-publisher-access-contract",
+      "harness-ci",
+      "installer-ci",
+      "portable-deploy-ci",
+      "windows-deploy-ci"
+    ],
+    "all_must_succeed_on_same_exact_head": true,
+    "main_reconcile_required_if_advanced": true,
+    "pass_with_warning_allowed": false
+  }
+}
