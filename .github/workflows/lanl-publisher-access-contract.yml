@@ -2,6 +2,22 @@ name: lanl-publisher-access-contract
 
 on:
   pull_request:
+    paths:
+      - '.github/workflows/lanl-publisher-access-contract.yml'
+      - 'tests/test_network_lanl_publisher_access.py'
+      - 'tests/test_network_lanl_publisher_access_workflow_scope.py'
+      - 'evaluation/network_v3_02e_lanl_publisher_access_v1.json'
+      - 'pyproject.toml'
+      - 'src/three_agent/__init__.py'
+      - 'src/three_agent/network_lanl_publisher_access.py'
+      - 'src/three_agent/network_lanl_adapter.py'
+      - 'src/three_agent/network_lanl_dns_adapter.py'
+      - 'src/three_agent/network_lanl_flow_adapter.py'
+      - 'src/three_agent/network_lanl_process_adapter.py'
+      - 'src/three_agent/network_lanl_redteam_matcher.py'
+      - 'src/three_agent/network_lanl_family.py'
+      - 'src/three_agent/network_corpus_adapter.py'
+      - 'src/three_agent/network_real_source_acceptance_contract.py'
   push:
     branches: [main]
   workflow_dispatch:
