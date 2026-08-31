@@ -50,13 +50,21 @@ def _manager_with_temp_roots(root: Path) -> NetworkDatasetManager:
     return NetworkDatasetManager.load(policy_path=policy_path, registry_path=registry_path)
 
 
+def _checked_in_ctu_record() -> dict:
+    registry = json.loads(
+        (ROOT / "config/network-datasets.registry.json").read_text(encoding="utf-8")
+    )
+    matches = [item for item in registry["datasets"] if item.get("id") == "ctu-13"]
+    if len(matches) != 1:
+        raise AssertionError("checked-in registry must contain exactly one ctu-13 record")
+    return matches[0]
+
+
 class PublicCorpusSuffixPolicyTests(unittest.TestCase):
     def test_checked_in_ctu_registry_allows_only_binetflow_source_suffix(self):
-        manager = NetworkDatasetManager.load(
-            policy_path=ROOT / "config/network-data-policy.json",
-            registry_path=ROOT / "config/network-datasets.registry.json",
-        )
-        acquisition = manager.datasets["ctu-13"].raw["acquisition"]
+        # This is a registry-shape assertion. Do not instantiate the Linux
+        # deployment policy merely to inspect portable registry metadata.
+        acquisition = _checked_in_ctu_record()["acquisition"]
         self.assertEqual(acquisition["allowlisted_source_suffixes"], [".binetflow"])
 
     def test_ctu_executable_url_is_denied_before_network_open(self):
