@@ -5,7 +5,7 @@ import json
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from .network_corpus_adapter import EvidenceRecord
@@ -37,6 +37,14 @@ def _parse_timestamp(value: str | None) -> datetime:
         return datetime.fromisoformat(value)
     except ValueError as exc:
         raise NetworkSecurityIntelligenceError("flow evidence timestamp must be ISO-8601") from exc
+
+
+def _stable_epoch_seconds(value: datetime) -> float:
+    # Naive dataset timestamps intentionally retain unknown timezone. Treat their
+    # calendar values as a timezone-neutral axis instead of consulting host TZ.
+    if value.tzinfo is None:
+        return (value - datetime(1970, 1, 1)).total_seconds()
+    return (value.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds()
 
 
 def _text(fields: dict[str, Any], key: str) -> str | None:
@@ -145,9 +153,8 @@ class NetworkSecuritySignal:
             "authority": "advisory",
             "ground_truth_used": False,
         }
-        signal_id = "nsi_" + _canonical_sha256(identity)[7:31]
         return cls(
-            signal_id=signal_id,
+            signal_id="nsi_" + _canonical_sha256(identity)[7:31],
             signal_type=signal_type,
             severity=severity,
             subject=subject,
@@ -229,11 +236,12 @@ class NetworkSecurityIntelligenceAnalyzer:
     def _views(self, records: Iterable[EvidenceRecord]) -> list[FlowView]:
         views: list[FlowView] = []
         for record in records:
+            view = FlowView.from_evidence(record)
+            if view is None:
+                continue
             if len(views) >= self.config.max_records:
                 raise NetworkSecurityIntelligenceError("analysis record budget exceeded")
-            view = FlowView.from_evidence(record)
-            if view is not None:
-                views.append(view)
+            views.append(view)
         views.sort(key=lambda item: (item.timestamp, item.evidence_id))
         return views
 
@@ -241,7 +249,6 @@ class NetworkSecurityIntelligenceAnalyzer:
         views = self._views(records)
         if not views:
             return ()
-
         signals: list[NetworkSecuritySignal] = []
         signals.extend(self._large_outbound(views))
         signals.extend(self._windowed_behavior(views))
@@ -255,9 +262,7 @@ class NetworkSecurityIntelligenceAnalyzer:
             if item.total_bytes is None or item.source_bytes is None or item.total_bytes <= 0:
                 continue
             ratio = item.source_bytes / item.total_bytes
-            if item.source_bytes < self.config.large_outbound_bytes:
-                continue
-            if ratio < self.config.large_outbound_source_ratio:
+            if item.source_bytes < self.config.large_outbound_bytes or ratio < self.config.large_outbound_source_ratio:
                 continue
             result.append(
                 NetworkSecuritySignal.build(
@@ -286,7 +291,7 @@ class NetworkSecurityIntelligenceAnalyzer:
     def _windowed_behavior(self, views: list[FlowView]) -> list[NetworkSecuritySignal]:
         buckets: dict[tuple[str, int], list[FlowView]] = defaultdict(list)
         for item in views:
-            bucket_id = int(item.timestamp.timestamp()) // self.config.window_seconds
+            bucket_id = int(_stable_epoch_seconds(item.timestamp)) // self.config.window_seconds
             buckets[(item.source_address, bucket_id)].append(item)
 
         result: list[NetworkSecuritySignal] = []
@@ -294,7 +299,6 @@ class NetworkSecurityIntelligenceAnalyzer:
             start = items[0].timestamp
             end = items[-1].timestamp
             sample_ids = [item.evidence_id for item in items[:64]]
-
             if len(items) >= self.config.burst_flow_count:
                 result.append(
                     NetworkSecuritySignal.build(
@@ -315,84 +319,74 @@ class NetworkSecurityIntelligenceAnalyzer:
             per_dst_ids: dict[str, list[str]] = defaultdict(list)
             per_port_ids: dict[str, list[str]] = defaultdict(list)
             for item in items:
-                if item.destination_port:
-                    per_dst_ports[item.destination_address].add(item.destination_port)
-                    if len(per_dst_ids[item.destination_address]) < 64:
-                        per_dst_ids[item.destination_address].append(item.evidence_id)
-                    per_port_dsts[item.destination_port].add(item.destination_address)
-                    if len(per_port_ids[item.destination_port]) < 64:
-                        per_port_ids[item.destination_port].append(item.evidence_id)
+                if not item.destination_port:
+                    continue
+                per_dst_ports[item.destination_address].add(item.destination_port)
+                if len(per_dst_ids[item.destination_address]) < 64:
+                    per_dst_ids[item.destination_address].append(item.evidence_id)
+                per_port_dsts[item.destination_port].add(item.destination_address)
+                if len(per_port_ids[item.destination_port]) < 64:
+                    per_port_ids[item.destination_port].append(item.evidence_id)
 
             for destination, ports in sorted(per_dst_ports.items()):
-                if len(ports) < self.config.port_scan_distinct_ports:
-                    continue
-                ids = per_dst_ids[destination]
-                result.append(
-                    NetworkSecuritySignal.build(
-                        signal_type="VERTICAL_PORT_FANOUT",
-                        severity="HIGH",
-                        subject=source,
-                        window_start=start,
-                        window_end=end,
-                        evidence_ids=ids,
-                        evidence_count=sum(1 for item in items if item.destination_address == destination),
-                        metrics={
-                            "destination_address": destination,
-                            "distinct_destination_ports": len(ports),
-                            "window_seconds": self.config.window_seconds,
-                        },
-                        rationale=(
-                            "The source contacted many distinct destination ports on one host inside a bounded window. "
-                            "Treat as scan-like behavior pending corroboration."
-                        ),
+                if len(ports) >= self.config.port_scan_distinct_ports:
+                    result.append(
+                        NetworkSecuritySignal.build(
+                            signal_type="VERTICAL_PORT_FANOUT",
+                            severity="HIGH",
+                            subject=source,
+                            window_start=start,
+                            window_end=end,
+                            evidence_ids=per_dst_ids[destination],
+                            evidence_count=sum(1 for item in items if item.destination_address == destination),
+                            metrics={
+                                "destination_address": destination,
+                                "distinct_destination_ports": len(ports),
+                                "window_seconds": self.config.window_seconds,
+                            },
+                            rationale=(
+                                "The source contacted many distinct destination ports on one host inside a bounded window. "
+                                "Treat as scan-like behavior pending corroboration."
+                            ),
+                        )
                     )
-                )
 
             for destination_port, destinations in sorted(per_port_dsts.items()):
-                if len(destinations) < self.config.host_fanout_distinct_destinations:
-                    continue
-                ids = per_port_ids[destination_port]
-                result.append(
-                    NetworkSecuritySignal.build(
-                        signal_type="HORIZONTAL_HOST_FANOUT",
-                        severity="HIGH",
-                        subject=source,
-                        window_start=start,
-                        window_end=end,
-                        evidence_ids=ids,
-                        evidence_count=sum(1 for item in items if item.destination_port == destination_port),
-                        metrics={
-                            "destination_port": destination_port,
-                            "distinct_destinations": len(destinations),
-                            "window_seconds": self.config.window_seconds,
-                        },
-                        rationale=(
-                            "The source contacted the same destination port across many hosts inside a bounded window. "
-                            "Treat as host-discovery/scan-like behavior pending corroboration."
-                        ),
+                if len(destinations) >= self.config.host_fanout_distinct_destinations:
+                    result.append(
+                        NetworkSecuritySignal.build(
+                            signal_type="HORIZONTAL_HOST_FANOUT",
+                            severity="HIGH",
+                            subject=source,
+                            window_start=start,
+                            window_end=end,
+                            evidence_ids=per_port_ids[destination_port],
+                            evidence_count=sum(1 for item in items if item.destination_port == destination_port),
+                            metrics={
+                                "destination_port": destination_port,
+                                "distinct_destinations": len(destinations),
+                                "window_seconds": self.config.window_seconds,
+                            },
+                            rationale=(
+                                "The source contacted the same destination port across many hosts inside a bounded window. "
+                                "Treat as host-discovery/scan-like behavior pending corroboration."
+                            ),
+                        )
                     )
-                )
         return result
 
     def _beaconing(self, views: list[FlowView]) -> list[NetworkSecuritySignal]:
         groups: dict[tuple[str, str, str | None, str | None], list[FlowView]] = defaultdict(list)
         for item in views:
-            key = (
-                item.source_address,
-                item.destination_address,
-                item.destination_port,
-                item.protocol,
-            )
-            groups[key].append(item)
+            groups[(item.source_address, item.destination_address, item.destination_port, item.protocol)].append(item)
 
         result: list[NetworkSecuritySignal] = []
         for key, items in sorted(groups.items(), key=lambda pair: tuple(str(x) for x in pair[0])):
             if len(items) < self.config.beacon_min_samples:
                 continue
-            times = [item.timestamp for item in items]
             intervals = [
-                (right - left).total_seconds()
-                for left, right in zip(times, times[1:])
+                (right.timestamp - left.timestamp).total_seconds()
+                for left, right in zip(items, items[1:])
             ]
             if not intervals or any(value <= 0 for value in intervals):
                 continue
