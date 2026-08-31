@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,6 +37,7 @@ from three_agent.network_lanl_redteam_matcher import (
 )
 from three_agent.network_real_source_acceptance_contract import (
     FAIL_INTEGRITY,
+    FAIL_RESOURCE,
     FAIL_SCHEMA,
     FAIL_SECURITY,
     MANIFEST_SCHEMA,
@@ -56,6 +58,7 @@ POLICY_FINGERPRINT = "sha256:" + "a" * 64
 ACQUISITION_RECEIPT = "sha256:" + "d" * 64
 SPEC_FINGERPRINT = "sha256:" + "e" * 64
 EXACT_HEAD = "1" * 40
+NON_LINUX_RSS_SKIP = "V3-02E production runner requires Linux peak RSS measurement"
 
 
 def load_json(path: Path) -> dict:
@@ -191,6 +194,28 @@ class RunnerFixture:
         self.temp.cleanup()
 
     def run(self, manifest: dict, source_paths: dict[str, str | Path]):
+        try:
+            return self.runner.run(
+                manifest=manifest,
+                acceptance_profile=self.acceptance_profile,
+                registry=self.registry,
+                policy_fingerprint=POLICY_FINGERPRINT,
+                source_paths=source_paths,
+                authorized_root=self.sources,
+                scratch_root=self.scratch,
+                exact_head_sha=EXACT_HEAD,
+                spec_fingerprint=SPEC_FINGERPRINT,
+            )
+        except RealSourceRunnerError as exc:
+            if (
+                not sys.platform.startswith("linux")
+                and exc.verdict == FAIL_RESOURCE
+                and exc.gate_id == "RUNNER_RESOURCE_MEASUREMENT_UNAVAILABLE"
+            ):
+                raise unittest.SkipTest(NON_LINUX_RSS_SKIP) from exc
+            raise
+
+    def run_production_contract(self, manifest: dict, source_paths: dict[str, str | Path]):
         return self.runner.run(
             manifest=manifest,
             acceptance_profile=self.acceptance_profile,
@@ -333,6 +358,18 @@ class OfflineRealSourceRunnerTests(unittest.TestCase):
         result = self.fx.run(manifest, paths)
         self.assertEqual(result.decision.verdict, NOT_ENOUGH_REAL_SOURCE_EVIDENCE)
         self.assertIn("CIC_MISSING_NON_BENIGN_TRUTH", result.decision.failed_gate_ids)
+
+    def test_non_linux_runner_fails_closed_without_peak_rss_measurement(self) -> None:
+        if sys.platform.startswith("linux"):
+            self.skipTest("non-Linux resource boundary contract")
+        manifest, paths, _ = self.fx.cic_manifest()
+        with self.assertRaises(RealSourceRunnerError) as caught:
+            self.fx.run_production_contract(manifest, paths)
+        self.assertEqual(caught.exception.verdict, FAIL_RESOURCE)
+        self.assertEqual(
+            caught.exception.gate_id,
+            "RUNNER_RESOURCE_MEASUREMENT_UNAVAILABLE",
+        )
 
     def test_digest_mismatch_fails_integrity_and_preserves_source(self) -> None:
         manifest, paths, source = self.fx.cic_manifest()
