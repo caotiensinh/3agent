@@ -1,0 +1,184 @@
+name: cic-real-source-evidence
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cic-real-source-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: true
+
+env:
+  EXACT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+  CIC_BUCKET: cse-cic-ids2018
+  CIC_REGION: ca-central-1
+  CIC_OBJECT_KEY: Processed Traffic Data for ML Algorithms/Thursday-01-03-2018_TrafficForML_CICFlowMeter.csv
+  CIC_MAX_PARENT_BYTES: '268435456'
+
+jobs:
+  real-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact feature head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install project dependencies
+        run: python -m pip install -e .
+
+      - name: Verify CIC evidence harness before network acquisition
+        run: python -m unittest tests.test_network_cic_real_source_evidence -v
+
+      - name: Verify unsigned S3 client availability
+        run: aws --version
+
+      - name: Prepare job-scoped acquisition roots
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          root="$RUNNER_TEMP/cic-real-source"
+          rm -rf -- "$root"
+          mkdir -p "$root/source-root" "$root/scratch" "$root/evidence"
+          {
+            echo "CIC_ROOT=$root"
+            echo "CIC_SOURCE_ROOT=$root/source-root"
+            echo "CIC_SCRATCH_ROOT=$root/scratch"
+            echo "CIC_EVIDENCE_DIR=$root/evidence"
+            echo "CIC_PARENT_PATH=$root/source-root/parent.csv"
+            echo "CIC_BOUNDED_PATH=$root/source-root/bounded.first-250000.csv"
+            echo "CIC_HEAD_METADATA=$root/head-object.json"
+          } >> "$GITHUB_ENV"
+
+      - name: Head exact official CIC S3 object without credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          aws s3api head-object \
+            --bucket "$CIC_BUCKET" \
+            --key "$CIC_OBJECT_KEY" \
+            --region "$CIC_REGION" \
+            --no-sign-request \
+            > "$CIC_HEAD_METADATA"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          metadata = json.loads(Path(os.environ["CIC_HEAD_METADATA"]).read_text(encoding="utf-8"))
+          size = metadata.get("ContentLength")
+          etag = metadata.get("ETag")
+          last_modified = metadata.get("LastModified")
+          maximum = int(os.environ["CIC_MAX_PARENT_BYTES"])
+          if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+              raise SystemExit("invalid official S3 ContentLength")
+          if size > maximum:
+              raise SystemExit("official CIC parent exceeds frozen 256 MiB bound")
+          for field, value in (("ETag", etag), ("LastModified", last_modified)):
+              if not isinstance(value, str) or not value.strip() or any(ord(ch) < 32 for ch in value):
+                  raise SystemExit(f"invalid official S3 {field}")
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as handle:
+              handle.write(f"CIC_HEAD_SIZE={size}\n")
+              handle.write(f"CIC_ETAG={etag}\n")
+              handle.write(f"CIC_LAST_MODIFIED={last_modified}\n")
+          PY
+
+      - name: Download exact official CIC parent object unsigned
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          aws s3 cp \
+            "s3://$CIC_BUCKET/$CIC_OBJECT_KEY" \
+            "$CIC_PARENT_PATH" \
+            --region "$CIC_REGION" \
+            --no-sign-request \
+            --only-show-errors
+          test -f "$CIC_PARENT_PATH"
+          test ! -L "$CIC_PARENT_PATH"
+          actual_size="$(stat -c '%s' "$CIC_PARENT_PATH")"
+          test "$actual_size" -eq "$CIC_HEAD_SIZE"
+          test "$actual_size" -le "$CIC_MAX_PARENT_BYTES"
+
+      - name: Derive bounded shard and run production offline evidence path
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m three_agent.network_cic_real_source_evidence \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --profile "$GITHUB_WORKSPACE/evaluation/network_v3_02e_cic_real_source_ci_v1.json" \
+            --source-root "$CIC_SOURCE_ROOT" \
+            --parent-source "$CIC_PARENT_PATH" \
+            --bounded-source "$CIC_BOUNDED_PATH" \
+            --scratch-root "$CIC_SCRATCH_ROOT" \
+            --output-dir "$CIC_EVIDENCE_DIR" \
+            --exact-head "$EXACT_HEAD" \
+            --s3-etag "$CIC_ETAG" \
+            --s3-last-modified "$CIC_LAST_MODIFIED"
+
+      - name: Validate compact PASS evidence allowlist
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["CIC_EVIDENCE_DIR"])
+          expected = {
+              "acquisition-receipt.json",
+              "acceptance-manifest.json",
+              "runner-receipt.json",
+              "evidence-summary.json",
+          }
+          actual = {path.name for path in root.iterdir() if path.is_file()}
+          if actual != expected:
+              raise SystemExit(f"durable evidence allowlist mismatch: {sorted(actual)}")
+          if any(path.is_dir() for path in root.iterdir()):
+              raise SystemExit("durable evidence directory may not contain nested content")
+          summary = json.loads((root / "evidence-summary.json").read_text(encoding="utf-8"))
+          receipt = json.loads((root / "acquisition-receipt.json").read_text(encoding="utf-8"))
+          if summary.get("verdict") != "PASS":
+              raise SystemExit("real CIC evidence did not PASS")
+          count = receipt.get("bounded_data_record_count")
+          if isinstance(count, bool) or not isinstance(count, int) or not (1 <= count <= 250000):
+              raise SystemExit("bounded record count violates frozen budget")
+          if summary.get("bounded_source_sha256") != receipt.get("bounded_source_sha256"):
+              raise SystemExit("bounded source digest not consistently bound")
+          if summary.get("parent_source_sha256") != receipt.get("parent_source_sha256"):
+              raise SystemExit("parent source digest not consistently bound")
+          PY
+
+      - name: Upload compact CIC evidence metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cic-real-source-evidence-${{ env.EXACT_HEAD }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ env.CIC_EVIDENCE_DIR }}/acquisition-receipt.json
+            ${{ env.CIC_EVIDENCE_DIR }}/acceptance-manifest.json
+            ${{ env.CIC_EVIDENCE_DIR }}/runner-receipt.json
+            ${{ env.CIC_EVIDENCE_DIR }}/evidence-summary.json
+
+      - name: Always remove CIC source bytes
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          root="${CIC_ROOT:-$RUNNER_TEMP/cic-real-source}"
+          rm -rf -- "$root"
+          test ! -e "$root"
