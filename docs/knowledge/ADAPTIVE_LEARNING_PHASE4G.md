@@ -41,6 +41,14 @@ registered research_handoff_json
  + exact admitted SHA-256 match
                 |
                 v
+parent higher-priority/resource gate
+ + explicit higher-priority-work signal
+ + existing ResourceBudgetManager
+ + serialized generation
+ + zero resource queue wait
+ + hard <=90% VRAM policy remains authoritative
+                |
+                v
 Phase 4B ReflectionCoordinator.reflect_and_stage()
                 |
                 +-- NO_LEARNING_VALUE
@@ -54,9 +62,31 @@ Phase 4B ReflectionCoordinator.reflect_and_stage()
 
 `AdaptiveLearningSchedulerConfig.enabled` defaults to `False`.
 
-A disabled `run_once()` returns a metadata-only disabled receipt before source discovery, manifest access, evidence access, receipt-store access or model invocation. Phase 4G is not wired into normal `Orchestrator` startup and does not create a service, thread, timer or daemon loop.
+A disabled `run_once()` returns a metadata-only disabled receipt before source discovery, manifest access, evidence access, receipt-store access, resource admission or model invocation. Phase 4G is not wired into normal `Orchestrator` startup and does not create a service, thread, timer or daemon loop.
 
-Production operators may construct the scheduler explicitly through `AdaptiveLearningScheduler.from_local_runtime(...)` and invoke one tick when policy permits.
+Production operators may construct the scheduler explicitly through `AdaptiveLearningScheduler.from_local_runtime(...)` and invoke one tick when policy permits. Enabled construction additionally requires an existing `ResourceBudgetManager` and a trusted `higher_priority_work_pending()` signal. Missing resource/priority policy fails closed.
+
+## Foreground and resource priority
+
+Background Reflection is lower priority than foreground chat/work and explicit user research/artifact work.
+
+The isolated Reflection Worker intentionally does not receive a resource manager or foreground-state reader. Phase 4G therefore enforces resource safety in the trusted parent immediately before `ReflectionCoordinator.reflect_and_stage()`.
+
+`LocalBackgroundReflectionResourcePolicy` requires:
+
+- the existing resource budget is enabled;
+- serialized generation is enabled;
+- `queue_wait_seconds == 0` for the background admission path;
+- the resource manager uses a loopback Ollama endpoint;
+- an explicit trusted boolean signal indicating whether higher-priority work is pending.
+
+The priority signal is checked both before resource admission and again after serialized admission. This prevents a background model call from starting when foreground/user work is already active or became pending while a prior foreground generation held the shared generation lock.
+
+Resource admission remains the existing `ResourceBudgetManager.admit(model)` contract. Its hard per-GPU safety logic keeps the 90% VRAM ceiling authoritative. `ResourceAdmissionError` is converted to the metadata-only `SCHEDULER_RESOURCE_ADMISSION_DENIED` reason before Phase 4B claims a reflection receipt or invokes the worker.
+
+Resource or higher-priority denial stops additional background reflection attempts for the current bounded tick. There is no same-tick retry loop and no larger-model escalation.
+
+Phase 4G does not add GPU probing, `nvidia-smi`, resource reservations, or model admission logic to the isolated child. Those remain parent-owned responsibilities.
 
 ## Explicit domain policy
 
@@ -123,6 +153,8 @@ The registered manifest is passed to the existing Phase 4A `DeterministicLearnin
 
 A task that changed state after scheduler discovery therefore still fails admission.
 
+Phase 4A.1 classification-stable admission identity remains authoritative. Scheduler deduplication continues to use the authoritative `admission_id`; caller-only sensitivity upgrades do not manufacture a second source identity.
+
 ## Evidence resolution
 
 Current production evidence validation records SHA-256 of the Research handoff and Research Agent records the corresponding `research_handoff_json` path in `TaskStore`.
@@ -140,11 +172,11 @@ The Phase 4B content broker then independently repeats exact-set and digest vali
 
 ## No-repeat and crash behavior
 
-Before reading evidence, Phase 4G checks the existing Phase 4B `ReflectionReceiptStore` for the exact `(admission_id, domain)` pair.
+Before reading evidence or requesting resource admission, Phase 4G checks the existing Phase 4B `ReflectionReceiptStore` for the exact `(admission_id, domain)` pair.
 
-- `completed` -> `SKIPPED / REFLECTION_ALREADY_COMPLETED`; no evidence load and no model call.
+- `completed` -> `SKIPPED / REFLECTION_ALREADY_COMPLETED`; no evidence load, resource admission or model call.
 - `claimed` -> `RECOVERY_REQUIRED / REFLECTION_CLAIM_RECOVERY_REQUIRED`; no silent replay.
-- no receipt -> normal Phase 4B flow.
+- no receipt -> continue through evidence verification and the parent resource gate.
 
 A concurrent race after preflight is still handled by the Phase 4B exclusive receipt claim and the same fail-closed reason codes.
 
@@ -152,7 +184,7 @@ A concurrent race after preflight is still handled by the Phase 4B exclusive rec
 
 ## Per-source failure isolation
 
-One source failure does not create an automatic retry and does not abort the rest of the bounded tick.
+Ordinary source-validation failures do not create an automatic retry and do not abort the rest of the bounded tick. Resource/priority denial is different: because it represents tick-wide capacity/priority state, it stops additional background model attempts for that tick.
 
 Scheduler outcomes contain only metadata:
 
@@ -173,7 +205,7 @@ Phase 4G introduces no method or object for:
 - archive/rollback/key rotation;
 - checkpoint operator mutation;
 - shell execution;
-- additional subprocess execution beyond the existing Phase 4B worker;
+- additional subprocess execution beyond the existing Phase 4B worker and the already-existing parent resource-budget implementation;
 - public/LAN research;
 - credentials;
 - package installation;
@@ -187,7 +219,7 @@ Existing Phase 4E authenticated human/domain reviewer requirements remain author
 
 ## Secret data
 
-`secret` Reflection remains unsupported and fails before evidence loading or model invocation. Phase 4G does not weaken the Phase 4B secret boundary.
+`secret` Reflection remains unsupported and fails before evidence loading, resource admission or model invocation. Phase 4G does not weaken the Phase 4B secret boundary.
 
 ## Non-goals
 
@@ -203,4 +235,5 @@ Phase 4G does not implement:
 - model-weight training/fine-tuning;
 - vector DB/embedding retrieval;
 - Internet/LAN learning egress;
-- Git/deployment authority.
+- Git/deployment authority;
+- resource-budget bypass or a second GPU admission algorithm.
