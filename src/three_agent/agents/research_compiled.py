@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from dataclasses import replace
 from typing import Any
 
+from ..adaptive_learning_contract import DOMAINS
 from ..adaptive_learning_retrieval import (
     LearningContext,
     LearningRetrievalGateway,
@@ -12,6 +13,7 @@ from ..adaptive_learning_retrieval import (
 )
 from ..prompt_ledger import PromptCompilationLedger
 from ..public_query_compiler import compile_public_search_queries
+from ..task_contract import SENSITIVITIES
 from .research_ranked import ResearchAgent as _RankedResearchAgent
 
 
@@ -57,6 +59,10 @@ class ResearchAgent(_RankedResearchAgent):
     queries and is attached only to the local synthesis objective as untrusted
     reference data. Therefore learned content cannot become public-search egress,
     system/developer authority, or execution capability.
+
+    The retrieval domain is trusted agent configuration. The task sensitivity is
+    never a constructor default: it is read from the exact bound TaskContract for
+    each task immediately before retrieval, preventing learned-context downgrade.
     """
 
     def __init__(
@@ -64,13 +70,29 @@ class ResearchAgent(_RankedResearchAgent):
         *args: Any,
         learning_retrieval: LearningRetrievalGateway | None = None,
         learning_domain: str = "analyst",
-        learning_sensitivity: str = "confidential",
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
+        normalized_domain = str(learning_domain or "").strip().lower()
+        if normalized_domain not in DOMAINS:
+            raise ValueError("unsupported learning retrieval domain")
         self.learning_retrieval = learning_retrieval
-        self.learning_domain = learning_domain
-        self.learning_sensitivity = learning_sensitivity
+        self.learning_domain = normalized_domain
+
+    @staticmethod
+    def _task_learning_sensitivity(store: Any, task_id: str) -> str:
+        loader = getattr(store, "task_contract_for_task", None)
+        if not callable(loader):
+            raise ValueError("bound TaskContract is required for learned retrieval")
+        payload = loader(task_id)
+        if not isinstance(payload, dict):
+            raise ValueError("bound TaskContract is required for learned retrieval")
+        sensitivity = str(payload.get("sensitivity") or "").strip().lower()
+        if sensitivity not in SENSITIVITIES:
+            raise ValueError("bound TaskContract sensitivity is invalid")
+        if str(payload.get("task_id") or "").strip() != task_id:
+            raise ValueError("bound TaskContract task_id mismatch")
+        return sensitivity
 
     def _plan(self, title: str, request: str) -> tuple[str, list[str], list[str]]:
         # Learned context MUST NOT be added here. Planning output may cross the
@@ -117,10 +139,11 @@ class ResearchAgent(_RankedResearchAgent):
         context: LearningContext | None = None
         if live and self.learning_retrieval is not None:
             try:
+                task_sensitivity = self._task_learning_sensitivity(store, task_id)
                 query = LearningRetrievalQuery(
                     query=compilation.compiled_text,
                     domain=self.learning_domain,
-                    task_sensitivity=self.learning_sensitivity,
+                    task_sensitivity=task_sensitivity,
                 )
                 context = self.learning_retrieval.retrieve(query)
             except Exception as exc:
