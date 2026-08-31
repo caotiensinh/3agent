@@ -346,7 +346,9 @@ class OfflineRealSourceRunnerTests(unittest.TestCase):
 
     def test_size_mismatch_fails_integrity(self) -> None:
         manifest, paths, _ = self.fx.cic_manifest()
-        manifest["sources"][0]["bounded_source_size_bytes"] += 1
+        source = manifest["sources"][0]
+        source["bounded_source_size_bytes"] += 1
+        source["parent_source_size_bytes"] = source["bounded_source_size_bytes"] + 1
         with self.assertRaises(RealSourceRunnerError) as caught:
             self.fx.run(manifest, paths)
         self.assertEqual(caught.exception.verdict, FAIL_INTEGRITY)
