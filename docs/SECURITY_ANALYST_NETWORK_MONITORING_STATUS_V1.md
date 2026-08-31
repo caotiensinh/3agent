@@ -1,12 +1,19 @@
 # WorkSpace Security Analyst & Network Monitoring — Research Status v1
 
-Status: **RESEARCH COMPLETE / STACKED IMPLEMENTATION VERIFIED**
+Status: **RESEARCH COMPLETE / STACKED IMPLEMENTATION VERIFIED / CURRENT-MAIN REVALIDATION IN PROGRESS**
 
 This branch remains a documentation-only research/design package. It contains no runtime implementation and grants no real-LAN, packet-capture, credential, remediation, or network-mutation authority.
 
 Runtime implementation exists separately on stacked PR #105 (`feature/security-analyst-network-monitoring-v001`). That implementation has completed its branch-scoped synthetic/exact-head verification, but it remains Draft and is not yet part of `main`.
 
 `NS1-18` real-LAN acceptance remains intentionally unperformed and must not be inferred from synthetic or CI evidence.
+
+Current integration revalidation base:
+
+- `main`: `18ddedf8b5c714fb3144bc051133fab9d8e3d49f`
+- reason for revalidation: `main` advanced after the previous PR #102 merge-ref CI evidence;
+- previous merge-ref CI remains historical evidence only and must not be reused as final merge evidence for the current base;
+- no runtime code, real-LAN execution, packet capture, credential access, or network mutation is introduced by this status update.
 
 Next integration milestone:
 
