@@ -110,7 +110,9 @@ def _positive_int(value: Any, field: str) -> int:
 
 
 def _sha(value: Any, field: str, *, verdict: str = FAIL_PROVENANCE) -> str:
-    text = _bounded(value, field, 71).lower()
+    if not isinstance(value, str):
+        raise RealSourceAcceptanceError(verdict, "DIGEST_FORMAT", f"{field} is invalid")
+    text = value.strip().lower()
     if len(text) != 71 or not text.startswith("sha256:"):
         raise RealSourceAcceptanceError(verdict, "DIGEST_FORMAT", f"{field} is invalid")
     try:
