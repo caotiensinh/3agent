@@ -10,8 +10,9 @@ Runtime implementation exists separately on stacked PR #105 (`feature/security-a
 
 Current integration revalidation base:
 
-- `main`: `18ddedf8b5c714fb3144bc051133fab9d8e3d49f`
-- reason for revalidation: `main` advanced after the previous PR #102 merge-ref CI evidence;
+- `main`: `c6d5f236ea7595f8fa684b30e5d3b61ddbe4c7ad`
+- CI infrastructure fix #143 is now on `main`; CIC real-source pull-request execution is scoped to explicit CIC material dependencies while exact-head provenance remains unchanged;
+- this Security Analyst documentation namespace is intentionally outside the CIC real-source trigger scope;
 - previous merge-ref CI remains historical evidence only and must not be reused as final merge evidence for the current base;
 - no runtime code, real-LAN execution, packet capture, credential access, or network mutation is introduced by this status update.
 
