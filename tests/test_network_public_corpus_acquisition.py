@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -163,7 +164,10 @@ class PublicCorpusAcquisitionTests(unittest.TestCase):
             self.assertTrue(receipt.source_sha256.startswith("sha256:"))
             staged = Path(receipt.destination_path)
             self.assertEqual(staged.read_bytes(), payload)
-            self.assertIn(str(root / "incoming"), str(staged))
+            # Compare filesystem identity instead of textual path spelling. Windows
+            # may return an 8.3 alias (RUNNER~1) for one side and the long form
+            # (runneradmin) for the other even though both name the same directory.
+            self.assertTrue(os.path.samefile(staged.parents[2], root / "incoming"))
             request, timeout = opener.requests[0]
             self.assertEqual(request.get_method(), "GET")
             self.assertEqual(timeout, 30)
