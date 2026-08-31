@@ -151,17 +151,23 @@ ROLLBACK_STATUS="not_required"
 DEPS_CHANGED=0
 PYPROJECT_CHANGED=0
 VENV_REPLACEMENT_REQUIRED=0
+CHAT_STOPPED_FOR_UPDATE=0
+AUTH_STATE_FILE="$CACHE_ROOT/auth-state-$BEFORE_SHA.json"
+AUTH_BACKUP="$CACHE_ROOT/auth-backup-$BEFORE_SHA.sqlite3"
+AUTH_GUARD_STATUS="not_applicable"
+AUTH_ROLLBACK_STATUS="not_required"
+AUTH_GUARD_APPLICABLE=0
 
 write_receipt() {
   local status="$1" final_sha="$2" rollback="$3" failure_stage="${4:-}"
   python3 - "$RECEIPT" "$status" "$BEFORE_SHA" "$TARGET_SHA" "$final_sha" \
     "$GPU_COUNT_BEFORE" "$DEPS_CHANGED" "$PYPROJECT_CHANGED" "$rollback" \
-    "$CHAT_WAS_ACTIVE" "$failure_stage" <<'PY'
+    "$CHAT_WAS_ACTIVE" "$failure_stage" "$AUTH_GUARD_STATUS" "$AUTH_ROLLBACK_STATUS" <<'PY'
 import json, sys
 from datetime import datetime, timezone
 from pathlib import Path
 payload = {
-    "schema_version": "workspace-linux-update/v3",
+    "schema_version": "workspace-linux-update/v4",
     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     "status": sys.argv[2],
     "from_sha": sys.argv[3],
@@ -173,6 +179,8 @@ payload = {
     "rollback": sys.argv[9],
     "chat_was_active": sys.argv[10] == "1",
     "failure_stage": sys.argv[11] or None,
+    "credential_guard": sys.argv[12],
+    "credential_rollback": sys.argv[13],
     "system_python_mutated": False,
     "driver_or_kernel_mutated": False,
     "runner_service_mutated": False,
@@ -192,12 +200,30 @@ cleanup_stage() {
   fi
 }
 
+cleanup_auth_artifacts() {
+  rm -f "$AUTH_STATE_FILE" "$AUTH_BACKUP"
+}
+
 rollback() {
-  local rc="$1" failed_stage="$UPDATE_STAGE"
+  local rc="$1" failed_stage="$UPDATE_STAGE" final_sha
   trap - EXIT ERR INT TERM
   set +e
   if [[ "$MUTATED" == "1" && "$COMMITTED" == "0" ]]; then
     warn "Update failed at stage '$failed_stage'; rolling back to $BEFORE_SHA."
+
+    if [[ "$CHAT_INSTALLED" == "1" ]]; then
+      systemctl --user stop "$CHAT_SERVICE" >/dev/null 2>&1 || true
+    fi
+
+    if [[ "$AUTH_GUARD_APPLICABLE" == "1" && -f "$AUTH_STATE_FILE" ]]; then
+      AUTH_ROLLBACK_STATUS="failed"
+      if [[ -n "$STAGE_ROOT" && -f "$STAGE_ROOT/scripts/workspace_auth_guard.py" ]] \
+        && python3 "$STAGE_ROOT/scripts/workspace_auth_guard.py" restore \
+          --state "$AUTH_STATE_FILE" --backup "$AUTH_BACKUP" >/dev/null; then
+        AUTH_ROLLBACK_STATUS="restored"
+      fi
+    fi
+
     cd "$ROOT" || true
     git reset --hard "$BEFORE_SHA" >/dev/null 2>&1 || true
     if [[ "$VENV_SWAPPED" == "1" && -n "$OLD_VENV" && -d "$OLD_VENV" ]]; then
@@ -211,9 +237,14 @@ rollback() {
     ROLLBACK_STATUS="attempted"
     final_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf '%s' "$BEFORE_SHA")"
     if [[ "$final_sha" == "$BEFORE_SHA" && -x "$ROOT/.venv/bin/python" ]]; then
-      ROLLBACK_STATUS="restored"
+      if [[ "$AUTH_GUARD_APPLICABLE" == "0" || "$AUTH_ROLLBACK_STATUS" == "restored" ]]; then
+        ROLLBACK_STATUS="restored"
+      fi
     fi
     write_receipt "rolled_back" "$final_sha" "$ROLLBACK_STATUS" "$failed_stage" || true
+    if [[ "$AUTH_ROLLBACK_STATUS" != "failed" ]]; then
+      cleanup_auth_artifacts
+    fi
   fi
   cleanup_stage
   exit "$rc"
@@ -236,6 +267,10 @@ UPDATE_STAGE="staged_source"
 STAGE_ROOT="$(mktemp -d "$CACHE_ROOT/source.XXXXXX")"
 rmdir "$STAGE_ROOT"
 git worktree add --detach "$STAGE_ROOT" "$TARGET_SHA" >/dev/null
+[[ -f "$STAGE_ROOT/scripts/workspace_auth_guard.py" ]] \
+  || die "Target source is missing the credential transaction guard."
+python3 -m py_compile "$STAGE_ROOT/scripts/workspace_auth_guard.py" \
+  || die "Credential transaction guard failed syntax validation."
 
 dependency_contract_sha() {
   local ref="$1"
@@ -300,12 +335,45 @@ pass "Target SHA staged validation: $TARGET_SHA"
 if [[ "$DRY_RUN" == "1" ]]; then
   write_receipt "dry_run_pass" "$BEFORE_SHA" "not_required" ""
   COMMITTED=1
-  log "DRY-RUN PASS: no checkout, venv, service, driver, kernel or runner mutation performed."
+  log "DRY-RUN PASS: no checkout, venv, service, credential, driver, kernel or runner mutation performed."
   exit 0
 fi
 
-UPDATE_STAGE="source_fast_forward"
+# Quiesce chat before touching its source or SQLite auth state. This creates a
+# deterministic update boundary and prevents bootstrap/login writes mid-transaction.
+UPDATE_STAGE="auth_guard_quiesce"
 MUTATED=1
+if [[ "$CHAT_WAS_ACTIVE" == "1" ]]; then
+  log "Temporarily stopping the previously-active WorkSpace chat service for an atomic update."
+  systemctl --user stop "$CHAT_SERVICE"
+  CHAT_STOPPED_FOR_UPDATE=1
+  systemctl --user is-active --quiet "$CHAT_SERVICE" \
+    && die "$CHAT_SERVICE remained active after stop request."
+fi
+
+UPDATE_STAGE="auth_guard_snapshot"
+rm -f "$AUTH_STATE_FILE" "$AUTH_BACKUP"
+python3 "$STAGE_ROOT/scripts/workspace_auth_guard.py" snapshot \
+  --root "$ROOT" --env "$CHAT_ENV" --backup "$AUTH_BACKUP" --state "$AUTH_STATE_FILE" \
+  || die "Unable to snapshot local credential state."
+AUTH_GUARD_APPLICABLE="$(python3 - "$AUTH_STATE_FILE" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1], encoding='utf-8'))
+print('1' if p.get('applicable') else '0')
+PY
+)"
+if [[ "$AUTH_GUARD_APPLICABLE" == "1" ]]; then
+  AUTH_GUARD_STATUS="snapshot_verified"
+  [[ -f "$AUTH_BACKUP" ]] || die "Credential guard marked applicable without a SQLite backup."
+  pass "Local credential state snapshotted without exposing password material."
+elif [[ "$CHAT_WAS_ACTIVE" == "1" ]]; then
+  die "Active WorkSpace chat has no verifiable credential database; refusing update fail-closed."
+else
+  AUTH_GUARD_STATUS="not_applicable"
+  log "Credential guard not applicable because no active auth database was found."
+fi
+
+UPDATE_STAGE="source_fast_forward"
 git merge --ff-only "$TARGET_SHA" >/dev/null
 [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]] || die "Exact target checkout verification failed."
 
@@ -339,6 +407,7 @@ if [[ "$CHAT_INSTALLED" == "1" && "$CHAT_WAS_ACTIVE" == "1" ]]; then
   UPDATE_STAGE="service_restart"
   log "Restarting the previously-active WorkSpace chat service only: $CHAT_SERVICE"
   systemctl --user restart "$CHAT_SERVICE"
+  CHAT_STOPPED_FOR_UPDATE=0
   sleep 2
   systemctl --user is-active --quiet "$CHAT_SERVICE" \
     || die "$CHAT_SERVICE did not become active after update."
@@ -346,6 +415,15 @@ elif [[ "$CHAT_INSTALLED" == "1" ]]; then
   log "Chat service exists but was inactive; preserving inactive state."
 else
   log "Chat service is not installed; preserving service topology."
+fi
+
+UPDATE_STAGE="credential_invariant_postflight"
+if [[ "$AUTH_GUARD_APPLICABLE" == "1" ]]; then
+  python3 "$ROOT/scripts/workspace_auth_guard.py" verify \
+    --root "$ROOT" --env "$CHAT_ENV" --state "$AUTH_STATE_FILE" >/dev/null \
+    || die "WorkSpace admin credential state changed during application update."
+  AUTH_GUARD_STATUS="verified"
+  pass "Credential invariant: unchanged."
 fi
 
 UPDATE_STAGE="gpu_postflight"
@@ -395,6 +473,7 @@ if [[ "$VENV_SWAPPED" == "1" && -n "$OLD_VENV" ]]; then
   rm -rf "$OLD_VENV"
   OLD_VENV=""
 fi
+cleanup_auth_artifacts
 cleanup_stage
 trap - EXIT INT TERM
 
@@ -407,6 +486,7 @@ printf 'After SHA:    %s\n' "$AFTER_SHA"
 printf 'GPU count:    %s\n' "$GPU_COUNT_BEFORE"
 printf 'Deps changed: %s\n' "$([[ "$DEPS_CHANGED" == "1" ]] && echo yes || echo no)"
 printf 'Pyproject:    %s\n' "$([[ "$PYPROJECT_CHANGED" == "1" ]] && echo changed || echo unchanged)"
+printf 'Credential:   %s\n' "$AUTH_GUARD_STATUS"
 printf 'Chat state:   %s\n' "$(systemctl --user is-active "$CHAT_SERVICE" 2>/dev/null || echo not-installed)"
 printf 'Receipt:      %s\n' "$RECEIPT"
 printf '%s\n' "NVIDIA driver/kernel and GitHub runner services were not modified."

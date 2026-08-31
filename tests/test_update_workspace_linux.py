@@ -99,11 +99,36 @@ class LinuxUpdateContractTests(unittest.TestCase):
         self.assertIn('systemctl --user restart "$CHAT_SERVICE"', text)
         self.assertIn("VENV_SWAPPED=1", text)
         self.assertIn("COMMITTED=1", text)
-        self.assertIn("workspace-linux-update/v3", text)
+        self.assertIn("workspace-linux-update/v4", text)
         self.assertIn('"failure_stage": sys.argv[11] or None', text)
         self.assertIn('failed_stage="$UPDATE_STAGE"', text)
         self.assertIn('"driver_or_kernel_mutated": False', text)
         self.assertIn('"runner_service_mutated": False', text)
+
+    def test_credential_guard_quiesces_snapshots_verifies_and_rolls_back(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        stop_pos = text.index('UPDATE_STAGE="auth_guard_quiesce"')
+        snapshot_pos = text.index('workspace_auth_guard.py" snapshot')
+        merge_pos = text.index('git merge --ff-only "$TARGET_SHA"')
+        restart_pos = text.index('UPDATE_STAGE="service_restart"')
+        verify_pos = text.index('UPDATE_STAGE="credential_invariant_postflight"')
+        self.assertLess(stop_pos, snapshot_pos)
+        self.assertLess(snapshot_pos, merge_pos)
+        self.assertLess(merge_pos, restart_pos)
+        self.assertLess(restart_pos, verify_pos)
+        self.assertIn('workspace_auth_guard.py" restore', text)
+        self.assertIn('AUTH_ROLLBACK_STATUS="restored"', text)
+        self.assertIn("Active WorkSpace chat has no verifiable credential database", text)
+        self.assertIn("Credential invariant: unchanged", text)
+
+    def test_receipt_never_contains_credential_fingerprint_or_password_material(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('"credential_guard": sys.argv[12]', text)
+        self.assertIn('"credential_rollback": sys.argv[13]', text)
+        write_receipt = text[text.index("write_receipt() {"):text.index("cleanup_stage() {")]
+        self.assertNotIn("credential_fingerprint", write_receipt)
+        self.assertNotIn("password_hash", write_receipt)
+        self.assertNotIn("password_salt", write_receipt)
 
     def test_runner_and_existing_service_topology_are_preserved(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
