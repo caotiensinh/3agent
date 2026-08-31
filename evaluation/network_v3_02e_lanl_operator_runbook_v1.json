@@ -1,0 +1,51 @@
+{
+  "schema_version": "workspace-network-lanl-operator-runbook-harness/v1",
+  "checkpoint": "V3-02E-LANL-OPERATOR-RUNBOOK",
+  "official_publisher_page": "https://csr.lanl.gov/data/cyber1/",
+  "expected_files": [
+    "auth.txt.gz",
+    "proc.txt.gz",
+    "flows.txt.gz",
+    "dns.txt.gz",
+    "redteam.txt.gz"
+  ],
+  "expected_handoff_command": "PYTHONPATH=src python -m three_agent.network_lanl_operator_handoff",
+  "expected_ready_state": "READY_FOR_LANL_EXECUTION_SPEC",
+  "blocked_real_source_state": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+  "required_sections": [
+    "Prerequisites",
+    "Official LANL enrollment step",
+    "Expected publisher source set",
+    "Safe local handoff",
+    "Result interpretation",
+    "Do not store or paste",
+    "Safe evidence to retain",
+    "Stop condition"
+  ],
+  "forbidden_patterns": [
+    "export LANL_",
+    "--url",
+    "--handle",
+    "--token",
+    "--cookie",
+    "handles.json",
+    "handles.txt",
+    "curl https://csr.lanl.gov/data/",
+    "wget https://csr.lanl.gov/data/",
+    "requests.post",
+    "selenium",
+    "playwright"
+  ],
+  "required_security_statements": [
+    "Do not paste publisher handles into GitHub, CI, chat, screenshots, shell history, environment variables, command-line arguments, or files.",
+    "READY_FOR_LANL_EXECUTION_SPEC does not authorize corpus download or execution.",
+    "Python RAM zeroization is not claimed.",
+    "V3-03 remains blocked until LANL real-source acceptance is complete."
+  ],
+  "promotion_workflows": [
+    "harness-ci",
+    "installer-ci",
+    "portable-deploy-ci",
+    "windows-deploy-ci"
+  ]
+}
