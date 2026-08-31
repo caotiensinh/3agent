@@ -11,12 +11,22 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable, Iterator
 
-from .adaptive_learning_checkpoint import LearningOperatorGateway
+from .adaptive_learning_checkpoint import (
+    LearningCheckpoint,
+    LearningCheckpointAuthority,
+    LearningCheckpointError,
+    LearningOperatorGateway,
+)
 from .adaptive_learning_contract import DOMAINS, KnowledgeCandidate, LearningValidationReceipt
 from .workspace_auth import USER_ID_RE, WorkspaceAuthStore
+
+if TYPE_CHECKING:
+    from .adaptive_learning_store import AdaptiveLearningStore
 
 PROMOTION_RESULT_SCHEMA = "workspace-adaptive-learning-promotion-result/v1"
 PROMOTION_LEVELS = {"approved", "enterprise"}
@@ -76,16 +86,14 @@ class LearningReviewerGrant:
         user_id = str(self.user_id or "").strip().lower()
         if not USER_ID_RE.fullmatch(user_id):
             raise ValueError("PROMOTION_GRANT_USER_ID_INVALID")
-        if not self.allowed_levels or len(set(self.allowed_levels)) != len(self.allowed_levels):
+        levels = tuple(str(value or "").strip().lower() for value in self.allowed_levels)
+        if not levels or len(set(levels)) != len(levels) or any(
+            value not in PROMOTION_LEVELS for value in levels
+        ):
             raise ValueError("PROMOTION_GRANT_LEVELS_INVALID")
-        for level in self.allowed_levels:
-            if str(level or "").strip().lower() not in PROMOTION_LEVELS:
-                raise ValueError("PROMOTION_GRANT_LEVELS_INVALID")
-        if len(set(self.reviewer_domains)) != len(self.reviewer_domains):
+        domains = tuple(str(value or "").strip().lower() for value in self.reviewer_domains)
+        if len(set(domains)) != len(domains) or any(value not in DOMAINS for value in domains):
             raise ValueError("PROMOTION_GRANT_DOMAINS_INVALID")
-        for domain in self.reviewer_domains:
-            if str(domain or "").strip().lower() not in DOMAINS:
-                raise ValueError("PROMOTION_GRANT_DOMAINS_INVALID")
         return self
 
     @property
@@ -123,6 +131,59 @@ class LearningReviewerAuthorizationPolicy:
         if grant is None:
             raise LearningPromotionAuthorizationError("PROMOTION_REVIEWER_NOT_AUTHORIZED")
         return grant
+
+
+class PromotionBoundCheckpointAuthority(LearningCheckpointAuthority):
+    """Phase 4E expected-state binding layered on the existing checkpoint authority.
+
+    The base authority remains responsible for verification, locking, mutation
+    delta checks, journal append and witness advancement. This subclass only
+    places a one-shot expected checkpoint into thread-local ceremony state.
+    ``_verify_store`` consumes and checks it while the base ``_mutate`` lock is
+    already held, before the store operation executes.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.__promotion_expectation = threading.local()
+
+    @contextmanager
+    def expect_promotion(
+        self,
+        *,
+        sequence: int,
+        state_sha256: str,
+    ) -> Iterator[None]:
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
+            raise LearningCheckpointError("PROMOTION_EXPECTED_SEQUENCE_INVALID")
+        state = _state_sha256(state_sha256)
+        if getattr(self.__promotion_expectation, "value", None) is not None:
+            raise LearningCheckpointError("PROMOTION_EXPECTATION_ALREADY_ACTIVE")
+        self.__promotion_expectation.value = (sequence, state)
+        try:
+            yield
+        finally:
+            self.__promotion_expectation.value = None
+
+    def _mutate(self, store: "AdaptiveLearningStore", *, mutation_kind: str, **kwargs):
+        expectation = getattr(self.__promotion_expectation, "value", None)
+        if expectation is not None and mutation_kind != "promote":
+            raise LearningCheckpointError("PROMOTION_EXPECTATION_MUTATION_KIND_MISMATCH")
+        return super()._mutate(store, mutation_kind=mutation_kind, **kwargs)
+
+    def _verify_store(self, store: "AdaptiveLearningStore") -> LearningCheckpoint:
+        checkpoint = super()._verify_store(store)
+        expectation = getattr(self.__promotion_expectation, "value", None)
+        if expectation is None:
+            return checkpoint
+        # Consume only at the pre-mutation verification reached by base _mutate.
+        self.__promotion_expectation.value = None
+        expected_sequence, expected_state = expectation
+        if checkpoint.sequence != expected_sequence:
+            raise LearningCheckpointError("PROMOTION_EXPECTED_SEQUENCE_MISMATCH")
+        if checkpoint.state_sha256 != expected_state:
+            raise LearningCheckpointError("PROMOTION_EXPECTED_STATE_MISMATCH")
+        return checkpoint
 
 
 @dataclass(frozen=True)
@@ -168,11 +229,13 @@ class AuthenticatedLearningPromotionService:
     def __init__(
         self,
         auth: WorkspaceAuthStore,
-        operator: LearningOperatorGateway,
+        store: "AdaptiveLearningStore",
+        authority: PromotionBoundCheckpointAuthority,
         reviewer_policy: LearningReviewerAuthorizationPolicy,
     ) -> None:
         self.__auth = auth
-        self.__operator = operator
+        self.__authority = authority
+        self.__operator = LearningOperatorGateway(store, authority)
         self.__reviewer_policy = reviewer_policy
 
     def _principal(self, session_token: str, client_ip: str) -> tuple[dict, LearningReviewerGrant]:
@@ -250,7 +313,7 @@ class AuthenticatedLearningPromotionService:
             raise LearningPromotionAuthorizationError("PROMOTION_RECEIPT_CANDIDATE_MISMATCH")
 
         # Reviewer identities in an incoming receipt are assertions, not authority.
-        # They may only name the principal that is authenticated for this ceremony.
+        # They may only name the principal authenticated for this ceremony.
         if receipt.human_reviewer_id not in {None, actor}:
             raise LearningPromotionAuthorizationError("PROMOTION_HUMAN_REVIEWER_MISMATCH")
         if receipt.domain_reviewer_id not in {None, actor}:
@@ -261,24 +324,23 @@ class AuthenticatedLearningPromotionService:
         bound_receipt = replace(
             receipt,
             human_reviewer_id=actor,
-            domain_reviewer_id=(
-                actor if candidate.domain in grant.normalized_domains else None
-            ),
+            domain_reviewer_id=(actor if candidate.domain in grant.normalized_domains else None),
         ).validate()
         receipt_sha256 = _canonical_sha256(bound_receipt.to_payload())
 
-        # The expected checkpoint is checked again inside the authority mutation
-        # lock by Phase 4E checkpoint support. A successful mutation therefore
-        # consumes this ceremony state; replay fails closed.
-        self.__operator.promote(
-            candidate.candidate_id,
-            target_level=level,
-            receipt=bound_receipt,
-            actor_id=actor,
-            reason_code="AUTHENTICATED_PROMOTION_GATE_PASSED",
-            expected_checkpoint_sequence=ceremony.expected_checkpoint_sequence,
-            expected_state_sha256=ceremony.expected_state_sha256,
-        )
+        # The expectation is checked and consumed by _verify_store while the
+        # inherited checkpoint mutation lock is held and before store.promote.
+        with self.__authority.expect_promotion(
+            sequence=ceremony.expected_checkpoint_sequence,
+            state_sha256=ceremony.expected_state_sha256,
+        ):
+            self.__operator.promote(
+                candidate.candidate_id,
+                target_level=level,
+                receipt=bound_receipt,
+                actor_id=actor,
+                reason_code="AUTHENTICATED_PROMOTION_GATE_PASSED",
+            )
         after = self.__operator.verify()
         return {
             "schema_version": PROMOTION_RESULT_SCHEMA,
