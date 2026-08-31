@@ -226,7 +226,7 @@ class AdaptiveLearningAdmissionTests(unittest.TestCase):
             ):
                 DeterministicLearningAdmission(store).admit(task.task_id, path)
 
-    def test_sensitivity_cannot_be_downgraded(self):
+    def test_sensitivity_cannot_be_downgraded_or_duplicate_source_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             store, _, task, _, path, _ = self._fixture(root)
@@ -235,10 +235,23 @@ class AdaptiveLearningAdmissionTests(unittest.TestCase):
                 LearningAdmissionError, "LEARNING_SENSITIVITY_DOWNGRADE_DENIED"
             ):
                 gate.admit(task.task_id, path, requested_sensitivity="internal")
+
+            baseline = gate.admit(task.task_id, path)
             upgraded = gate.admit(
                 task.task_id, path, requested_sensitivity="restricted"
             )
+            self.assertEqual(baseline.sensitivity, "confidential")
             self.assertEqual(upgraded.sensitivity, "restricted")
+            self.assertEqual(baseline.admission_id, upgraded.admission_id)
+            self.assertNotEqual(
+                baseline.provenance_sha256,
+                upgraded.provenance_sha256,
+            )
+            self.assertEqual(baseline.evidence_hashes, upgraded.evidence_hashes)
+            self.assertEqual(
+                baseline.validator_provenance_sha256,
+                upgraded.validator_provenance_sha256,
+            )
 
     def test_envelope_contains_hashes_not_raw_request_paths_or_authority(self):
         with tempfile.TemporaryDirectory() as tmp:

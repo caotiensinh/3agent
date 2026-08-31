@@ -323,7 +323,17 @@ class DeterministicLearningAdmission:
             "evidence_hashes": list(evidence_hashes),
         }
         provenance_sha256 = _digest(provenance_payload)
-        admission_id = "admission:" + provenance_sha256.split(":", 1)[1]
+
+        # Effective classification is audit provenance, not a source-identity
+        # dimension. A trusted caller may raise classification without creating a
+        # second trusted experience from the same authoritative source. Reusing the
+        # historical provenance shape with the bound contract sensitivity keeps
+        # default (non-upgraded) admission IDs backward-compatible.
+        source_identity_payload = dict(provenance_payload)
+        source_identity_payload["sensitivity"] = contract.sensitivity
+        source_identity_sha256 = _digest(source_identity_payload)
+        admission_id = "admission:" + source_identity_sha256.split(":", 1)[1]
+
         envelope = VerifiedLearningSourceEnvelope(
             admission_id=admission_id,
             task_id=task_id,

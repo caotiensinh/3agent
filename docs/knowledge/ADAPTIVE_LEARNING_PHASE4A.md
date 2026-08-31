@@ -111,31 +111,39 @@ This avoids leaking local paths and prevents weak path identity from being treat
 
 The exact `manifest_sha256` remains in the envelope for audit, but **does not control trusted-experience identity**.
 
-The deterministic `admission_id` is derived from authoritative provenance:
+Phase 4A distinguishes two hashes:
+
+- `provenance_sha256` binds the exact effective envelope classification and therefore remains useful for audit;
+- `admission_id` binds the authoritative source identity and uses the bound TaskContract sensitivity, so a caller-only classification upgrade cannot manufacture another trusted experience.
+
+The source identity basis is:
 
 ```text
 task identity/status
  + contract SHA
  + complete validator-event provenance SHA
  + recomputed verification
- + sensitivity/risk
+ + bound TaskContract sensitivity/risk
  + final content-addressed evidence hashes
        |
        v
-provenance SHA-256
+source identity SHA-256
        |
        v
 admission:<digest>
 ```
 
+For the normal case where the caller does not raise classification, this retains the historical Phase 4A hash shape and therefore keeps existing default admission IDs backward-compatible.
+
 Consequences:
 
 - repeated admission with identical authoritative provenance returns the same ID;
 - changing non-authoritative manifest bytes changes `manifest_sha256` but does not manufacture a new trusted experience;
+- raising only effective classification changes audit `provenance_sha256` but not `admission_id`;
 - changing validator/evidence provenance makes the old manifest stale;
 - after deterministic reevaluation, genuinely changed authoritative provenance receives a new admission ID.
 
-This specifically reduces repeated self-reinforcement from replaying the same successful task with cosmetically different manifests.
+This specifically reduces repeated self-reinforcement from replaying the same successful task with cosmetically different manifests or classification-only rewrapping.
 
 ## Sensitivity monotonicity
 
@@ -146,6 +154,8 @@ A trusted caller may request stricter classification, never weaker classificatio
 ```text
 public < internal < confidential < restricted < secret
 ```
+
+A stricter requested classification is retained in the envelope and bound by `provenance_sha256`, but it is not a new source-experience identity dimension. Reclassification therefore cannot by itself create another `admission_id` for the same authoritative evidence.
 
 ## No capability transfer
 
@@ -188,10 +198,11 @@ Tests cover:
 6. manifest task/verification tamper rejection;
 7. raw-request-field and invalid-time rejection;
 8. sensitivity downgrade rejection and stricter-classification allowance;
-9. raw request, credential-looking content, artifact paths, timestamps and authority fields absent from envelope;
-10. non-authority manifest change changes only manifest audit SHA, not trusted-experience identity;
-11. new validator provenance makes an old manifest stale;
-12. reevaluated authoritative provenance produces a new admission ID.
+9. classification-only upgrades preserve `admission_id` while changing effective-classification provenance;
+10. raw request, credential-looking content, artifact paths, timestamps and authority fields absent from envelope;
+11. non-authority manifest change changes only manifest audit SHA, not trusted-experience identity;
+12. new validator provenance makes an old manifest stale;
+13. reevaluated authoritative provenance produces a new admission ID.
 
 ## Still intentionally absent
 
