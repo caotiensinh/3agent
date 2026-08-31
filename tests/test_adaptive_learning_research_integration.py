@@ -3,11 +3,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from three_agent.adaptive_learning_retrieval import LearningContext, LearningContextItem
 from three_agent.agents.research_compiled import ResearchAgent, _ACTIVE_LEARNING_CONTEXT
 from three_agent.agents.research_ranked import ResearchAgent as RankedResearchAgent
+from three_agent.prompt_ledger import PromptCompilationLedger
 
 
 H1 = "sha256:" + "1" * 64
@@ -17,6 +19,36 @@ H2 = "sha256:" + "2" * 64
 class _DummyLLM:
     def generate_json(self, *args, **kwargs):
         return {}
+
+
+class _CaptureRetrievalGateway:
+    def __init__(self):
+        self.queries = []
+
+    def retrieve(self, query):
+        self.queries.append(query)
+        return LearningContext(
+            query_sha256=query.query_sha256,
+            domain=query.domain,
+            task_sensitivity=query.task_sensitivity,
+            items=(),
+        ).validate()
+
+
+class _BoundContractStore:
+    def __init__(self, db_path: Path, *, sensitivity="internal"):
+        # PromptCompilationLedger binds to the store path during construction even
+        # when compile_and_bind() itself is mocked by these focused integration
+        # tests. Give the fixture the same minimal storage surface as TaskStore.
+        self.db_path = Path(db_path)
+        self.sensitivity = sensitivity
+        self.activities = []
+
+    def task_contract_for_task(self, task_id):
+        return {"task_id": task_id, "sensitivity": self.sensitivity}
+
+    def record_activity(self, *args):
+        self.activities.append(args)
 
 
 class AdaptiveLearningResearchIntegrationTests(unittest.TestCase):
@@ -126,7 +158,7 @@ class AdaptiveLearningResearchIntegrationTests(unittest.TestCase):
                 _ACTIVE_LEARNING_CONTEXT.reset(token)
             self.assertEqual(parent.call_args.args[2], "ORIGINAL OBJECTIVE")
 
-    def test_constructor_policy_is_trusted_configuration_not_model_output(self):
+    def test_constructor_domain_is_trusted_configuration_not_model_output(self):
         with tempfile.TemporaryDirectory() as tmp:
             profiles = Path(tmp) / "profiles"
             profiles.mkdir(parents=True, exist_ok=True)
@@ -137,11 +169,67 @@ class AdaptiveLearningResearchIntegrationTests(unittest.TestCase):
                 _DummyLLM(),
                 learning_retrieval=marker,
                 learning_domain="security",
-                learning_sensitivity="restricted",
             )
             self.assertIs(agent.learning_retrieval, marker)
             self.assertEqual(agent.learning_domain, "security")
-            self.assertEqual(agent.learning_sensitivity, "restricted")
+            with self.assertRaisesRegex(ValueError, "unsupported learning retrieval domain"):
+                ResearchAgent(
+                    profiles,
+                    _DummyLLM(),
+                    learning_retrieval=marker,
+                    learning_domain="model_selected",
+                )
+
+    def test_run_binds_retrieval_sensitivity_from_exact_task_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir(parents=True, exist_ok=True)
+            (profiles / "agent_research.md").write_text("SYSTEM PROFILE", encoding="utf-8")
+            gateway = _CaptureRetrievalGateway()
+            agent = ResearchAgent(
+                profiles,
+                _DummyLLM(),
+                learning_retrieval=gateway,
+                learning_domain="analyst",
+            )
+            store = _BoundContractStore(root / "state.db", sensitivity="internal")
+            with patch.object(
+                PromptCompilationLedger,
+                "compile_and_bind",
+                return_value=SimpleNamespace(compiled_text="LOCAL COMPILED REQUEST"),
+            ), patch.object(RankedResearchAgent, "run", return_value="ok"):
+                result = agent.run("task:bound", store, object(), live=True)
+
+            self.assertEqual(result, "ok")
+            self.assertEqual(len(gateway.queries), 1)
+            self.assertEqual(gateway.queries[0].domain, "analyst")
+            self.assertEqual(gateway.queries[0].task_sensitivity, "internal")
+
+    def test_invalid_or_missing_bound_contract_disables_learning_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profiles = root / "profiles"
+            profiles.mkdir(parents=True, exist_ok=True)
+            (profiles / "agent_research.md").write_text("SYSTEM PROFILE", encoding="utf-8")
+            gateway = _CaptureRetrievalGateway()
+            agent = ResearchAgent(
+                profiles,
+                _DummyLLM(),
+                learning_retrieval=gateway,
+                learning_domain="analyst",
+            )
+            store = _BoundContractStore(root / "state.db", sensitivity="invalid")
+            with patch.object(
+                PromptCompilationLedger,
+                "compile_and_bind",
+                return_value=SimpleNamespace(compiled_text="LOCAL COMPILED REQUEST"),
+            ), patch.object(RankedResearchAgent, "run", return_value="ok"):
+                result = agent.run("task:bound", store, object(), live=True)
+
+            self.assertEqual(result, "ok")
+            self.assertEqual(gateway.queries, [])
+            self.assertTrue(any(activity[2] == "learning_retrieval_blocked" for activity in store.activities))
 
 
 if __name__ == "__main__":
