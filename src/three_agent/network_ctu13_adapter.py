@@ -23,31 +23,13 @@ CTU13_ADAPTER_ID = "ctu-13-bidirectional-netflow"
 CTU13_ADAPTER_VERSION = "ctu-13-bidirectional-netflow/0.1"
 CTU13_MAX_VISIBLE_RECORDS = 250_000
 
-# Reviewed against the publisher's CTU-13 FAQ for Argus/ra bidirectional
-# flow output. Schema drift fails closed rather than guessing aliases.
 CTU13_COLUMNS = (
-    "StartTime",
-    "Dur",
-    "Proto",
-    "SrcAddr",
-    "Sport",
-    "Dir",
-    "DstAddr",
-    "Dport",
-    "State",
-    "sTos",
-    "dTos",
-    "TotPkts",
-    "TotBytes",
-    "SrcBytes",
-    "Label",
+    "StartTime", "Dur", "Proto", "SrcAddr", "Sport", "Dir", "DstAddr",
+    "Dport", "State", "sTos", "dTos", "TotPkts", "TotBytes", "SrcBytes", "Label",
 )
-
 CTU13_TIMESTAMP_FORMATS = (
-    "%Y/%m/%d %H:%M:%S.%f",
-    "%Y/%m/%d %H:%M:%S",
-    "%Y-%m-%d %H:%M:%S.%f",
-    "%Y-%m-%d %H:%M:%S",
+    "%Y/%m/%d %H:%M:%S.%f", "%Y/%m/%d %H:%M:%S",
+    "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
 )
 
 
@@ -95,8 +77,6 @@ def _normalize_timestamp(raw: str) -> str:
             parsed = datetime.strptime(value, fmt)
         except ValueError:
             continue
-        # CTU-13 text flows do not encode a timezone. Preserve that uncertainty
-        # rather than inventing UTC.
         return parsed.isoformat(timespec="microseconds").rstrip("0").rstrip(".")
     raise CTU13AdapterSchemaError("invalid required StartTime value")
 
@@ -104,11 +84,7 @@ def _normalize_timestamp(raw: str) -> str:
 def _nonnegative_number(raw: str, field: str, *, integer: bool) -> int | float:
     value = _bounded_text(raw, field, max_len=64)
     try:
-        parsed: int | float
-        if integer:
-            parsed = int(value, 10)
-        else:
-            parsed = float(value)
+        parsed: int | float = int(value, 10) if integer else float(value)
     except ValueError as exc:
         raise CTU13AdapterSchemaError(f"required numeric field {field!r} is invalid") from exc
     if isinstance(parsed, float) and not math.isfinite(parsed):
@@ -192,15 +168,11 @@ class CTU13BidirectionalFlowAdapter:
             raise CTU13AdapterSchemaError(f"adapter requires variant={CTU13_VARIANT}")
         if contract.adapter_version != self.adapter_version:
             raise CTU13AdapterSchemaError("adapter version in input contract does not match runtime adapter")
-
         inspection = inspect_staged_source(
-            source_path,
-            authorized_root=authorized_root,
-            contract=contract,
+            source_path, authorized_root=authorized_root, contract=contract
         )
         self._bound_contract = contract
         self._bound_authorized_root = Path(authorized_root).resolve(strict=True)
-
         with Path(source_path).open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
             try:
@@ -224,7 +196,6 @@ class CTU13BidirectionalFlowAdapter:
             raise CTU13AdapterSchemaError("inspection adapter version mismatch")
         if self._bound_contract is None or self._bound_authorized_root is None:
             raise CTU13AdapterSchemaError("inspect() must succeed before iterate()")
-
         rebound = inspect_staged_source(
             source_path,
             authorized_root=self._bound_authorized_root,
@@ -247,13 +218,11 @@ class CTU13BidirectionalFlowAdapter:
                 if len(row) != len(CTU13_COLUMNS):
                     self._reject("ROW_COLUMN_COUNT", malformed=True)
                     continue
-
                 values = dict(zip(CTU13_COLUMNS, row))
                 label = values.pop("Label").strip()
                 if not label:
                     self._reject("LABEL_MISSING", malformed=True)
                     continue
-
                 try:
                     timestamp = _normalize_timestamp(values.pop("StartTime"))
                     duration = _nonnegative_number(values.pop("Dur"), "Dur", integer=False)
@@ -272,7 +241,6 @@ class CTU13BidirectionalFlowAdapter:
                 except CTU13AdapterSchemaError:
                     self._reject("ROW_REQUIRED_FIELD_INVALID", malformed=True)
                     continue
-
                 if values:
                     self._reject("ROW_UNCONSUMED_FIELDS", malformed=True)
                     continue
@@ -282,21 +250,6 @@ class CTU13BidirectionalFlowAdapter:
                 if self._records_emitted >= self.max_visible_records:
                     raise CTU13AdapterResourceError("visible record budget exceeded")
 
-                observations = {
-                    "duration_seconds": duration,
-                    "protocol": protocol,
-                    "source_address": src_addr,
-                    "source_port": src_port,
-                    "direction": direction,
-                    "destination_address": dst_addr,
-                    "destination_port": dst_port,
-                    "state": state,
-                    "source_tos": source_tos,
-                    "destination_tos": destination_tos,
-                    "total_packets": total_packets,
-                    "total_bytes": total_bytes,
-                    "source_bytes": source_bytes,
-                }
                 evidence = EvidenceRecord.build(
                     dataset_id=CTU13_DATASET_ID,
                     source_domain="network_flow",
@@ -305,21 +258,31 @@ class CTU13BidirectionalFlowAdapter:
                     adapter_version=self.adapter_version,
                     record_ordinal=ordinal,
                     timestamp=timestamp,
-                    asset_refs=[src_addr, dst_addr],
+                    asset_refs=list(dict.fromkeys((src_addr, dst_addr))),
                     account_refs=[],
                     network_refs=[
-                        f"src={src_addr}",
-                        f"sport={src_port or '-'}",
-                        f"dst={dst_addr}",
-                        f"dport={dst_port or '-'}",
-                        f"protocol={protocol}",
+                        f"src={src_addr}", f"sport={src_port or '-'}",
+                        f"dst={dst_addr}", f"dport={dst_port or '-'}", f"protocol={protocol}",
                     ],
                     event_family="network_flow",
                     event_type="ctu13_bidirectional_flow",
-                    observation_fields=observations,
+                    observation_fields={
+                        "duration_seconds": duration,
+                        "protocol": protocol,
+                        "source_address": src_addr,
+                        "source_port": src_port,
+                        "direction": direction,
+                        "destination_address": dst_addr,
+                        "destination_port": dst_port,
+                        "state": state,
+                        "source_tos": source_tos,
+                        "destination_tos": destination_tos,
+                        "total_packets": total_packets,
+                        "total_bytes": total_bytes,
+                        "source_bytes": source_bytes,
+                    },
                     provenance_ref=inspection.provenance_ref,
                 )
-
                 label_folded = label.casefold()
                 truth = TruthRecord.build(
                     evidence_refs=[evidence.evidence_id],
