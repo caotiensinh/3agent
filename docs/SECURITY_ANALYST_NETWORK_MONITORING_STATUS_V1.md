@@ -10,10 +10,12 @@ Runtime implementation exists separately on stacked PR #105 (`feature/security-a
 
 Current integration revalidation base:
 
-- `main`: `1cedda91012568a813ddaac014dd641c41ace77b`
-- `main` advanced again after the previous PR #102 merge-ref verification, so all earlier merge-ref readiness evidence is historical only until fresh validation completes;
-- CI infrastructure fix #143 remains on `main`; CIC real-source pull-request execution is scoped to explicit CIC material dependencies while exact-head provenance remains unchanged;
-- this Security Analyst documentation namespace remains intentionally outside the CIC real-source trigger scope;
+- `main`: `3a33c600e89f3968d67d40beee0baff99bddd9ed`
+- CI infrastructure fix #151 is now on `main` via merge commit `3d8cc60ced7450c60542fe955ce853b2e26cbf89`; LANL publisher-access pull-request execution is scoped to explicit material dependencies while exact-head provenance and fail-closed no-access semantics remain unchanged;
+- the post-merge deployed tree containing both concurrent Phase 4F changes and #151 passed LANL publisher-access, harness, installer, portable Ubuntu, Windows, and CIC real-source push-to-main verification;
+- `main` then advanced by docs-only PR #152, so prior PR #102 merge-ref evidence remains historical until this fresh validation completes;
+- CI infrastructure fix #143 remains on `main`; CIC real-source pull-request execution is scoped to explicit CIC material dependencies;
+- this Security Analyst documentation namespace is intentionally outside both CIC real-source and LANL publisher-access PR trigger scopes;
 - no runtime code, real-LAN execution, packet capture, credential access, or network mutation is introduced by this status update.
 
 Next integration milestone:
