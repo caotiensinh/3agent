@@ -38,11 +38,7 @@ class PublicCorpusAcquisitionError(RuntimeError):
 
 def _canonical_sha256(value: Any) -> str:
     encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
+        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
@@ -53,6 +49,8 @@ def _safe_output_name(value: str) -> str:
         raise PublicCorpusAcquisitionError("OUTPUT_NAME_INVALID", "output name must be bounded")
     if name in {".", ".."} or Path(name).name != name or "/" in name or "\\" in name:
         raise PublicCorpusAcquisitionError("OUTPUT_NAME_INVALID", "output name must be a basename")
+    if any(ord(char) < 32 for char in name):
+        raise PublicCorpusAcquisitionError("OUTPUT_NAME_INVALID", "output name contains control characters")
     return name
 
 
@@ -169,7 +167,9 @@ class PublicCorpusFetcher:
         if host not in set(plan.allowlisted_hosts):
             raise PublicCorpusAcquisitionError("SOURCE_HOST_DENIED", "source host is not in the reviewed dataset allowlist")
         path = parsed.path or "/"
-        if plan.allowlisted_path_prefixes and not any(path.startswith(prefix) for prefix in plan.allowlisted_path_prefixes):
+        if plan.allowlisted_path_prefixes and not any(
+            path.startswith(prefix) for prefix in plan.allowlisted_path_prefixes
+        ):
             raise PublicCorpusAcquisitionError("SOURCE_PATH_DENIED", "source path is outside the reviewed dataset allowlist")
         if self._deny_private:
             try:
@@ -195,6 +195,22 @@ class PublicCorpusFetcher:
             return urllib.request.build_opener(NoRedirect())
         handler = _SafeRedirectHandler(lambda url: self._validate_url(plan, url), self._max_redirects)
         return urllib.request.build_opener(handler)
+
+    @staticmethod
+    def _commit_no_overwrite(part: Path, target: Path) -> None:
+        # A pre-check alone is racy. Hard-link creation is atomic and fails if
+        # the target appeared after validation; both paths are in the same dir.
+        try:
+            os.link(part, target, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise PublicCorpusAcquisitionError(
+                "DESTINATION_EXISTS", "refusing to overwrite existing staged source"
+            ) from exc
+        except OSError as exc:
+            raise PublicCorpusAcquisitionError(
+                "ATOMIC_STAGE_COMMIT_FAILED", "could not atomically commit staged source"
+            ) from exc
+        part.unlink()
 
     def fetch(
         self,
@@ -229,9 +245,7 @@ class PublicCorpusFetcher:
             raise PublicCorpusAcquisitionError("TEMP_DESTINATION_EXISTS", "temporary staging path already exists")
 
         request = urllib.request.Request(
-            source_url,
-            headers={"User-Agent": "WorkSpace-Public-Corpus/0.1"},
-            method="GET",
+            source_url, headers={"User-Agent": "WorkSpace-Public-Corpus/0.1"}, method="GET"
         )
         digest = hashlib.sha256()
         written = 0
@@ -268,7 +282,7 @@ class PublicCorpusFetcher:
                     os.fsync(handle.fileno())
             if written <= 0:
                 raise PublicCorpusAcquisitionError("SOURCE_EMPTY", "downloaded source object is empty")
-            os.replace(part, target)
+            self._commit_no_overwrite(part, target)
         except PublicCorpusAcquisitionError:
             part.unlink(missing_ok=True)
             raise
@@ -306,7 +320,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("output_name")
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--registry", type=Path, default=DEFAULT_REGISTRY)
-    parser.add_argument("--purpose", choices=("experience_extraction", "training", "evaluation", "research"), default="training")
+    parser.add_argument(
+        "--purpose",
+        choices=("experience_extraction", "training", "evaluation", "research"),
+        default="training",
+    )
     parser.add_argument("--variant")
     parser.add_argument("--estimated-bytes", type=int, required=True)
     return parser
@@ -325,15 +343,26 @@ def main(argv: list[str] | None = None) -> int:
             full_sync=False,
         )
         receipt = PublicCorpusFetcher(manager).fetch(
-            plan=plan,
-            source_url=args.source_url,
-            output_name=args.output_name,
+            plan=plan, source_url=args.source_url, output_name=args.output_name
         )
         print(json.dumps(receipt.as_dict(), ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (PublicCorpusAcquisitionError, NetworkDatasetDenied, NetworkDatasetPolicyError, OSError, json.JSONDecodeError) as exc:
+    except (
+        PublicCorpusAcquisitionError,
+        NetworkDatasetDenied,
+        NetworkDatasetPolicyError,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
         reason = getattr(exc, "reason_code", exc.__class__.__name__)
-        print(json.dumps({"allowed": False, "reason_code": reason, "error": str(exc)}, ensure_ascii=False, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {"allowed": False, "reason_code": reason, "error": str(exc)},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 2
 
 
