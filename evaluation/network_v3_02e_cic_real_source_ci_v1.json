@@ -1,7 +1,7 @@
 {
   "schema_version": "workspace-network-v3-02e-cic-real-source-ci/v1",
   "phase": "V3-02E-CIC-REAL-SOURCE",
-  "status": "HARNESS_FROZEN_BEFORE_EXECUTION_CODE",
+  "status": "HARNESS_AND_FIXTURE_MATRIX_FROZEN_BEFORE_EXECUTION_CODE",
   "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_CIC_REAL_SOURCE_CI_SPEC_V1.md",
   "prerequisite_main_sha": "033b67b7531d4cd24adaa5f258c5aa42b71bdc11",
   "source": {
@@ -116,6 +116,64 @@
     "RAW_SOURCE_LEFT_AFTER_CLEANUP",
     "BOTS_DIRECT_ADAPTER_ATTEMPT",
     "EXACT_HEAD_LINEAGE_MISMATCH"
+  ],
+  "fixture_matrix": [
+    {
+      "id": "valid_official_cic_metadata_and_local_bytes",
+      "expected": "PASS_CONTRACT_AND_MANIFEST_BUILD"
+    },
+    {
+      "id": "wrong_bucket",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "wrong_object_key",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "mirror_or_signed_source",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "source_larger_than_256_mib",
+      "expected": "FAIL_RESOURCE"
+    },
+    {
+      "id": "invalid_or_mismatched_local_digest",
+      "expected": "FAIL_INTEGRITY"
+    },
+    {
+      "id": "missing_required_s3_metadata",
+      "expected": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "adapter_id_or_version_drift",
+      "expected": "FAIL_SCHEMA"
+    },
+    {
+      "id": "forbidden_raw_content_key_in_receipt_or_summary",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "executor_source_contains_network_client_authority",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "workflow_missing_always_cleanup",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "workflow_artifact_includes_raw_source",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "runner_pass",
+      "expected": "PASS"
+    },
+    {
+      "id": "runner_valid_but_coverage_insufficient",
+      "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+    }
   ],
   "promotion_gate": {
     "required_ci_families": [
