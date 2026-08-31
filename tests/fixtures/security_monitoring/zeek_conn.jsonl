@@ -1,0 +1,2 @@
+{"ts":1788091860.0,"_path":"conn","uid":"Csynthetic1","id.orig_h":"192.0.2.50","id.resp_h":"192.0.2.1","id.resp_p":443,"proto":"tcp","duration":0.12}
+{"ts":1788091920.0,"_path":"notice","uid":"Csynthetic2","note":"Synthetic::Notice"}
