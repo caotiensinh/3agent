@@ -6,16 +6,19 @@ then reuses Phase 4A admission and Phase 4B reflection/stage-only persistence.
 
 It deliberately provides only a bounded run_once() primitive. It has no daemon
 loop, promotion authority, remediation capability, Git/deployment authority, or
-network client of its own.
+network client of its own. Enabled background reflection additionally requires
+an explicit parent-side resource/priority policy before Phase 4B may claim a
+receipt or invoke the isolated model worker.
 """
 from __future__ import annotations
 
 import hashlib
 import re
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, ContextManager, Mapping, Protocol
 
 from .adaptive_learning_admission import (
     DeterministicLearningAdmission,
@@ -29,8 +32,13 @@ from .adaptive_learning_reflection_contract import (
     ReflectionContractError,
     ReflectionDomainBinding,
 )
+from .adaptive_learning_reflection_worker import (
+    ReflectionWorkerError,
+    assert_loopback_ollama_base_url,
+)
 from .artifacts import ArtifactManager
 from .models import TaskStatus
+from .resource_budget import ResourceAdmissionError, ResourceBudgetManager
 from .store import TaskStore
 
 SCHEDULER_RUN_SCHEMA = "workspace-learning-scheduler-run/v1"
@@ -42,12 +50,95 @@ _MAX_EVIDENCE_RECORDS_PER_TASK = 32
 _MAX_EVIDENCE_ITEM_BYTES = 32 * 1024
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
+_RESOURCE_STOP_REASONS = {
+    "SCHEDULER_HIGHER_PRIORITY_WORK_ACTIVE": "HIGHER_PRIORITY_WORK",
+    "SCHEDULER_PRIORITY_STATE_UNAVAILABLE": "RESOURCE_GUARD",
+    "SCHEDULER_PRIORITY_STATE_INVALID": "RESOURCE_GUARD",
+    "SCHEDULER_RESOURCE_ADMISSION_DENIED": "RESOURCE_PRESSURE",
+}
 
 
 class LearningSchedulerError(ValueError):
     def __init__(self, reason_code: str):
         self.reason_code = str(reason_code)
         super().__init__(self.reason_code)
+
+
+class BackgroundReflectionResourcePolicy(Protocol):
+    """Parent-owned guard that authorizes one background model invocation."""
+
+    def admit(self) -> ContextManager[None]: ...
+
+
+class LocalBackgroundReflectionResourcePolicy:
+    """Fail-fast local resource guard for background reflection.
+
+    The policy intentionally lives in the trusted parent. The isolated Phase 4B
+    worker receives no resource manager, foreground-state reader, shell, or new
+    authority. The supplied ResourceBudgetManager must use the existing hard
+    safety limits, serialized generation, and zero queue wait so background work
+    cannot sit on generation authority while resources are pressured.
+    """
+
+    def __init__(
+        self,
+        resource_manager: ResourceBudgetManager,
+        model: str,
+        higher_priority_work_pending: Callable[[], bool],
+    ):
+        self.resource_manager = resource_manager
+        self.model = str(model or "").strip()
+        self.higher_priority_work_pending = higher_priority_work_pending
+        if not self.model or len(self.model) > 160 or any(
+            ch in self.model for ch in "\r\n\x00"
+        ):
+            raise LearningSchedulerError("SCHEDULER_RESOURCE_MODEL_INVALID")
+        if not callable(higher_priority_work_pending):
+            raise LearningSchedulerError("SCHEDULER_PRIORITY_SIGNAL_REQUIRED")
+        config = resource_manager.config
+        if not config.enabled:
+            raise LearningSchedulerError("SCHEDULER_RESOURCE_BUDGET_DISABLED")
+        if not config.serialize_generation:
+            raise LearningSchedulerError("SCHEDULER_RESOURCE_SERIALIZATION_REQUIRED")
+        try:
+            queue_wait = float(config.queue_wait_seconds)
+        except (TypeError, ValueError) as exc:
+            raise LearningSchedulerError("SCHEDULER_RESOURCE_QUEUE_WAIT_INVALID") from exc
+        if queue_wait != 0.0:
+            raise LearningSchedulerError("SCHEDULER_RESOURCE_QUEUE_WAIT_MUST_BE_ZERO")
+        try:
+            assert_loopback_ollama_base_url(resource_manager.base_url)
+        except ReflectionWorkerError as exc:
+            raise LearningSchedulerError(
+                "SCHEDULER_RESOURCE_LOOPBACK_REQUIRED"
+            ) from exc
+
+    def _assert_higher_priority_idle(self) -> None:
+        try:
+            pending = self.higher_priority_work_pending()
+        except Exception as exc:
+            raise LearningSchedulerError(
+                "SCHEDULER_PRIORITY_STATE_UNAVAILABLE"
+            ) from exc
+        if not isinstance(pending, bool):
+            raise LearningSchedulerError("SCHEDULER_PRIORITY_STATE_INVALID")
+        if pending:
+            raise LearningSchedulerError("SCHEDULER_HIGHER_PRIORITY_WORK_ACTIVE")
+
+    @contextmanager
+    def admit(self):
+        self._assert_higher_priority_idle()
+        try:
+            with self.resource_manager.admit(self.model):
+                # Recheck after serialized admission. A foreground request may
+                # have become pending while this background caller waited for an
+                # already-running foreground generation to release the lock.
+                self._assert_higher_priority_idle()
+                yield
+        except ResourceAdmissionError as exc:
+            raise LearningSchedulerError(
+                "SCHEDULER_RESOURCE_ADMISSION_DENIED"
+            ) from exc
 
 
 @dataclass(frozen=True)
@@ -337,13 +428,20 @@ class AdaptiveLearningScheduler:
         reflection: ReflectionCoordinator,
         source_provider: LocalLearningSourceProvider,
         *,
+        resource_policy: BackgroundReflectionResourcePolicy | None = None,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.config = config.validate()
         self.admission = admission
         self.reflection = reflection
         self.source_provider = source_provider
+        self.resource_policy = resource_policy
         self.clock = clock
+        if self.config.enabled:
+            if resource_policy is None:
+                raise LearningSchedulerError("SCHEDULER_RESOURCE_POLICY_REQUIRED")
+            if not callable(getattr(resource_policy, "admit", None)):
+                raise LearningSchedulerError("SCHEDULER_RESOURCE_POLICY_INVALID")
 
     @classmethod
     def from_local_runtime(
@@ -353,13 +451,26 @@ class AdaptiveLearningScheduler:
         store: TaskStore,
         artifacts: ArtifactManager,
         reflection: ReflectionCoordinator,
+        resource_manager: ResourceBudgetManager | None = None,
+        higher_priority_work_pending: Callable[[], bool] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> "AdaptiveLearningScheduler":
+        validated = config.validate()
+        resource_policy: BackgroundReflectionResourcePolicy | None = None
+        if validated.enabled:
+            if resource_manager is None or higher_priority_work_pending is None:
+                raise LearningSchedulerError("SCHEDULER_RESOURCE_POLICY_REQUIRED")
+            resource_policy = LocalBackgroundReflectionResourcePolicy(
+                resource_manager,
+                reflection.runner.config.model,
+                higher_priority_work_pending,
+            )
         return cls(
-            config,
+            validated,
             DeterministicLearningAdmission(store),
             reflection,
             LocalLearningSourceProvider(store, artifacts),
+            resource_policy=resource_policy,
             clock=clock,
         )
 
@@ -402,6 +513,12 @@ class AdaptiveLearningScheduler:
             admission_id=envelope.admission_id,
         )
 
+    @staticmethod
+    def _scheduler_error_result(reason: str) -> str:
+        if reason in _RESOURCE_STOP_REASONS:
+            return "SKIPPED"
+        return "REJECTED"
+
     def _process(
         self,
         handle: LearningSourceHandle,
@@ -432,11 +549,14 @@ class AdaptiveLearningScheduler:
                 handle.task_id,
                 envelope.evidence_hashes,
             )
-            outcome = self.reflection.reflect_and_stage(
-                envelope,
-                binding,
-                evidence,
-            )
+            if self.resource_policy is None:
+                raise LearningSchedulerError("SCHEDULER_RESOURCE_POLICY_REQUIRED")
+            with self.resource_policy.admit():
+                outcome = self.reflection.reflect_and_stage(
+                    envelope,
+                    binding,
+                    evidence,
+                )
             return SchedulerItemOutcome(
                 task_id=handle.task_id,
                 result=outcome.result,
@@ -470,10 +590,11 @@ class AdaptiveLearningScheduler:
                 admission_id=(envelope.admission_id if envelope else None),
             )
         except (LearningSchedulerError, ReflectionContractError) as exc:
+            reason = self._safe_reason(exc)
             return SchedulerItemOutcome(
                 task_id=handle.task_id,
-                result="REJECTED",
-                reason_code=self._safe_reason(exc),
+                result=self._scheduler_error_result(reason),
+                reason_code=reason,
                 domain=domain,
                 admission_id=(envelope.admission_id if envelope else None),
             )
@@ -521,7 +642,11 @@ class AdaptiveLearningScheduler:
             domain = domain_map.get(handle.task_id)
             if domain is None:
                 continue
-            outcomes.append(self._process(handle, domain))
+            item = self._process(handle, domain)
+            outcomes.append(item)
+            if item.reason_code in _RESOURCE_STOP_REASONS:
+                stop_reason = _RESOURCE_STOP_REASONS[item.reason_code]
+                break
 
         elapsed_ms = max(0, int((self.clock() - started) * 1000))
         return SchedulerRunReceipt(
