@@ -233,6 +233,8 @@ class IsolatedReflectionRunner:
                     command,
                     input=encoded,
                     text=True,
+                    encoding="utf-8",
+                    errors="strict",
                     capture_output=True,
                     timeout=int(self.config.timeout_seconds) + 30,
                     cwd=tmp,
