@@ -68,6 +68,7 @@
         "mode": "public_https",
         "allowlisted_hosts": ["mcfp.felk.cvut.cz"],
         "allowlisted_path_prefixes": ["/publicDatasets/CTU-Malware-Capture-Botnet-"],
+        "allowlisted_source_suffixes": [".binetflow"],
         "credentials": false
       },
       "variants": {
