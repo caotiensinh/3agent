@@ -1,8 +1,9 @@
 """Trusted parent-side coordinator for WorkSpace Phase 4B reflection.
 
-This module owns domain binding, summary sanitization, isolated worker invocation,
-deterministic candidate construction, Phase 1/2 validation, replay suppression,
-and the only allowed persistence call: LearningStagingGateway.stage().
+This module owns domain binding, evidence-bound content preparation, isolated
+worker invocation, deterministic candidate construction, Phase 1/2 validation,
+replay suppression, and the only allowed persistence call:
+LearningStagingGateway.stage().
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,7 +40,8 @@ from .privacy import redact_sensitive_text
 from .runtime_efficiency import sanitize_untrusted_payload
 
 RECEIPT_SCHEMA = "workspace-learning-reflection-receipt/v1"
-_MAX_SOURCE_SUMMARY_BYTES = 32 * 1024
+_MAX_EVIDENCE_ITEM_BYTES = 32 * 1024
+_MAX_EVIDENCE_TOTAL_BYTES = 128 * 1024
 _MAX_SUMMARY_BYTES = 8 * 1024
 _MAX_SUMMARY_CHARS = 3500
 _MAX_STDERR_BYTES = 4096
@@ -69,6 +72,10 @@ def _canonical(payload: Any) -> str:
 
 def _sha256(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
+
+
+def _bytes_sha256(raw: bytes) -> str:
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
 
 
 def _now_z() -> str:
@@ -104,7 +111,13 @@ def _experience_identity(
 
 
 class TrustedReflectionContentBroker:
-    """Prepare bounded redacted learning text before any model invocation."""
+    """Prepare bounded reflection text only from exact admitted evidence bytes.
+
+    A valid Phase 4A envelope cannot be paired with arbitrary caller-authored text.
+    Every evidence payload must exactly match one content-addressed SHA-256 admitted
+    by Phase 4A; missing, extra or mismatched evidence fails closed before the model
+    is invoked.
+    """
 
     @staticmethod
     def _extra_redact(text: str) -> str:
@@ -117,30 +130,75 @@ class TrustedReflectionContentBroker:
         value = _LOCAL_PATH_RE.sub("[REDACTED_LOCAL_PATH]", value)
         return value
 
-    def sanitize_summary(self, summary: str) -> str:
-        raw = str(summary or "")
-        if not raw.strip() or len(raw.encode("utf-8")) > _MAX_SOURCE_SUMMARY_BYTES:
-            raise ReflectionError("REFLECTION_SOURCE_SUMMARY_SIZE_INVALID")
-        normalized, findings = sanitize_untrusted_payload(raw)
+    def _sanitize_evidence_text(self, raw: bytes) -> str:
+        if not raw or len(raw) > _MAX_EVIDENCE_ITEM_BYTES:
+            raise ReflectionError("REFLECTION_EVIDENCE_ITEM_SIZE_INVALID")
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise ReflectionError("REFLECTION_EVIDENCE_TEXT_UTF8_REQUIRED") from exc
+        normalized, findings = sanitize_untrusted_payload(text)
         if findings:
             raise ReflectionError("REFLECTION_SUMMARY_INSTRUCTION_RISK")
         if not isinstance(normalized, str):
-            raise ReflectionError("REFLECTION_SOURCE_SUMMARY_INVALID")
+            raise ReflectionError("REFLECTION_EVIDENCE_TEXT_INVALID")
         cleaned = self._extra_redact(redact_sensitive_text(normalized))
         cleaned = "\n".join(line.rstrip() for line in cleaned.splitlines()).strip()
+        if not cleaned:
+            raise ReflectionError("REFLECTION_EVIDENCE_TEXT_EMPTY")
+        return cleaned
+
+    def prepare_summary(
+        self,
+        envelope: VerifiedLearningSourceEnvelope,
+        evidence_payloads: Mapping[str, bytes],
+    ) -> str:
+        envelope.to_payload()
+        if not isinstance(evidence_payloads, Mapping):
+            raise ReflectionError("REFLECTION_EVIDENCE_PAYLOADS_INVALID")
+        expected = tuple(envelope.evidence_hashes)
+        if not expected or len(set(expected)) != len(expected):
+            raise ReflectionError("REFLECTION_EVIDENCE_HASHES_INVALID")
+        supplied_keys = tuple(str(key).strip().lower() for key in evidence_payloads.keys())
+        if len(supplied_keys) != len(set(supplied_keys)) or set(supplied_keys) != set(expected):
+            raise ReflectionError("REFLECTION_EVIDENCE_SET_MISMATCH")
+
+        normalized_payloads: dict[str, bytes] = {}
+        total_bytes = 0
+        for raw_key, raw_value in evidence_payloads.items():
+            key = str(raw_key).strip().lower()
+            if not isinstance(raw_value, (bytes, bytearray)):
+                raise ReflectionError("REFLECTION_EVIDENCE_BYTES_REQUIRED")
+            payload = bytes(raw_value)
+            total_bytes += len(payload)
+            if total_bytes > _MAX_EVIDENCE_TOTAL_BYTES:
+                raise ReflectionError("REFLECTION_EVIDENCE_TOTAL_SIZE_INVALID")
+            if _bytes_sha256(payload) != key:
+                raise ReflectionError("REFLECTION_EVIDENCE_DIGEST_MISMATCH")
+            normalized_payloads[key] = payload
+
+        pieces: list[str] = []
+        for evidence_hash in expected:
+            raw = normalized_payloads.get(evidence_hash)
+            if raw is None:
+                raise ReflectionError("REFLECTION_EVIDENCE_SET_MISMATCH")
+            cleaned = self._sanitize_evidence_text(raw)
+            pieces.append(f"[verified-evidence {evidence_hash}]\n{cleaned}")
+
+        summary = "\n\n".join(pieces).strip()
         if (
-            not cleaned
-            or len(cleaned) > _MAX_SUMMARY_CHARS
-            or len(cleaned.encode("utf-8")) > _MAX_SUMMARY_BYTES
+            not summary
+            or len(summary) > _MAX_SUMMARY_CHARS
+            or len(summary.encode("utf-8")) > _MAX_SUMMARY_BYTES
         ):
             raise ReflectionError("REFLECTION_SUMMARY_SIZE_INVALID")
-        return cleaned
+        return summary
 
     def build_packet(
         self,
         envelope: VerifiedLearningSourceEnvelope,
         binding: ReflectionDomainBinding,
-        summary: str,
+        evidence_payloads: Mapping[str, bytes],
         *,
         allowed_action: str = "create",
         target_item_id: str | None = None,
@@ -162,7 +220,7 @@ class TrustedReflectionContentBroker:
             risk_level=envelope.risk_level,
             outcome=envelope.outcome,
             evidence_hashes=tuple(envelope.evidence_hashes),
-            summary=self.sanitize_summary(summary),
+            summary=self.prepare_summary(envelope, evidence_payloads),
             output_schema_version=REFLECTION_RESULT_SCHEMA,
             allowed_action=str(allowed_action).strip().lower(),
             target_item_id=target_item_id,
@@ -598,7 +656,7 @@ class ReflectionCoordinator:
         self,
         envelope: VerifiedLearningSourceEnvelope,
         binding: ReflectionDomainBinding,
-        summary: str,
+        evidence_payloads: Mapping[str, bytes],
         *,
         allowed_action: str = "create",
         target_item_id: str | None = None,
@@ -607,7 +665,7 @@ class ReflectionCoordinator:
         packet = self.broker.build_packet(
             envelope,
             binding,
-            summary,
+            evidence_payloads,
             allowed_action=allowed_action,
             target_item_id=target_item_id,
             base_item_sha256=base_item_sha256,
