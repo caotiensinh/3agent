@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .network_lanl_publisher_access import (
+    FAIL_SCHEMA,
     FAIL_SECURITY,
     LANLPublisherAccessError,
     NOT_ENOUGH,
@@ -96,13 +97,13 @@ def _read_profile(path: Path) -> dict[str, Any]:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise LANLPublisherAccessError(
-            "FAIL_SCHEMA",
+            FAIL_SCHEMA,
             "LANL_HANDOFF_PROFILE_SCHEMA",
             "profile JSON invalid",
         ) from exc
     if not isinstance(value, dict):
         raise LANLPublisherAccessError(
-            "FAIL_SCHEMA",
+            FAIL_SCHEMA,
             "LANL_HANDOFF_PROFILE_SCHEMA",
             "profile must be an object",
         )
