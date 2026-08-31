@@ -414,11 +414,15 @@ def _receipt(
 
 def validate_durable_receipt(receipt: Mapping[str, Any], *, profile: Mapping[str, Any]) -> None:
     _profile_contract(profile)
-    if not isinstance(receipt, Mapping) or frozenset(receipt) != DURABLE_ALLOWED_KEYS:
+    if not isinstance(receipt, Mapping):
+        raise LANLPublisherAccessError(
+            FAIL_SCHEMA, "LANL_RECEIPT_SCHEMA", "receipt must be object"
+        )
+    _forbid_durable_keys(receipt)
+    if frozenset(receipt) != DURABLE_ALLOWED_KEYS:
         raise LANLPublisherAccessError(
             FAIL_SCHEMA, "LANL_RECEIPT_SCHEMA", "receipt field set drifted"
         )
-    _forbid_durable_keys(receipt)
     try:
         encoded = json.dumps(
             receipt,
