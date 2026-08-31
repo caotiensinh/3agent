@@ -1,0 +1,12 @@
+[Unit]
+Description=WorkSpace Security Analyst daily report timer
+
+[Timer]
+OnCalendar=*-*-* 17:30:00 Asia/Tokyo
+Persistent=true
+RandomizedDelaySec=0
+AccuracySec=1s
+Unit=workspace-security-report-daily.service
+
+[Install]
+WantedBy=timers.target

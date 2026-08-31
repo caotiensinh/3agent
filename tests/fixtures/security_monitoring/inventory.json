@@ -1,0 +1,21 @@
+[
+  {
+    "asset_id": "router-rnd-01",
+    "role": "router",
+    "management_host": "192.0.2.1",
+    "collector_capabilities": ["icmp_echo", "tcp_connect"],
+    "allowed_tcp_ports": [443],
+    "data_class": "confidential",
+    "enabled": true
+  },
+  {
+    "asset_id": "switch-rnd-01",
+    "role": "switch",
+    "management_host": "192.0.2.2",
+    "collector_capabilities": ["icmp_echo", "snmpv3_read"],
+    "allowed_tcp_ports": [],
+    "data_class": "confidential",
+    "enabled": true,
+    "credential_ref": "secret-ref:snmpv3-switch-rnd-01"
+  }
+]

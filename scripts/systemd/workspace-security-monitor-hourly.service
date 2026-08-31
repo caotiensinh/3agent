@@ -1,0 +1,38 @@
+[Unit]
+Description=WorkSpace Security Analyst hourly read-only monitoring
+Documentation=https://github.com/caotiensinh/3agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=workspace-monitor
+Group=workspace-monitor
+ExecStart=/usr/local/bin/workspace-security-monitor --config /etc/workspace/security-monitoring.json run-hourly --execute-readonly
+WorkingDirectory=/var/lib/workspace-monitor
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/workspace-monitor
+ReadOnlyPaths=/etc/workspace/security-monitoring.json
+TimeoutStartSec=15min
+TimeoutStopSec=15s
+KillMode=control-group
+# Fail closed by default. Deployment must add an operator-reviewed drop-in with
+# IPAddressAllow= for the exact approved LAN subnet(s), while Internet stays denied.
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target
