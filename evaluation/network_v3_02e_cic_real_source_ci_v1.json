@@ -1,7 +1,7 @@
 {
   "schema_version": "workspace-network-v3-02e-cic-real-source-ci/v1",
   "phase": "V3-02E-CIC-REAL-SOURCE",
-  "status": "HARNESS_AND_FIXTURE_MATRIX_FROZEN_BEFORE_EXECUTION_CODE",
+  "status": "HARNESS_AND_FIXTURE_MATRIX_RE_FROZEN_BEFORE_REAL_EXECUTION",
   "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_CIC_REAL_SOURCE_CI_SPEC_V1.md",
   "prerequisite_main_sha": "033b67b7531d4cd24adaa5f258c5aa42b71bdc11",
   "source": {
@@ -14,7 +14,17 @@
     "credentials_allowed": false,
     "mirrors_allowed": false,
     "signed_urls_allowed": false,
-    "max_source_bytes": 268435456
+    "max_parent_source_bytes": 268435456
+  },
+  "bounded_derivation": {
+    "method": "record_aligned_slice",
+    "maximum_data_records": 250000,
+    "selection_rule": "header_plus_first_250000_logical_data_records_in_original_order",
+    "record_boundary_rule": "python_csv_reader_logical_records_then_csv_writer_lineterminator_lf",
+    "label_aware_selection_allowed": false,
+    "random_selection_allowed": false,
+    "shuffle_allowed": false,
+    "wall_clock_selection_allowed": false
   },
   "production_binding": {
     "runner": "three_agent.network_real_source_runner.OfflineRealSourceRunner",
@@ -36,8 +46,12 @@
       "region",
       "object_key",
       "acquisition_mode",
-      "source_size_bytes",
-      "source_sha256",
+      "parent_source_size_bytes",
+      "parent_source_sha256",
+      "bounded_source_size_bytes",
+      "bounded_source_sha256",
+      "bounded_data_record_count",
+      "derivation",
       "s3_etag",
       "s3_last_modified",
       "exact_head_sha",
@@ -61,6 +75,7 @@
   },
   "coverage": {
     "minimum_valid_records": 1000,
+    "maximum_visible_records": 250000,
     "requires_benign_truth": true,
     "requires_non_benign_truth": true,
     "hidden_truth_leakage_count": 0,
@@ -73,9 +88,11 @@
     "linux_peak_rss_required": true
   },
   "cleanup": {
-    "delete_downloaded_source_always": true,
+    "delete_parent_source_always": true,
+    "delete_bounded_source_always": true,
     "delete_runner_scratch_always": true,
     "raw_source_artifact_allowed": false,
+    "bounded_source_artifact_allowed": false,
     "normalized_corpus_artifact_allowed": false,
     "truth_corpus_artifact_allowed": false
   },
@@ -102,6 +119,9 @@
     "SOURCE_TOO_LARGE",
     "SOURCE_PATH_ESCAPE",
     "SOURCE_DIGEST_OR_SIZE_BINDING_FAILED",
+    "BOUNDED_DERIVATION_INVALID",
+    "BOUNDED_RECORD_LIMIT_EXCEEDED",
+    "LABEL_AWARE_SELECTION_ATTEMPT",
     "REGISTRY_FINGERPRINT_MISMATCH",
     "POLICY_FINGERPRINT_MISMATCH",
     "ADAPTER_BINDING_DRIFT",
@@ -119,7 +139,7 @@
   ],
   "fixture_matrix": [
     {
-      "id": "valid_official_cic_metadata_and_local_bytes",
+      "id": "valid_official_parent_metadata_and_deterministic_bounded_shard",
       "expected": "PASS_CONTRACT_AND_MANIFEST_BUILD"
     },
     {
@@ -135,11 +155,15 @@
       "expected": "FAIL_SECURITY"
     },
     {
-      "id": "source_larger_than_256_mib",
+      "id": "parent_larger_than_256_mib",
       "expected": "FAIL_RESOURCE"
     },
     {
-      "id": "invalid_or_mismatched_local_digest",
+      "id": "parent_digest_changes_after_binding",
+      "expected": "FAIL_INTEGRITY"
+    },
+    {
+      "id": "bounded_digest_changes_after_derivation",
       "expected": "FAIL_INTEGRITY"
     },
     {
@@ -149,6 +173,18 @@
     {
       "id": "adapter_id_or_version_drift",
       "expected": "FAIL_SCHEMA"
+    },
+    {
+      "id": "derivation_selection_rule_drift",
+      "expected": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "label_aware_or_random_selection_enabled",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "bounded_record_count_above_250000",
+      "expected": "FAIL_RESOURCE"
     },
     {
       "id": "forbidden_raw_content_key_in_receipt_or_summary",
@@ -163,7 +199,7 @@
       "expected": "FAIL_SECURITY"
     },
     {
-      "id": "workflow_artifact_includes_raw_source",
+      "id": "workflow_artifact_includes_parent_or_bounded_csv",
       "expected": "FAIL_SECURITY"
     },
     {
