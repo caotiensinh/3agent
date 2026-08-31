@@ -235,13 +235,14 @@ class NetworkSecurityIntelligenceAnalyzer:
 
     def _views(self, records: Iterable[EvidenceRecord]) -> list[FlowView]:
         views: list[FlowView] = []
+        records_seen = 0
         for record in records:
+            records_seen += 1
+            if records_seen > self.config.max_records:
+                raise NetworkSecurityIntelligenceError("analysis input record budget exceeded")
             view = FlowView.from_evidence(record)
-            if view is None:
-                continue
-            if len(views) >= self.config.max_records:
-                raise NetworkSecurityIntelligenceError("analysis record budget exceeded")
-            views.append(view)
+            if view is not None:
+                views.append(view)
         views.sort(key=lambda item: (item.timestamp, item.evidence_id))
         return views
 
