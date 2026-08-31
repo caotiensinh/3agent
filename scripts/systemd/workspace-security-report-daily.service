@@ -1,0 +1,38 @@
+[Unit]
+Description=WorkSpace Security Analyst deterministic daily reporting
+Documentation=https://github.com/caotiensinh/3agent
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=workspace-monitor
+Group=workspace-monitor
+ExecStart=/usr/local/bin/workspace-security-report --config /etc/workspace/security-reporting.json run-canonical
+WorkingDirectory=/var/lib/workspace-monitor
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ReadOnlyPaths=/etc/workspace/security-reporting.json
+ReadWritePaths=-/var/lib/workspace-monitor -/mnt/workspace-security-archive
+
+# The report process has no socket authority. `nas_root` must already be mounted by
+# the OS/operator. If it is unavailable, WorkSpace records PENDING_NAS and keeps the
+# validated local bundle; it never mounts SMB/NFS and never stores NAS credentials.
+
+[Install]
+WantedBy=multi-user.target

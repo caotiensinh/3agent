@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "database_path": "/var/lib/workspace-monitor/monitoring.sqlite3",
+  "spool_root": "/var/lib/workspace-monitor/reports",
+  "nas_root": "/mnt/workspace-security-archive",
+  "timezone": "Asia/Tokyo",
+  "report_hour": 17,
+  "report_minute": 30,
+  "max_archive_attempts_per_run": 4
+}
