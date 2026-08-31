@@ -1,27 +1,39 @@
-# WorkSpace Security Analyst & Network Monitoring — Research Status v1
+# WorkSpace Security Analyst & Network Monitoring — Integration Status v1
 
-Status: **RESEARCH COMPLETE / STACKED IMPLEMENTATION VERIFIED / CURRENT-MAIN REVALIDATION IN PROGRESS**
+Status: **RUNTIME INTEGRATION CANDIDATE / FRESH RELEASE GATES REQUIRED**
 
-This branch remains a documentation-only research/design package. It contains no runtime implementation and grants no real-LAN, packet-capture, credential, remediation, or network-mutation authority.
+The verified research/design baseline is already present on `main` through commit `3c7800da6f0e3a42d4a34cf4215b05decae04303`.
 
-Runtime implementation exists separately on stacked PR #105 (`feature/security-analyst-network-monitoring-v001`). That implementation has completed its branch-scoped synthetic/exact-head verification, but it remains Draft and is not yet part of `main`.
+This integration candidate adds the Security Analyst & Network Monitoring runtime derived from PR #105 while preserving the newer WorkSpace runtime that already exists on `main`. In particular, it does not roll back current-request language/context behavior, credential hardening, adaptive-learning changes, current Workflow V4 behavior, or the current frontend UX.
 
-`NS1-18` real-LAN acceptance remains intentionally unperformed and must not be inferred from synthetic or CI evidence.
+Product integration in this candidate:
 
-Current integration revalidation base:
+- authenticated **Security Analyst** specialized UI;
+- query-only monitoring views for overview, network observations, findings, events/logs, approved assets, reports, and admin status;
+- approved-inventory-only monitoring contracts;
+- optional SNMPv3 read dependency as an explicit package extra;
+- deterministic hourly monitoring and reporting components;
+- local evidence/read model with read-only SQLite access from chat;
+- bounded incident-PCAP approval metadata in web/admin;
+- packet capture execution remains a separate POSIX dedicated runner with its own literal confirmation and systemd capability boundary;
+- enterprise verification harness and receipt generation.
 
-- `main`: `3a33c600e89f3968d67d40beee0baff99bddd9ed`
-- CI infrastructure fix #151 is now on `main` via merge commit `3d8cc60ced7450c60542fe955ce853b2e26cbf89`; LANL publisher-access pull-request execution is scoped to explicit material dependencies while exact-head provenance and fail-closed no-access semantics remain unchanged;
-- the post-merge deployed tree containing both concurrent Phase 4F changes and #151 passed LANL publisher-access, harness, installer, portable Ubuntu, Windows, and CIC real-source push-to-main verification;
-- `main` then advanced by docs-only PR #152, so prior PR #102 merge-ref evidence remains historical until this fresh validation completes;
-- CI infrastructure fix #143 remains on `main`; CIC real-source pull-request execution is scoped to explicit CIC material dependencies;
-- this Security Analyst documentation namespace is intentionally outside both CIC real-source and LANL publisher-access PR trigger scopes;
-- no runtime code, real-LAN execution, packet capture, credential access, or network mutation is introduced by this status update.
+Security authority remains fail-closed:
 
-Next integration milestone:
+- no model-generated LAN command execution;
+- no autonomous remediation;
+- no router, switch, firewall, VLAN, route, QoS, endpoint, credential, or policy mutation;
+- no arbitrary LAN target discovery;
+- no continuous/full packet capture;
+- web/chat has no packet-capture execution path;
+- raw credentials are excluded from monitoring contracts, UI output, logs, reports, CI and evidence receipts.
 
-1. validate this docs-only PR against the current `main` and merge it only with owner authorization;
-2. synchronize/retarget PR #105 onto the resulting `main`;
-3. reconcile any design-only wording that becomes stale after implementation integration;
-4. run fresh exact-head harness, installer, portable-deploy, Windows-deploy, enterprise-evidence, TEST_RELEASE and SEC_GATE checks;
-5. consider PR #105 merge only after those fresh gates pass.
+`NS1-18` real-LAN acceptance remains intentionally **NOT PERFORMED**. Synthetic/unit/CI results must not be represented as production-LAN evidence.
+
+Promotion sequence for this candidate:
+
+1. create one exact integration commit on a dedicated branch;
+2. run fresh harness Python 3.11/3.12, installer, portable Ubuntu, Windows, and enterprise verification on that exact SHA;
+3. fix deterministic integration defects only in a new session/commit if required;
+4. obtain fresh TEST_RELEASE and SEC_GATE evidence on the final exact candidate;
+5. re-read live `main` and merge only the exact fully verified candidate.

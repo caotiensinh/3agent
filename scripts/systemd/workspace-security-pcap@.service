@@ -1,0 +1,39 @@
+[Unit]
+Description=WorkSpace Security Analyst bounded incident capture %i
+Documentation=https://github.com/caotiensinh/3agent
+After=network.target
+
+[Service]
+Type=oneshot
+User=workspace-pcap
+Group=workspace-pcap
+EnvironmentFile=-/etc/workspace/security-pcap.env
+ExecStart=/usr/local/bin/workspace-security-pcap --config /etc/workspace/security-monitoring.json --approval-id %i --confirmation AUTHORIZE_PCAP
+WorkingDirectory=/var/lib/workspace-monitor
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_PACKET
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+IPAddressDeny=any
+ReadOnlyPaths=/etc/workspace/security-monitoring.json
+ReadWritePaths=/var/lib/workspace-monitor/pcap-approvals /var/lib/workspace-monitor/pcap
+KillMode=control-group
+TimeoutStartSec=16min
+TimeoutStopSec=5s
+
+[Install]
+WantedBy=multi-user.target

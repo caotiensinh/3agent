@@ -1,0 +1,12 @@
+[Unit]
+Description=Run WorkSpace Security Analyst monitoring once per hour
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=0
+Unit=workspace-security-monitor-hourly.service
+
+[Install]
+WantedBy=timers.target
