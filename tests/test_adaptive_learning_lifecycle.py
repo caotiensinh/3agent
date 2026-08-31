@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import sqlite3
 import stat
 import tempfile
 import unittest
@@ -145,9 +146,16 @@ class AdaptiveLearningLifecycleTests(unittest.TestCase):
                 verify_learning_store(**paths, store_id=STORE_ID, key_id=KEY_ID)
             paths["key_path"].write_bytes(original_key)
             paths["key_path"].chmod(0o600)
-            data = paths["store_path"].read_bytes()
-            paths["store_path"].write_bytes(data + b"tamper")
-            paths["store_path"].chmod(0o600)
+
+            # Tamper an authoritative store structure, not unused trailing bytes.
+            # SQLite may legally ignore bytes appended after the database image;
+            # checkpoint integrity is defined over canonical ledger/version state.
+            conn = sqlite3.connect(paths["store_path"])
+            try:
+                conn.execute("DROP TABLE learning_versions")
+                conn.commit()
+            finally:
+                conn.close()
             with self.assertRaises(Exception):
                 verify_learning_store(**paths, store_id=STORE_ID, key_id=KEY_ID)
 
