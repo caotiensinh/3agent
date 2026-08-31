@@ -102,6 +102,8 @@ Domain is trusted workflow/policy configuration and must be exactly one of:
 
 The model and learned content do not select the domain. Phase 4C performs exact-domain matching only. Cross-domain reuse is not implemented.
 
+For the initial Research/Analyst integration, the domain remains trusted agent configuration, while task sensitivity is loaded from the exact bound `TaskContract` for the current `task_id` immediately before retrieval. There is no constructor sensitivity default and no model-selected sensitivity. A missing, malformed, invalid, or task-ID-mismatched bound contract disables learned context for that run.
+
 ## Sensitivity monotonicity
 
 Retrieval requires:
@@ -198,10 +200,10 @@ Important ordering:
 1. prompt compilation remains local;
 2. research query planning occurs without learned context;
 3. only model-generated, declassified public queries may reach InternetGateway;
-4. Phase 4C retrieval occurs locally from the authenticated learning store;
+4. Phase 4C retrieval occurs locally from the authenticated learning store, using the exact bound TaskContract sensitivity for the current task;
 5. if matching approved knowledge exists, it is attached only to the local synthesis objective as untrusted reference data;
 6. the authoritative request passed to existing constraint/evidence validators remains byte-identical;
-7. if retrieval is unavailable, fails verification, or returns no items, no learned context is used.
+7. if retrieval is unavailable, the bound TaskContract is invalid/missing, checkpoint verification fails, or no items match, no learned context is used.
 
 Learned content is intentionally excluded from search-query planning. This prevents approved internal knowledge from becoming public-search egress through a model-generated query.
 
@@ -246,7 +248,8 @@ Phase 4C tests cover:
 15. no network/process imports in retrieval;
 16. no-match empty context and byte-identical prompt no-op;
 17. metadata-only telemetry;
-18. Research query planning cannot receive learned context.
+18. Research query planning cannot receive learned context;
+19. Research retrieval sensitivity is bound from the exact current-task TaskContract, and invalid/missing bindings disable learned context.
 
 The repository-wide harness continues to provide Phase 1-4B regression coverage.
 
