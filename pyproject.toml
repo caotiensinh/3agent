@@ -16,6 +16,11 @@ dependencies = [
   "tzdata>=2024.1",
 ]
 
+[project.optional-dependencies]
+monitoring-snmp = [
+  "pysnmp>=7.1.29,<7.2",
+]
+
 [project.scripts]
 workspace = "three_agent.cli:main"
 workspace-benchmark = "three_agent.benchmark_suite:main"
@@ -39,6 +44,9 @@ workspace-network-data = "three_agent.network_dataset_cli:main"
 workspace-network-fetch = "three_agent.network_public_corpus_acquisition:main"
 workspace-promotion = "three_agent.promotion_gate:main"
 workspace-retrieval = "three_agent.deterministic_retrieval_cli:main"
+workspace-security-monitor = "three_agent.security_monitoring_cli:main"
+workspace-security-pcap = "three_agent.security_pcap_runner:main"
+workspace-security-report = "three_agent.security_reporting_cli:main"
 three-agent = "three_agent.cli:main"
 three-agent-chat = "three_agent.chat_gateway_v18:main"
 

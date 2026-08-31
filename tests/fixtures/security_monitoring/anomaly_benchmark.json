@@ -1,0 +1,65 @@
+{
+  "schema_version": "workspace-security-monitoring/anomaly-benchmark-fixture-v1",
+  "cases": [
+    {
+      "case_id": "normal-stable-100",
+      "history": [100, 101, 99, 100, 100, 101, 99, 100, 101],
+      "current_value": 100,
+      "expected_anomaly": false
+    },
+    {
+      "case_id": "normal-stable-50",
+      "history": [50, 50, 51, 49, 50, 51, 50, 49, 50],
+      "current_value": 51,
+      "expected_anomaly": false
+    },
+    {
+      "case_id": "normal-noisy-200",
+      "history": [195, 202, 198, 205, 200, 197, 204, 199, 201],
+      "current_value": 206,
+      "expected_anomaly": false
+    },
+    {
+      "case_id": "normal-small-trend",
+      "history": [10, 11, 12, 13, 14, 15, 16, 17, 18],
+      "current_value": 19,
+      "expected_anomaly": false
+    },
+    {
+      "case_id": "normal-low-counter",
+      "history": [0, 1, 0, 1, 2, 1, 0, 1, 1],
+      "current_value": 2,
+      "expected_anomaly": false
+    },
+    {
+      "case_id": "spike-high-100",
+      "history": [100, 101, 99, 100, 100, 101, 99, 100, 101],
+      "current_value": 180,
+      "expected_anomaly": true
+    },
+    {
+      "case_id": "drop-low-100",
+      "history": [100, 101, 99, 100, 100, 101, 99, 100, 101],
+      "current_value": 20,
+      "expected_anomaly": true
+    },
+    {
+      "case_id": "bandwidth-spike",
+      "history": [500, 510, 495, 505, 500, 515, 490, 505, 500],
+      "current_value": 900,
+      "expected_anomaly": true
+    },
+    {
+      "case_id": "error-burst",
+      "history": [0, 1, 0, 1, 0, 2, 1, 0, 1],
+      "current_value": 20,
+      "expected_anomaly": true
+    },
+    {
+      "case_id": "moderate-shift",
+      "history": [99, 100, 101, 100, 99, 101, 100, 100, 99],
+      "current_value": 112,
+      "expected_anomaly": true
+    }
+  ]
+}
