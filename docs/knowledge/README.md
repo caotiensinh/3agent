@@ -19,8 +19,9 @@ The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Determinis
 - `ADAPTIVE_LEARNING_PHASE3.md` — implemented local immutable version store, append-only hash-chained audit ledger, staged/active lifecycle, enterprise-baseline protection, archive, and exact-version rollback.
 - `ADAPTIVE_LEARNING_PHASE3_1.md` — authenticated checkpoint journal plus independent trusted-head freshness witness, exact store-state binding, stale/full-rewrite/replay detection, key rotation, and a learner-facing `stage()`-only gateway.
 - `ADAPTIVE_LEARNING_PHASE4A.md` — deterministic verified-experience admission from authoritative task contract, validator ledger and workflow manifest into a capability-free, metadata-only learning-source envelope.
+- `ADAPTIVE_LEARNING_PHASE4B.md` — domain-bound, process-isolated local Reflection proposal path with bounded/redacted packets, strict raw JSON, loopback-only Ollama, deterministic candidate provenance, Phase 1/2 revalidation, persistent no-repeat receipts, and stage-only persistence.
 
-The current implementation still has **no background LLM learner**. Phase 1 through Phase 3 establish deterministic contract, evaluation, persistence, audit, and rollback. Phase 3.1 adds authenticated persistence integrity/freshness. Phase 4A then decides, without an LLM, which exact completed workflows are trustworthy enough to become future Reflection input.
+The current implementation has **no background autonomous learner**. Phase 1 through Phase 3 establish deterministic contract, evaluation, persistence, audit, and rollback. Phase 3.1 adds authenticated persistence integrity/freshness. Phase 4A decides, without an LLM, which exact completed workflows are trustworthy enough to become Reflection input. Phase 4B then permits one bounded local model proposal while keeping domain, provenance, sensitivity, ownership, identity, validation and persistence authority outside the model. Promotion remains a separate deterministic/operator-controlled gate.
 
 ## Provenance
 
