@@ -4,6 +4,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,11 +14,13 @@ from three_agent.adaptive_learning_scheduler import (
     AdaptiveLearningSchedulerConfig,
     LearningSchedulerError,
     LearningSourceHandle,
+    LocalBackgroundReflectionResourcePolicy,
     LocalLearningSourceProvider,
     ScheduledTaskDomain,
 )
 from three_agent.artifacts import ArtifactManager
 from three_agent.models import TaskStatus
+from three_agent.resource_budget import ResourceAdmissionError
 from three_agent.store import TaskStore
 
 
@@ -113,6 +116,46 @@ class FakeProvider:
         return {EVIDENCE_SHA: EVIDENCE}
 
 
+class FakeResourcePolicy:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = 0
+
+    @contextmanager
+    def admit(self):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        yield
+
+
+class FakeBudgetManager:
+    def __init__(
+        self,
+        *,
+        error=None,
+        enabled=True,
+        serialize_generation=True,
+        queue_wait_seconds=0.0,
+        base_url="http://127.0.0.1:11434",
+    ):
+        self.error = error
+        self.calls = 0
+        self.base_url = base_url
+        self.config = SimpleNamespace(
+            enabled=enabled,
+            serialize_generation=serialize_generation,
+            queue_wait_seconds=queue_wait_seconds,
+        )
+
+    @contextmanager
+    def admit(self, model):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        yield SimpleNamespace(allowed=True, model=model)
+
+
 class Exploding:
     def __getattr__(self, name):
         raise AssertionError(f"disabled scheduler touched {name}")
@@ -134,24 +177,48 @@ def config(*task_domains, enabled=True, max_items=4, max_scan_items=16, max_wall
         max_items=max_items,
         max_scan_items=max_scan_items,
         max_wall_time_seconds=max_wall,
-        task_domains=tuple(ScheduledTaskDomain(task_id, domain) for task_id, domain in task_domains),
+        task_domains=tuple(
+            ScheduledTaskDomain(task_id, domain) for task_id, domain in task_domains
+        ),
+    )
+
+
+def scheduler(config_value, admission, reflection, provider, *, policy=None, clock=lambda: 1.0):
+    if policy is None and config_value.enabled:
+        policy = FakeResourcePolicy()
+    return AdaptiveLearningScheduler(
+        config_value,
+        admission,
+        reflection,
+        provider,
+        resource_policy=policy,
+        clock=clock,
     )
 
 
 class SchedulerConfigurationTests(unittest.TestCase):
-    def test_disabled_run_touches_no_admission_provider_or_reflection(self):
-        scheduler = AdaptiveLearningScheduler(
+    def test_disabled_run_touches_no_admission_provider_reflection_or_resource_policy(self):
+        instance = AdaptiveLearningScheduler(
             config(enabled=False),
             Exploding(),
             Exploding(),
             Exploding(),
             clock=lambda: 10.0,
         )
-        receipt = scheduler.run_once()
+        receipt = instance.run_once()
         self.assertFalse(receipt.enabled)
         self.assertEqual(receipt.attempted, 0)
         self.assertEqual(receipt.stop_reason, "DISABLED")
         self.assertEqual(receipt.outcomes, ())
+
+    def test_enabled_scheduler_requires_explicit_resource_policy(self):
+        with self.assertRaisesRegex(LearningSchedulerError, "RESOURCE_POLICY_REQUIRED"):
+            AdaptiveLearningScheduler(
+                config(("TASK-A", "network")),
+                FakeAdmission(),
+                FakeReflection(),
+                FakeProvider(("TASK-A",)),
+            )
 
     def test_config_requires_bounded_canonical_explicit_domain_bindings(self):
         with self.assertRaisesRegex(LearningSchedulerError, "DOMAIN_INVALID"):
@@ -162,6 +229,75 @@ class SchedulerConfigurationTests(unittest.TestCase):
             config(("TASK-A", "network"), ("TASK-A", "security")).validate()
         with self.assertRaisesRegex(LearningSchedulerError, "SCAN_LIMIT_BELOW_ITEM_LIMIT"):
             config(("TASK-A", "network"), max_items=4, max_scan_items=2).validate()
+
+
+class BackgroundResourcePolicyTests(unittest.TestCase):
+    def test_policy_requires_enabled_serialized_fail_fast_loopback_budget(self):
+        cases = (
+            (
+                FakeBudgetManager(enabled=False),
+                "RESOURCE_BUDGET_DISABLED",
+            ),
+            (
+                FakeBudgetManager(serialize_generation=False),
+                "RESOURCE_SERIALIZATION_REQUIRED",
+            ),
+            (
+                FakeBudgetManager(queue_wait_seconds=1.0),
+                "RESOURCE_QUEUE_WAIT_MUST_BE_ZERO",
+            ),
+            (
+                FakeBudgetManager(base_url="http://192.168.11.10:11434"),
+                "RESOURCE_LOOPBACK_REQUIRED",
+            ),
+        )
+        for manager, reason in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(LearningSchedulerError, reason):
+                    LocalBackgroundReflectionResourcePolicy(
+                        manager,
+                        "qwen-test",
+                        lambda: False,
+                    )
+
+    def test_higher_priority_work_blocks_before_resource_admission(self):
+        manager = FakeBudgetManager()
+        policy = LocalBackgroundReflectionResourcePolicy(
+            manager,
+            "qwen-test",
+            lambda: True,
+        )
+        with self.assertRaisesRegex(LearningSchedulerError, "HIGHER_PRIORITY_WORK_ACTIVE"):
+            with policy.admit():
+                self.fail("background work must not start")
+        self.assertEqual(manager.calls, 0)
+
+    def test_priority_is_rechecked_after_serialized_resource_admission(self):
+        manager = FakeBudgetManager()
+        states = iter((False, True))
+        policy = LocalBackgroundReflectionResourcePolicy(
+            manager,
+            "qwen-test",
+            lambda: next(states),
+        )
+        with self.assertRaisesRegex(LearningSchedulerError, "HIGHER_PRIORITY_WORK_ACTIVE"):
+            with policy.admit():
+                self.fail("background work must not start")
+        self.assertEqual(manager.calls, 1)
+
+    def test_resource_admission_error_is_fail_closed(self):
+        manager = FakeBudgetManager(
+            error=ResourceAdmissionError("projected VRAM exceeds budget")
+        )
+        policy = LocalBackgroundReflectionResourcePolicy(
+            manager,
+            "qwen-test",
+            lambda: False,
+        )
+        with self.assertRaisesRegex(LearningSchedulerError, "RESOURCE_ADMISSION_DENIED"):
+            with policy.admit():
+                self.fail("background work must not start")
+        self.assertEqual(manager.calls, 1)
 
 
 class LocalSourceProviderTests(unittest.TestCase):
@@ -176,7 +312,10 @@ class LocalSourceProviderTests(unittest.TestCase):
 
         manifest = artifacts.root / "workflow_runs" / "2026-09-01" / f"{task.task_id}.json"
         manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(json.dumps({"task_id": task.task_id}) + "\n", encoding="utf-8")
+        manifest.write_text(
+            json.dumps({"task_id": task.task_id}) + "\n",
+            encoding="utf-8",
+        )
         store.record_artifact(
             task.task_id,
             "workflow",
@@ -237,7 +376,8 @@ class LocalSourceProviderTests(unittest.TestCase):
         handoff.write_bytes(b"tampered")
         with self.assertRaisesRegex(LearningSchedulerError, "EVIDENCE_NOT_RESOLVED"):
             LocalLearningSourceProvider(store, artifacts).load_evidence(
-                task.task_id, (EVIDENCE_SHA,)
+                task.task_id,
+                (EVIDENCE_SHA,),
             )
 
 
@@ -246,9 +386,14 @@ class SchedulerTickTests(unittest.TestCase):
         tasks = ("TASK-A", "TASK-B", "TASK-C")
         provider = FakeProvider(tasks)
         reflection = FakeReflection(
-            {"TASK-A": "STAGED", "TASK-B": "NO_LEARNING_VALUE", "TASK-C": "STAGED"}
+            {
+                "TASK-A": "STAGED",
+                "TASK-B": "NO_LEARNING_VALUE",
+                "TASK-C": "STAGED",
+            }
         )
-        scheduler = AdaptiveLearningScheduler(
+        policy = FakeResourcePolicy()
+        receipt = scheduler(
             config(
                 ("TASK-A", "network"),
                 ("TASK-B", "security"),
@@ -258,9 +403,8 @@ class SchedulerTickTests(unittest.TestCase):
             FakeAdmission(),
             reflection,
             provider,
-            clock=lambda: 1.0,
-        )
-        receipt = scheduler.run_once()
+            policy=policy,
+        ).run_once()
         self.assertEqual(receipt.attempted, 2)
         self.assertEqual(receipt.staged, 1)
         self.assertEqual(receipt.no_learning_value, 1)
@@ -270,69 +414,146 @@ class SchedulerTickTests(unittest.TestCase):
             ["network", "security"],
         )
         self.assertEqual(len(reflection.calls), 2)
+        self.assertEqual(policy.calls, 2)
 
-    def test_completed_and_claimed_receipts_suppress_evidence_and_model_work(self):
+    def test_completed_and_claimed_receipts_suppress_evidence_model_and_resource_work(self):
         first = envelope("TASK-A")
         second = envelope("TASK-B")
         records = {
             (first.admission_id, "network"): SimpleNamespace(
-                status="completed", candidate_sha256="sha256:" + "9" * 64
+                status="completed",
+                candidate_sha256="sha256:" + "9" * 64,
             ),
             (second.admission_id, "security"): SimpleNamespace(
-                status="claimed", candidate_sha256=None
+                status="claimed",
+                candidate_sha256=None,
             ),
         }
         provider = FakeProvider(("TASK-A", "TASK-B"))
         reflection = FakeReflection(records=records)
-        receipt = AdaptiveLearningScheduler(
+        policy = FakeResourcePolicy()
+        receipt = scheduler(
             config(("TASK-A", "network"), ("TASK-B", "security")),
             FakeAdmission(),
             reflection,
             provider,
-            clock=lambda: 1.0,
+            policy=policy,
         ).run_once()
-        self.assertEqual([item.result for item in receipt.outcomes], ["SKIPPED", "RECOVERY_REQUIRED"])
+        self.assertEqual(
+            [item.result for item in receipt.outcomes],
+            ["SKIPPED", "RECOVERY_REQUIRED"],
+        )
         self.assertEqual(provider.evidence_calls, [])
         self.assertEqual(reflection.calls, [])
+        self.assertEqual(policy.calls, 0)
         self.assertEqual(receipt.skipped, 1)
         self.assertEqual(receipt.recovery_required, 1)
 
     def test_source_failure_is_metadata_only_and_does_not_block_next_source(self):
-        provider = FakeProvider(("TASK-A", "TASK-B"), evidence_failures=("TASK-A",))
+        provider = FakeProvider(
+            ("TASK-A", "TASK-B"),
+            evidence_failures=("TASK-A",),
+        )
         reflection = FakeReflection({"TASK-B": "STAGED"})
-        receipt = AdaptiveLearningScheduler(
+        receipt = scheduler(
             config(("TASK-A", "network"), ("TASK-B", "analyst")),
             FakeAdmission(),
             reflection,
             provider,
-            clock=lambda: 1.0,
         ).run_once()
         self.assertEqual(receipt.outcomes[0].result, "REJECTED")
-        self.assertEqual(receipt.outcomes[0].reason_code, "SCHEDULER_EVIDENCE_NOT_RESOLVED")
+        self.assertEqual(
+            receipt.outcomes[0].reason_code,
+            "SCHEDULER_EVIDENCE_NOT_RESOLVED",
+        )
         self.assertEqual(receipt.outcomes[1].result, "STAGED")
         rendered = json.dumps(receipt.to_payload(), sort_keys=True)
         self.assertNotIn(EVIDENCE.decode("utf-8"), rendered)
         self.assertNotIn("/trusted/", rendered)
         self.assertEqual(len(reflection.calls), 1)
 
-    def test_secret_source_fails_before_evidence_or_model_invocation(self):
+    def test_secret_source_fails_before_evidence_model_or_resource_invocation(self):
         provider = FakeProvider(("TASK-A",))
         reflection = FakeReflection()
-        receipt = AdaptiveLearningScheduler(
+        policy = FakeResourcePolicy()
+        receipt = scheduler(
             config(("TASK-A", "security")),
             FakeAdmission(secret_tasks=("TASK-A",)),
             reflection,
             provider,
-            clock=lambda: 1.0,
+            policy=policy,
         ).run_once()
         self.assertEqual(receipt.outcomes[0].result, "REJECTED")
-        self.assertEqual(receipt.outcomes[0].reason_code, "REFLECTION_SECRET_NOT_SUPPORTED")
+        self.assertEqual(
+            receipt.outcomes[0].reason_code,
+            "REFLECTION_SECRET_NOT_SUPPORTED",
+        )
         self.assertEqual(provider.evidence_calls, [])
+        self.assertEqual(reflection.calls, [])
+        self.assertEqual(policy.calls, 0)
+
+    def test_higher_priority_work_stops_tick_before_reflection(self):
+        provider = FakeProvider(("TASK-A", "TASK-B"))
+        reflection = FakeReflection()
+        policy = FakeResourcePolicy(
+            LearningSchedulerError("SCHEDULER_HIGHER_PRIORITY_WORK_ACTIVE")
+        )
+        receipt = scheduler(
+            config(("TASK-A", "network"), ("TASK-B", "security")),
+            FakeAdmission(),
+            reflection,
+            provider,
+            policy=policy,
+        ).run_once()
+        self.assertEqual(receipt.attempted, 1)
+        self.assertEqual(receipt.skipped, 1)
+        self.assertEqual(receipt.failed, 0)
+        self.assertEqual(receipt.stop_reason, "HIGHER_PRIORITY_WORK")
+        self.assertEqual(
+            receipt.outcomes[0].reason_code,
+            "SCHEDULER_HIGHER_PRIORITY_WORK_ACTIVE",
+        )
+        self.assertEqual(policy.calls, 1)
+        self.assertEqual(len(provider.evidence_calls), 1)
+        self.assertEqual(reflection.calls, [])
+
+    def test_resource_denial_is_one_fail_closed_attempt_per_tick(self):
+        provider = FakeProvider(("TASK-A", "TASK-B", "TASK-C"))
+        reflection = FakeReflection()
+        manager = FakeBudgetManager(
+            error=ResourceAdmissionError("projected VRAM exceeds 90%")
+        )
+        policy = LocalBackgroundReflectionResourcePolicy(
+            manager,
+            "qwen-test",
+            lambda: False,
+        )
+        receipt = scheduler(
+            config(
+                ("TASK-A", "network"),
+                ("TASK-B", "security"),
+                ("TASK-C", "analyst"),
+            ),
+            FakeAdmission(),
+            reflection,
+            provider,
+            policy=policy,
+        ).run_once()
+        self.assertEqual(receipt.attempted, 1)
+        self.assertEqual(receipt.skipped, 1)
+        self.assertEqual(receipt.failed, 0)
+        self.assertEqual(receipt.stop_reason, "RESOURCE_PRESSURE")
+        self.assertEqual(
+            receipt.outcomes[0].reason_code,
+            "SCHEDULER_RESOURCE_ADMISSION_DENIED",
+        )
+        self.assertEqual(manager.calls, 1)
+        self.assertEqual(len(provider.evidence_calls), 1)
         self.assertEqual(reflection.calls, [])
 
     def test_wall_time_stops_starting_new_items(self):
         provider = FakeProvider(("TASK-A",))
-        receipt = AdaptiveLearningScheduler(
+        receipt = scheduler(
             config(("TASK-A", "analyst"), max_wall=1),
             FakeAdmission(),
             FakeReflection(),
@@ -343,14 +564,21 @@ class SchedulerTickTests(unittest.TestCase):
         self.assertEqual(receipt.stop_reason, "WALL_TIME")
 
     def test_scheduler_exposes_no_promotion_or_operator_mutation_methods(self):
-        scheduler = AdaptiveLearningScheduler(
+        instance = scheduler(
             config(("TASK-A", "analyst")),
             FakeAdmission(),
             FakeReflection(),
             FakeProvider(("TASK-A",)),
         )
-        for name in ("promote", "archive", "rollback", "rotate_key", "deploy", "remediate"):
-            self.assertFalse(hasattr(scheduler, name))
+        for name in (
+            "promote",
+            "archive",
+            "rollback",
+            "rotate_key",
+            "deploy",
+            "remediate",
+        ):
+            self.assertFalse(hasattr(instance, name))
 
 
 if __name__ == "__main__":
