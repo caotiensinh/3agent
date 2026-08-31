@@ -1,0 +1,32 @@
+{
+  "schema_version": "workspace-network-adapter-fixture/v1",
+  "source_object_ref": "cic/fixture.csv",
+  "source_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "adapter_version": "network-adapter-base/0.1",
+  "provenance_ref": "prov://fixture/cic-001",
+  "evidence": {
+    "dataset_id": "cse-cic-ids2018",
+    "source_domain": "network_flow",
+    "record_ordinal": 0,
+    "timestamp": "2018-02-14T10:00:00Z",
+    "asset_refs": ["host:10.0.0.10", "host:10.0.0.20"],
+    "account_refs": [],
+    "network_refs": ["flow:10.0.0.10:50000-10.0.0.20:443-tcp"],
+    "event_family": "flow",
+    "event_type": "connection",
+    "observation_fields": {
+      "protocol": "TCP",
+      "src_port": 50000,
+      "dst_port": 443,
+      "duration_ms": 120,
+      "forward_packets": 8,
+      "backward_packets": 6
+    }
+  },
+  "truth": {
+    "truth_class": "benign",
+    "truth_fields": {
+      "label": "BENIGN"
+    }
+  }
+}
