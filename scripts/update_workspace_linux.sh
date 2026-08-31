@@ -393,15 +393,15 @@ if [[ "$VENV_REPLACEMENT_REQUIRED" == "1" ]]; then
 fi
 
 UPDATE_STAGE="entrypoint_validation"
-[[ -x "$ROOT/.venv/bin/workspace-chat" ]] || die "workspace-chat entrypoint missing after update."
-first_line="$(head -n 1 "$ROOT/.venv/bin/workspace-chat" 2>/dev/null || true)"
-[[ "$first_line" == "#!$ROOT/.venv/bin/python" ]] \
-  || die "workspace-chat entrypoint is bound to an unexpected Python path."
+THREE_AGENT_ROOT="$ROOT" PYTHONPATH="$ROOT/src" \
+  "$ROOT/.venv/bin/python" "$ROOT/scripts/validate_workspace_runtime.py" \
+  || die "WorkSpace runtime or Security Analyst entrypoint validation failed after update."
+pass "Runtime entrypoints: workspace-chat and Security Analyst commands are correctly bound."
 
 UPDATE_STAGE="post_update_import"
 PYTHONPATH="$ROOT/src" "$ROOT/.venv/bin/python" -c \
-  'import three_agent; import three_agent.chat_gateway_v17' \
-  || die "Post-update WorkSpace import validation failed."
+  'import three_agent; import three_agent.chat_gateway_v18; import three_agent.security_monitoring_cli; import three_agent.security_reporting_cli; import three_agent.security_pcap_runner' \
+  || die "Post-update WorkSpace/Security runtime import validation failed."
 
 if [[ "$CHAT_INSTALLED" == "1" && "$CHAT_WAS_ACTIVE" == "1" ]]; then
   UPDATE_STAGE="service_restart"
