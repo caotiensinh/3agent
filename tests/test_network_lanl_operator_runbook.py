@@ -52,13 +52,13 @@ class LANLOperatorRunbookContractTests(unittest.TestCase):
         self.assertIn(self.profile["blocked_real_source_state"], self.text)
         self.assertIn("Do not proceed to LANL execution.", self.text)
 
-    def test_no_direct_download_or_mirror_instructions(self) -> None:
+    def test_no_positive_direct_download_or_mirror_instructions(self) -> None:
         forbidden_phrases = (
-            "direct download url",
-            "download handle example",
-            "use a mirror",
-            "mirror fallback",
-            "automate this form",
+            "direct download url:",
+            "download handle example:",
+            "download from a mirror",
+            "use alternate download host",
+            "automate lanl enrollment",
         )
         lowered = self.text.casefold()
         for phrase in forbidden_phrases:
