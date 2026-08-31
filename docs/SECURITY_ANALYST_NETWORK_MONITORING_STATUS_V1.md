@@ -1,9 +1,17 @@
 # WorkSpace Security Analyst & Network Monitoring — Research Status v1
 
-Status: **RESEARCH COMPLETE / CODE NOT STARTED**
+Status: **RESEARCH COMPLETE / STACKED IMPLEMENTATION VERIFIED**
 
-The research package is intentionally frozen before runtime implementation.
+This branch remains a documentation-only research/design package. It contains no runtime implementation and grants no real-LAN, packet-capture, credential, remediation, or network-mutation authority.
 
-Next engineering milestone after design approval:
+Runtime implementation exists separately on stacked PR #105 (`feature/security-analyst-network-monitoring-v001`). That implementation has completed its branch-scoped synthetic/exact-head verification, but it remains Draft and is not yet part of `main`.
 
-**NS-0 + NS-1: contracts, synthetic fixtures, policy broker and lean read-only collectors.**
+`NS1-18` real-LAN acceptance remains intentionally unperformed and must not be inferred from synthetic or CI evidence.
+
+Next integration milestone:
+
+1. validate this docs-only PR against the current `main` and merge it only with owner authorization;
+2. synchronize/retarget PR #105 onto the resulting `main`;
+3. reconcile any design-only wording that becomes stale after implementation integration;
+4. run fresh exact-head harness, installer, portable-deploy, Windows-deploy, enterprise-evidence, TEST_RELEASE and SEC_GATE checks;
+5. consider PR #105 merge only after those fresh gates pass.
