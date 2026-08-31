@@ -27,7 +27,10 @@ def validate_modules() -> None:
 
 
 def validate_entrypoints(venv: Path) -> None:
-    python_path = (venv / "bin" / "python").resolve()
+    # Console-script shebangs must point to the venv path exactly. Do not resolve
+    # this path: on POSIX venv/bin/python is commonly a symlink to the system
+    # interpreter, while pip intentionally writes the stable venv path.
+    python_path = venv / "bin" / "python"
     if not python_path.is_file():
         raise RuntimeError("WORKSPACE_VENV_PYTHON_MISSING")
 
