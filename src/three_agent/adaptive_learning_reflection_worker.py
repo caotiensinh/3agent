@@ -143,18 +143,17 @@ def main() -> int:
         payload = json.loads(raw.decode("utf-8"))
         packet = BoundedReflectionPacket.from_payload(payload)
         result = run_reflection_model(packet, _config_from_env())
-        sys.stdout.write(
-            json.dumps(
-                result.to_payload(),
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-        )
+        response = json.dumps(
+            result.to_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        sys.stdout.buffer.write(response)
         return 0
     except Exception as exc:
         code = getattr(exc, "reason_code", None) or str(exc) or type(exc).__name__
-        sys.stderr.write(str(code)[:512])
+        sys.stderr.buffer.write(str(code)[:512].encode("utf-8", errors="replace"))
         return 2
 
 
