@@ -14,7 +14,7 @@ _SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
 _BRIEF_PROSE_MAX_CHARS = 600
 _BRIEF_PROSE_NUM_PREDICT = 128
 STRICT_STRUCTURED_OUTPUT_KINDS = frozenset(
-    {"bullets", "single_sentence", "single_number", "code_only"}
+    {"bullets", "single_sentence", "single_number", "code_only", "brief_prose"}
 )
 
 
@@ -108,13 +108,21 @@ def strict_structured_schema(contract: ChatOutputContract) -> dict[str, Any] | N
             "required": list(properties),
             "additionalProperties": False,
         }
-    if contract.kind == "single_sentence":
+    if contract.kind in {"single_sentence", "brief_prose"}:
+        description = (
+            "Exactly one concise answer sentence and no heading or note."
+            if contract.kind == "single_sentence"
+            else (
+                "Concise answer prose in the target response language. Preserve the semantic label "
+                "of any ordinal or pronoun referent resolved from eligible recent context."
+            )
+        )
         return {
             "type": "object",
             "properties": {
                 "answer": {
                     "type": "string",
-                    "description": "Exactly one concise answer sentence and no heading or note.",
+                    "description": description,
                 }
             },
             "required": ["answer"],
@@ -172,7 +180,7 @@ def render_strict_structured_answer(
             for index in range(1, contract.exact_items + 1)
         ]
         return "\n".join(f"- {item}" for item in items if item).strip()
-    if contract.kind == "single_sentence":
+    if contract.kind in {"single_sentence", "brief_prose"}:
         return _single_line(payload.get("answer"))
     if contract.kind == "single_number":
         value = payload.get("value")

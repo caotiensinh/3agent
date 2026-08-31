@@ -16,6 +16,34 @@ class _NoopStore:
         del args, kwargs
 
 
+def _missing_reference_service(llm, contract):
+    service = object.__new__(ContractAwareProjectChatService)
+    service.orchestrator = SimpleNamespace(llm=llm, store=_NoopStore())
+    service._job_uploads = {"job": []}
+    service._job_language_sources = {"job": "follow_up_cue"}
+    service._effective_output_contract = lambda job, effort: contract
+    service._direct_prompt = lambda job, uploads: (
+        "<CURRENT_USER_REQUEST>\n"
+        + job.message
+        + "\n</CURRENT_USER_REQUEST>\n"
+        + '<CONVERSATION_CONTEXT_POLICY mode="follow_up">\n'
+        + "Resolve only the current missing reference.\n"
+        + "</CONVERSATION_CONTEXT_POLICY>\n"
+        + '<RECENT_CONVERSATION_CONTEXT available="false">\n'
+        + "No eligible completed prior conversation is available.\n"
+        + "</RECENT_CONVERSATION_CONTEXT>"
+    )
+    service._test_updates = []
+    service._test_stages = []
+    service._update = lambda job_id, **kwargs: service._test_updates.append(
+        (job_id, kwargs)
+    )
+    service._stage = lambda job_id, name, status, detail="": service._test_stages.append(
+        (job_id, name, status, detail)
+    )
+    return service
+
+
 class MissingReferencePlainFirstTests(unittest.TestCase):
     def test_missing_reference_disables_only_internal_structured_decoding(self) -> None:
         normal = ChatOutputContract(
@@ -55,35 +83,38 @@ class MissingReferencePlainFirstTests(unittest.TestCase):
             ChatOutputContract(kind="prose", max_chars=2800, num_predict=768)
         )
         llm = LLM()
-        service = object.__new__(ContractAwareProjectChatService)
-        service.orchestrator = SimpleNamespace(llm=llm, store=_NoopStore())
-        service._job_uploads = {"job": []}
-        service._job_language_sources = {"job": "follow_up_cue"}
-        service._effective_output_contract = lambda job, effort: contract
-        service._direct_prompt = lambda job, uploads: (
-            "<CURRENT_USER_REQUEST>\n"
-            + job.message
-            + "\n</CURRENT_USER_REQUEST>\n"
-            + '<CONVERSATION_CONTEXT_POLICY mode="follow_up">\n'
-            + "Resolve only the current missing reference.\n"
-            + "</CONVERSATION_CONTEXT_POLICY>\n"
-            + '<RECENT_CONVERSATION_CONTEXT available="false">\n'
-            + "No eligible completed prior conversation is available.\n"
-            + "</RECENT_CONVERSATION_CONTEXT>"
-        )
-        service._test_updates = []
-        service._test_stages = []
-        service._update = lambda job_id, **kwargs: service._test_updates.append(
-            (job_id, kwargs)
-        )
-        service._stage = lambda job_id, name, status, detail="": service._test_stages.append(
-            (job_id, name, status, detail)
-        )
+        service = _missing_reference_service(llm, contract)
 
         job = SimpleNamespace(language="vi", message="tiếp theo?")
         service._execute_direct_chat("job", job, "standard")
 
         self.assertEqual(llm.json_calls, 0)
+        self.assertEqual(llm.plain_calls, 1)
+        self.assertEqual(service._test_updates[-1][1]["status"], "completed")
+        self.assertEqual(
+            service._test_updates[-1][1]["answer"],
+            "Bạn muốn tôi tiếp tục phần nào?",
+        )
+
+    def test_invalid_missing_reference_model_answer_is_repaired_locally_without_second_call(self) -> None:
+        class LLM:
+            def __init__(self) -> None:
+                self.plain_calls = 0
+
+            def generate(self, system_prompt, user_prompt, **kwargs):
+                del system_prompt, user_prompt, kwargs
+                self.plain_calls += 1
+                return "What should I continue?"
+
+        contract = tighten_for_missing_reference(
+            ChatOutputContract(kind="prose", max_chars=2800, num_predict=768)
+        )
+        llm = LLM()
+        service = _missing_reference_service(llm, contract)
+
+        job = SimpleNamespace(language="vi", message="tiếp theo?")
+        service._execute_direct_chat("job", job, "standard")
+
         self.assertEqual(llm.plain_calls, 1)
         self.assertEqual(service._test_updates[-1][1]["status"], "completed")
         self.assertEqual(

@@ -24,6 +24,29 @@ _STRUCTURED_INTERNAL_MIN_NUM_PREDICT = 32
 _STRUCTURED_PLAIN_FALLBACK_REASONS = frozenset(
     {"target_language_mismatch", "structured_runtime_error"}
 )
+_EXPLANATORY_FOLLOW_UP_KINDS = frozenset(
+    {"single_sentence", "brief_prose", "prose"}
+)
+_MISSING_REFERENCE_CLARIFICATIONS = {
+    "vi": "Bạn muốn tôi tiếp tục phần nào?",
+    "ja": "どの部分について続ければよいか教えてください。",
+    "en": "Which part would you like me to continue?",
+}
+_TARGET_LANGUAGE_REPAIR_INSTRUCTIONS = {
+    "vi": (
+        "TARGET-LANGUAGE REPAIR: Write all explanatory text in natural Vietnamese with "
+        "Vietnamese diacritics; do not answer primarily in English or Japanese."
+    ),
+    "ja": (
+        "TARGET-LANGUAGE REPAIR: Write all explanatory text in natural Japanese using "
+        "Japanese script (hiragana, katakana, or kanji); do not answer primarily in English "
+        "or romanized Japanese."
+    ),
+    "en": (
+        "TARGET-LANGUAGE REPAIR: Write all explanatory text in natural English; do not "
+        "answer primarily in Japanese or Vietnamese."
+    ),
+}
 
 
 def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
@@ -104,6 +127,22 @@ def _use_structured_attempt(
     )
 
 
+def _missing_reference_clarification(language: str) -> str:
+    """Return a bounded local clarification with no model, tool, or network authority."""
+
+    return _MISSING_REFERENCE_CLARIFICATIONS.get(
+        str(language or "").strip().lower(),
+        _MISSING_REFERENCE_CLARIFICATIONS["ja"],
+    )
+
+
+def _target_language_repair_instruction(language: str) -> str:
+    return _TARGET_LANGUAGE_REPAIR_INSTRUCTIONS.get(
+        str(language or "").strip().lower(),
+        _TARGET_LANGUAGE_REPAIR_INSTRUCTIONS["ja"],
+    )
+
+
 class ContractAwareProjectChatService(ContextAwareProjectChatService):
     """Reference-gated local chat plus deterministic response-shape enforcement."""
 
@@ -154,6 +193,11 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
         )
 
         prompt = self._direct_prompt(job, uploads)
+        missing_reference = '<RECENT_CONVERSATION_CONTEXT available="false">' in prompt
+        anchored_follow_up = (
+            '<CONVERSATION_CONTEXT_POLICY mode="follow_up">' in prompt
+            and "<RECENT_CONVERSATION_CONTEXT>" in prompt
+        )
         last_reason = ""
         try:
             for attempt in range(2):
@@ -169,6 +213,19 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                         repair_reason=last_reason if attempt > 0 else "",
                     )
                 )
+                if (
+                    anchored_follow_up
+                    and contract.kind in _EXPLANATORY_FOLLOW_UP_KINDS
+                ):
+                    system_prompt += (
+                        "\n\nFOLLOW-UP SEMANTIC ANCHOR (mandatory):\n"
+                        "- Resolve the ordinal, pronoun, or shorthand reference from eligible recent context.\n"
+                        "- In explanatory prose, explicitly repeat at least one short semantic label or canonical term from the resolved item so the answer is self-contained.\n"
+                        "- Do not replace that semantic subject with only a pronoun, generic description, command, or identifier."
+                    )
+                if attempt > 0 and last_reason == "target_language_mismatch":
+                    system_prompt += "\n\n" + _target_language_repair_instruction(job.language)
+
                 use_structured = _use_structured_attempt(
                     structured_mode,
                     attempt,
@@ -180,6 +237,7 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                         "- The decoder returns an internal JSON object, not the final user-visible format.\n"
                         "- Fill every required value with only the requested answer content.\n"
                         "- Every required string value that contains explanatory prose must itself be clearly written in the TARGET RESPONSE LANGUAGE above.\n"
+                        "- For a follow-up that resolves an ordinal or pronoun, preserve a short semantic label or canonical term from the resolved item inside the explanatory string value.\n"
                         "- Technical commands and identifiers may remain unchanged, but do not return only technical identifiers when the current request asks for target-language explanation.\n"
                         "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
                         "- A deterministic local renderer will convert these values to the user's requested final shape."
@@ -225,6 +283,30 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 valid, reason = direct_chat_answer_valid(answer, job.language, job.message)
                 if valid:
                     valid, reason = contract.validate(answer)
+
+                if not valid and attempt == 0 and missing_reference:
+                    deterministic = _missing_reference_clarification(job.language)
+                    repaired, repair_reason = direct_chat_answer_valid(
+                        deterministic,
+                        job.language,
+                        job.message,
+                    )
+                    if repaired:
+                        repaired, repair_reason = contract.validate(deterministic)
+                    if repaired:
+                        answer = deterministic
+                        valid, reason = True, "ok"
+                        self.orchestrator.store.record_activity(
+                            None,
+                            "chat_gateway",
+                            "direct_chat_deterministic_repair",
+                            "ok",
+                            (
+                                f"language={job.language} attempt={attempt + 1} "
+                                f"reason=missing_reference output_kind={contract.kind}"
+                            ),
+                        )
+
                 if valid:
                     self._stage(job_id, "answer", "completed", "Direct local answer validated.")
                     self._update(
