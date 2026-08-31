@@ -62,6 +62,11 @@
     "allow_all_commands_in_test": false,
     "audit_log": "/var/lib/workspace/data/activity/execution.jsonl"
   },
+  "adaptive_learning": {
+    "runtime_retrieval": {
+      "enabled": false
+    }
+  },
   "knowledge": {
     "public_mirror_enabled": true,
     "public_mirror_root": "/var/lib/workspace-knowledge-public",
