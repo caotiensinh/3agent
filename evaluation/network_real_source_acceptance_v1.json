@@ -1,0 +1,306 @@
+{
+  "schema_version": "workspace-network-real-source-acceptance-profile/v1",
+  "phase": "V3-02E",
+  "status": "HARNESS_PROFILE_FROZEN_BEFORE_RUNNER_CODE",
+  "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_REAL_SOURCE_ACCEPTANCE_SPEC_V1.md",
+  "main_prerequisite": {
+    "required": true,
+    "minimum_checkpoint": "V3-01/V3-02A-D",
+    "required_ci_families": [
+      "harness-ci",
+      "installer-ci",
+      "portable-deploy-ci",
+      "windows-deploy-ci"
+    ]
+  },
+  "authorized_lanes": [
+    {
+      "lane_id": "cic_processed_ml",
+      "dataset_id": "cse-cic-ids2018",
+      "variant": "processed-ml",
+      "source_family": null,
+      "adapter_id": "cse-cic-ids2018-processed-ml"
+    },
+    {
+      "lane_id": "lanl_authentication",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "auth",
+      "adapter_id": "lanl-auth"
+    },
+    {
+      "lane_id": "lanl_process",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "process",
+      "adapter_id": "lanl-process"
+    },
+    {
+      "lane_id": "lanl_dns",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "dns",
+      "adapter_id": "lanl-dns"
+    },
+    {
+      "lane_id": "lanl_flow",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "flow",
+      "adapter_id": "lanl-flow"
+    },
+    {
+      "lane_id": "lanl_redteam_truth",
+      "dataset_id": "lanl-comprehensive",
+      "variant": "events",
+      "source_family": "redteam",
+      "adapter_id": "lanl-redteam-matcher",
+      "scorer_only": true
+    }
+  ],
+  "explicit_exclusions": {
+    "splunk-bots-v2": {
+      "runtime_verdict": "BLOCKED_DEPENDENCY_COST",
+      "direct_adapter_authorized": false
+    },
+    "cic_raw_pcap": false,
+    "research_only_sources": false,
+    "review_required_sources": false
+  },
+  "manifest_contract": {
+    "schema_version": "workspace-network-real-source-acceptance-manifest/v1",
+    "required_top_level_fields": [
+      "schema_version",
+      "acceptance_id",
+      "spec_version",
+      "created_by_role",
+      "registry_fingerprint",
+      "policy_fingerprint",
+      "sources",
+      "expected_lanes",
+      "bots_direct_adapter_authorized"
+    ],
+    "required_source_fields": [
+      "source_id",
+      "dataset_id",
+      "variant",
+      "source_family",
+      "real_source",
+      "publisher_reference",
+      "acquisition_mode",
+      "acquisition_receipt_fingerprint",
+      "parent_source_object_ref",
+      "parent_source_sha256",
+      "parent_source_size_bytes",
+      "bounded_source_object_ref",
+      "bounded_source_sha256",
+      "bounded_source_size_bytes",
+      "derivation",
+      "adapter_id",
+      "adapter_version",
+      "provenance_ref"
+    ],
+    "real_source_must_be_true": true,
+    "bots_direct_adapter_authorized_must_be_false": true,
+    "forbidden_durable_fields": [
+      "raw_line",
+      "raw_record",
+      "raw_payload",
+      "password",
+      "credential",
+      "signed_url",
+      "cookie",
+      "token",
+      "secret"
+    ]
+  },
+  "receipt_contract": {
+    "schema_version": "workspace-network-real-source-acceptance-receipt/v1",
+    "required_fields": [
+      "schema_version",
+      "acceptance_id",
+      "exact_head_sha",
+      "spec_fingerprint",
+      "manifest_fingerprint",
+      "dataset_id",
+      "variant",
+      "source_family",
+      "real_source_verified",
+      "publisher_reference_fingerprint",
+      "acquisition_receipt_fingerprint",
+      "parent_source_sha256",
+      "bounded_source_sha256",
+      "adapter_id",
+      "adapter_version",
+      "records_seen",
+      "records_emitted",
+      "records_rejected",
+      "truth_records_emitted",
+      "evidence_fingerprint",
+      "truth_fingerprint",
+      "deterministic_replay_pass",
+      "visible_schema_pass",
+      "truth_separation_pass",
+      "provenance_pass",
+      "resource_pass",
+      "cleanup_pass",
+      "network_calls",
+      "model_calls",
+      "subprocess_calls",
+      "peak_rss_delta_bytes",
+      "verdict",
+      "failed_gate_ids"
+    ],
+    "forbidden_fields": [
+      "raw_line",
+      "raw_record",
+      "raw_payload",
+      "exception_text",
+      "signed_url",
+      "credential",
+      "cookie",
+      "token",
+      "secret"
+    ]
+  },
+  "resource_contract": {
+    "max_source_objects": 8,
+    "max_bytes_per_source_object": 268435456,
+    "max_total_bounded_input_bytes": 536870912,
+    "max_visible_records_per_adapter_invocation": 250000,
+    "max_durable_generated_object_bytes": 1048576,
+    "max_linux_peak_rss_delta_bytes": 536870912,
+    "network_calls": 0,
+    "model_calls": 0,
+    "subprocess_calls": 0
+  },
+  "coverage_contract": {
+    "cic_processed_ml": {
+      "minimum_valid_records": 1000,
+      "requires_benign_truth": true,
+      "requires_non_benign_truth": true
+    },
+    "lanl_authentication": {
+      "minimum_valid_records": 100
+    },
+    "lanl_process": {
+      "minimum_valid_records": 100
+    },
+    "lanl_dns": {
+      "minimum_valid_records": 100
+    },
+    "lanl_flow": {
+      "minimum_valid_records": 100
+    },
+    "lanl_redteam_truth": {
+      "minimum_exact_auth_matches": 1,
+      "zero_match_must_not_resolve": true,
+      "ambiguous_match_must_not_resolve": true
+    }
+  },
+  "zero_tolerance_gates": [
+    "SYNTHETIC_SOURCE_MARKED_REAL",
+    "UNREVIEWED_PUBLISHER_OR_MIRROR",
+    "REGISTRY_FINGERPRINT_MISMATCH",
+    "POLICY_FINGERPRINT_MISMATCH",
+    "MISSING_ACQUISITION_RECEIPT_FINGERPRINT",
+    "MISSING_PARENT_SOURCE_DIGEST",
+    "BOUNDED_SOURCE_DIGEST_MISMATCH",
+    "NONDETERMINISTIC_SLICE_DERIVATION",
+    "OUT_OF_MANIFEST_SOURCE_READ",
+    "PATH_OR_SYMLINK_ESCAPE",
+    "SOURCE_FAMILY_MISMATCH",
+    "BOTS_DIRECT_ADAPTER_ATTEMPT",
+    "HIDDEN_TRUTH_LEAKAGE",
+    "RAW_SOURCE_CONTENT_IN_DURABLE_RECEIPT",
+    "SILENT_REQUIRED_FIELD_COERCION",
+    "DIGEST_MISMATCH_ACCEPTED",
+    "DETERMINISTIC_REPLAY_MISMATCH",
+    "INTERNET_CALL_OBSERVED",
+    "MODEL_CALL_OBSERVED",
+    "SUBPROCESS_CALL_OBSERVED",
+    "RESOURCE_BOUND_EXCEEDED",
+    "HARNESS_OWNED_RAW_LEFTOVER_AFTER_PASS",
+    "HARNESS_OWNED_NORMALIZED_LEFTOVER_AFTER_PASS"
+  ],
+  "pass_contract": {
+    "real_publisher_origin_provenance_percent": 100,
+    "source_sha_binding_percent": 100,
+    "manifest_schema_validity_percent": 100,
+    "registry_license_eligibility_percent": 100,
+    "production_adapter_used_percent": 100,
+    "deterministic_replay_percent": 100,
+    "visible_schema_validity_percent": 100,
+    "evidence_id_uniqueness_percent": 100,
+    "truth_separation_percent": 100,
+    "hidden_truth_leakage_count": 0,
+    "out_of_manifest_read_count": 0,
+    "network_call_count": 0,
+    "model_call_count": 0,
+    "subprocess_call_count": 0,
+    "raw_source_content_in_receipt_count": 0,
+    "cleanup_validity_percent": 100
+  },
+  "verdicts": [
+    "PASS",
+    "FAIL_SCHEMA",
+    "FAIL_INTEGRITY",
+    "FAIL_SECURITY",
+    "FAIL_PROVENANCE",
+    "FAIL_LICENSE",
+    "FAIL_RESOURCE",
+    "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+  ],
+  "insufficient_evidence_rules": [
+    "CIC_VALID_RECORDS_BELOW_MINIMUM",
+    "CIC_MISSING_BENIGN_TRUTH",
+    "CIC_MISSING_NON_BENIGN_TRUTH",
+    "LANL_AUTH_RECORDS_BELOW_MINIMUM",
+    "LANL_PROCESS_RECORDS_BELOW_MINIMUM",
+    "LANL_DNS_RECORDS_BELOW_MINIMUM",
+    "LANL_FLOW_RECORDS_BELOW_MINIMUM",
+    "LANL_NO_EXACT_REAL_REDTEAM_AUTH_MATCH"
+  ],
+  "fixture_matrix": [
+    {"id": "valid_cic_manifest_metadata", "expected": "PASS_CONTRACT_VALIDATION_ONLY"},
+    {"id": "valid_lanl_multifamily_manifest_metadata", "expected": "PASS_CONTRACT_VALIDATION_ONLY"},
+    {"id": "synthetic_marked_real", "expected": "FAIL_SECURITY"},
+    {"id": "unreviewed_mirror", "expected": "FAIL_PROVENANCE"},
+    {"id": "registry_fingerprint_mismatch", "expected": "FAIL_PROVENANCE"},
+    {"id": "missing_acquisition_receipt", "expected": "FAIL_PROVENANCE"},
+    {"id": "missing_parent_digest", "expected": "FAIL_PROVENANCE"},
+    {"id": "bounded_digest_mismatch", "expected": "FAIL_INTEGRITY"},
+    {"id": "nondeterministic_slice", "expected": "FAIL_PROVENANCE"},
+    {"id": "source_family_mismatch", "expected": "FAIL_SCHEMA"},
+    {"id": "bots_direct_attempt", "expected": "FAIL_SECURITY"},
+    {"id": "truth_leakage", "expected": "FAIL_SECURITY"},
+    {"id": "path_escape", "expected": "FAIL_SECURITY"},
+    {"id": "resource_overflow", "expected": "FAIL_RESOURCE"},
+    {"id": "replay_mismatch", "expected": "FAIL_INTEGRITY"},
+    {"id": "cleanup_leftover_after_pass", "expected": "FAIL_SECURITY"},
+    {"id": "raw_source_in_receipt", "expected": "FAIL_SECURITY"},
+    {"id": "cic_insufficient_class_coverage", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"},
+    {"id": "lanl_insufficient_family_coverage", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"},
+    {"id": "lanl_zero_or_ambiguous_truth", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"}
+  ],
+  "git_retention_contract": {
+    "real_raw_source_bytes_in_git": false,
+    "real_normalized_source_bytes_in_git": false,
+    "allowed_durable_material": [
+      "specification",
+      "machine_readable_contracts",
+      "synthetic_adversarial_fixtures",
+      "hash_only_real_source_manifests",
+      "compact_hash_counter_receipts",
+      "deterministic_harness_code"
+    ]
+  },
+  "definition_of_done": [
+    "CIC_REAL_SOURCE_ACCEPTANCE_PASS",
+    "LANL_REAL_SOURCE_ACCEPTANCE_PASS",
+    "BOTS_DIRECT_ADAPTER_REMAINS_BLOCKED",
+    "NO_REAL_RAW_CORPUS_BYTES_COMMITTED",
+    "EXACT_HEAD_REQUIRED_CI_GREEN",
+    "V3_02E_MERGED_TO_MAIN_BEFORE_V3_03"
+  ]
+}
