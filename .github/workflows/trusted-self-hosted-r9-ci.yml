@@ -1,0 +1,155 @@
+name: trusted-self-hosted-r9-ci
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: acceptance (py${{ matrix.python-version }})
+    runs-on: [self-hosted, Linux, X64, r9]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - name: Checkout exact trusted main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: true
+          persist-credentials: false
+
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create isolated virtual environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-r9-py${{ matrix.python-version }}"
+          rm -rf "$VENV"
+          python -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/python" -m pip install -e ".[monitoring-snmp]"
+          printf 'VENV=%s\n' "$VENV" >> "$GITHUB_ENV"
+
+      - name: Skill security admission
+        shell: bash
+        run: "$VENV/bin/python" scripts/scan_skills.py
+
+      - name: Compile source and tests
+        shell: bash
+        run: "$VENV/bin/python" -m compileall -q src tests
+
+      - name: Unit tests
+        shell: bash
+        run: "$VENV/bin/python" -m unittest discover -s tests -v
+
+      - name: Enterprise verification EV-01 through EV-10
+        shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          "$VENV/bin/python" scripts/security_enterprise_verify.py \
+            --source-sha "$EXACT_SOURCE_SHA" \
+            --output "$RUNNER_TEMP/security-enterprise-verification-py${{ matrix.python-version }}.json"
+
+      - name: One-command bootstrap on real runner
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-r9-install-py${{ matrix.python-version }}
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-r9-bin-py${{ matrix.python-version }}
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$THREE_AGENT_INSTALL_DIR" "$THREE_AGENT_BIN_DIR"
+          bash scripts/bootstrap.sh
+
+      - name: Verify exact installed lineage
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-r9-install-py${{ matrix.python-version }}
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-r9-bin-py${{ matrix.python-version }}
+        run: |
+          set -Eeuo pipefail
+          "$THREE_AGENT_BIN_DIR/3agent" smoke
+          test -x "$THREE_AGENT_BIN_DIR/3agent-update"
+          test -f "$THREE_AGENT_INSTALL_DIR/config/local.json"
+          installed="$(git -C "$THREE_AGENT_INSTALL_DIR" rev-parse HEAD)"
+          test "$installed" = "$EXPECTED_HEAD" || {
+            echo "Installed SHA $installed does not match trusted main SHA $EXPECTED_HEAD" >&2
+            exit 1
+          }
+
+      - name: Verify idempotent re-deploy preserves configuration
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-r9-install-py${{ matrix.python-version }}
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-r9-bin-py${{ matrix.python-version }}
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          set -Eeuo pipefail
+          printf '\n' >> "$THREE_AGENT_INSTALL_DIR/config/local.json"
+          before="$(sha256sum "$THREE_AGENT_INSTALL_DIR/config/local.json" | awk '{print $1}')"
+          bash scripts/bootstrap.sh
+          after="$(sha256sum "$THREE_AGENT_INSTALL_DIR/config/local.json" | awk '{print $1}')"
+          test "$before" = "$after"
+
+      - name: Write self-hosted runner evidence receipt
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.sha }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          set -Eeuo pipefail
+          "$VENV/bin/python" - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "workspace-ci/self-hosted-runner-evidence-v1",
+              "workflow": os.environ["GITHUB_WORKFLOW"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "1"),
+              "job": os.environ["GITHUB_JOB"],
+              "target_sha": os.environ["TARGET_SHA"],
+              "python_version": os.environ["PYTHON_VERSION"],
+              "runner_name": os.environ.get("RUNNER_NAME", "unknown"),
+              "runner_os": os.environ.get("RUNNER_OS", "unknown"),
+              "runner_arch": os.environ.get("RUNNER_ARCH", "unknown"),
+              "runner_environment": os.environ.get("RUNNER_ENVIRONMENT", "unknown"),
+              "result": "PASS",
+          }
+          path = Path(os.environ["RUNNER_TEMP"]) / f"self-hosted-r9-evidence-py{os.environ['PYTHON_VERSION']}.json"
+          path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(path)
+          PY
+
+      - name: Upload verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: trusted-self-hosted-r9-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/security-enterprise-verification-py${{ matrix.python-version }}.json
+            ${{ runner.temp }}/self-hosted-r9-evidence-py${{ matrix.python-version }}.json
+          if-no-files-found: error
+          retention-days: 14
