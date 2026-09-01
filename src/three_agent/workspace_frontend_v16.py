@@ -6,6 +6,34 @@ from .workspace_frontend_v15 import WORKSPACE_HTML_V15
 
 html = WORKSPACE_HTML_V15
 
+
+def _insert_after_workflow_description(document: str, markup: str) -> str:
+    """Compose Draft Library after the semantic Workflow Studio description field.
+
+    Do not anchor this feature to human-facing copy. Copy changes are expected in an
+    enterprise UI and must not make the production gateway unimportable. The stable
+    element id is the composition contract; a missing/duplicate id or unexpected
+    element shape still fails closed during import/CI.
+    """
+
+    token = 'id="workflowDescription"'
+    count = document.count(token)
+    if count != 1:
+        raise RuntimeError(
+            "workflow-draft-library-markup: expected exactly one workflowDescription id, "
+            f"found {count}"
+        )
+    token_at = document.index(token)
+    open_at = document.rfind("<textarea", 0, token_at + 1)
+    close_at = document.find("</textarea>", token_at)
+    if open_at < 0 or close_at < 0 or open_at > token_at:
+        raise RuntimeError(
+            "workflow-draft-library-markup: workflowDescription must remain a textarea"
+        )
+    insert_at = close_at + len("</textarea>")
+    return document[:insert_at] + "\n" + markup + document[insert_at:]
+
+
 draft_css = r"""
 .workflow-library-toolbar{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:-4px 0 12px;padding:9px;border:1px solid #33363c;border-radius:10px;background:#17181b}.workflow-library-toolbar input{min-width:220px;flex:1;background:#111216;color:var(--text);border:1px solid #3b3d43;border-radius:8px;padding:8px 9px}.workflow-library-current{font-size:10px;color:var(--muted);word-break:break-all}.workflow-library-drawer{margin:0 0 12px;border:1px solid #383b42;border-radius:12px;background:#121317;padding:11px}.workflow-library-filters{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:9px}.workflow-library-filters input{min-width:220px;flex:1;background:#0e0f12;color:var(--text);border:1px solid #35383f;border-radius:8px;padding:8px 9px}.workflow-library-filters select{background:#1b1d21;color:var(--text);border:1px solid #35383f;border-radius:8px;padding:8px 9px}.workflow-library-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}.workflow-library-item{border:1px solid #30333a;background:#17191d;border-radius:10px;padding:10px;cursor:pointer;text-align:left;color:var(--text)}.workflow-library-item:hover,.workflow-library-item:focus-visible{border-color:#555a66;outline:0}.workflow-library-item b{display:block;font-size:12px;margin-bottom:4px}.workflow-library-item span{display:block;font-size:10px;color:var(--muted);line-height:1.45}.workflow-library-item.archived{opacity:.68}.workflow-library-version-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.workflow-library-version{border:1px solid #353941;border-radius:999px;padding:4px 7px;font-size:9px;color:#b8bdc7}.workflow-library-authority{font-size:10px;color:#82c99a;margin-left:auto}@media(max-width:700px){.workflow-library-toolbar input,.workflow-library-filters input{min-width:100%;width:100%}.workflow-library-authority{width:100%;margin-left:0}}
 """
@@ -32,7 +60,7 @@ draft_markup = r"""
       <div class="workflow-library-version-list" id="workflowDraftVersions"></div>
     </div>
 """
-html = _replace_once(html, '    <div class="workflow-studio-note">Describe the process in plain language. WorkSpace compiles a design-only graph; creating a diagram never grants execution authority.</div>', '    <div class="workflow-studio-note">Describe the process in plain language. WorkSpace compiles a design-only graph; creating a diagram never grants execution authority.</div>\n' + draft_markup, "workflow-draft-library-markup")
+html = _insert_after_workflow_description(html, draft_markup)
 
 draft_js = r"""
 (function(){
