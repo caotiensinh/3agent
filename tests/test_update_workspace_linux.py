@@ -77,7 +77,7 @@ class LinuxUpdateContractTests(unittest.TestCase):
             '"$ROOT/.venv/bin/python" -m pip install --no-deps --force-reinstall -e "$ROOT"'
         )
         entrypoint_check = text.index(
-            '[[ "$first_line" == "#!$ROOT/.venv/bin/python" ]]'
+            '"$ROOT/.venv/bin/python" "$ROOT/scripts/validate_workspace_runtime.py"'
         )
         self.assertLess(swap, rebind)
         self.assertLess(rebind, entrypoint_check)
@@ -89,6 +89,16 @@ class LinuxUpdateContractTests(unittest.TestCase):
             'UPDATE_STAGE="existing_venv_rebind"',
             text,
         )
+
+    def test_update_validates_current_chat_and_security_runtime_without_forcing_optional_snmp(self) -> None:
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("validate_workspace_runtime.py", text)
+        self.assertIn("three_agent.chat_gateway_v18", text)
+        self.assertIn("three_agent.security_monitoring_cli", text)
+        self.assertIn("three_agent.security_reporting_cli", text)
+        self.assertIn("three_agent.security_pcap_runner", text)
+        self.assertNotIn('pip install -e ".[monitoring-snmp]"', text)
+        self.assertNotIn('pip install ".[monitoring-snmp]"', text)
 
     def test_update_is_transactional_and_records_failure_stage(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")

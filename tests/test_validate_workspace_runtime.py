@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -40,7 +41,7 @@ class WorkspaceRuntimeValidatorTests(unittest.TestCase):
             python = bin_dir / "python"
             python.write_text("", encoding="utf-8")
             python.chmod(0o700)
-            expected = f"#!{python.resolve()}\n"
+            expected = f"#!{python}\n"
             for command in validator.REQUIRED_ENTRYPOINTS:
                 path = bin_dir / command
                 path.write_text(expected + "pass\n", encoding="utf-8")
@@ -51,6 +52,28 @@ class WorkspaceRuntimeValidatorTests(unittest.TestCase):
             broken.write_text("#!/usr/bin/python3\n", encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "WORKSPACE_ENTRYPOINT_BINDING_INVALID"):
                 validator.validate_entrypoints(venv)
+
+    @unittest.skipUnless(os.name == "posix", "venv Python symlink contract is POSIX-specific")
+    def test_entrypoint_validation_preserves_venv_symlink_path_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            venv = root / ".venv"
+            bin_dir = venv / "bin"
+            bin_dir.mkdir(parents=True)
+            system_python = root / "system-python"
+            system_python.write_text("", encoding="utf-8")
+            system_python.chmod(0o700)
+            python = bin_dir / "python"
+            python.symlink_to(system_python)
+
+            expected = f"#!{python}\n"
+            self.assertNotEqual(str(python), str(python.resolve()))
+            for command in validator.REQUIRED_ENTRYPOINTS:
+                path = bin_dir / command
+                path.write_text(expected + "pass\n", encoding="utf-8")
+                path.chmod(0o700)
+
+            validator.validate_entrypoints(venv)
 
 
 if __name__ == "__main__":
