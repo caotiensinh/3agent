@@ -32,6 +32,19 @@ from .dns_behavior import DNSBehaviorFeatures, extract_dns_behavior_features
 from .dns_behavior_storage import DNSBehaviorFeatureStore
 from .entity_context import EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
+from .flow_process_attribution import FlowTupleEvidence, SocketProcessObservation, endpoint_ref
+from .flow_process_engine import (
+    DeterministicFlowProcessAttributor,
+    FlowProcessAttributionAssessment,
+    FlowProcessAttributionConfig,
+)
+from .flow_process_graph import (
+    FLOW_PROCESS_GRAPH_CATEGORY,
+    FLOW_PROCESS_GRAPH_PARSER_VERSION,
+    FLOW_PROCESS_GRAPH_SOURCE_ID,
+    FLOW_PROCESS_GRAPH_SOURCE_TYPE,
+    attribution_to_correlation_event,
+)
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
 from .network_triage import (
@@ -110,6 +123,17 @@ __all__ = [
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
+    "FlowTupleEvidence",
+    "SocketProcessObservation",
+    "endpoint_ref",
+    "FlowProcessAttributionAssessment",
+    "FlowProcessAttributionConfig",
+    "DeterministicFlowProcessAttributor",
+    "FLOW_PROCESS_GRAPH_CATEGORY",
+    "FLOW_PROCESS_GRAPH_PARSER_VERSION",
+    "FLOW_PROCESS_GRAPH_SOURCE_ID",
+    "FLOW_PROCESS_GRAPH_SOURCE_TYPE",
+    "attribution_to_correlation_event",
     "CorrelationEvent",
     "CorrelationGraphConfig",
     "CorrelationStoreReader",
