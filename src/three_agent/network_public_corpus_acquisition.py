@@ -282,11 +282,16 @@ class PublicCorpusFetcher:
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "policy.network must be an object")
         if network.get("https_only") is not True:
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "public corpus acquisition requires HTTPS-only")
+        if network.get("deny_private_special_destinations") is not True:
+            raise PublicCorpusAcquisitionError(
+                "NETWORK_POLICY_INVALID",
+                "public corpus acquisition requires private/special destination denial",
+            )
         if network.get("credentials_allowed") is not False:
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "credentials must remain disabled")
         if network.get("caller_headers_allowed") is not False:
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "caller headers must remain disabled")
-        self._deny_private = network.get("deny_private_special_destinations") is True
+        self._deny_private = True
         self._allow_redirects = network.get("allow_redirects") is True
         try:
             self._max_redirects = int(network.get("max_redirects", 0))
@@ -341,8 +346,7 @@ class PublicCorpusFetcher:
             if not sockaddr:
                 raise PublicCorpusAcquisitionError("DNS_ADDRESS_INVALID", "resolver returned no socket address")
             ip_text = str(sockaddr[0])
-            if self._deny_private:
-                _validate_public_ip(ip_text)
+            _validate_public_ip(ip_text)
             if ip_text not in addresses:
                 addresses.append(ip_text)
         return tuple(addresses)
@@ -484,7 +488,7 @@ class PublicCorpusFetcher:
         except PublicCorpusAcquisitionError:
             part.unlink(missing_ok=True)
             raise
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
             part.unlink(missing_ok=True)
             raise PublicCorpusAcquisitionError("FETCH_FAILED", "public corpus fetch failed") from exc
 
