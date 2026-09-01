@@ -305,6 +305,10 @@ class AuthenticatedCurationRevisionApprovalService:
     ) -> AuthenticatedCurationRevisionApproval:
         proposal = _proposal_from_set(proposal_set, proposal_id)
         actor, grant = self._principal(session_token, client_ip)
+        if proposal.active_level not in grant.normalized_levels:
+            raise CurationRevisionAuthorizationError(
+                "CURATION_REVISION_LEVEL_NOT_AUTHORIZED"
+            )
         domain_satisfied = proposal.domain in grant.normalized_domains
         if proposal.domain_review_required and not domain_satisfied:
             raise CurationRevisionAuthorizationError(
