@@ -47,6 +47,17 @@ from .structured_behavior_ingest import (
     StructuredBehaviorIngestReceipt,
     StructuredBehaviorIngestor,
 )
+from .temporal_behavior import (
+    DeterministicTemporalBucketizer,
+    TemporalAnalysisWindow,
+    TemporalBucket,
+    TemporalBucketConfig,
+)
+from .temporal_scenarios import (
+    DeterministicTemporalScenarioEngine,
+    TemporalScenario,
+    TemporalScenarioAssessment,
+)
 
 __all__ = [
     "APPROVED_DATA_CLASSES",
@@ -71,6 +82,13 @@ __all__ = [
     "HealthTransitionRecord",
     "HealthEvaluation",
     "DeterministicHealthEvaluator",
+    "TemporalBucketConfig",
+    "TemporalAnalysisWindow",
+    "TemporalBucket",
+    "DeterministicTemporalBucketizer",
+    "TemporalScenario",
+    "TemporalScenarioAssessment",
+    "DeterministicTemporalScenarioEngine",
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
