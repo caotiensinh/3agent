@@ -4,7 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.security_monitoring.contracts import CanonicalEvent, MonitoringContractError
+from three_agent.security_monitoring.contracts import (
+    AssetInventoryRecord,
+    CanonicalEvent,
+    MonitoringContractError,
+)
 from three_agent.security_monitoring.entity_context import EventEntityContext, EventEntityReference
 from three_agent.security_monitoring.entity_context_storage import EventEntityContextStore
 from three_agent.security_monitoring.storage import MonitoringStore
@@ -24,12 +28,24 @@ def event(event_id: str = "evt-storage-001") -> CanonicalEvent:
     ).validate()
 
 
+def asset(asset_id: str, host: str, *, enabled: bool = True) -> AssetInventoryRecord:
+    return AssetInventoryRecord(
+        asset_id=asset_id,
+        role="correlation_endpoint",
+        management_host=host,
+        collector_capabilities=(),
+        enabled=enabled,
+    ).validate()
+
+
 class EventEntityContextStorageTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = MonitoringStore(Path(self.temp.name) / "monitoring.sqlite3")
         self.entities = EventEntityContextStore(self.store)
         self.entities.initialize()
+        self.store.upsert_asset(asset("server-rd-01", "192.0.2.2"))
+        self.store.upsert_asset(asset("disabled-rd-01", "192.0.2.3", enabled=False))
 
     def tearDown(self):
         self.temp.cleanup()
@@ -67,6 +83,16 @@ class EventEntityContextStorageTests(unittest.TestCase):
             ("evt-storage-001",),
         )
 
+    def test_asset_reference_requires_enabled_approved_inventory_record(self):
+        self.store.add_event(event())
+        for asset_id in ("unknown-rd-01", "disabled-rd-01"):
+            context = EventEntityContext(
+                event_id="evt-storage-001",
+                references=(EventEntityReference.approved_asset(role="asset", asset_id=asset_id),),
+            ).validate()
+            with self.assertRaises(MonitoringContractError):
+                self.entities.put(context)
+
     def test_exact_replay_is_idempotent_but_mutation_fails_closed(self):
         self.store.add_event(event())
         original = EventEntityContext(
@@ -86,10 +112,22 @@ class EventEntityContextStorageTests(unittest.TestCase):
         with self.assertRaises(MonitoringContractError):
             self.entities.put(mutated)
 
+    def test_historical_exact_replay_survives_later_asset_disable(self):
+        self.store.add_event(event())
+        context = EventEntityContext(
+            event_id="evt-storage-001",
+            references=(EventEntityReference.approved_asset(role="asset", asset_id="server-rd-01"),),
+        ).validate()
+        self.entities.put(context)
+        self.store.upsert_asset(asset("server-rd-01", "192.0.2.2", enabled=False))
+        self.entities.put(context)
+        self.assertEqual(self.entities.get("evt-storage-001"), context)
+
     def test_existing_monitoring_database_can_be_extended_in_place(self):
         second_path = Path(self.temp.name) / "existing.sqlite3"
         old_store = MonitoringStore(second_path)
         old_store.initialize()
+        old_store.upsert_asset(asset("gateway-01", "192.0.2.10"))
         old_store.add_event(event("evt-before-extension"))
         extension = EventEntityContextStore(old_store)
         extension.initialize()
@@ -101,7 +139,10 @@ class EventEntityContextStorageTests(unittest.TestCase):
         self.assertEqual(extension.get("evt-before-extension"), context)
         self.assertEqual(old_store.count("canonical_events"), 1)
 
-    def test_lookup_bounds_fail_closed(self):
+    def test_empty_context_and_lookup_bounds_fail_closed(self):
+        self.store.add_event(event())
+        with self.assertRaises(MonitoringContractError):
+            self.entities.put(EventEntityContext(event_id="evt-storage-001", references=()).validate())
         with self.assertRaises(MonitoringContractError):
             self.entities.event_ids_for_entity("entity:ip:sha256:" + "a" * 64, limit=0)
         with self.assertRaises(MonitoringContractError):
