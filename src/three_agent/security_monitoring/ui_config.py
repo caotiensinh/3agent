@@ -170,22 +170,32 @@ class SecurityMonitoringUIConfigManager:
         config = _validate_payload(payload)
         self._path_safe()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        try:
-            os.chmod(self.path.parent, 0o700)
-        except OSError:
-            pass
+        if os.name == "posix":
+            try:
+                os.chmod(self.path.parent, 0o700)
+            except OSError:
+                pass
         encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
         fd, name = tempfile.mkstemp(prefix=".security-monitoring-", suffix=".tmp", dir=self.path.parent)
         temp = Path(name)
         try:
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "wb") as handle:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+            handle = os.fdopen(fd, "wb")
+            fd = -1
+            with handle:
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp, self.path)
-            os.chmod(self.path, 0o600)
+            if os.name == "posix":
+                os.chmod(self.path, 0o600)
         finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             try:
                 temp.unlink()
             except FileNotFoundError:

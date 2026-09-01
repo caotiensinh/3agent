@@ -49,8 +49,6 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
                 manager.validate(payload)
 
     def test_save_is_atomic_private_and_round_trips(self) -> None:
-        if os.name != "posix":
-            self.skipTest("POSIX mode assertion")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             manager = self.manager(root)
@@ -69,7 +67,8 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             ]
             result = manager.save(payload)
             self.assertTrue(result["saved"])
-            self.assertEqual(manager.path.stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(manager.path.stat().st_mode & 0o777, 0o600)
             loaded = manager.get()
             self.assertEqual(loaded["config"]["assets"][0]["asset_id"], "switch-01")
             self.assertEqual(loaded["summary"]["asset_count"], 1)
