@@ -10,6 +10,11 @@ from .correlation_graph import (
     DeterministicIncidentCorrelator,
     IncidentGraph,
 )
+from .correlation_support import (
+    CorrelationSupportConfig,
+    IncidentSupportingEvidence,
+    attach_supporting_evidence,
+)
 from .entity_context import ENTITY_CONTEXT_SCHEMA, EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
 from .storage import MonitoringStore
@@ -33,6 +38,18 @@ class CorrelationWindow:
         object.__setattr__(self, "starts_at", start.isoformat())
         object.__setattr__(self, "ends_at", end.isoformat())
         return self
+
+
+@dataclass(frozen=True)
+class CorrelatedIncidentBundle:
+    graph: IncidentGraph
+    support: IncidentSupportingEvidence | None
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "graph": self.graph.public_dict(),
+            "support": self.support.public_dict() if self.support is not None else None,
+        }
 
 
 class CorrelationStoreReader:
@@ -135,3 +152,29 @@ class CorrelationStoreReader:
     def correlate_window(self, window: CorrelationWindow) -> tuple[IncidentGraph, ...]:
         events = self.read_window(window)
         return DeterministicIncidentCorrelator(self.config).correlate(events)
+
+    def correlate_window_with_support(
+        self,
+        window: CorrelationWindow,
+        *,
+        support_config: CorrelationSupportConfig | None = None,
+    ) -> tuple[CorrelatedIncidentBundle, ...]:
+        """Return causal graphs plus separate fact-only operational support."""
+
+        events = self.read_window(window)
+        graphs = DeterministicIncidentCorrelator(self.config).correlate(events)
+        if not graphs:
+            return ()
+        attachments = {
+            item.graph_id: item
+            for item in attach_supporting_evidence(
+                graphs,
+                events,
+                config=support_config
+                or CorrelationSupportConfig(window_seconds=self.config.window_seconds),
+            )
+        }
+        return tuple(
+            CorrelatedIncidentBundle(graph=graph, support=attachments.get(graph.graph_id))
+            for graph in graphs
+        )
