@@ -139,6 +139,7 @@ class SecurityMonitoringUIConfigManager:
         return {
             "schema_version": CONFIG_SCHEMA,
             "state": "configured" if exists else "safe_default_not_saved",
+            "mode": "operator-configured" if exists else "safe-default",
             "path_source": self.path_source,
             "config_path": str(self.path),
             "config": payload,
@@ -193,6 +194,7 @@ class SecurityMonitoringUIConfigManager:
         return {
             "schema_version": CONFIG_SCHEMA,
             "saved": True,
+            "mode": "operator-configured",
             "config_path": str(self.path),
             "summary": _config_summary(config),
             "readiness": self._readiness_for(config),
@@ -235,8 +237,10 @@ class SecurityMonitoringUIConfigManager:
                 secret_file = secret_dir / f"{secret_name}.json"
                 if not secret_file.is_file() or secret_file.is_symlink():
                     issues.append({"code": "SECRET_REF_UNRESOLVED", "message": f"{asset.asset_id}: credential reference is not present in the local secret boundary."})
+        ready = not issues
         return {
-            "ready": not issues,
+            "ready": ready,
+            "status": "ready" if ready else "blocked",
             "config_saved": saved,
             "issues": issues,
             "warnings": warnings,
