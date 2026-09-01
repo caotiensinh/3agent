@@ -32,6 +32,8 @@ from .dns_behavior import DNSBehaviorFeatures, extract_dns_behavior_features
 from .dns_behavior_storage import DNSBehaviorFeatureStore
 from .entity_context import EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
+from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
+from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
 from .network_triage import (
     DeterministicNetworkIncidentTriage,
     NetworkIncidentTriage,
@@ -63,6 +65,12 @@ __all__ = [
     "ReplayBatch",
     "ParsedReplayBatch",
     "DeterministicByteReplay",
+    "HEALTH_STATES",
+    "HealthPolicyConfig",
+    "HealthStateRecord",
+    "HealthTransitionRecord",
+    "HealthEvaluation",
+    "DeterministicHealthEvaluator",
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
