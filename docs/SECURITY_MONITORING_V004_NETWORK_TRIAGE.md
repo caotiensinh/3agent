@@ -46,6 +46,27 @@ If IDS corroborates a graph that already has another exact rule, confidence beco
 
 **Source severity is never manufactured by triage.** The output copies the graph severity exactly. Investigation priority and confidence are analyst metadata, not a replacement for source evidence.
 
+## Local AI Analyst integration
+
+`LocalAIAnalyst` can optionally receive validated `NetworkIncidentTriage` records in addition to the existing deterministic report. The existing `analyze(report)` path remains valid and unchanged for callers that do not provide triage.
+
+The generative model receives only a compact bounded view of triage metadata:
+
+- triage reference;
+- graph reference and graph fingerprint;
+- triage kind, confidence, source severity and investigation priority;
+- deterministic reason codes, stage types and rule IDs;
+- at most eight stored evidence references per triage record;
+- first/last observed timestamps.
+
+The model view deliberately excludes `entity_refs` and `event_ids`. This means inventory asset IDs and typed IP/DNS/user/process/service hashes remain outside the generative prompt even though deterministic storage retains them for audit and replay.
+
+The AI evidence pack accepts at most 16 triage records and remains inside the existing 16 KiB total pack budget. Highest investigation priority is retained first. Under pack pressure, lower-priority findings are removed before correlated triage; if the bounded pack still cannot fit, construction fails closed.
+
+Only references present in `allowed_evidence_ids` may be cited by model output. Each retained triage contributes its `triage:` reference, `graph:` reference and bounded stored evidence references to that allow-list. Invented references therefore fail deterministic output validation and trigger the existing bounded retry/fallback path.
+
+A triage-only evidence pack is material enough to invoke the local analyst. The system prompt explicitly states that deterministic network triage is review context, **not proof of compromise and never authorization to act**.
+
 ## Privacy boundary
 
 The triage output preserves graph/event/evidence anchors so an operator can trace the decision back to stored evidence. It does not reveal the raw values used to create sensitive entity links.
@@ -58,7 +79,7 @@ Approved inventory assets may remain explicit as:
 
 `asset:<asset_id>`
 
-Any raw or malformed entity identity is rejected.
+Any raw or malformed entity identity is rejected. Before AI analysis, even those approved/hashed entity references are removed from the model-visible evidence pack.
 
 ## Resource bounds
 
@@ -67,13 +88,16 @@ Default analyst-side bounds are independent of upstream collection bounds:
 - maximum graphs: 128;
 - maximum event references: 4,096;
 - maximum entity references: 16,384;
-- maximum evidence references: 4,096.
+- maximum evidence references: 4,096;
+- maximum triage records visible to LocalAIAnalyst: 16;
+- maximum evidence references per model-visible triage record: 8;
+- total AI evidence pack budget: 16 KiB.
 
 Configuration has hard ceilings and invalid values fail closed. Exact replay is deduplicated before aggregate bounds are evaluated, preventing replay inflation while still rejecting conflicting evidence under the same graph ID.
 
 ## Authority boundary
 
-`network_triage_plan()` declares the stage as `local_deterministic` and `advisory`.
+`network_triage_plan()` declares the deterministic triage stage as `local_deterministic` and `advisory`.
 
 Enabled capability is limited to validation, exact-chain classification, evidence-anchor preservation and bounded advisory output.
 
@@ -85,17 +109,19 @@ The following remain disabled:
 - network mutation;
 - credential retrieval;
 - remediation;
-- external model calls;
+- external model calls from the deterministic triage module;
 - outbound network access.
 
-This module therefore cannot scan a subnet, run shell commands, capture traffic, change network policy, quarantine a host, retrieve credentials or call an Internet/LLM service.
+The deterministic triage module therefore cannot scan a subnet, run shell commands, capture traffic, change network policy, quarantine a host, retrieve credentials or call an Internet/LLM service.
+
+`LocalAIAnalyst` remains a separate advisory-only consumer. It receives no tool interface and no shell, network, inventory mutation, severity mutation or remediation API. Model output cannot mutate the deterministic evidence, source severity or network state.
 
 ## Operator interpretation
 
 A high-priority triage record means: **review this correlated evidence first**. It does not mean an attack has been conclusively proven, and it never authorizes an automated response.
 
-The operator can use `triage_id`, `graph_id`, `graph_fingerprint`, `event_ids` and `evidence_refs` to reproduce and audit the local decision.
+The operator can use `triage_id`, `graph_id`, `graph_fingerprint`, `event_ids` and `evidence_refs` in deterministic storage to reproduce and audit the local decision. The AI view is intentionally smaller than that audit record.
 
 ## v0.0.4 acceptance target
 
-The checkpoint is complete only when focused tests cover deterministic classification, replay handling, graph integrity, privacy, bounds and authority isolation, and the repository regression suite plus exact-head CI remain green.
+The checkpoint is complete only when focused tests cover deterministic classification, replay handling, graph integrity, privacy, bounds, AI-pack redaction, evidence-reference allow-listing, backward-compatible analyst integration and authority isolation, and the repository regression suite plus exact-head CI remain green.
