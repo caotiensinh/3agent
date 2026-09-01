@@ -15,6 +15,7 @@ from .correlation_graph import (
     DeterministicIncidentCorrelator,
     IncidentGraph,
 )
+from .correlation_store import CorrelationStoreReader, CorrelationWindow
 from .entity_context import EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
 from .policy import MonitoringCapabilityDecision, MonitoringPolicy, MonitoringPolicyEngine
@@ -35,6 +36,8 @@ __all__ = [
     "EventEntityContextStore",
     "CorrelationEvent",
     "CorrelationGraphConfig",
+    "CorrelationStoreReader",
+    "CorrelationWindow",
     "DeterministicIncidentCorrelator",
     "IncidentGraph",
     "MonitoringCapabilityDecision",
