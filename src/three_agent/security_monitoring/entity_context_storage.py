@@ -64,6 +64,8 @@ class EventEntityContextStore:
                 "ORDER BY kind,role,entity_ref",
                 (validated.event_id,),
             ).fetchall()
+            if existing_rows and {row["schema_version"] for row in existing_rows} != {ENTITY_CONTEXT_SCHEMA}:
+                raise MonitoringContractError("stored entity context schema is invalid")
             existing = tuple(
                 EventEntityReference(
                     kind=row["kind"], role=row["role"], entity_ref=row["entity_ref"]
