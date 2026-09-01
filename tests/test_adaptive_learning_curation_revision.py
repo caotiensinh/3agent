@@ -359,6 +359,31 @@ class AdaptiveLearningCurationRevisionTests(unittest.TestCase):
                 client_ip="192.168.11.20",
             )
 
+    def test_reviewer_level_grant_must_cover_active_knowledge_level(self):
+        _active, row = self.active_item("level-grant")
+        proposal_set, proposal = self.proposal(row)
+        policy = LearningReviewerAuthorizationPolicy(
+            (
+                LearningReviewerGrant(
+                    user_id=self.reviewer["user_id"],
+                    allowed_levels=("enterprise",),
+                    reviewer_domains=(),
+                ),
+            )
+        )
+        service = AuthenticatedCurationRevisionApprovalService(
+            self.auth, self.store, self.authority, policy
+        )
+        with self.assertRaisesRegex(
+            CurationRevisionAuthorizationError, "LEVEL_NOT_AUTHORIZED"
+        ):
+            service.approve(
+                proposal_set=proposal_set,
+                proposal_id=proposal.proposal_id,
+                session_token=self.token,
+                client_ip="192.168.11.20",
+            )
+
     def test_security_revision_requires_explicit_domain_reviewer_entitlement(self):
         _active, row = self.active_item("security", domain="security")
         proposal_set, proposal = self.proposal(
