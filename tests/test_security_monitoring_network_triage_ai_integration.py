@@ -11,6 +11,11 @@ from three_agent.security_monitoring.ai_analyst import (
     build_ai_evidence_pack,
 )
 from three_agent.security_monitoring.contracts import MonitoringContractError
+from three_agent.security_monitoring.correlation_graph import (
+    RULE_AUTH_PROCESS,
+    RULE_DNS_FLOW,
+    RULE_FLOW_AUTH,
+)
 from three_agent.security_monitoring.network_triage import NetworkIncidentTriage
 from three_agent.security_monitoring.reporting import DeterministicReport, PeriodSummary
 
@@ -64,7 +69,7 @@ def triage(
         investigation_priority=priority,
         reason_codes=("complete_exact_multistage_chain", "exact_dns_flow"),
         stage_types=("DNS", "FLOW", "AUTH", "PROCESS"),
-        rule_ids=("auth-process-v1", "dns-flow-v1", "flow-auth-v1"),
+        rule_ids=(RULE_AUTH_PROCESS, RULE_DNS_FLOW, RULE_FLOW_AUTH),
         event_ids=(f"evt-{index}-1", f"evt-{index}-2"),
         evidence_refs=(f"event:evt-{index}-1", f"event:evt-{index}-2"),
         entity_refs=(
