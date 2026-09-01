@@ -1,7 +1,9 @@
 name: security-config-selfhosted-ci
 
 on:
-  pull_request:
+  push:
+    branches:
+      - 'feature/security-configuration-center-v001'
     paths:
       - '.github/workflows/security-config-selfhosted-ci.yml'
       - 'scripts/install_chat_gateway.sh'
@@ -16,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-config-selfhosted-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,14 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
           clean: true
 
-      - name: Verify exact PR head
+      - name: Verify exact source head
         shell: bash
         env:
-          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           ACTUAL_SHA="$(git rev-parse HEAD)"
@@ -74,7 +76,7 @@ jobs:
       - name: Enterprise verification EV-01 through EV-10
         shell: bash
         env:
-          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+          EXACT_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           "$TEST_VENV/bin/python" scripts/security_enterprise_verify.py \
