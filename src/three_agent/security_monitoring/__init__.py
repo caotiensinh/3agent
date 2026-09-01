@@ -30,6 +30,21 @@ from .correlation_graph import (
 from .correlation_store import CorrelationStoreReader, CorrelationWindow
 from .dns_behavior import DNSBehaviorFeatures, extract_dns_behavior_features
 from .dns_behavior_storage import DNSBehaviorFeatureStore
+from .edge_agent import (
+    EDGE_READ_ONLY_CAPABILITIES,
+    AuthenticatedEdgeEnvelope,
+    BoundedEdgeEnvelopeQueue,
+    EdgeAgentDescriptor,
+    EdgeBackpressure,
+    EdgeCollectionRequest,
+    EdgeEvidenceEnvelope,
+    EdgeEvidenceItem,
+    EdgeQueuePolicy,
+    authorize_edge_request,
+    build_edge_envelope,
+    seal_edge_envelope,
+    verify_edge_envelope,
+)
 from .entity_context import EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
 from .flow_process_attribution import FlowTupleEvidence, SocketProcessObservation, endpoint_ref
@@ -120,6 +135,19 @@ __all__ = [
     "RuleWorkCluster",
     "bind_rule_to_authorized_work",
     "cluster_authorized_rule_work",
+    "EDGE_READ_ONLY_CAPABILITIES",
+    "EdgeAgentDescriptor",
+    "EdgeCollectionRequest",
+    "EdgeEvidenceItem",
+    "EdgeEvidenceEnvelope",
+    "AuthenticatedEdgeEnvelope",
+    "EdgeQueuePolicy",
+    "EdgeBackpressure",
+    "BoundedEdgeEnvelopeQueue",
+    "authorize_edge_request",
+    "build_edge_envelope",
+    "seal_edge_envelope",
+    "verify_edge_envelope",
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
