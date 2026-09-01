@@ -49,7 +49,7 @@ class ReplayParserIntegrationTests(unittest.TestCase):
         self.assertEqual(result.replay.receipt.stop_reason, "partial_record")
         self.assertEqual(result.next_checkpoint.cursor_offset_bytes, len(valid + malformed))
         self.assertEqual(result.next_checkpoint.observed_size_bytes, len(payload))
-        self.assertEqual(result.next_checkpoint.last_event_at, "2026-09-01T12:00:00+00:00")
+        self.assertEqual(result.next_checkpoint.last_event_at, "2026-09-01T12:00:00Z")
 
     def test_repeated_input_and_timestamp_are_deterministic(self) -> None:
         payload = b"bad-record\n"
