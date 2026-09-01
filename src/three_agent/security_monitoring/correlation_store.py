@@ -51,6 +51,10 @@ class CorrelationStoreReader:
 
     def read_window(self, window: CorrelationWindow) -> tuple[CorrelationEvent, ...]:
         bound = window.validate()
+        starts_at = datetime.fromisoformat(bound.starts_at)
+        ends_at = datetime.fromisoformat(bound.ends_at)
+        if (ends_at - starts_at).total_seconds() > self.config.window_seconds:
+            raise MonitoringContractError("correlation store query window exceeds configured time bound")
         self.entity_store.initialize()
         with self.store.connect() as conn:
             event_rows = conn.execute(
