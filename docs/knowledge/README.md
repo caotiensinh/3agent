@@ -15,6 +15,7 @@ The WorkSpace authority hierarchy in `AGENTS.md` remains controlling. Determinis
 - `SELF_IMPROVEMENT_DOCTRINE.md` — canonical WorkSpace interpretation of experience-driven learning, memory, procedural skills, validation, curation, rollback, and safe self-improvement.
 - `NETWORK_SECURITY_ANALYST_LEARNING.md` — domain-specific application for Network Monitoring, Security Analysis, and general Analyst work, where evidence quality and false-positive control are critical.
 - `NETWORK_SECURITY_INTELLIGENCE_V002.md` — operator-bounded public corpus acquisition, CTU-13 CC-BY flow admission, truth-separated streaming normalization, and deterministic advisory deep-flow security signals.
+- `NETWORK_SECURITY_INTELLIGENCE_V003.md` — privacy-preserving typed entity references, additive event/entity persistence, strict structured auth/process enrichment, and exact-relationship multi-source incident graphs across DNS, flow, authentication, process and IDS evidence.
 - `ADAPTIVE_LEARNING_PHASE1.md` — implemented deterministic contracts for evidence, experience, candidate provenance, contradictions, validation receipts, classification monotonicity and knowledge-level promotion.
 - `ADAPTIVE_LEARNING_PHASE2.md` — implemented offline/synthetic Network/Security/Analyst evaluation corpus and metadata-only deterministic replay.
 - `ADAPTIVE_LEARNING_PHASE3.md` — implemented local immutable version store, append-only hash-chained audit ledger, staged/active lifecycle, enterprise-baseline protection, archive, and exact-version rollback.
