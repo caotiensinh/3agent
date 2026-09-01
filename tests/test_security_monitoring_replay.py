@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+import unittest
 
 from three_agent.security_monitoring.checkpoint import SourceCheckpoint, SourceDescriptor
 from three_agent.security_monitoring.contracts import MonitoringContractError
@@ -41,90 +41,85 @@ def harness(**overrides: object) -> DeterministicByteReplay:
     return DeterministicByteReplay(**values)  # type: ignore[arg-type]
 
 
-def test_same_input_and_checkpoint_produce_byte_identical_receipt() -> None:
-    payload = b"alpha\nbeta\ngamma\n"
-    left = harness().replay(source=source(), source_bytes=payload)
-    right = harness().replay(source=source(), source_bytes=payload)
-    assert [item.text for item in left.records] == ["alpha", "beta", "gamma"]
-    assert left.receipt.to_json() == right.receipt.to_json()
-    assert left.receipt.fingerprint == right.receipt.fingerprint
+class DeterministicByteReplayTests(unittest.TestCase):
+    def test_same_input_and_checkpoint_produce_byte_identical_receipt(self) -> None:
+        payload = b"alpha\nbeta\ngamma\n"
+        left = harness().replay(source=source(), source_bytes=payload)
+        right = harness().replay(source=source(), source_bytes=payload)
+        self.assertEqual([item.text for item in left.records], ["alpha", "beta", "gamma"])
+        self.assertEqual(left.receipt.to_json(), right.receipt.to_json())
+        self.assertEqual(left.receipt.fingerprint, right.receipt.fingerprint)
+
+    def test_resume_starts_at_exact_record_boundary(self) -> None:
+        payload = b"alpha\nbeta\ngamma\n"
+        prior = checkpoint(cursor=len(b"alpha\n"), size=len(payload))
+        batch = harness().replay(source=source(), source_bytes=payload, checkpoint=prior)
+        self.assertEqual(batch.compatibility.action, "resume")
+        self.assertEqual(batch.receipt.start_offset_bytes, len(b"alpha\n"))
+        self.assertEqual([item.text for item in batch.records], ["beta", "gamma"])
+
+    def test_rotation_resets_to_start_and_replays_new_source(self) -> None:
+        old = source(identity_fingerprint=IDENTITY_A)
+        new = source(identity_fingerprint=IDENTITY_B)
+        prior = checkpoint(cursor=6, size=11, source_value=old)
+        batch = harness().replay(source=new, source_bytes=b"new-1\nnew-2\n", checkpoint=prior)
+        self.assertEqual((batch.compatibility.action, batch.compatibility.reason_code), ("reset", "source_rotated"))
+        self.assertEqual(batch.receipt.start_offset_bytes, 0)
+        self.assertEqual([item.text for item in batch.records], ["new-1", "new-2"])
+
+    def test_truncation_resets_to_start(self) -> None:
+        prior = checkpoint(cursor=6, size=20)
+        batch = harness().replay(source=source(), source_bytes=b"new\n", checkpoint=prior)
+        self.assertEqual((batch.compatibility.action, batch.compatibility.reason_code), ("reset", "source_truncated"))
+        self.assertEqual(batch.receipt.start_offset_bytes, 0)
+        self.assertEqual([item.text for item in batch.records], ["new"])
+
+    def test_invalid_checkpoint_never_exposes_replay(self) -> None:
+        prior = checkpoint(cursor=0, size=0, source_value=source(source_id="other-source"))
+        with self.assertRaisesRegex(MonitoringContractError, "not replayable"):
+            harness().replay(source=source(), source_bytes=b"alpha\n", checkpoint=prior)
+
+    def test_non_boundary_cursor_fails_closed(self) -> None:
+        payload = b"alpha\nbeta\n"
+        prior = checkpoint(cursor=2, size=len(payload))
+        with self.assertRaisesRegex(MonitoringContractError, "record boundary"):
+            harness().replay(source=source(), source_bytes=payload, checkpoint=prior)
+
+    def test_partial_trailing_record_is_not_consumed(self) -> None:
+        payload = b"alpha\nbeta-partial"
+        batch = harness().replay(source=source(), source_bytes=payload)
+        self.assertEqual([item.text for item in batch.records], ["alpha"])
+        self.assertEqual(batch.receipt.stop_reason, "partial_record")
+        self.assertEqual(batch.receipt.next_offset_bytes, len(b"alpha\n"))
+        self.assertEqual(batch.receipt.replayed_bytes, len(b"alpha\n"))
+
+    def test_record_limit_preserves_next_exact_offset(self) -> None:
+        payload = b"a\nb\nc\n"
+        batch = harness(max_records=2).replay(source=source(), source_bytes=payload)
+        self.assertEqual([item.text for item in batch.records], ["a", "b"])
+        self.assertEqual(batch.receipt.stop_reason, "record_limit")
+        self.assertEqual(batch.receipt.next_offset_bytes, len(b"a\nb\n"))
+
+    def test_byte_limit_never_splits_a_record(self) -> None:
+        payload = b"abc\ndef\n"
+        batch = harness(max_replay_bytes=5, max_record_bytes=5).replay(source=source(), source_bytes=payload)
+        self.assertEqual([item.text for item in batch.records], ["abc"])
+        self.assertEqual(batch.receipt.stop_reason, "byte_limit")
+        self.assertEqual(batch.receipt.next_offset_bytes, len(b"abc\n"))
+
+    def test_receipt_is_hash_only_and_does_not_serialize_raw_lines(self) -> None:
+        secretish_line = "user=alice action=login"
+        batch = harness().replay(source=source(), source_bytes=(secretish_line + "\n").encode())
+        self.assertEqual(batch.records[0].text, secretish_line)
+        self.assertNotIn(secretish_line, batch.receipt.to_json())
+        self.assertIn("sha256:", batch.receipt.to_json())
+
+    def test_source_and_record_bounds_fail_closed(self) -> None:
+        with self.assertRaisesRegex(MonitoringContractError, "max_source_bytes"):
+            harness(max_source_bytes=4096).replay(source=source(), source_bytes=b"x" * 4097)
+        with self.assertRaisesRegex(MonitoringContractError, "max_record_bytes"):
+            harness(max_record_bytes=4).replay(source=source(), source_bytes=b"12345\n")
 
 
-def test_resume_starts_at_exact_record_boundary() -> None:
-    payload = b"alpha\nbeta\ngamma\n"
-    prior = checkpoint(cursor=len(b"alpha\n"), size=len(payload))
-    batch = harness().replay(source=source(), source_bytes=payload, checkpoint=prior)
-    assert batch.compatibility.action == "resume"
-    assert batch.receipt.start_offset_bytes == len(b"alpha\n")
-    assert [item.text for item in batch.records] == ["beta", "gamma"]
-
-
-def test_rotation_resets_to_start_and_replays_new_source() -> None:
-    old = source(identity_fingerprint=IDENTITY_A)
-    new = source(identity_fingerprint=IDENTITY_B)
-    prior = checkpoint(cursor=6, size=11, source_value=old)
-    batch = harness().replay(source=new, source_bytes=b"new-1\nnew-2\n", checkpoint=prior)
-    assert (batch.compatibility.action, batch.compatibility.reason_code) == ("reset", "source_rotated")
-    assert batch.receipt.start_offset_bytes == 0
-    assert [item.text for item in batch.records] == ["new-1", "new-2"]
-
-
-def test_truncation_resets_to_start() -> None:
-    prior = checkpoint(cursor=6, size=20)
-    batch = harness().replay(source=source(), source_bytes=b"new\n", checkpoint=prior)
-    assert (batch.compatibility.action, batch.compatibility.reason_code) == ("reset", "source_truncated")
-    assert batch.receipt.start_offset_bytes == 0
-    assert [item.text for item in batch.records] == ["new"]
-
-
-def test_invalid_checkpoint_never_exposes_replay() -> None:
-    prior = checkpoint(cursor=0, size=0, source_value=source(source_id="other-source"))
-    with pytest.raises(MonitoringContractError, match="not replayable"):
-        harness().replay(source=source(), source_bytes=b"alpha\n", checkpoint=prior)
-
-
-def test_non_boundary_cursor_fails_closed() -> None:
-    payload = b"alpha\nbeta\n"
-    prior = checkpoint(cursor=2, size=len(payload))
-    with pytest.raises(MonitoringContractError, match="record boundary"):
-        harness().replay(source=source(), source_bytes=payload, checkpoint=prior)
-
-
-def test_partial_trailing_record_is_not_consumed() -> None:
-    payload = b"alpha\nbeta-partial"
-    batch = harness().replay(source=source(), source_bytes=payload)
-    assert [item.text for item in batch.records] == ["alpha"]
-    assert batch.receipt.stop_reason == "partial_record"
-    assert batch.receipt.next_offset_bytes == len(b"alpha\n")
-    assert batch.receipt.replayed_bytes == len(b"alpha\n")
-
-
-def test_record_limit_preserves_next_exact_offset() -> None:
-    payload = b"a\nb\nc\n"
-    batch = harness(max_records=2).replay(source=source(), source_bytes=payload)
-    assert [item.text for item in batch.records] == ["a", "b"]
-    assert batch.receipt.stop_reason == "record_limit"
-    assert batch.receipt.next_offset_bytes == len(b"a\nb\n")
-
-
-def test_byte_limit_never_splits_a_record() -> None:
-    payload = b"abc\ndef\n"
-    batch = harness(max_replay_bytes=5, max_record_bytes=5).replay(source=source(), source_bytes=payload)
-    assert [item.text for item in batch.records] == ["abc"]
-    assert batch.receipt.stop_reason == "byte_limit"
-    assert batch.receipt.next_offset_bytes == len(b"abc\n")
-
-
-def test_receipt_is_hash_only_and_does_not_serialize_raw_lines() -> None:
-    secretish_line = "user=alice action=login"
-    batch = harness().replay(source=source(), source_bytes=(secretish_line + "\n").encode())
-    assert batch.records[0].text == secretish_line
-    assert secretish_line not in batch.receipt.to_json()
-    assert "sha256:" in batch.receipt.to_json()
-
-
-def test_source_and_record_bounds_fail_closed() -> None:
-    with pytest.raises(MonitoringContractError, match="max_source_bytes"):
-        harness(max_source_bytes=4096).replay(source=source(), source_bytes=b"x" * 4097)
-    with pytest.raises(MonitoringContractError, match="max_record_bytes"):
-        harness(max_record_bytes=4).replay(source=source(), source_bytes=b"12345\n")
+if __name__ == "__main__":
+    unittest.main()
