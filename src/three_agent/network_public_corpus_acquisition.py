@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
 import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +28,7 @@ ACQUISITION_VERSION = "workspace-network-public-acquisition/0.1"
 DEFAULT_POLICY = Path("config/network-data-policy.json")
 DEFAULT_REGISTRY = Path("config/network-datasets.registry.json")
 CHUNK_BYTES = 1024 * 1024
+REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 
 
 class PublicCorpusAcquisitionError(RuntimeError):
@@ -113,15 +116,144 @@ class AcquisitionReceipt:
         }
 
 
-class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def __init__(self, validator: Callable[[str], None], max_redirects: int):
-        super().__init__()
-        self._validator = validator
-        self.max_redirections = max_redirects
+@dataclass(frozen=True)
+class _ValidatedSource:
+    parsed: urllib.parse.SplitResult
+    host: str
+    public_addresses: tuple[str, ...]
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
-        self._validator(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that never resolves the reviewed hostname at connect time.
+
+    DNS is resolved and policy-validated before construction. The TCP socket is
+    opened to that exact vetted address while TLS SNI and certificate hostname
+    verification continue to use the reviewed hostname.
+    """
+
+    def __init__(self, host: str, pinned_ip: str, *, timeout: float):
+        super().__init__(host=host, port=443, timeout=timeout, context=ssl.create_default_context())
+        self._pinned_ip = pinned_ip
+
+    def connect(self) -> None:
+        if self._tunnel_host is not None:
+            raise PublicCorpusAcquisitionError("PROXY_TUNNEL_DENIED", "HTTPS proxy tunnels are not admitted")
+        raw_socket = socket.create_connection(
+            (self._pinned_ip, self.port),
+            self.timeout,
+            self.source_address,
+        )
+        try:
+            self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+        except BaseException:
+            raw_socket.close()
+            raise
+
+
+class _PinnedHTTPResponse:
+    def __init__(
+        self,
+        connection: http.client.HTTPSConnection,
+        response: http.client.HTTPResponse,
+        url: str,
+    ):
+        self._connection = connection
+        self._response = response
+        self._url = url
+        self.headers = response.headers
+        self._closed = False
+
+    def __enter__(self) -> "_PinnedHTTPResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self.close()
+        return False
+
+    def geturl(self) -> str:
+        return self._url
+
+    def read(self, size: int = -1) -> bytes:
+        return self._response.read(size)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._response.close()
+        finally:
+            self._connection.close()
+
+
+class _PinnedHTTPSOpener:
+    def __init__(self, fetcher: "PublicCorpusFetcher", plan: AcquisitionPlan):
+        self._fetcher = fetcher
+        self._plan = plan
+
+    def open(self, request: urllib.request.Request, timeout: float = 30) -> _PinnedHTTPResponse:
+        if request.get_method() != "GET":
+            raise PublicCorpusAcquisitionError("HTTP_METHOD_DENIED", "only GET is admitted for corpus fetch")
+
+        current_url = request.full_url
+        redirects = 0
+        while True:
+            validated = self._fetcher._validate_source(self._plan, current_url)
+            parsed = validated.parsed
+            target = parsed.path or "/"
+            last_error: BaseException | None = None
+            connection: http.client.HTTPSConnection | None = None
+            response: http.client.HTTPResponse | None = None
+
+            for pinned_ip in validated.public_addresses:
+                candidate = self._fetcher._connection_factory(
+                    validated.host,
+                    pinned_ip,
+                    timeout=timeout,
+                )
+                try:
+                    candidate.request(
+                        "GET",
+                        target,
+                        headers={"User-Agent": "WorkSpace-Public-Corpus/0.1"},
+                    )
+                    response = candidate.getresponse()
+                    connection = candidate
+                    break
+                except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+                    last_error = exc
+                    candidate.close()
+
+            if connection is None or response is None:
+                raise PublicCorpusAcquisitionError(
+                    "FETCH_CONNECT_FAILED",
+                    "could not connect to any policy-validated public dataset address",
+                ) from last_error
+
+            if response.status in REDIRECT_STATUS_CODES:
+                location = response.getheader("Location")
+                response.close()
+                connection.close()
+                if not self._fetcher._allow_redirects:
+                    raise PublicCorpusAcquisitionError("REDIRECT_DENIED", "redirects are disabled by policy")
+                if redirects >= self._fetcher._max_redirects:
+                    raise PublicCorpusAcquisitionError("REDIRECT_LIMIT_EXCEEDED", "redirect limit exceeded")
+                if not location:
+                    raise PublicCorpusAcquisitionError("REDIRECT_LOCATION_MISSING", "redirect response has no Location")
+                current_url = urllib.parse.urljoin(current_url, location)
+                redirects += 1
+                continue
+
+            if response.status < 200 or response.status >= 300:
+                status = response.status
+                response.close()
+                connection.close()
+                raise PublicCorpusAcquisitionError(
+                    "FETCH_HTTP_STATUS_DENIED",
+                    f"dataset source returned HTTP status {status}",
+                )
+
+            return _PinnedHTTPResponse(connection, response, current_url)
 
 
 class PublicCorpusFetcher:
@@ -130,6 +262,8 @@ class PublicCorpusFetcher:
     This component is deliberately separate from model/agent runtime. It accepts
     no credentials or caller-controlled headers, performs no archive extraction,
     and stages one reviewed object at a time under the ephemeral incoming cache.
+    Production transport pins TCP connections to the exact public IP addresses
+    that passed the current DNS policy check, eliminating DNS-rebinding TOCTOU.
     """
 
     def __init__(
@@ -138,9 +272,11 @@ class PublicCorpusFetcher:
         *,
         resolver: Callable[..., Iterable[tuple[Any, ...]]] = socket.getaddrinfo,
         opener: Any | None = None,
+        connection_factory: Callable[..., http.client.HTTPSConnection] = _PinnedHTTPSConnection,
     ):
         self.manager = manager
         self._resolver = resolver
+        self._connection_factory = connection_factory
         network = manager.policy.raw.get("network", {})
         if not isinstance(network, dict):
             raise PublicCorpusAcquisitionError("NETWORK_POLICY_INVALID", "policy.network must be an object")
@@ -191,7 +327,27 @@ class PublicCorpusFetcher:
                 suffixes.append(suffix)
         return tuple(suffixes)
 
-    def _validate_url(self, plan: AcquisitionPlan, raw_url: str) -> urllib.parse.SplitResult:
+    def _resolve_public_addresses(self, host: str) -> tuple[str, ...]:
+        try:
+            answers = tuple(self._resolver(host, 443, type=socket.SOCK_STREAM))
+        except OSError as exc:
+            raise PublicCorpusAcquisitionError("DNS_RESOLUTION_FAILED", "dataset host could not be resolved") from exc
+        if not answers:
+            raise PublicCorpusAcquisitionError("DNS_RESOLUTION_FAILED", "dataset host resolved to no addresses")
+
+        addresses: list[str] = []
+        for answer in answers:
+            sockaddr = answer[4]
+            if not sockaddr:
+                raise PublicCorpusAcquisitionError("DNS_ADDRESS_INVALID", "resolver returned no socket address")
+            ip_text = str(sockaddr[0])
+            if self._deny_private:
+                _validate_public_ip(ip_text)
+            if ip_text not in addresses:
+                addresses.append(ip_text)
+        return tuple(addresses)
+
+    def _validate_source(self, plan: AcquisitionPlan, raw_url: str) -> _ValidatedSource:
         try:
             parsed = urllib.parse.urlsplit(raw_url)
         except ValueError as exc:
@@ -221,30 +377,16 @@ class PublicCorpusFetcher:
                 "SOURCE_SUFFIX_DENIED",
                 "source path does not end with a reviewed dataset file suffix",
             )
-        if self._deny_private:
-            try:
-                answers = tuple(self._resolver(host, 443, type=socket.SOCK_STREAM))
-            except OSError as exc:
-                raise PublicCorpusAcquisitionError("DNS_RESOLUTION_FAILED", "dataset host could not be resolved") from exc
-            if not answers:
-                raise PublicCorpusAcquisitionError("DNS_RESOLUTION_FAILED", "dataset host resolved to no addresses")
-            for answer in answers:
-                sockaddr = answer[4]
-                if not sockaddr:
-                    raise PublicCorpusAcquisitionError("DNS_ADDRESS_INVALID", "resolver returned no socket address")
-                _validate_public_ip(str(sockaddr[0]))
-        return parsed
+        addresses = self._resolve_public_addresses(host)
+        return _ValidatedSource(parsed=parsed, host=host, public_addresses=addresses)
+
+    def _validate_url(self, plan: AcquisitionPlan, raw_url: str) -> urllib.parse.SplitResult:
+        return self._validate_source(plan, raw_url).parsed
 
     def _opener(self, plan: AcquisitionPlan):
         if self._opener_override is not None:
             return self._opener_override
-        if not self._allow_redirects:
-            class NoRedirect(urllib.request.HTTPRedirectHandler):
-                def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
-                    raise PublicCorpusAcquisitionError("REDIRECT_DENIED", "redirects are disabled by policy")
-            return urllib.request.build_opener(NoRedirect())
-        handler = _SafeRedirectHandler(lambda url: self._validate_url(plan, url), self._max_redirects)
-        return urllib.request.build_opener(handler)
+        return _PinnedHTTPSOpener(self, plan)
 
     @staticmethod
     def _commit_no_overwrite(part: Path, target: Path) -> None:
