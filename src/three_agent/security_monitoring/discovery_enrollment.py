@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -162,14 +163,8 @@ class DiscoveryEnrollmentService:
                 (str(DISCOVERY_ENROLLMENT_STORAGE_VERSION),),
             )
 
-    def _load_receipt(self, enrollment_id: str) -> DiscoveryEnrollmentReceipt | None:
-        with self.store.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM discovery_enrollment_receipts WHERE enrollment_id=?",
-                (enrollment_id,),
-            ).fetchone()
-        if row is None:
-            return None
+    @staticmethod
+    def _receipt_from_row(row) -> DiscoveryEnrollmentReceipt:
         return DiscoveryEnrollmentReceipt(
             enrollment_id=row["enrollment_id"],
             candidate_id=row["candidate_id"],
@@ -192,17 +187,37 @@ class DiscoveryEnrollmentService:
         if discovery_identity_ref(kind, asset.management_host) != candidate.identity_ref:
             raise MonitoringContractError("approved asset management_host does not match discovery candidate")
 
-    def _verify_inventory_conflicts(self, asset: AssetInventoryRecord) -> None:
-        existing = self.store.get_asset(asset.asset_id)
-        if existing is not None and existing.fingerprint != asset.fingerprint:
-            raise MonitoringContractError("discovery enrollment cannot mutate an existing asset definition")
-        with self.store.connect() as conn:
-            row = conn.execute(
-                "SELECT asset_id,asset_fingerprint FROM approved_assets WHERE management_host=?",
-                (asset.management_host,),
-            ).fetchone()
-        if row is not None and row["asset_id"] != asset.asset_id:
-            raise MonitoringContractError("management_host is already owned by another approved asset")
+    @staticmethod
+    def _write_asset_row(conn, asset: AssetInventoryRecord) -> None:
+        conn.execute(
+            """
+            INSERT INTO approved_assets(
+                asset_id,role,management_host,collector_capabilities_json,
+                allowed_tcp_ports_json,data_class,enabled,credential_ref,asset_fingerprint
+            ) VALUES(?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(asset_id) DO UPDATE SET
+                role=excluded.role,
+                management_host=excluded.management_host,
+                collector_capabilities_json=excluded.collector_capabilities_json,
+                allowed_tcp_ports_json=excluded.allowed_tcp_ports_json,
+                data_class=excluded.data_class,
+                enabled=excluded.enabled,
+                credential_ref=excluded.credential_ref,
+                asset_fingerprint=excluded.asset_fingerprint,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                asset.asset_id,
+                asset.role,
+                asset.management_host,
+                json.dumps(list(asset.collector_capabilities), separators=(",", ":")),
+                json.dumps(list(asset.allowed_tcp_ports), separators=(",", ":")),
+                asset.data_class,
+                1 if asset.enabled else 0,
+                asset.credential_ref.handle if asset.credential_ref else None,
+                asset.fingerprint,
+            ),
+        )
 
     def enroll(
         self,
@@ -217,9 +232,7 @@ class DiscoveryEnrollmentService:
             raise MonitoringContractError("discovery enrollment requires an existing candidate")
         if candidate.fingerprint != approved.candidate_fingerprint:
             raise MonitoringContractError("discovery candidate fingerprint changed before enrollment")
-
         self._verify_candidate_binding(candidate, approved.asset)
-        self._verify_inventory_conflicts(approved.asset)
 
         enrollment_id = "enroll-" + sha256_fingerprint(
             {
@@ -228,28 +241,62 @@ class DiscoveryEnrollmentService:
                 "operator_approval_ref": approved.operator_approval_ref,
             }
         ).split(":", 1)[1][:24]
-        receipt = DiscoveryEnrollmentReceipt(
-            enrollment_id=enrollment_id,
-            candidate_id=candidate.candidate_id,
-            candidate_fingerprint=candidate.fingerprint,
-            asset_id=approved.asset.asset_id,
-            asset_fingerprint=approved.asset.fingerprint,
-            operator_approval_ref=approved.operator_approval_ref,
-            enrolled_at=timestamp,
-        ).validate()
 
-        prior = self._load_receipt(enrollment_id)
-        if prior is not None:
-            if prior.to_json() != receipt.to_json():
-                raise MonitoringContractError("discovery enrollment replay conflicts with persisted receipt")
-            existing = self.store.get_asset(approved.asset.asset_id)
-            if existing is None or existing.fingerprint != approved.asset.fingerprint:
-                raise MonitoringContractError("enrollment receipt exists but approved inventory state diverged")
-            return prior
-
-        self.store.upsert_asset(approved.asset)
         try:
             with self.store.connect() as conn:
+                persisted_candidate = conn.execute(
+                    "SELECT candidate_fingerprint FROM discovery_candidates WHERE candidate_id=?",
+                    (candidate.candidate_id,),
+                ).fetchone()
+                if persisted_candidate is None:
+                    raise MonitoringContractError("discovery candidate disappeared before enrollment")
+                if persisted_candidate["candidate_fingerprint"] != approved.candidate_fingerprint:
+                    raise MonitoringContractError("discovery candidate changed during enrollment")
+
+                prior_row = conn.execute(
+                    "SELECT * FROM discovery_enrollment_receipts WHERE enrollment_id=?",
+                    (enrollment_id,),
+                ).fetchone()
+                if prior_row is not None:
+                    prior = self._receipt_from_row(prior_row)
+                    asset_row = conn.execute(
+                        "SELECT asset_fingerprint FROM approved_assets WHERE asset_id=?",
+                        (approved.asset.asset_id,),
+                    ).fetchone()
+                    if asset_row is None or asset_row["asset_fingerprint"] != approved.asset.fingerprint:
+                        raise MonitoringContractError(
+                            "enrollment receipt exists but approved inventory state diverged"
+                        )
+                    return prior
+
+                existing_asset = conn.execute(
+                    "SELECT asset_fingerprint FROM approved_assets WHERE asset_id=?",
+                    (approved.asset.asset_id,),
+                ).fetchone()
+                if existing_asset is not None and existing_asset["asset_fingerprint"] != approved.asset.fingerprint:
+                    raise MonitoringContractError(
+                        "discovery enrollment cannot mutate an existing asset definition"
+                    )
+                host_owner = conn.execute(
+                    "SELECT asset_id FROM approved_assets WHERE management_host=?",
+                    (approved.asset.management_host,),
+                ).fetchone()
+                if host_owner is not None and host_owner["asset_id"] != approved.asset.asset_id:
+                    raise MonitoringContractError(
+                        "management_host is already owned by another approved asset"
+                    )
+
+                receipt = DiscoveryEnrollmentReceipt(
+                    enrollment_id=enrollment_id,
+                    candidate_id=candidate.candidate_id,
+                    candidate_fingerprint=candidate.fingerprint,
+                    asset_id=approved.asset.asset_id,
+                    asset_fingerprint=approved.asset.fingerprint,
+                    operator_approval_ref=approved.operator_approval_ref,
+                    enrolled_at=timestamp,
+                ).validate()
+
+                self._write_asset_row(conn, approved.asset)
                 conn.execute(
                     """
                     INSERT INTO discovery_enrollment_receipts(
@@ -269,6 +316,6 @@ class DiscoveryEnrollmentService:
                         receipt.schema_version,
                     ),
                 )
+                return receipt
         except sqlite3.IntegrityError as exc:
-            raise MonitoringContractError("discovery enrollment receipt persistence failed") from exc
-        return receipt
+            raise MonitoringContractError("discovery enrollment transaction failed") from exc
