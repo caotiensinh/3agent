@@ -50,6 +50,8 @@ class EventEntityContextStore:
 
     def put(self, context: EventEntityContext) -> None:
         validated = context.validate()
+        if not validated.references:
+            raise MonitoringContractError("stored entity context requires at least one reference")
         with self.store.connect() as conn:
             event = conn.execute(
                 "SELECT event_id FROM canonical_events WHERE event_id=?",
@@ -71,7 +73,21 @@ class EventEntityContextStore:
             if existing and existing != validated.references:
                 raise MonitoringContractError("event entity context mutation is forbidden")
             if existing:
+                # Historical exact replay remains valid even if an inventory asset
+                # is later disabled. New bindings must pass current inventory state.
                 return
+            for reference in validated.references:
+                if reference.kind != "asset":
+                    continue
+                asset_id = reference.entity_ref.removeprefix("asset:")
+                asset = conn.execute(
+                    "SELECT enabled FROM approved_assets WHERE asset_id=?",
+                    (asset_id,),
+                ).fetchone()
+                if asset is None or int(asset["enabled"]) != 1:
+                    raise MonitoringContractError(
+                        "asset entity requires a currently enabled approved inventory record"
+                    )
             try:
                 conn.executemany(
                     "INSERT INTO event_entities(event_id,kind,role,entity_ref,schema_version) "
