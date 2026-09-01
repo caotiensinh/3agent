@@ -1,6 +1,6 @@
 {
   "schema_version": "workspace-network-dataset-registry/v1",
-  "reviewed_at": "2026-08-31",
+  "reviewed_at": "2026-09-01",
   "datasets": [
     {
       "id": "lanl-comprehensive",
@@ -54,6 +54,31 @@
       },
       "formats": ["csv", "pcap", "logs"],
       "notes": "Prefer processed traffic for evidence-pattern extraction. Fetch raw PCAP only when packet-level evidence is necessary to validate a case or extractor."
+    },
+    {
+      "id": "ctu-13",
+      "name": "CTU-13 Botnet Dataset",
+      "status": "enterprise_approved",
+      "license": {
+        "commercial_use": true,
+        "source": "https://www.stratosphereips.org/datasets-overview/",
+        "summary": "CTU-13 is published under Creative Commons CC-BY; preserve attribution and dataset/paper citation in provenance."
+      },
+      "acquisition": {
+        "mode": "public_https",
+        "allowlisted_hosts": ["mcfp.felk.cvut.cz"],
+        "allowlisted_path_prefixes": ["/publicDatasets/CTU-Malware-Capture-Botnet-"],
+        "allowlisted_source_suffixes": [".binetflow"],
+        "credentials": false
+      },
+      "variants": {
+        "bidirectional-netflow": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": true
+        }
+      },
+      "formats": ["binetflow"],
+      "notes": "Phase v0.0.2 admits labelled bidirectional flow text only. Original malware executables, archive-wide synchronization and executable extraction are forbidden. Labels are scorer-only truth and never visible evidence."
     },
     {
       "id": "splunk-bots-v2",
