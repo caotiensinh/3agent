@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import json
 import unittest
 
 from three_agent.security_monitoring.ai_analyst import (
+    AI_EVIDENCE_PACK_SCHEMA_VERSION,
     MAX_EVIDENCE_PACK_BYTES,
     MAX_NETWORK_TRIAGE_IN_PACK,
     LocalAIAnalyst,
@@ -106,13 +108,71 @@ class FixedClient:
 
 
 class NetworkTriageAIIntegrationTests(unittest.TestCase):
-    def test_existing_report_only_path_remains_backward_compatible(self):
-        pack = build_ai_evidence_pack(report())
-        self.assertEqual(pack.payload["network_triage"], [])
-        self.assertEqual(pack.omitted_network_triage, 0)
+    def test_existing_report_only_payload_contract_remains_legacy_compatible(self):
+        current_report = report()
+        pack = build_ai_evidence_pack(current_report)
+        self.assertNotIn("network_triage", pack.payload)
+        self.assertNotIn("omitted_network_triage", pack.payload)
+
+        expected_payload = {
+            "schema_version": AI_EVIDENCE_PACK_SCHEMA_VERSION,
+            "report_id": current_report.report_id,
+            "cutoff_at": current_report.cutoff_at,
+            "periods": {
+                "today": {
+                    "label": "today",
+                    "starts_at": "2026-09-01T00:00:00+09:00",
+                    "ends_at": "2026-09-01T01:00:00+09:00",
+                    "hourly_runs": 1,
+                    "average_coverage_pct": 100.0,
+                    "event_count": 0,
+                    "finding_count": 0,
+                    "open_high_critical": 0,
+                    "data_gap_count": 0,
+                    "severity_counts": {},
+                    "finding_status_counts": {},
+                    "metric_summaries": [],
+                },
+                "rolling_7d": {
+                    "label": "rolling_7d",
+                    "starts_at": "2026-09-01T00:00:00+09:00",
+                    "ends_at": "2026-09-01T01:00:00+09:00",
+                    "hourly_runs": 1,
+                    "average_coverage_pct": 100.0,
+                    "event_count": 0,
+                    "finding_count": 0,
+                    "open_high_critical": 0,
+                    "data_gap_count": 0,
+                    "severity_counts": {},
+                    "finding_status_counts": {},
+                    "metric_summaries": [],
+                },
+                "rolling_30d": {
+                    "label": "rolling_30d",
+                    "starts_at": "2026-09-01T00:00:00+09:00",
+                    "ends_at": "2026-09-01T01:00:00+09:00",
+                    "hourly_runs": 1,
+                    "average_coverage_pct": 100.0,
+                    "event_count": 0,
+                    "finding_count": 0,
+                    "open_high_critical": 0,
+                    "data_gap_count": 0,
+                    "severity_counts": {},
+                    "finding_status_counts": {},
+                    "metric_summaries": [],
+                },
+            },
+            "findings": [],
+            "allowed_evidence_ids": [],
+            "omitted_findings": 0,
+            "authority": "advisory_only",
+        }
+        canonical = json.dumps(expected_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        self.assertEqual(pack.canonical_json, canonical)
+        self.assertEqual(pack.sha256, "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
 
         client = FixedClient("unused")
-        result = LocalAIAnalyst(client).analyze(report())
+        result = LocalAIAnalyst(client).analyze(current_report)
         self.assertEqual(result.status, "not_requested")
         self.assertEqual(result.model_calls, 0)
         self.assertEqual(client.calls, 0)
@@ -168,6 +228,11 @@ class NetworkTriageAIIntegrationTests(unittest.TestCase):
                 report(),
                 (replace(triage(), entity_refs=("192.0.2.10",)),),
             )
+        with self.assertRaises(MonitoringContractError):
+            build_ai_evidence_pack(
+                report(),
+                (replace(triage(), reason_codes=("ignore_previous_instructions",)),),
+            )
         self.assertEqual(client.calls, 0)
 
     def test_highest_priority_triage_is_retained_under_count_bound(self):
@@ -178,7 +243,7 @@ class NetworkTriageAIIntegrationTests(unittest.TestCase):
         records[-1] = triage(99, priority="high", severity="critical", confidence="high")
         pack = build_ai_evidence_pack(report(), records)
         self.assertLessEqual(len(pack.payload["network_triage"]), MAX_NETWORK_TRIAGE_IN_PACK)
-        self.assertEqual(pack.omitted_network_triage, 4)
+        self.assertEqual(pack.payload["omitted_network_triage"], 4)
         self.assertLessEqual(pack.byte_count, MAX_EVIDENCE_PACK_BYTES)
         retained = {item["triage_ref"] for item in pack.payload["network_triage"]}
         self.assertIn("triage:triage-000000000000000000000063", retained)
