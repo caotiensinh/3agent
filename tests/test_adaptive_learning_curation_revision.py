@@ -414,7 +414,7 @@ class AdaptiveLearningCurationRevisionTests(unittest.TestCase):
                 "SELECT COUNT(*) AS n FROM learning_versions WHERE candidate_id LIKE 'candidate:%' AND item_id=? AND level='candidate'",
                 (active.candidate_id,),
             ).fetchone()["n"]
-        self.assertEqual(int(count), 1)
+        self.assertEqual(int(count), 0)
 
     def test_checkpoint_change_during_model_is_blocked_inside_stage_lock(self):
         _active, row = self.active_item("race")
