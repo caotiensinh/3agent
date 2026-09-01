@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from .checkpoint import SourceCheckpoint, SourceDescriptor, _nonnegative_int
 from .checkpoint_compatibility import CheckpointCompatibilityReceipt, SourceContinuationEvaluator
-from .contracts import MonitoringContractError, canonical_json, sha256_fingerprint
+from .contracts import CanonicalEvent, MonitoringContractError, canonical_json, sha256_fingerprint
+from .parsers import QuarantinedRecord, parse_json_sensor_event, parse_syslog_line
 
 REPLAY_RECEIPT_SCHEMA = "workspace-security-monitoring/replay-receipt-v1"
 _REPLAY_STOP_REASONS = {"source_end", "partial_record", "record_limit", "byte_limit"}
+_SUPPORTED_FORMATS = {
+    "syslog-rfc5424": "syslog",
+    "suricata-eve-jsonl": "suricata_eve",
+    "zeek-jsonl": "zeek_json",
+}
 
 
 def _payload_sha256(payload: bytes) -> str:
@@ -102,6 +108,16 @@ class ReplayBatch:
     records: tuple[ReplayRecord, ...]
     receipt: ReplayReceipt
     compatibility: CheckpointCompatibilityReceipt
+
+
+@dataclass(frozen=True)
+class ParsedReplayBatch:
+    """Deterministic parser output plus the exact next source checkpoint."""
+
+    events: tuple[CanonicalEvent, ...]
+    quarantined: tuple[QuarantinedRecord, ...]
+    replay: ReplayBatch
+    next_checkpoint: SourceCheckpoint
 
 
 class DeterministicByteReplay:
@@ -204,3 +220,65 @@ class DeterministicByteReplay:
             stop_reason=stop_reason,
         ).validate()
         return ReplayBatch(records=tuple(records), receipt=receipt, compatibility=compatibility)
+
+    def replay_and_parse(
+        self,
+        *,
+        source: SourceDescriptor,
+        source_bytes: bytes,
+        checkpointed_at: str,
+        checkpoint: SourceCheckpoint | None = None,
+    ) -> ParsedReplayBatch:
+        """Replay complete records through existing parsers and emit the next checkpoint.
+
+        This method performs no I/O and no storage mutation. Unsupported formats fail
+        closed before replay. Quarantine timestamps are replaced with the caller-supplied
+        checkpoint timestamp so repeated processing is byte-for-byte deterministic.
+        """
+        source_type = _SUPPORTED_FORMATS.get(source.format_id)
+        if source_type is None:
+            raise MonitoringContractError(f"unsupported replay format_id: {source.format_id}")
+
+        timestamp_probe = SourceCheckpoint(
+            source=source,
+            cursor_offset_bytes=0,
+            observed_size_bytes=len(source_bytes),
+            checkpointed_at=checkpointed_at,
+        ).validate()
+        stable_observed_at = timestamp_probe.checkpointed_at
+
+        batch = self.replay(source=source, source_bytes=source_bytes, checkpoint=checkpoint)
+        events: list[CanonicalEvent] = []
+        quarantined: list[QuarantinedRecord] = []
+
+        for replay_record in batch.records:
+            if source_type == "syslog":
+                parsed = parse_syslog_line(source_id=source.source_id, line=replay_record.text)
+            else:
+                parsed = parse_json_sensor_event(
+                    source_id=source.source_id,
+                    source_type=source_type,
+                    raw_line=replay_record.text,
+                )
+            if isinstance(parsed, QuarantinedRecord):
+                quarantined.append(replace(parsed, observed_at=stable_observed_at))
+            else:
+                events.append(parsed)
+
+        last_event_at = max((event.observed_at for event in events), default=None)
+        if last_event_at is None and checkpoint is not None and batch.compatibility.action == "resume":
+            last_event_at = checkpoint.last_event_at
+
+        next_checkpoint = SourceCheckpoint(
+            source=source,
+            cursor_offset_bytes=batch.receipt.next_offset_bytes,
+            observed_size_bytes=len(source_bytes),
+            checkpointed_at=stable_observed_at,
+            last_event_at=last_event_at,
+        ).validate()
+        return ParsedReplayBatch(
+            events=tuple(events),
+            quarantined=tuple(quarantined),
+            replay=batch,
+            next_checkpoint=next_checkpoint,
+        )
