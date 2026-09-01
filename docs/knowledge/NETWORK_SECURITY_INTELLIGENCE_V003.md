@@ -37,6 +37,8 @@ The only explicit identity permitted is an **already approved inventory asset ID
 asset:<approved-asset-id>
 ```
 
+For a new persisted asset binding, the ID must exist in the current `approved_assets` table and be enabled. The structured ingestor verifies this before parsing, and `EventEntityContextStore.put()` verifies it again at the persistence boundary. An event payload cannot approve itself. Exact historical replay remains readable/idempotent if that asset is disabled later.
+
 Entity role and kind are bound by a fixed allowlist (`source_ip`, `destination_ip`, `dns_query`, `dns_answer`, `asset`, `auth_user`, `process_image`, `service`). A mismatched kind/role pair fails closed.
 
 ## Parser enrichment
@@ -78,7 +80,7 @@ Values such as arbitrary `uid` or unrelated application metadata do not enter en
 
 Authentication services are explicitly supported and canonicalized (`ssh`, `smb`, `rdp`, `winrm`, `winrm_tls`). Unknown keys fail closed. This deliberately prevents password, token, cookie, session, command-line or other unexpected material from entering correlation metadata.
 
-Free-form text is not interpreted by a model to create identities or graph edges.
+The audit payload's `asset_id` is only a consistency assertion. A trusted caller must provide an enabled inventory asset ID, and the two IDs must match exactly. Free-form text is not interpreted by a model to create identities or graph edges.
 
 ## Storage
 
@@ -86,7 +88,7 @@ Free-form text is not interpreted by a model to create identities or graph edges
 
 The additive table is keyed by exact event ID and exact typed entity reference. Existing monitoring databases can be initialized in place without rewriting `canonical_events` or `findings`.
 
-An exact replay is idempotent. A different entity context for an already-bound event ID is rejected rather than silently replacing history.
+An exact replay is idempotent. A different entity context for an already-bound event ID is rejected rather than silently replacing history. Empty contexts cannot be persisted.
 
 ## Structured ingest
 
@@ -98,7 +100,13 @@ An exact replay is idempotent. A different entity context for an already-bound e
 
 Input is byte-bounded. Invalid enriched records are quarantined. A correlation-capable accepted record must contain at least one validated entity reference.
 
-Existing trusted source mapping remains authoritative; v0.0.3 does not discover or trust new senders.
+Existing trusted source mapping remains authoritative; v0.0.3 does not discover or trust new senders. Any explicit asset identity must also resolve to an enabled `approved_assets` record.
+
+## Store-backed read path
+
+`CorrelationStoreReader` is the bounded read-only bridge from the existing `MonitoringStore` plus `event_entities` table into the pure correlator. It does not create a second persistence path.
+
+A `CorrelationWindow` requires timezone-aware start/end timestamps. SQLite `julianday()` is used for range comparison so equivalent timestamps with different offsets are treated consistently. The reader enforces configured event/entity limits **before** graph construction and fails closed if persisted context is missing or has an unsupported schema.
 
 ## Deterministic graph rules
 
@@ -148,7 +156,7 @@ A graph with at least three linked stage types receives `priority=high`. This ca
 
 ## Bounds and replay safety
 
-The correlator enforces explicit bounds for:
+The correlator and store reader enforce explicit bounds for:
 
 - events per run;
 - entity references per run;
@@ -156,6 +164,10 @@ The correlator enforces explicit bounds for:
 - correlation time window.
 
 Exact duplicate events are deduplicated. A duplicate `event_id` with conflicting event/context identity fails closed.
+
+## CI coverage
+
+`portable-deploy-ci` now explicitly includes Security Monitoring source, CLI, test, config and Network Security Intelligence documentation paths on both pull-request and main-push triggers. A unit contract locks these path filters plus exact source-lineage and idempotent re-deploy checks, preventing this security package from silently bypassing the portable deployment gate.
 
 ## Authority boundary
 
@@ -180,14 +192,16 @@ v0.0.3 is accepted only when:
 
 1. existing `CanonicalEvent` and parser callers remain backward compatible;
 2. raw IP/DNS/user/process values never appear in entity-context or graph serialization;
-3. DNS->FLOW requires exact answer/destination plus initiating identity linkage;
-4. FLOW->AUTH requires exact endpoints and service;
-5. AUTH->PROCESS requires exact asset and user;
-6. same-window unrelated events do not correlate;
-7. duplicate replay does not inflate a graph;
-8. conflicting duplicate context fails closed;
-9. graph/input bounds fail closed;
-10. multi-stage graphs remain advisory;
-11. the existing PCAP approval boundary remains unchanged;
-12. v0.0.2 truth separation and advisory-only deep-flow behavior remain unchanged;
-13. exact-head harness, installer, portable-deploy and Windows-deploy gates pass before merge.
+3. explicit asset entities require enabled approved inventory state for new bindings;
+4. DNS->FLOW requires exact answer/destination plus initiating identity linkage;
+5. FLOW->AUTH requires exact endpoints and service;
+6. AUTH->PROCESS requires exact asset and user;
+7. same-window unrelated events do not correlate;
+8. duplicate replay does not inflate a graph;
+9. conflicting duplicate context fails closed;
+10. graph/store-read input bounds fail closed;
+11. multi-stage graphs remain advisory;
+12. the existing PCAP approval boundary remains unchanged;
+13. v0.0.2 truth separation and advisory-only deep-flow behavior remain unchanged;
+14. Security Monitoring changes cannot silently bypass portable-deploy CI;
+15. exact-head harness, installer, portable-deploy and Windows-deploy gates pass before merge.
