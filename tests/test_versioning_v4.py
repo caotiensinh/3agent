@@ -28,8 +28,8 @@ class WorkSpaceV4VersioningTests(unittest.TestCase):
         project = data["project"]
         scripts = project["scripts"]
         self.assertEqual(project["version"], PACKAGE_VERSION)
-        self.assertEqual(scripts["workspace-chat"], "three_agent.chat_gateway_v18:main")
-        self.assertEqual(scripts["three-agent-chat"], "three_agent.chat_gateway_v18:main")
+        self.assertEqual(scripts["workspace-chat"], "three_agent.chat_gateway_v19:main")
+        self.assertEqual(scripts["three-agent-chat"], "three_agent.chat_gateway_v19:main")
         self.assertEqual(
             scripts["workspace-chat-acceptance"],
             "three_agent.chat_acceptance:main",
@@ -40,6 +40,7 @@ class WorkSpaceV4VersioningTests(unittest.TestCase):
         )
         self.assertTrue((root / "src/three_agent/chat_gateway_v17.py").is_file())
         self.assertTrue((root / "src/three_agent/chat_gateway_v18.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway_v19.py").is_file())
 
 
 if __name__ == "__main__":
