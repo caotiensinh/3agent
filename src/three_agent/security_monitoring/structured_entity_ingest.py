@@ -60,7 +60,7 @@ class StructuredEntityIngestor:
         parsed: ParsedCanonicalEvent | QuarantinedRecord
         if source.source_type == "workspace_audit":
             if asset_id is not None:
-                raise MonitoringContractError("workspace_audit asset identity must come from its strict signed/local payload contract")
+                raise MonitoringContractError("workspace_audit asset identity must come from its strict local payload contract")
             parsed = parse_workspace_audit_event(source_id=source.source_id, raw_line=raw_line)
         else:
             parsed = parse_json_sensor_event_enriched(
