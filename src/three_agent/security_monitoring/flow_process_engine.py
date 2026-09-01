@@ -64,6 +64,7 @@ class FlowProcessAttributionAssessment:
     status: str
     flow_fingerprint: str
     flow_evidence_ref: str
+    candidate_identity_count: int
     asset_refs: tuple[str, ...]
     process_refs: tuple[str, ...]
     user_refs: tuple[str, ...]
@@ -83,6 +84,12 @@ class FlowProcessAttributionAssessment:
             raise MonitoringContractError("flow_fingerprint must be a sha256 digest")
         if not self.flow_evidence_ref or len(self.flow_evidence_ref) > 256:
             raise MonitoringContractError("flow_evidence_ref is invalid")
+        if (
+            isinstance(self.candidate_identity_count, bool)
+            or not isinstance(self.candidate_identity_count, int)
+            or not 0 <= self.candidate_identity_count <= 64
+        ):
+            raise MonitoringContractError("candidate_identity_count must be within 0..64")
         if len(self.asset_refs) > 64 or len(self.process_refs) > 64 or len(self.user_refs) > 64:
             raise MonitoringContractError("flow process identity reference bound exceeded")
         if len(self.socket_evidence_refs) > 256:
@@ -114,11 +121,15 @@ class FlowProcessAttributionAssessment:
             raise MonitoringContractError("unsupported flow process attribution schema")
 
         if self.status == "unmatched":
+            if self.candidate_identity_count != 0:
+                raise MonitoringContractError("unmatched attribution must have zero candidate identities")
             if any((self.asset_refs, self.process_refs, self.user_refs, self.socket_evidence_refs, self.match_directions)):
                 raise MonitoringContractError("unmatched attribution cannot contain socket identities")
             if self.closest_delta_microseconds is not None:
                 raise MonitoringContractError("unmatched attribution cannot contain a time delta")
         elif self.status == "attributed":
+            if self.candidate_identity_count != 1:
+                raise MonitoringContractError("attributed flow requires exactly one candidate identity")
             if len(self.asset_refs) != 1 or len(self.process_refs) != 1:
                 raise MonitoringContractError("attributed flow requires exactly one asset and process")
             if not self.socket_evidence_refs or not self.match_directions:
@@ -126,9 +137,10 @@ class FlowProcessAttributionAssessment:
             if self.closest_delta_microseconds is None:
                 raise MonitoringContractError("attributed flow requires a time delta")
         else:
-            identities = set(zip(self.asset_refs, self.process_refs))
-            if len(self.process_refs) < 2 and len(self.asset_refs) < 2:
-                raise MonitoringContractError("ambiguous attribution requires multiple identities")
+            if self.candidate_identity_count < 2:
+                raise MonitoringContractError("ambiguous attribution requires multiple candidate identities")
+            if not self.asset_refs or not self.process_refs:
+                raise MonitoringContractError("ambiguous flow requires asset/process identities")
             if not self.socket_evidence_refs or not self.match_directions:
                 raise MonitoringContractError("ambiguous flow requires socket evidence and direction")
             if self.closest_delta_microseconds is None:
@@ -143,6 +155,7 @@ class FlowProcessAttributionAssessment:
         return {
             "asset_refs": list(self.asset_refs),
             "authority": self.authority,
+            "candidate_identity_count": self.candidate_identity_count,
             "closest_delta_microseconds": self.closest_delta_microseconds,
             "config_fingerprint": self.config_fingerprint,
             "flow_event_id": self.flow_event_id,
@@ -286,6 +299,7 @@ class DeterministicFlowProcessAttributor:
                 status="unmatched",
                 flow_fingerprint=flow.fingerprint,
                 flow_evidence_ref=flow.evidence_ref,
+                candidate_identity_count=0,
                 asset_refs=(),
                 process_refs=(),
                 user_refs=(),
@@ -305,6 +319,7 @@ class DeterministicFlowProcessAttributor:
                 status=status,
                 flow_fingerprint=flow.fingerprint,
                 flow_evidence_ref=flow.evidence_ref,
+                candidate_identity_count=len(identities),
                 asset_refs=tuple(sorted({value[0] for value in identities})),
                 process_refs=tuple(sorted({value[1] for value in identities})),
                 user_refs=tuple(sorted({value[2] for value in identities if value[2] is not None})),
