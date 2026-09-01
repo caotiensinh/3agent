@@ -1,0 +1,98 @@
+name: security-config-selfhosted-ci
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/security-config-selfhosted-ci.yml'
+      - 'scripts/install_chat_gateway.sh'
+      - 'src/three_agent/chat_gateway_v18.py'
+      - 'src/three_agent/security_monitoring/config_center.py'
+      - 'src/three_agent/workspace_frontend_v15.py'
+      - 'tests/test_security_configuration_center.py'
+      - 'tests/test_security_configuration_frontend.py'
+      - 'tests/test_security_configuration_installer_contract.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-config-selfhosted-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selfhosted-security:
+    runs-on: [self-hosted, Linux, X64, rtx5090]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          clean: true
+
+      - name: Verify exact PR head
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          printf 'expected=%s\nactual=%s\n' "$EXPECTED_SHA" "$ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create isolated test environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/workspace-security-config-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python -m venv "$VENV"
+          echo "TEST_VENV=$VENV" >> "$GITHUB_ENV"
+          "$VENV/bin/python" -m pip install --upgrade pip
+          "$VENV/bin/python" -m pip install -e '.[monitoring-snmp]'
+
+      - name: Security configuration targeted tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$TEST_VENV/bin/python" -m unittest -v \
+            tests.test_security_configuration_center \
+            tests.test_security_configuration_frontend \
+            tests.test_security_configuration_installer_contract
+
+      - name: Compile
+        shell: bash
+        run: "$TEST_VENV/bin/python" -m compileall -q src tests
+
+      - name: Full unit test suite
+        shell: bash
+        run: "$TEST_VENV/bin/python" -m unittest discover -s tests -v
+
+      - name: Enterprise verification EV-01 through EV-10
+        shell: bash
+        env:
+          EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          "$TEST_VENV/bin/python" scripts/security_enterprise_verify.py \
+            --source-sha "$EXACT_SOURCE_SHA" \
+            --output "$RUNNER_TEMP/security-config-selfhosted-enterprise-verification.json"
+
+      - name: Upload self-hosted verification receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-config-selfhosted-verification
+          path: ${{ runner.temp }}/security-config-selfhosted-enterprise-verification.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Cleanup isolated environment
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${TEST_VENV:-}" ] && [ -d "$TEST_VENV" ]; then
+            rm -rf -- "$TEST_VENV"
+          fi
