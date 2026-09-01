@@ -124,11 +124,27 @@ class DeterministicHealthEvaluator:
                     else:
                         break
 
-                if previous_state in {"degraded", "unreachable", "data_gap"}:
+                if previous_state == "unreachable":
                     if recovery >= self.policy.recovery_samples_to_healthy:
                         target, reason = "healthy", "RECOVERY_THRESHOLD_MET"
                     else:
-                        target, reason = previous_state, "RECOVERY_HYSTERESIS_PENDING"
+                        target, reason = "unreachable", "RECOVERY_HYSTERESIS_PENDING"
+                elif previous_state == "degraded":
+                    if recovery >= self.policy.recovery_samples_to_healthy:
+                        target, reason = "healthy", "RECOVERY_THRESHOLD_MET"
+                    elif hard >= self.policy.failure_samples_to_unreachable:
+                        target, reason = "unreachable", "UNREACHABLE_THRESHOLD_MET"
+                    else:
+                        target, reason = "degraded", "HYSTERESIS_PENDING"
+                elif previous_state == "data_gap":
+                    if recovery >= self.policy.recovery_samples_to_healthy:
+                        target, reason = "healthy", "RECOVERY_THRESHOLD_MET"
+                    elif hard >= self.policy.failure_samples_to_unreachable:
+                        target, reason = "unreachable", "UNREACHABLE_THRESHOLD_MET"
+                    elif unhealthy >= self.policy.failure_samples_to_degraded:
+                        target, reason = "degraded", "DEGRADED_THRESHOLD_MET"
+                    else:
+                        target, reason = "data_gap", "HYSTERESIS_PENDING"
                 elif hard >= self.policy.failure_samples_to_unreachable:
                     target, reason = "unreachable", "UNREACHABLE_THRESHOLD_MET"
                 elif unhealthy >= self.policy.failure_samples_to_degraded:
