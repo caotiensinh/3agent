@@ -232,9 +232,9 @@ class SecurityMonitoringUIConfigManager:
                     issues.append({"code": "CREDENTIAL_REF_REQUIRED", "message": f"{asset.asset_id}: SNMPv3 requires an opaque credential reference."})
                     continue
                 secret_name = asset.credential_ref.handle.removeprefix("secret-ref:")
-                secret_file = secret_dir / secret_name
+                secret_file = secret_dir / f"{secret_name}.json"
                 if not secret_file.is_file() or secret_file.is_symlink():
-                    warnings.append({"code": "SECRET_REF_UNRESOLVED", "message": f"{asset.asset_id}: credential reference is not present in the local secret boundary."})
+                    issues.append({"code": "SECRET_REF_UNRESOLVED", "message": f"{asset.asset_id}: credential reference is not present in the local secret boundary."})
         return {
             "ready": not issues,
             "config_saved": saved,
