@@ -21,6 +21,7 @@ from .chat_context_v3 import (
 from .chat_fidelity import parse_chat_request
 from .chat_gateway_v5 import _history_owner_key
 from .knowledge_gateway_v2 import EXTENDED_UPLOAD_EXTENSIONS, KnowledgeGatewayV2
+from .workspace_frontend_v15 import WORKSPACE_HTML_V15
 
 _BASE_UI_CAPABILITIES = _v18.workspace_ui_capabilities
 _ATTACHMENT_REFERENCE_RE = re.compile(
@@ -292,13 +293,14 @@ def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
 
 
 # Preserve v18 authentication, RBAC, Security Monitoring, Workflow V4 and DLP.
-# Only the local knowledge parser and direct-chat context policy are replaced.
+# Only the local knowledge parser, current frontend, and direct-chat context policy are replaced.
 _orchestrator.KnowledgeGateway = KnowledgeGatewayV2
 _v4.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v18.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = ContinuityProjectChatService
 _v17.CONVERSATION_CONTEXT_POLICY_VERSION = CONVERSATION_CONTEXT_POLICY_VERSION
+_v17.HTML_V17 = WORKSPACE_HTML_V15
 
 
 def main() -> int:
