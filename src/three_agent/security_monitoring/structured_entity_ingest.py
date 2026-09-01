@@ -12,6 +12,7 @@ from .entity_context_storage import EventEntityContextStore
 from .ingest import SourceMapping
 from .parsers import QuarantinedRecord
 from .storage import MonitoringStore
+from .syslog_enrichment import parse_syslog_line_enriched
 
 
 @dataclass(frozen=True)
@@ -45,7 +46,7 @@ class StructuredEntityIngestor:
     def _approved_asset(self, asset_id: str | None, *, required: bool) -> str | None:
         if asset_id is None:
             if required:
-                raise MonitoringContractError("workspace_audit requires trusted approved_asset_id")
+                raise MonitoringContractError("structured source requires trusted approved_asset_id")
             return None
         normalized = _compact(asset_id, "approved_asset_id", max_len=128)
         with self.store.connect() as conn:
@@ -65,7 +66,7 @@ class StructuredEntityIngestor:
         approved_asset_id: str | None = None,
     ) -> StructuredEntityIngestReceipt:
         source.validate()
-        if source.source_type not in {"suricata_eve", "zeek_json", "workspace_audit"}:
+        if source.source_type not in {"suricata_eve", "zeek_json", "workspace_audit", "syslog"}:
             raise MonitoringContractError("structured entity ingest source_type is unsupported")
         encoded = str(raw_line).encode("utf-8", errors="replace")
         if len(encoded) > self.max_line_bytes:
@@ -74,7 +75,7 @@ class StructuredEntityIngestor:
         self.entity_store.initialize()
         trusted_asset = self._approved_asset(
             approved_asset_id,
-            required=source.source_type == "workspace_audit",
+            required=source.source_type in {"workspace_audit", "syslog"},
         )
         parsed: ParsedCanonicalEvent | QuarantinedRecord
         if source.source_type == "workspace_audit":
@@ -82,6 +83,13 @@ class StructuredEntityIngestor:
             parsed = parse_workspace_audit_event(
                 source_id=source.source_id,
                 raw_line=raw_line,
+                approved_asset_id=trusted_asset,
+            )
+        elif source.source_type == "syslog":
+            assert trusted_asset is not None
+            parsed = parse_syslog_line_enriched(
+                source_id=source.source_id,
+                line=raw_line,
                 approved_asset_id=trusted_asset,
             )
         else:
