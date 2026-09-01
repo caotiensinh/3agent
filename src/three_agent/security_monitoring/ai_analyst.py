@@ -5,15 +5,18 @@ import json
 import os
 import re
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
 from ..runtime_efficiency import StructuredOutputValidationError, validate_json_schema_subset
 from .contracts import MonitoringContractError, SEVERITIES
+from .correlation_graph import STAGE_ORDER
 from .network_triage import (
     CONFIDENCE_LEVELS,
     INVESTIGATION_PRIORITIES,
     NETWORK_TRIAGE_SCHEMA,
+    SUPPORTED_RULES,
     TRIAGE_KINDS,
     NetworkIncidentTriage,
 )
@@ -37,6 +40,17 @@ _GRAPH_ID_RE = re.compile(r"^incident-[0-9a-f]{24}$")
 _FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _TYPED_ENTITY_RE = re.compile(r"^entity:(ip|dns|user|process|service):sha256:[0-9a-f]{64}$")
 _ASSET_REF_RE = re.compile(r"^asset:[A-Za-z0-9][A-Za-z0-9._:@+\-/]{0,127}$")
+_TRIAGE_REASON_CODES = {
+    "exact_dns_flow",
+    "exact_flow_auth",
+    "exact_auth_process",
+    "ids_exact_entity_corroboration",
+    "complete_exact_multistage_chain",
+    "exact_post_connection_execution_chain",
+    "exact_resolution_connection_auth_chain",
+    "independent_ids_corroboration",
+    "upstream_high_priority_evidence",
+}
 
 AI_ANALYSIS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -81,7 +95,6 @@ class AnalystEvidencePack:
     byte_count: int
     allowed_evidence_ids: tuple[str, ...]
     omitted_findings: int
-    omitted_network_triage: int = 0
 
 
 @dataclass(frozen=True)
@@ -197,6 +210,19 @@ def _safe_model_token(value: object, field_name: str) -> str:
     return text
 
 
+def _safe_iso_timestamp(value: object, field_name: str) -> str:
+    text = str(value or "").strip()
+    if len(text) > 64 or _SAFE_MODEL_TOKEN_RE.fullmatch(text) is None:
+        raise MonitoringContractError(f"network triage {field_name} is invalid")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise MonitoringContractError(f"network triage {field_name} must be ISO-8601") from exc
+    if parsed.tzinfo is None:
+        raise MonitoringContractError(f"network triage {field_name} must include timezone")
+    return text
+
+
 def _triage_view(item: NetworkIncidentTriage) -> dict[str, Any]:
     if not isinstance(item, NetworkIncidentTriage):
         raise MonitoringContractError("AI analyst accepts NetworkIncidentTriage inputs only")
@@ -225,8 +251,17 @@ def _triage_view(item: NetworkIncidentTriage) -> dict[str, Any]:
     event_ids = tuple(_safe_model_token(value, "event_id") for value in item.event_ids)
     evidence_refs = tuple(_safe_model_token(value, "evidence_ref") for value in item.evidence_refs)
     entity_refs = tuple(str(value or "").strip() for value in item.entity_refs)
+    first_seen = _safe_iso_timestamp(item.first_seen, "first_seen")
+    last_seen = _safe_iso_timestamp(item.last_seen, "last_seen")
+
     if not event_ids:
         raise MonitoringContractError("network triage must retain at least one event reference")
+    if any(reason not in _TRIAGE_REASON_CODES for reason in reason_codes):
+        raise MonitoringContractError("network triage reason code is unsupported")
+    if any(stage not in STAGE_ORDER for stage in stage_types):
+        raise MonitoringContractError("network triage stage is unsupported")
+    if any(rule not in SUPPORTED_RULES for rule in rule_ids):
+        raise MonitoringContractError("network triage rule is unsupported")
     if any(
         _ASSET_REF_RE.fullmatch(value) is None and _TYPED_ENTITY_RE.fullmatch(value) is None
         for value in entity_refs
@@ -234,8 +269,6 @@ def _triage_view(item: NetworkIncidentTriage) -> dict[str, Any]:
         raise MonitoringContractError("network triage contains an invalid entity reference")
     if len(reason_codes) > 16 or len(stage_types) > 8 or len(rule_ids) > 8:
         raise MonitoringContractError("network triage analyst metadata exceeds bounds")
-    if len(item.first_seen) > 64 or len(item.last_seen) > 64:
-        raise MonitoringContractError("network triage timestamps exceed bounds")
 
     # Deliberately omit event_ids and entity_refs from the model view. Event IDs are
     # preserved in deterministic triage storage, while raw/hashed identities never
@@ -252,8 +285,8 @@ def _triage_view(item: NetworkIncidentTriage) -> dict[str, Any]:
         "stage_types": list(stage_types),
         "rule_ids": list(rule_ids),
         "evidence_refs": list(evidence_refs[:MAX_TRIAGE_EVIDENCE_REFS]),
-        "first_seen": item.first_seen,
-        "last_seen": item.last_seen,
+        "first_seen": first_seen,
+        "last_seen": last_seen,
     }
 
 
@@ -265,7 +298,11 @@ def build_ai_evidence_pack(
     report: DeterministicReport,
     network_triage: Iterable[NetworkIncidentTriage] = (),
 ) -> AnalystEvidencePack:
-    """Build a bounded model view; never include raw logs, packets, hosts or identities."""
+    """Build a bounded model view; never include raw logs, packets, hosts or identities.
+
+    With no network triage supplied, the payload and canonical SHA remain byte-for-byte
+    compatible with the pre-v0.0.4 evidence-pack path.
+    """
 
     ordered_findings = sorted((dict(item) for item in report.findings), key=_finding_priority)
     selected_findings = ordered_findings[:MAX_FINDINGS_IN_PACK]
@@ -309,12 +346,15 @@ def build_ai_evidence_pack(
             "cutoff_at": report.cutoff_at,
             "periods": periods,
             "findings": finding_views,
-            "network_triage": triage_views,
             "allowed_evidence_ids": list(allowed_ids),
             "omitted_findings": len(ordered_findings) - len(findings),
-            "omitted_network_triage": len(ordered_triage) - len(triage),
             "authority": "advisory_only",
         }
+        # Additive extension only when triage exists. The legacy report-only payload
+        # remains exactly unchanged, including canonical JSON and evidence-pack SHA.
+        if ordered_triage:
+            payload["network_triage"] = triage_views
+            payload["omitted_network_triage"] = len(ordered_triage) - len(triage)
         return payload, allowed_ids
 
     while True:
@@ -329,7 +369,6 @@ def build_ai_evidence_pack(
                 byte_count=byte_count,
                 allowed_evidence_ids=allowed_ids,
                 omitted_findings=len(ordered_findings) - len(selected_findings),
-                omitted_network_triage=len(ordered_triage) - len(selected_triage),
             )
         # Preserve the highest-priority correlated network incidents under pressure.
         # Existing behavior is unchanged when no network triage was supplied.
@@ -401,9 +440,10 @@ class LocalAIAnalyst:
 
         # Skip inference only when there is no material finding, correlated network
         # triage record, or explicit data gap.
+        has_network_triage = bool(pack.payload.get("network_triage"))
         if (
             not pack.payload["findings"]
-            and not pack.payload["network_triage"]
+            and not has_network_triage
             and all(int(period["data_gap_count"]) == 0 for period in pack.payload["periods"].values())
         ):
             return AIAnalysisResult(
@@ -416,20 +456,35 @@ class LocalAIAnalyst:
                 retry_count=0,
             ).validate()
 
-        system_prompt = (
-            "You are the local WorkSpace Security Analyst. You are advisory only. "
-            "Use only supplied evidence IDs. Deterministic network_triage is correlated "
-            "review context, not proof of compromise and never authorization to act. "
-            "Never claim authority, change severity, change inventory, execute tools, "
-            "or claim remediation occurred."
-        )
-        base_prompt = (
-            "Analyze this compact validated evidence pack. Label every item exactly as "
-            "FACT, CORRELATION, HYPOTHESIS, RISK, ACTION, or DATA GAP. Every item must "
-            "cite one or more IDs from allowed_evidence_ids. Treat network_triage as "
-            "bounded advisory context only. Return only schema JSON.\n"
-            + pack.canonical_json
-        )
+        if has_network_triage:
+            system_prompt = (
+                "You are the local WorkSpace Security Analyst. You are advisory only. "
+                "Use only supplied evidence IDs. Deterministic network_triage is correlated "
+                "review context, not proof of compromise and never authorization to act. "
+                "Never claim authority, change severity, change inventory, execute tools, "
+                "or claim remediation occurred."
+            )
+            base_prompt = (
+                "Analyze this compact validated evidence pack. Label every item exactly as "
+                "FACT, CORRELATION, HYPOTHESIS, RISK, ACTION, or DATA GAP. Every item must "
+                "cite one or more IDs from allowed_evidence_ids. Treat network_triage as "
+                "bounded advisory context only. Return only schema JSON.\n"
+                + pack.canonical_json
+            )
+        else:
+            # Preserve the pre-v0.0.4 prompt exactly for report-only callers.
+            system_prompt = (
+                "You are the local WorkSpace Security Analyst. You are advisory only. "
+                "Use only supplied evidence IDs. Never claim authority, change severity, "
+                "change inventory, execute tools, or claim remediation occurred."
+            )
+            base_prompt = (
+                "Analyze this compact validated evidence pack. Label every item exactly as "
+                "FACT, CORRELATION, HYPOTHESIS, RISK, ACTION, or DATA GAP. Every item must "
+                "cite one or more IDs from allowed_evidence_ids. Return only schema JSON.\n"
+                + pack.canonical_json
+            )
+
         model_calls = 0
         retry_count = 0
         reason_code: str | None = None
