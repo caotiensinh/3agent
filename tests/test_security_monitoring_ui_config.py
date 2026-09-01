@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -128,6 +129,56 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             readiness = manager.readiness()
             self.assertTrue(readiness["ready"])
             self.assertFalse(readiness["secret_values_read"])
+
+    def test_enterprise_save_contract_exposes_safe_runtime_and_readiness_signals(self) -> None:
+        """Verify the admin save contract without changing the flat runtime schema."""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager = self.manager(root)
+            valid = safe_default_payload(manager.path)
+            valid["enabled"] = True
+            valid["allow_real_network"] = True
+            secret_dir = Path(valid["secret_directory"])
+            secret_dir.mkdir(parents=True)
+            secret_path = secret_dir / "router-01.json"
+            secret_path.write_text('{"username":"monitor"}', encoding="utf-8")
+            secret_doc = json.loads(secret_path.read_text(encoding="utf-8"))
+            self.assertEqual(secret_doc["username"], "monitor")
+            valid["assets"] = [
+                {
+                    "asset_id": "router-01",
+                    "role": "router",
+                    "management_host": "192.0.2.1",
+                    "collector_capabilities": ["snmpv3_read"],
+                    "allowed_tcp_ports": [],
+                    "data_class": "confidential",
+                    "enabled": True,
+                    "credential_ref": "secret-ref:router-01",
+                }
+            ]
+
+            enterprise_contract_view = {
+                "runtime": {
+                    "enabled": valid["enabled"],
+                    "allow_real_network_access": valid["allow_real_network"],
+                },
+                "capabilities": {"snmp_v3": "snmpv3_read" in valid["assets"][0]["collector_capabilities"]},
+                "policy": {
+                    "read_only": valid["policy"]["read_only"],
+                    "packet_analysis": valid["policy"]["packet_analysis_mode"],
+                    "bandwidth_measurement": valid["policy"]["bandwidth_measurement_mode"],
+                },
+            }
+            self.assertTrue(enterprise_contract_view["runtime"]["enabled"])
+            self.assertTrue(enterprise_contract_view["runtime"]["allow_real_network_access"])
+            self.assertTrue(enterprise_contract_view["capabilities"]["snmp_v3"])
+            self.assertTrue(enterprise_contract_view["policy"]["read_only"])
+            self.assertEqual(enterprise_contract_view["policy"]["packet_analysis"], "passive_only")
+            self.assertEqual(enterprise_contract_view["policy"]["bandwidth_measurement"], "counter_only")
+
+            saved = manager.save(valid)
+            self.assertEqual(saved["mode"], "operator-configured")
+            self.assertEqual(saved["readiness"]["status"], "ready")
 
     def test_frontend_exposes_real_configuration_controls(self) -> None:
         for marker in (
