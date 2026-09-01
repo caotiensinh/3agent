@@ -24,14 +24,68 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Run deterministic collector tests
+      - name: Run dependency-free deterministic assertions
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
           set -Eeuo pipefail
           echo "EXACT_HEAD=$(git rev-parse HEAD)"
-          python3 -m pytest -q tests/test_security_monitoring_collectors.py
+          python3 <<'PY'
+          import subprocess
+
+          from three_agent.security_monitoring.collectors import IcmpCollector
+          from three_agent.security_monitoring.contracts import AssetInventoryRecord
+          from three_agent.security_monitoring.policy import MonitoringPolicy, MonitoringPolicyEngine
+
+          def engine():
+              return MonitoringPolicyEngine(MonitoringPolicy(
+                  profile_id="ubuntu-deterministic-icmp",
+                  read_only=True,
+                  allow_active_liveness=True,
+                  timeout_seconds=2.0,
+                  max_retries=0,
+                  max_catch_up_runs=0,
+                  allowed_capabilities=("icmp_echo",),
+              ).validate())
+
+          linux = IcmpCollector(engine(), platform_name="posix")
+          windows = IcmpCollector(engine(), platform_name="nt")
+          assert linux._argv("192.0.2.10") == ["ping", "-n", "-c", "1", "-W", "2", "192.0.2.10"]
+          assert windows._argv("192.0.2.10") == ["ping", "-n", "1", "-w", "2000", "192.0.2.10"]
+          assert IcmpCollector._parse_rtt_ms("64 bytes from x: time=0.996 ms") == 0.996
+          assert IcmpCollector._parse_rtt_ms("Reply from x: bytes=32 time<1ms TTL=128") == 1.0
+          assert IcmpCollector._parse_rtt_ms("x からの応答: バイト数 =32 時間 <1ms TTL=128") == 1.0
+          assert IcmpCollector._parse_rtt_ms("Minimum = 0ms, Maximum = 0ms, Average = 0ms") is None
+          assert IcmpCollector._parse_rtt_ms("最小 = 0ms、最大 = 0ms、平均 = 0ms") is None
+
+          captured = {}
+          def fake_executor(argv, **kwargs):
+              captured["argv"] = argv
+              captured.update(kwargs)
+              return subprocess.CompletedProcess(argv, 0, stdout="Reply from x: bytes=32 time<1ms TTL=128\n", stderr="")
+
+          asset = AssetInventoryRecord(
+              asset_id="deterministic-device",
+              role="network-device",
+              management_host="192.0.2.10",
+              collector_capabilities=("icmp_echo",),
+              data_class="internal",
+              enabled=True,
+          ).validate()
+          result = IcmpCollector(engine(), executor=fake_executor, platform_name="nt").collect(
+              asset=asset,
+              run_id="run:deterministic-windows-icmp",
+              observed_at="2026-09-01T00:00:00+00:00",
+          )
+          assert captured["argv"] == ["ping", "-n", "1", "-w", "2000", "192.0.2.10"]
+          assert captured["shell"] is False
+          assert captured["check"] is False
+          assert captured["timeout"] == 3.0
+          assert result.failure_code is None
+          assert [(o.metric, o.value) for o in result.observations] == [("icmp_reachable", True), ("icmp_rtt_ms", 1.0)]
+          print("DEPENDENCY_FREE_DETERMINISTIC_ASSERTIONS=PASS")
+          PY
 
       - name: Run authorized Ubuntu live ICMP collector
         shell: bash
@@ -68,10 +122,7 @@ jobs:
                   data_class="internal",
                   enabled=True,
               ).validate()
-              result = collector.collect(
-                  asset=asset,
-                  run_id="run:ubuntu-live-icmp-exact-head",
-              )
+              result = collector.collect(asset=asset, run_id="run:ubuntu-live-icmp-exact-head")
               print(host, result.failure_code, [(o.metric, o.status, o.value, o.unit) for o in result.observations])
               assert result.failure_code is None
               assert result.observations[0].metric == "icmp_reachable"
