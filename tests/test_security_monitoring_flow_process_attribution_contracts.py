@@ -16,8 +16,8 @@ class FlowProcessEvidenceContractTests(unittest.TestCase):
         right = endpoint_ref(protocol="tcp", ip="2001:db8::1", port=443)
         self.assertEqual(left, right)
         self.assertTrue(left.startswith("endpoint:tcp:sha256:"))
+        self.assertEqual(len(left), len("endpoint:tcp:sha256:") + 64)
         self.assertNotIn("2001:db8::1", left)
-        self.assertNotIn("443", left)
 
     def test_flow_tuple_retains_only_hashed_endpoints_and_event_evidence(self) -> None:
         flow = FlowTupleEvidence.build(
@@ -35,8 +35,8 @@ class FlowProcessEvidenceContractTests(unittest.TestCase):
         self.assertEqual(flow.protocol, "tcp")
         self.assertNotIn("192.0.2.10", payload)
         self.assertNotIn("198.51.100.20", payload)
-        self.assertNotIn("50123", payload)
-        self.assertNotIn('"443"', payload)
+        self.assertNotIn('"source_port"', payload)
+        self.assertNotIn('"destination_port"', payload)
         self.assertEqual(flow.authority, "evidence_only")
 
     def test_socket_process_observation_hashes_endpoint_process_and_user(self) -> None:
@@ -59,11 +59,12 @@ class FlowProcessEvidenceContractTests(unittest.TestCase):
         for raw in (
             "192.0.2.10",
             "198.51.100.20",
-            "50123",
             r"C:\Program Files\Browser\browser.exe",
             "DOMAIN\\alice",
         ):
             self.assertNotIn(raw, payload)
+        self.assertNotIn('"local_port"', payload)
+        self.assertNotIn('"remote_port"', payload)
         self.assertEqual(item.authority, "evidence_only")
 
     def test_same_exact_socket_builds_byte_identical_contract(self) -> None:
