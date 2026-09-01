@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
@@ -76,7 +74,7 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             self.assertEqual(loaded["config"]["assets"][0]["asset_id"], "switch-01")
             self.assertEqual(loaded["summary"]["asset_count"], 1)
 
-    def test_readiness_never_executes_network_or_reads_secret_values(self) -> None:
+    def test_unresolved_snmp_reference_blocks_readiness_without_secret_read(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             manager = self.manager(root)
@@ -97,12 +95,39 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             ]
             manager.save(payload)
             readiness = manager.readiness()
-            self.assertTrue(readiness["ready"])
+            self.assertFalse(readiness["ready"])
             self.assertFalse(readiness["network_test_executed"])
             self.assertFalse(readiness["secret_values_read"])
             self.assertFalse(readiness["packet_capture_executed"])
             self.assertFalse(readiness["remediation_executed"])
-            self.assertTrue(any(x["code"] == "SECRET_REF_UNRESOLVED" for x in readiness["warnings"]))
+            self.assertTrue(any(x["code"] == "SECRET_REF_UNRESOLVED" for x in readiness["issues"]))
+
+    def test_resolved_snmp_reference_uses_json_filename_without_reading_value(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager = self.manager(root)
+            payload = safe_default_payload(manager.path)
+            payload["enabled"] = True
+            payload["allow_real_network"] = True
+            secret_dir = Path(payload["secret_directory"])
+            secret_dir.mkdir(parents=True)
+            (secret_dir / "router-01.json").write_text("not-read-by-readiness", encoding="utf-8")
+            payload["assets"] = [
+                {
+                    "asset_id": "router-01",
+                    "role": "router",
+                    "management_host": "192.0.2.1",
+                    "collector_capabilities": ["snmpv3_read"],
+                    "allowed_tcp_ports": [],
+                    "data_class": "confidential",
+                    "enabled": True,
+                    "credential_ref": "secret-ref:router-01",
+                }
+            ]
+            manager.save(payload)
+            readiness = manager.readiness()
+            self.assertTrue(readiness["ready"])
+            self.assertFalse(readiness["secret_values_read"])
 
     def test_frontend_exposes_real_configuration_controls(self) -> None:
         for marker in (
