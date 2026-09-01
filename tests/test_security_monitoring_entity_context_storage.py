@@ -112,6 +112,23 @@ class EventEntityContextStorageTests(unittest.TestCase):
         with self.assertRaises(MonitoringContractError):
             self.entities.put(mutated)
 
+    def test_schema_tamper_fails_closed_for_get_and_exact_replay(self):
+        self.store.add_event(event())
+        context = EventEntityContext(
+            event_id="evt-storage-001",
+            references=(EventEntityReference.opaque(kind="ip", role="source_ip", value="192.0.2.10"),),
+        ).validate()
+        self.entities.put(context)
+        with self.store.connect() as conn:
+            conn.execute(
+                "UPDATE event_entities SET schema_version='tampered/v9' WHERE event_id=?",
+                ("evt-storage-001",),
+            )
+        with self.assertRaises(MonitoringContractError):
+            self.entities.get("evt-storage-001")
+        with self.assertRaises(MonitoringContractError):
+            self.entities.put(context)
+
     def test_historical_exact_replay_survives_later_asset_disable(self):
         self.store.add_event(event())
         context = EventEntityContext(
