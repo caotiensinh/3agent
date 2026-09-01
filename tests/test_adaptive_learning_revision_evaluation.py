@@ -493,15 +493,14 @@ class AdaptiveLearningRevisionEvaluationTests(unittest.TestCase):
     def test_validation_expectation_rejects_wrong_mutation_kind(self):
         authority = self.phase4k_authority()
         checkpoint = authority.verify(self.store)
+        staging = LearningStagingGateway(self.store, authority)
         with self.assertRaisesRegex(LearningCheckpointError, "MUTATION_KIND_MISMATCH"):
             with authority.expect_revision_validation(
                 sequence=checkpoint.sequence,
                 checkpoint_sha256=checkpoint.checkpoint_sha256,
                 state_sha256=checkpoint.state_sha256,
             ):
-                LearningStagingGateway(self.store, authority).stage(
-                    self.candidate("wrong-kind")
-                )
+                staging.stage(self.candidate("wrong-kind"))
 
 
 if __name__ == "__main__":
