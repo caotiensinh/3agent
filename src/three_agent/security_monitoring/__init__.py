@@ -9,6 +9,7 @@ from .behavior_risk import (
     DeterministicBehaviorRiskScorer,
 )
 from .behavior_store import BehaviorAnalysisWindow, BehaviorStoreConfig, BehaviorStoreReader
+from .checkpoint import SourceCheckpoint, SourceDescriptor
 from .contracts import (
     APPROVED_DATA_CLASSES,
     COLLECTOR_CAPABILITIES,
@@ -38,6 +39,7 @@ from .network_triage import (
     network_triage_plan,
 )
 from .policy import MonitoringCapabilityDecision, MonitoringPolicy, MonitoringPolicyEngine
+from .replay import DeterministicByteReplay, ParsedReplayBatch, ReplayBatch, ReplayReceipt, ReplayRecord
 from .storage import MonitoringStore
 from .structured_behavior_ingest import (
     StructuredBehaviorIngestReceipt,
@@ -54,6 +56,13 @@ __all__ = [
     "HourlyRunReceipt",
     "ObservationRecord",
     "SecretReference",
+    "SourceDescriptor",
+    "SourceCheckpoint",
+    "ReplayRecord",
+    "ReplayReceipt",
+    "ReplayBatch",
+    "ParsedReplayBatch",
+    "DeterministicByteReplay",
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
