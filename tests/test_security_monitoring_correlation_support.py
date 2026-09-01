@@ -4,7 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.security_monitoring.contracts import CanonicalEvent, MonitoringContractError
+from three_agent.security_monitoring.contracts import (
+    AssetInventoryRecord,
+    CanonicalEvent,
+    MonitoringContractError,
+)
 from three_agent.security_monitoring.correlation_graph import (
     CorrelationEvent,
     DeterministicIncidentCorrelator,
@@ -187,6 +191,14 @@ class CorrelationSupportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = MonitoringStore(Path(tmp) / "monitoring.sqlite3")
             store.initialize()
+            store.upsert_asset(
+                AssetInventoryRecord(
+                    asset_id="server-rd-01",
+                    role="server",
+                    management_host="192.0.2.50",
+                    collector_capabilities=(),
+                ).validate()
+            )
             entities = EventEntityContextStore(store)
             entities.initialize()
             for entry in (auth, process, health):
