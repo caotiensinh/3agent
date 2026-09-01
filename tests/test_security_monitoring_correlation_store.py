@@ -153,7 +153,7 @@ class CorrelationStoreReaderTests(unittest.TestCase):
             (),
         )
 
-    def test_reader_event_and_entity_bounds_fail_closed(self):
+    def test_reader_event_entity_and_time_bounds_fail_closed(self):
         for index in range(2):
             self._put(
                 event(
@@ -186,6 +186,12 @@ class CorrelationStoreReaderTests(unittest.TestCase):
                 store=self.store,
                 entity_store=self.entities,
                 config=CorrelationGraphConfig(max_entities=1),
+            ).read_window(window)
+        with self.assertRaises(MonitoringContractError):
+            CorrelationStoreReader(
+                store=self.store,
+                entity_store=self.entities,
+                config=CorrelationGraphConfig(window_seconds=30),
             ).read_window(window)
 
     def test_window_validation_is_timezone_aware_and_fail_closed(self):
