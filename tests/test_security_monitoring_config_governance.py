@@ -66,11 +66,11 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
                 expected_revision=0,
             )
             changed = safe_default_payload(manager.path)
-            changed["policy"]["max_workers"] = 8
+            changed["policy"]["max_workers"] = 4
             governance.apply_change(
                 changed,
                 actor="admin-b",
-                reason="Increase bounded monitoring concurrency",
+                reason="Approved bounded monitoring concurrency",
                 expected_revision=1,
             )
             stale = safe_default_payload(manager.path)
@@ -83,7 +83,7 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
                     expected_revision=1,
                 )
             active = manager.get()["config"]
-            self.assertEqual(active["policy"]["max_workers"], 8)
+            self.assertEqual(active["policy"]["max_workers"], 4)
             self.assertEqual(governance.state().revision, 2)
 
     def test_out_of_band_config_change_is_detected_as_drift(self) -> None:
@@ -93,11 +93,70 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
             payload = safe_default_payload(manager.path)
             governance.apply_change(payload, actor="admin", reason="Approved baseline", expected_revision=0)
             bypass = safe_default_payload(manager.path)
-            bypass["policy"]["max_workers"] = 7
+            bypass["policy"]["max_workers"] = 3
             manager.save(bypass)
             state = governance.state()
             self.assertTrue(state.drift_detected)
             self.assertNotEqual(state.config_sha256, state.active_config_sha256)
+
+    def test_drift_blocks_future_governed_change_without_overwriting_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager, governance = self.setup_governance(root)
+            baseline = safe_default_payload(manager.path)
+            governance.apply_change(baseline, actor="admin", reason="Approved baseline", expected_revision=0)
+            bypass = safe_default_payload(manager.path)
+            bypass["policy"]["max_workers"] = 3
+            manager.save(bypass)
+            requested = safe_default_payload(manager.path)
+            requested["policy"]["max_workers"] = 2
+            with self.assertRaisesRegex(MonitoringContractError, "drift detected"):
+                governance.apply_change(
+                    requested,
+                    actor="admin",
+                    reason="Must not overwrite out-of-band change",
+                    expected_revision=1,
+                )
+            self.assertEqual(manager.get()["config"]["policy"]["max_workers"], 3)
+            self.assertEqual(governance.state().revision, 1)
+
+    def test_existing_untracked_config_requires_explicit_adoption(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager, governance = self.setup_governance(root)
+            existing = safe_default_payload(manager.path)
+            manager.save(existing)
+            changed = safe_default_payload(manager.path)
+            changed["policy"]["max_workers"] = 3
+            status = governance.status()
+            self.assertTrue(status["adoption_required"])
+            self.assertFalse(status["writes_allowed"])
+            with self.assertRaisesRegex(MonitoringContractError, "explicit adoption"):
+                governance.apply_change(
+                    changed,
+                    actor="admin",
+                    reason="No silent legacy takeover",
+                    expected_revision=0,
+                )
+            self.assertEqual(governance.history(), [])
+
+    def test_adopt_existing_config_creates_audited_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager, governance = self.setup_governance(root)
+            existing = safe_default_payload(manager.path)
+            existing["policy"]["max_workers"] = 3
+            manager.save(existing)
+            result = governance.adopt_existing(
+                actor="security-admin",
+                reason="Adopt reviewed legacy configuration into governed baseline",
+            )
+            self.assertEqual(result["revision"], 1)
+            self.assertEqual(manager.get()["config"]["policy"]["max_workers"], 3)
+            status = governance.status()
+            self.assertEqual(status["change_state"], "governed")
+            self.assertTrue(status["writes_allowed"])
+            self.assertFalse(status["drift_detected"])
 
     def test_audit_tampering_is_detected_and_future_change_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -109,7 +168,7 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
                 conn.execute("UPDATE audit_events SET reason='tampered' WHERE event_id=1")
             self.assertFalse(governance.verify_audit_chain())
             changed = safe_default_payload(manager.path)
-            changed["policy"]["max_workers"] = 5
+            changed["policy"]["max_workers"] = 3
             with self.assertRaisesRegex(MonitoringContractError, "audit chain"):
                 governance.apply_change(
                     changed,
@@ -126,7 +185,7 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
             first = safe_default_payload(manager.path)
             governance.apply_change(first, actor="admin", reason="Baseline", expected_revision=0)
             second = safe_default_payload(manager.path)
-            second["policy"]["max_workers"] = 9
+            second["policy"]["max_workers"] = 3
             governance.apply_change(second, actor="admin", reason="Approved capacity change", expected_revision=1)
             result = governance.rollback(
                 1,
