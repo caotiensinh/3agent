@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import chat_gateway_v4 as _v4
 from . import chat_gateway_v17 as _v17
 from . import chat_gateway_v18 as _v18
 from . import orchestrator as _orchestrator
+from .chat_attachment_memory import ConversationAttachmentMemory
 from .chat_context_v3 import (
     CONTEXT_MODE_FOLLOW_UP,
     CONVERSATION_CONTEXT_POLICY_VERSION,
@@ -13,6 +15,7 @@ from .chat_context_v3 import (
     DEFAULT_CONTEXT_MAX_MESSAGES,
     ConversationContextPlan,
     build_conversation_context,
+    classify_context_request,
     infer_recent_user_language,
 )
 from .chat_fidelity import parse_chat_request
@@ -20,10 +23,105 @@ from .chat_gateway_v5 import _history_owner_key
 from .knowledge_gateway_v2 import EXTENDED_UPLOAD_EXTENSIONS, KnowledgeGatewayV2
 
 _BASE_UI_CAPABILITIES = _v18.workspace_ui_capabilities
+_ATTACHMENT_REFERENCE_RE = re.compile(
+    r"(?:"
+    r"\b(?:file|attachment|document|pdf|docx|xlsx|spreadsheet|workbook|presentation)\b|"
+    r"\b(?:tệp|file|tài\s+liệu|đính\s+kèm|pdf|word|excel|powerpoint|bảng\s+tính)\b|"
+    r"(?:添付|ファイル|文書|資料|PDF|Excel|Word|PowerPoint|スプレッドシート)"
+    r")",
+    re.IGNORECASE,
+)
 
 
 class ContinuityProjectChatService(_v18.CurrentRequestProjectChatService):
-    """Bounded same-conversation memory with current-request precedence."""
+    """Bounded same-conversation memory with durable attachment references."""
+
+    def __init__(self, orchestrator: Any, default_language: str = "ja") -> None:
+        super().__init__(orchestrator, default_language=default_language)
+        self.attachment_memory = ConversationAttachmentMemory(
+            orchestrator.config.database_path
+        )
+        self.attachment_memory.initialize()
+
+    @staticmethod
+    def _references_prior_attachment(message: str) -> bool:
+        mode, _, _ = classify_context_request(message)
+        return mode == CONTEXT_MODE_FOLLOW_UP or bool(
+            _ATTACHMENT_REFERENCE_RE.search(str(message or ""))
+        )
+
+    def _resolve_submit_uploads(
+        self,
+        message: str,
+        *,
+        channel: str,
+        sender: str,
+        conversation_id: str | None,
+        upload_ids: list[str] | None,
+    ) -> list[str]:
+        current = [str(item) for item in (upload_ids or []) if str(item).strip()]
+        if current or not conversation_id or not self._references_prior_attachment(message):
+            return current
+
+        # The conversation must belong to the current user before attachment ids
+        # are resolved. The ids are then revalidated against KnowledgeGateway
+        # ownership; the history pointer itself grants no file authority.
+        try:
+            owner_key = _history_owner_key(channel, sender)
+            self.history.get_conversation(owner_key, conversation_id)
+        except (KeyError, ValueError):
+            return current
+
+        recent = self.attachment_memory.recent_upload_ids(
+            conversation_id,
+            max_messages=2,
+            max_uploads=8,
+        )
+        if not recent:
+            return current
+        return _v4._validate_owned_uploads(
+            self.orchestrator.knowledge_gateway,
+            recent,
+            sender,
+        )
+
+    def submit(
+        self,
+        message: str,
+        *,
+        channel: str,
+        sender: str,
+        language: str | None = None,
+        upload_ids: list[str] | None = None,
+        request_mode: str = "chat",
+        effort: str = "high",
+        conversation_id: str | None = None,
+    ) -> Any:
+        effective_uploads = self._resolve_submit_uploads(
+            message,
+            channel=channel,
+            sender=sender,
+            conversation_id=conversation_id,
+            upload_ids=upload_ids,
+        )
+        job = super().submit(
+            message,
+            channel=channel,
+            sender=sender,
+            language=language,
+            upload_ids=effective_uploads,
+            request_mode=request_mode,
+            effort=effort,
+            conversation_id=conversation_id,
+        )
+        conversation = self.conversation_for_job(job.job_id)
+        if conversation and effective_uploads:
+            self.attachment_memory.record(
+                conversation,
+                job.job_id,
+                effective_uploads,
+            )
+        return job
 
     def _language_for_follow_up(
         self,
@@ -179,6 +277,8 @@ def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
     upload["supported_extensions"] = sorted(EXTENDED_UPLOAD_EXTENSIONS)
     upload["document_text_extraction"] = True
     upload["query_aware_long_document_excerpts"] = True
+    upload["conversation_attachment_memory"] = True
+    upload["attachment_memory_scope"] = "same_owner_same_conversation"
     upload["image_semantic_understanding"] = False
     upload["image_note"] = "Images are validated/stored, but semantic vision requires a separately configured local vision model."
     payload["conversation_context"] = {
