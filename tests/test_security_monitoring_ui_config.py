@@ -8,7 +8,7 @@ from pathlib import Path
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
-from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15
+from three_agent.workspace_frontend_v15 import html as WORKSPACE_HTML_V15
 
 
 class SecurityMonitoringUIConfigTests(unittest.TestCase):
