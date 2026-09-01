@@ -10,8 +10,11 @@ from .flow_process_engine import FlowProcessAttributionAssessment
 if TYPE_CHECKING:
     from .correlation_graph import CorrelationEvent
 
-FLOW_PROCESS_GRAPH_SOURCE_TYPE = "flow_process_attribution"
-FLOW_PROCESS_GRAPH_CATEGORY = "flow_process.attributed"
+# Reuse the PROCESS event dialect already understood by the incident graph.
+# Provenance remains explicit through source_id and parser_version below.
+FLOW_PROCESS_GRAPH_SOURCE_TYPE = "workspace_audit"
+FLOW_PROCESS_GRAPH_CATEGORY = "workspace_audit.process_start"
+FLOW_PROCESS_GRAPH_SOURCE_ID = "flow-process-attribution"
 FLOW_PROCESS_GRAPH_PARSER_VERSION = "flow-process-graph-bridge/v1"
 
 
@@ -29,11 +32,12 @@ def attribution_to_correlation_event(
     flow: FlowTupleEvidence,
     assessment: FlowProcessAttributionAssessment,
 ) -> "CorrelationEvent | None":
-    """Bridge exact attribution evidence into the existing incident graph.
+    """Bridge exact flow/process attribution into the existing incident graph.
 
     The bridge is deterministic and side-effect free. Only an exact `attributed`
-    assessment is allowed to become PROCESS-stage evidence. Ambiguous or
-    unmatched assessments intentionally emit no correlation event.
+    assessment becomes PROCESS-stage evidence. Ambiguous or unmatched evidence
+    intentionally emits no correlation event and therefore cannot create an
+    identity edge by guesswork.
     """
 
     flow = flow.validate()
@@ -57,7 +61,7 @@ def attribution_to_correlation_event(
     event_id = _event_id(flow=flow, assessment=assessment)
     event = CanonicalEvent(
         event_id=event_id,
-        source_id="flow-process-attribution",
+        source_id=FLOW_PROCESS_GRAPH_SOURCE_ID,
         source_type=FLOW_PROCESS_GRAPH_SOURCE_TYPE,
         observed_at=flow.observed_at,
         category=FLOW_PROCESS_GRAPH_CATEGORY,
@@ -90,8 +94,6 @@ def attribution_to_correlation_event(
 
     context = EventEntityContext(event_id=event_id, references=tuple(references)).validate()
 
-    # Local import avoids a module cycle while keeping the stage constants
-    # available to correlation_graph at import time.
     from .correlation_graph import CorrelationEvent
 
     return CorrelationEvent(event=event, context=context).validate()
