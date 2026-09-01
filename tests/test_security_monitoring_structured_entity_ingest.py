@@ -38,8 +38,12 @@ class StructuredEntityIngestTests(unittest.TestCase):
                 "proto": "TCP",
             }
         )
-        first = self.ingestor.ingest_line(source=source, raw_line=raw, asset_id="gateway-rd-01")
-        second = self.ingestor.ingest_line(source=source, raw_line=raw, asset_id="gateway-rd-01")
+        first = self.ingestor.ingest_line(
+            source=source, raw_line=raw, approved_asset_id="gateway-rd-01"
+        )
+        second = self.ingestor.ingest_line(
+            source=source, raw_line=raw, approved_asset_id="gateway-rd-01"
+        )
         self.assertEqual(first, second)
         self.assertEqual(first.status, "accepted")
         self.assertGreater(first.entity_count, 0)
@@ -66,13 +70,15 @@ class StructuredEntityIngestTests(unittest.TestCase):
                 "token": "must-never-enter-metadata",
             }
         )
-        receipt = self.ingestor.ingest_line(source=source, raw_line=raw)
+        receipt = self.ingestor.ingest_line(
+            source=source, raw_line=raw, approved_asset_id="server-rd-01"
+        )
         self.assertEqual(receipt.status, "quarantined")
         self.assertEqual(receipt.quarantine_reason, "WORKSPACE_AUDIT_INVALID")
         self.assertEqual(self.store.count("canonical_events"), 0)
         self.assertEqual(self.store.count("quarantine"), 1)
 
-    def test_workspace_audit_asset_override_is_forbidden(self):
+    def test_workspace_audit_requires_trusted_asset_and_payload_must_match(self):
         source = SourceMapping(
             source_id="audit-rd",
             source_type="workspace_audit",
@@ -89,7 +95,20 @@ class StructuredEntityIngestTests(unittest.TestCase):
             }
         )
         with self.assertRaises(MonitoringContractError):
-            self.ingestor.ingest_line(source=source, raw_line=raw, asset_id="other-server")
+            self.ingestor.ingest_line(source=source, raw_line=raw)
+
+        mismatch = self.ingestor.ingest_line(
+            source=source, raw_line=raw, approved_asset_id="server-rd-02"
+        )
+        self.assertEqual(mismatch.status, "quarantined")
+        self.assertEqual(mismatch.quarantine_reason, "WORKSPACE_AUDIT_INVALID")
+        self.assertEqual(self.store.count("canonical_events"), 0)
+
+        accepted = self.ingestor.ingest_line(
+            source=source, raw_line=raw, approved_asset_id="server-rd-01"
+        )
+        self.assertEqual(accepted.status, "accepted")
+        self.assertEqual(self.store.count("canonical_events"), 1)
 
     def test_unsupported_source_and_oversized_line_fail_closed(self):
         syslog = SourceMapping(
