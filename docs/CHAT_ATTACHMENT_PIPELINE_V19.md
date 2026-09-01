@@ -39,7 +39,7 @@ A later turn that references a prior file/document can resolve the most recent a
 2. the upload still exists;
 3. the upload manifest owner matches the current sender.
 
-An unrelated later message does not silently inherit old attachments.
+The history pointer itself grants no file authority. An unrelated later message does not silently inherit old attachments.
 
 ## Supported semantic document extraction
 
