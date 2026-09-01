@@ -97,16 +97,16 @@ def _add_service(refs: list[EventEntityReference], protocol: Any, port: Any) -> 
         refs.append(EventEntityReference.opaque(kind="service", role="service", value=service))
 
 
-def _approved_asset(refs: list[EventEntityReference], asset_id: str | None) -> None:
-    if asset_id:
-        refs.append(EventEntityReference.approved_asset(role="asset", asset_id=asset_id))
+def _approved_asset(refs: list[EventEntityReference], approved_asset_id: str | None) -> None:
+    if approved_asset_id:
+        refs.append(EventEntityReference.approved_asset(role="asset", asset_id=approved_asset_id))
 
 
-def _suricata_refs(payload: dict[str, Any], *, asset_id: str | None) -> tuple[EventEntityReference, ...]:
+def _suricata_refs(payload: dict[str, Any], *, approved_asset_id: str | None) -> tuple[EventEntityReference, ...]:
     # The explicit extraction allowlist above documents which EVE fields may
     # influence entity metadata. All other EVE fields remain raw evidence only.
     refs: list[EventEntityReference] = []
-    _approved_asset(refs, asset_id)
+    _approved_asset(refs, approved_asset_id)
     _entity_ip(refs, role="source_ip", value=payload.get("src_ip"))
     _entity_ip(refs, role="destination_ip", value=payload.get("dest_ip"))
     _add_service(refs, payload.get("proto"), payload.get("dest_port"))
@@ -137,9 +137,9 @@ def _suricata_refs(payload: dict[str, Any], *, asset_id: str | None) -> tuple[Ev
     return tuple(refs)
 
 
-def _zeek_refs(payload: dict[str, Any], *, asset_id: str | None) -> tuple[EventEntityReference, ...]:
+def _zeek_refs(payload: dict[str, Any], *, approved_asset_id: str | None) -> tuple[EventEntityReference, ...]:
     refs: list[EventEntityReference] = []
-    _approved_asset(refs, asset_id)
+    _approved_asset(refs, approved_asset_id)
     _entity_ip(refs, role="source_ip", value=payload.get("id.orig_h"))
     _entity_ip(refs, role="destination_ip", value=payload.get("id.resp_h"))
     _add_service(refs, payload.get("proto"), payload.get("id.resp_p"))
@@ -161,13 +161,14 @@ def parse_json_sensor_event_enriched(
     source_id: str,
     source_type: str,
     raw_line: str,
-    asset_id: str | None = None,
+    approved_asset_id: str | None = None,
 ) -> ParsedCanonicalEvent | QuarantinedRecord:
     """Parse a supported sensor event and derive privacy-preserving entity refs.
 
     Existing parse_json_sensor_event() remains the authoritative CanonicalEvent
     parser. This wrapper only adds deterministic metadata derived from an
     explicit field allowlist; it cannot broaden source or collection authority.
+    Any explicit asset identity must already be approved by trusted caller/config.
     """
 
     base = parse_json_sensor_event(source_id=source_id, source_type=source_type, raw_line=raw_line)
@@ -177,13 +178,14 @@ def parse_json_sensor_event_enriched(
         payload = json.loads(raw_line)
         if not isinstance(payload, dict):
             raise MonitoringContractError("sensor payload must be an object")
+        if approved_asset_id is not None:
+            approved_asset_id = _compact(approved_asset_id, "approved_asset_id", max_len=128)
         if source_type == "suricata_eve":
-            # Access to fields is intentionally constrained to the documented set.
             selected = {key: payload.get(key) for key in _SURICATA_ENTITY_FIELDS if key in payload}
-            refs = _suricata_refs(selected, asset_id=asset_id)
+            refs = _suricata_refs(selected, approved_asset_id=approved_asset_id)
         elif source_type == "zeek_json":
             selected = {key: payload.get(key) for key in _ZEEK_ENTITY_FIELDS if key in payload}
-            refs = _zeek_refs(selected, asset_id=asset_id)
+            refs = _zeek_refs(selected, approved_asset_id=approved_asset_id)
         else:
             raise MonitoringContractError("unsupported enriched sensor source_type")
         context = EventEntityContext(event_id=base.event_id, references=refs).validate()
@@ -216,9 +218,16 @@ def _audit_service(value: Any) -> str:
     return mapped
 
 
-def parse_workspace_audit_event(*, source_id: str, raw_line: str) -> ParsedCanonicalEvent | QuarantinedRecord:
+def parse_workspace_audit_event(
+    *,
+    source_id: str,
+    raw_line: str,
+    approved_asset_id: str,
+) -> ParsedCanonicalEvent | QuarantinedRecord:
     """Strict structured local audit parser for auth/process correlation.
 
+    The payload may name an asset only as a consistency assertion. The explicit
+    entity identity comes from trusted caller/config and must match exactly.
     Free-form log inference is deliberately unsupported. Unknown fields fail
     closed, preventing credential/command-line material from entering context.
     """
@@ -234,13 +243,16 @@ def parse_workspace_audit_event(*, source_id: str, raw_line: str) -> ParsedCanon
         if event_type not in AUDIT_EVENT_TYPES:
             raise MonitoringContractError("unsupported workspace audit event_type")
         observed_at = _audit_timestamp(payload.get("timestamp"))
-        asset_id = _compact(str(payload.get("asset_id") or ""), "asset_id", max_len=128)
+        payload_asset_id = _compact(str(payload.get("asset_id") or ""), "asset_id", max_len=128)
+        trusted_asset_id = _compact(approved_asset_id, "approved_asset_id", max_len=128)
+        if payload_asset_id != trusted_asset_id:
+            raise MonitoringContractError("workspace audit asset_id does not match trusted approved asset")
         user = str(payload.get("user") or "").strip()
         if not user or len(user) > 256:
             raise MonitoringContractError("workspace audit user is required")
 
         refs: list[EventEntityReference] = [
-            EventEntityReference.approved_asset(role="asset", asset_id=asset_id),
+            EventEntityReference.approved_asset(role="asset", asset_id=trusted_asset_id),
             EventEntityReference.opaque(kind="user", role="auth_user", value=user),
         ]
         _entity_ip(refs, role="source_ip", value=payload.get("source_ip"))
