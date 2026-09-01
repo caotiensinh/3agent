@@ -48,6 +48,7 @@ Important properties:
 - admin role alone is not authority;
 - learned content cannot nominate a reviewer;
 - external profile/department text is not authority;
+- the exact active knowledge level (`approved` or `enterprise`) must be present in the reviewer's Phase 4E `allowed_levels` grant;
 - Network/Security requires the matching explicit domain-review entitlement;
 - approval binds the exact proposal ID and SHA, proposal-set SHA, active item/knowledge/candidate SHA, curation action and exact Phase 3.1 checkpoint sequence/checkpoint SHA/state SHA;
 - approval contains no capability grants.
