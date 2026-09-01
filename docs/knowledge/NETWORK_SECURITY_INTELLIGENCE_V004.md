@@ -93,13 +93,16 @@ History ends strictly before the current window, preventing the current event fr
 
 Key rules:
 
+- each risk receipt is isolated to one exact initiating asset/source entity scope;
+- `score()` fails closed when scoped assessments from multiple initiators are mixed; `score_by_scope()` is the explicit multi-initiator API;
+- unrelated incident graphs cannot add score merely because they exist in the same time window;
 - duplicate assessment replay does not add points;
 - multiple events from the same behavior rule contribute that rule's weight only once;
 - graph contribution is bounded and deterministic;
 - corroboration requires exact shared `event_id` or exact opaque entity reference;
 - time proximity is not an input to risk corroboration;
 - one rare peer/DNS/service cannot become `high` by itself;
-- `high` requires either exact graph corroboration at the configured score threshold or at least three independent deterministic signal rules;
+- `high` requires either exact graph corroboration at the configured score threshold or at least three independent deterministic signal rules inside the same initiator scope;
 - no `critical` level is manufactured by this scorer;
 - every receipt has `authority=advisory`.
 
@@ -134,7 +137,8 @@ The phase is accepted only when:
 6. current-window observations cannot self-baseline;
 7. rare-entity, entropy, cardinality and NXDOMAIN rules are bounded and deterministic;
 8. duplicate replay cannot inflate counts or scores;
-9. risk corroboration requires exact event/entity evidence rather than time proximity;
-10. all outputs remain advisory and metadata-only;
-11. v0.0.2 truth separation and v0.0.3 exact correlation remain unchanged;
-12. exact-head harness, installer, portable-deploy and Windows-deploy gates pass before merge.
+9. risk scoring is isolated per exact initiator and never aggregates unrelated hosts into one high score;
+10. risk corroboration requires exact event/entity evidence rather than time proximity;
+11. all outputs remain advisory and metadata-only;
+12. v0.0.2 truth separation and v0.0.3 exact correlation remain unchanged;
+13. exact-head harness, installer, portable-deploy and Windows-deploy gates pass before merge.
