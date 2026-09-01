@@ -42,6 +42,8 @@ from .network_triage import (
 )
 from .policy import MonitoringCapabilityDecision, MonitoringPolicy, MonitoringPolicyEngine
 from .replay import DeterministicByteReplay, ParsedReplayBatch, ReplayBatch, ReplayReceipt, ReplayRecord
+from .rule_compiler import CompiledRulePlan, DeterministicRuleCompiler, RuleMatchReceipt
+from .rule_contracts import RulePredicates, RuleSource, parse_rule_source
 from .storage import MonitoringStore
 from .structured_behavior_ingest import (
     StructuredBehaviorIngestReceipt,
@@ -57,6 +59,12 @@ from .temporal_scenarios import (
     DeterministicTemporalScenarioEngine,
     TemporalScenario,
     TemporalScenarioAssessment,
+)
+from .work_clustering import (
+    AuthorizedRuleWorkBinding,
+    RuleWorkCluster,
+    bind_rule_to_authorized_work,
+    cluster_authorized_rule_work,
 )
 
 __all__ = [
@@ -89,6 +97,16 @@ __all__ = [
     "TemporalScenario",
     "TemporalScenarioAssessment",
     "DeterministicTemporalScenarioEngine",
+    "RulePredicates",
+    "RuleSource",
+    "parse_rule_source",
+    "CompiledRulePlan",
+    "RuleMatchReceipt",
+    "DeterministicRuleCompiler",
+    "AuthorizedRuleWorkBinding",
+    "RuleWorkCluster",
+    "bind_rule_to_authorized_work",
+    "cluster_authorized_rule_work",
     "EventEntityContext",
     "EventEntityReference",
     "EventEntityContextStore",
