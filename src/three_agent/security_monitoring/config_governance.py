@@ -157,6 +157,33 @@ class SecurityMonitoringConfigGovernance:
             audit_chain_valid=self.verify_audit_chain(),
         )
 
+    def status(self) -> dict[str, Any]:
+        state = self.state()
+        tracked = state.revision > 0
+        active_exists = state.active_config_sha256 is not None
+        if not state.audit_chain_valid:
+            change_state = "audit_invalid"
+        elif state.drift_detected and tracked:
+            change_state = "drift"
+        elif active_exists and not tracked:
+            change_state = "adoption_required"
+        elif tracked:
+            change_state = "governed"
+        else:
+            change_state = "unconfigured"
+        return {
+            "schema_version": GOVERNANCE_SCHEMA,
+            "revision": state.revision,
+            "config_sha256": state.config_sha256,
+            "active_config_sha256": state.active_config_sha256,
+            "drift_detected": state.drift_detected,
+            "audit_chain_valid": state.audit_chain_valid,
+            "tracked": tracked,
+            "change_state": change_state,
+            "writes_allowed": state.audit_chain_valid and change_state in {"governed", "unconfigured"},
+            "adoption_required": change_state == "adoption_required",
+        }
+
     def verify_audit_chain(self) -> bool:
         previous: str | None = None
         with self._connect() as conn:
@@ -193,6 +220,26 @@ class SecurityMonitoringConfigGovernance:
             return
         self.manager.save(previous_payload)
 
+    def _assert_pre_write_integrity(
+        self,
+        *,
+        latest: sqlite3.Row | None,
+        previous_payload: dict[str, Any] | None,
+        action: str,
+    ) -> None:
+        expected_sha = str(latest["config_sha256"]) if latest else None
+        active_sha = config_fingerprint(previous_payload) if previous_payload is not None else None
+        if latest is None:
+            if previous_payload is not None and action != "CONFIG_ADOPT":
+                raise MonitoringContractError(
+                    "existing configuration is untracked; explicit adoption is required before governed changes"
+                )
+            return
+        if expected_sha != active_sha:
+            raise MonitoringContractError(
+                "configuration drift detected; governed changes are blocked until drift is resolved"
+            )
+
     def apply_change(
         self,
         payload: Any,
@@ -225,6 +272,11 @@ class SecurityMonitoringConfigGovernance:
                 )
             if not self.verify_audit_chain():
                 raise MonitoringContractError("configuration audit chain verification failed")
+            self._assert_pre_write_integrity(
+                latest=latest,
+                previous_payload=previous_payload,
+                action=action,
+            )
             created_at = _utc_now()
             cursor = conn.execute(
                 "INSERT INTO config_revisions(created_at,actor,reason,config_sha256,payload_json,source_revision) "
@@ -293,6 +345,20 @@ class SecurityMonitoringConfigGovernance:
             "drift_detected": False,
             "audit_chain_valid": True,
         }
+
+    def adopt_existing(self, *, actor: str, reason: str) -> dict[str, Any]:
+        if self.state().revision != 0:
+            raise MonitoringContractError("configuration governance already has a tracked revision")
+        payload = self._active_payload()
+        if payload is None:
+            raise MonitoringContractError("no existing configuration is available for adoption")
+        return self.apply_change(
+            payload,
+            actor=actor,
+            reason=reason,
+            expected_revision=0,
+            action="CONFIG_ADOPT",
+        )
 
     def revision(self, revision: int) -> dict[str, Any]:
         if not isinstance(revision, int) or revision <= 0:
