@@ -11,7 +11,7 @@ from .security_monitoring.config_governance import SecurityMonitoringConfigGover
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG, SecurityMonitoringUIConfigManager
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
-from .workspace_frontend_v15 import WORKSPACE_HTML_V15
+from .workspace_frontend_v16 import WORKSPACE_HTML_V16
 
 
 _BASE_APPLICATION = _v18.SecurityMonitoringApplication
@@ -35,9 +35,6 @@ class SecurityMonitoringConfigApplication(_BASE_APPLICATION):
         self.refresh_security_monitoring()
 
     def refresh_security_monitoring(self) -> None:
-        # The manager has an explicit safe default path when the environment
-        # variable is absent. Feeding the resolved absolute path to the existing
-        # read model keeps one authoritative validation contract after restart.
         self.security_monitoring = SecurityMonitoringUIReadModel.from_environment(
             {ENV_CONFIG: str(self.security_config.path)}
         )
@@ -187,9 +184,7 @@ class SecurityMonitoringConfigHTTPHandler(_BASE_HANDLER):
         super().do_POST()
 
 
-# Preserve the complete hardened v18 runtime. Only the UI document and the
-# application/handler subclasses move forward; v18 remains a rollback boundary.
-_v17.HTML_V17 = WORKSPACE_HTML_V15
+_v17.HTML_V17 = WORKSPACE_HTML_V16
 _v17.WorkflowV4ContextApplication = SecurityMonitoringConfigApplication
 _v17.WorkflowV4ContextHTTPHandler = SecurityMonitoringConfigHTTPHandler
 
