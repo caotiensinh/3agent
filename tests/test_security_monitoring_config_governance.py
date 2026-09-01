@@ -141,6 +141,25 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
             self.assertEqual(history[0]["source_revision"], 1)
             self.assertTrue(governance.verify_audit_chain())
 
+    def test_missing_runtime_config_after_governed_commit_is_detected_as_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager, governance = self.setup_governance(root)
+            payload = safe_default_payload(manager.path)
+            governance.apply_change(
+                payload,
+                actor="security-admin",
+                reason="Establish governed production baseline",
+                expected_revision=0,
+            )
+            manager.path.unlink()
+            state = governance.state()
+            self.assertEqual(state.revision, 1)
+            self.assertIsNotNone(state.config_sha256)
+            self.assertIsNone(state.active_config_sha256)
+            self.assertTrue(state.drift_detected)
+            self.assertTrue(state.audit_chain_valid)
+
     def test_raw_secret_is_rejected_before_governance_history_is_written(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
