@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
 
+from three_agent import chat_gateway_v19
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
-from three_agent.workspace_frontend_v15 import html as WORKSPACE_HTML_V15
+from three_agent.workspace_frontend_v16 import WORKSPACE_HTML_V16
 
 
 class SecurityMonitoringUIConfigTests(unittest.TestCase):
@@ -131,7 +133,6 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             self.assertFalse(readiness["secret_values_read"])
 
     def test_enterprise_save_contract_exposes_safe_runtime_and_readiness_signals(self) -> None:
-        """Verify the admin save contract without changing the flat runtime schema."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             manager = self.manager(root)
@@ -180,7 +181,7 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             self.assertEqual(saved["mode"], "operator-configured")
             self.assertEqual(saved["readiness"]["status"], "ready")
 
-    def test_frontend_exposes_real_configuration_controls(self) -> None:
+    def test_frontend_exposes_governed_configuration_controls(self) -> None:
         for marker in (
             "Configuration",
             "Monitoring &amp; safety policy",
@@ -188,14 +189,32 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             "Approved asset inventory",
             "SNMPv3 read",
             "Readiness check",
+            "Enterprise change control",
+            "Change reason (required)",
+            "Rollback as new revision",
             "/api/security/config/validate",
             "/api/security/config/readiness",
             "/api/security/config/save",
+            "/api/security/config/history",
+            "/api/security/config/adopt",
+            "/api/security/config/rollback",
+            "expected_revision",
+            "change_reason",
             "approved_inventory_only",
             "passive_only",
         ):
-            self.assertIn(marker, WORKSPACE_HTML_V15)
-        self.assertNotIn('type="password"', WORKSPACE_HTML_V15)
+            self.assertIn(marker, WORKSPACE_HTML_V16)
+        self.assertNotIn('type="password"', WORKSPACE_HTML_V16)
+
+    def test_production_gateway_has_no_direct_config_save_bypass(self) -> None:
+        source = inspect.getsource(chat_gateway_v19.SecurityMonitoringConfigHTTPHandler)
+        self.assertIn("security_governance.apply_change", source)
+        self.assertIn("security_governance.adopt_existing", source)
+        self.assertIn("security_governance.rollback", source)
+        self.assertNotIn("security_config.save(", source)
+        self.assertIn('"/api/security/config/history"', source)
+        self.assertIn('"/api/security/config/adopt"', source)
+        self.assertIn('"/api/security/config/rollback"', source)
 
 
 if __name__ == "__main__":
