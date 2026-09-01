@@ -19,6 +19,12 @@ class TrustedSelfHostedRunnerWorkflowContractTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
         self.assertIn("persist-credentials: false", self.workflow)
 
+    def test_shell_commands_use_valid_yaml_block_scalars(self) -> None:
+        self.assertNotIn('run: "$VENV', self.workflow)
+        self.assertIn('run: |\n          "$VENV/bin/python" scripts/scan_skills.py', self.workflow)
+        self.assertIn('run: |\n          "$VENV/bin/python" -m compileall -q src tests', self.workflow)
+        self.assertIn('run: |\n          "$VENV/bin/python" -m unittest discover -s tests -v', self.workflow)
+
     def test_exact_source_and_idempotency_are_verified(self) -> None:
         self.assertIn("THREE_AGENT_REPO_REF: ${{ github.sha }}", self.workflow)
         self.assertIn('git -C "$THREE_AGENT_INSTALL_DIR" rev-parse HEAD', self.workflow)
