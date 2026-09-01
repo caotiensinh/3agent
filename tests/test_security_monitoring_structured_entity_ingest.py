@@ -5,17 +5,32 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.security_monitoring.contracts import MonitoringContractError
+from three_agent.security_monitoring.contracts import AssetInventoryRecord, MonitoringContractError
 from three_agent.security_monitoring.entity_context_storage import EventEntityContextStore
 from three_agent.security_monitoring.ingest import SourceMapping
 from three_agent.security_monitoring.storage import MonitoringStore
 from three_agent.security_monitoring.structured_entity_ingest import StructuredEntityIngestor
 
 
+def inventory_asset(asset_id: str, host: str, *, enabled: bool = True) -> AssetInventoryRecord:
+    return AssetInventoryRecord(
+        asset_id=asset_id,
+        role="correlation_endpoint",
+        management_host=host,
+        collector_capabilities=(),
+        enabled=enabled,
+    ).validate()
+
+
 class StructuredEntityIngestTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.store = MonitoringStore(Path(self.temp.name) / "monitoring.sqlite3")
+        self.store.initialize()
+        self.store.upsert_asset(inventory_asset("gateway-rd-01", "192.0.2.1"))
+        self.store.upsert_asset(inventory_asset("server-rd-01", "192.0.2.2"))
+        self.store.upsert_asset(inventory_asset("server-rd-02", "192.0.2.3"))
+        self.store.upsert_asset(inventory_asset("disabled-rd-01", "192.0.2.4", enabled=False))
         self.entity_store = EventEntityContextStore(self.store)
         self.ingestor = StructuredEntityIngestor(store=self.store, entity_store=self.entity_store)
 
@@ -78,7 +93,7 @@ class StructuredEntityIngestTests(unittest.TestCase):
         self.assertEqual(self.store.count("canonical_events"), 0)
         self.assertEqual(self.store.count("quarantine"), 1)
 
-    def test_workspace_audit_requires_trusted_asset_and_payload_must_match(self):
+    def test_workspace_audit_requires_enabled_inventory_asset_and_payload_must_match(self):
         source = SourceMapping(
             source_id="audit-rd",
             source_type="workspace_audit",
@@ -96,6 +111,14 @@ class StructuredEntityIngestTests(unittest.TestCase):
         )
         with self.assertRaises(MonitoringContractError):
             self.ingestor.ingest_line(source=source, raw_line=raw)
+        with self.assertRaises(MonitoringContractError):
+            self.ingestor.ingest_line(
+                source=source, raw_line=raw, approved_asset_id="unknown-rd-01"
+            )
+        with self.assertRaises(MonitoringContractError):
+            self.ingestor.ingest_line(
+                source=source, raw_line=raw, approved_asset_id="disabled-rd-01"
+            )
 
         mismatch = self.ingestor.ingest_line(
             source=source, raw_line=raw, approved_asset_id="server-rd-02"
