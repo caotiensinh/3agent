@@ -29,7 +29,7 @@ class EnrichedParserTests(unittest.TestCase):
         self.assertEqual(event.category, "suricata.flow")
         self.assertFalse(hasattr(event, "entity_context"))
 
-    def test_suricata_enrichment_hashes_ip_dns_and_service_and_keeps_asset_only(self):
+    def test_suricata_enrichment_hashes_ip_dns_and_service_and_keeps_approved_asset_only(self):
         raw = json.dumps(
             {
                 "timestamp": "2026-09-01T00:00:00+00:00",
@@ -49,7 +49,7 @@ class EnrichedParserTests(unittest.TestCase):
             source_id="sensor-suricata",
             source_type="suricata_eve",
             raw_line=raw,
-            asset_id="gateway-rd-01",
+            approved_asset_id="gateway-rd-01",
         )
         self.assertIsInstance(parsed, ParsedCanonicalEvent)
         rendered = json.dumps(parsed.entity_context.public_dict(), sort_keys=True)
@@ -94,7 +94,7 @@ class EnrichedParserTests(unittest.TestCase):
         self.assertNotIn("C-raw-value", rendered)
         self.assertNotIn("alias.example.org", rendered)
 
-    def test_workspace_audit_auth_is_strict_and_metadata_only(self):
+    def test_workspace_audit_auth_is_strict_metadata_only_and_trusted_asset_bound(self):
         raw = json.dumps(
             {
                 "timestamp": "2026-09-01T09:00:00+09:00",
@@ -107,7 +107,11 @@ class EnrichedParserTests(unittest.TestCase):
                 "outcome": "success",
             }
         )
-        parsed = parse_workspace_audit_event(source_id="audit-server-rd-01", raw_line=raw)
+        parsed = parse_workspace_audit_event(
+            source_id="audit-server-rd-01",
+            raw_line=raw,
+            approved_asset_id="server-rd-01",
+        )
         self.assertIsInstance(parsed, ParsedCanonicalEvent)
         self.assertEqual(parsed.event.category, "workspace_audit.auth_success")
         rendered = json.dumps(parsed.entity_context.public_dict(), sort_keys=True)
@@ -116,6 +120,14 @@ class EnrichedParserTests(unittest.TestCase):
         self.assertIn(opaque_entity_ref("service", "tcp:22"), rendered)
         self.assertNotIn("alice", rendered.lower())
         self.assertNotIn("192.0.2.20", rendered)
+
+        mismatch = parse_workspace_audit_event(
+            source_id="audit-server-rd-01",
+            raw_line=raw,
+            approved_asset_id="server-rd-02",
+        )
+        self.assertIsInstance(mismatch, QuarantinedRecord)
+        self.assertEqual(mismatch.reason_code, "WORKSPACE_AUDIT_INVALID")
 
     def test_workspace_audit_process_links_asset_user_and_process_without_raw_path(self):
         raw = json.dumps(
@@ -127,7 +139,11 @@ class EnrichedParserTests(unittest.TestCase):
                 "process_image": "C:\\Windows\\System32\\whoami.exe",
             }
         )
-        parsed = parse_workspace_audit_event(source_id="audit-server-rd-01", raw_line=raw)
+        parsed = parse_workspace_audit_event(
+            source_id="audit-server-rd-01",
+            raw_line=raw,
+            approved_asset_id="server-rd-01",
+        )
         self.assertIsInstance(parsed, ParsedCanonicalEvent)
         rendered = json.dumps(parsed.entity_context.public_dict(), sort_keys=True)
         self.assertIn(opaque_entity_ref("process", "C:\\Windows\\System32\\whoami.exe"), rendered)
@@ -145,7 +161,11 @@ class EnrichedParserTests(unittest.TestCase):
                 "outcome": "success",
                 forbidden_key: "super-secret-value",
             }
-            result = parse_workspace_audit_event(source_id="audit-1", raw_line=json.dumps(payload))
+            result = parse_workspace_audit_event(
+                source_id="audit-1",
+                raw_line=json.dumps(payload),
+                approved_asset_id="server-rd-01",
+            )
             self.assertIsInstance(result, QuarantinedRecord)
             self.assertEqual(result.reason_code, "WORKSPACE_AUDIT_INVALID")
 
@@ -159,12 +179,20 @@ class EnrichedParserTests(unittest.TestCase):
             "outcome": "success",
         }
         self.assertIsInstance(
-            parse_workspace_audit_event(source_id="audit-1", raw_line=json.dumps(unsupported)),
+            parse_workspace_audit_event(
+                source_id="audit-1",
+                raw_line=json.dumps(unsupported),
+                approved_asset_id="server-rd-01",
+            ),
             QuarantinedRecord,
         )
         mismatch = dict(unsupported, service="ssh", outcome="failure")
         self.assertIsInstance(
-            parse_workspace_audit_event(source_id="audit-1", raw_line=json.dumps(mismatch)),
+            parse_workspace_audit_event(
+                source_id="audit-1",
+                raw_line=json.dumps(mismatch),
+                approved_asset_id="server-rd-01",
+            ),
             QuarantinedRecord,
         )
 
