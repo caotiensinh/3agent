@@ -18,6 +18,12 @@ from .correlation_graph import (
 from .correlation_store import CorrelationStoreReader, CorrelationWindow
 from .entity_context import EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
+from .network_triage import (
+    DeterministicNetworkIncidentTriage,
+    NetworkIncidentTriage,
+    NetworkTriageConfig,
+    network_triage_plan,
+)
 from .policy import MonitoringCapabilityDecision, MonitoringPolicy, MonitoringPolicyEngine
 from .storage import MonitoringStore
 
@@ -40,6 +46,10 @@ __all__ = [
     "CorrelationWindow",
     "DeterministicIncidentCorrelator",
     "IncidentGraph",
+    "DeterministicNetworkIncidentTriage",
+    "NetworkIncidentTriage",
+    "NetworkTriageConfig",
+    "network_triage_plan",
     "MonitoringCapabilityDecision",
     "MonitoringPolicy",
     "MonitoringPolicyEngine",
