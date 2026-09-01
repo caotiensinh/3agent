@@ -47,7 +47,7 @@ class StructuredEntityIngestor:
         *,
         source: SourceMapping,
         raw_line: str,
-        asset_id: str | None = None,
+        approved_asset_id: str | None = None,
     ) -> StructuredEntityIngestReceipt:
         source.validate()
         if source.source_type not in {"suricata_eve", "zeek_json", "workspace_audit"}:
@@ -59,15 +59,19 @@ class StructuredEntityIngestor:
         self.entity_store.initialize()
         parsed: ParsedCanonicalEvent | QuarantinedRecord
         if source.source_type == "workspace_audit":
-            if asset_id is not None:
-                raise MonitoringContractError("workspace_audit asset identity must come from its strict local payload contract")
-            parsed = parse_workspace_audit_event(source_id=source.source_id, raw_line=raw_line)
+            if approved_asset_id is None:
+                raise MonitoringContractError("workspace_audit requires trusted approved_asset_id")
+            parsed = parse_workspace_audit_event(
+                source_id=source.source_id,
+                raw_line=raw_line,
+                approved_asset_id=approved_asset_id,
+            )
         else:
             parsed = parse_json_sensor_event_enriched(
                 source_id=source.source_id,
                 source_type=source.source_type,
                 raw_line=raw_line,
-                asset_id=asset_id,
+                approved_asset_id=approved_asset_id,
             )
 
         if isinstance(parsed, QuarantinedRecord):
