@@ -73,6 +73,7 @@ from .forensic_evidence import (
     ForensicEventTime,
     verify_custody_chain,
 )
+from .forensic_store import ForensicMetadataStore, ForensicStoreReceipt
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
 from .network_triage import (
@@ -186,6 +187,8 @@ __all__ = [
     "CaseAuthorization",
     "CollectionFootprint",
     "CaseRecord",
+    "ForensicStoreReceipt",
+    "ForensicMetadataStore",
     "CorrelationEvent",
     "CorrelationGraphConfig",
     "CorrelationStoreReader",
