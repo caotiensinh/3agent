@@ -116,7 +116,7 @@ class CorrelationSupportTests(unittest.TestCase):
             (),
         )
 
-    def test_exact_interface_can_attach_without_becoming_causal_stage(self):
+    def test_exact_interface_corroborates_only_after_exact_asset_match(self):
         client = "192.0.2.10"
         server = "198.51.100.20"
         interface = "Ethernet1/1"
@@ -136,6 +136,7 @@ class CorrelationSupportTests(unittest.TestCase):
             category="zeek.conn",
             observed_at="2026-09-01T00:00:05+00:00",
             refs=(
+                asset("switch-rd-01"),
                 opaque("ip", "source_ip", client),
                 opaque("ip", "destination_ip", server),
                 opaque("interface", "interface", interface),
@@ -157,7 +158,52 @@ class CorrelationSupportTests(unittest.TestCase):
         self.assertEqual(support.event_ids, ("evt-interface-health",))
         self.assertEqual(
             support.shared_entity_refs,
-            (opaque("interface", "interface", interface).entity_ref,),
+            (
+                "asset:switch-rd-01",
+                opaque("interface", "interface", interface).entity_ref,
+            ),
+        )
+
+    def test_same_interface_on_different_asset_never_attaches_support(self):
+        client = "192.0.2.10"
+        server = "198.51.100.20"
+        interface = "Ethernet1/1"
+        dns = item(
+            event_id="evt-dns-interface-isolation",
+            source_type="zeek_json",
+            category="zeek.dns",
+            observed_at="2026-09-01T00:00:00+00:00",
+            refs=(
+                opaque("ip", "source_ip", client),
+                opaque("ip", "dns_answer", server),
+            ),
+        )
+        flow = item(
+            event_id="evt-flow-interface-isolation",
+            source_type="zeek_json",
+            category="zeek.conn",
+            observed_at="2026-09-01T00:00:05+00:00",
+            refs=(
+                asset("switch-rd-01"),
+                opaque("ip", "source_ip", client),
+                opaque("ip", "destination_ip", server),
+                opaque("interface", "interface", interface),
+            ),
+        )
+        unrelated = item(
+            event_id="evt-interface-unrelated",
+            source_type="monitoring_observation",
+            category="monitoring.snmpv3_read",
+            observed_at="2026-09-01T00:00:06+00:00",
+            refs=(
+                asset("switch-rd-02"),
+                opaque("interface", "interface", interface),
+            ),
+        )
+        graph = DeterministicIncidentCorrelator().correlate((dns, flow, unrelated))[0]
+        self.assertEqual(
+            attach_supporting_evidence((graph,), (dns, flow, unrelated)),
+            (),
         )
 
     def test_support_bounds_fail_closed(self):

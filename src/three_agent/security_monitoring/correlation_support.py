@@ -8,7 +8,6 @@ from .contracts import MonitoringContractError
 from .correlation_graph import CorrelationEvent, IncidentGraph
 
 SUPPORT_SOURCE_TYPES = frozenset({"monitoring_observation", "syslog"})
-SUPPORT_ENTITY_ROLES = ("asset", "interface")
 
 
 @dataclass(frozen=True)
@@ -51,11 +50,8 @@ class IncidentSupportingEvidence:
         }
 
 
-def _support_refs(item: CorrelationEvent) -> set[str]:
-    refs: set[str] = set()
-    for role in SUPPORT_ENTITY_ROLES:
-        refs |= set(item.context.refs_for_role(role))
-    return refs
+def _refs(item: CorrelationEvent, role: str) -> set[str]:
+    return set(item.context.refs_for_role(role))
 
 
 def attach_supporting_evidence(
@@ -67,9 +63,12 @@ def attach_supporting_evidence(
     """Attach fact-only operational context without creating or changing incident edges.
 
     Only stage-less syslog/monitoring observations are eligible. Attachment requires
-    an exact shared typed asset/interface reference with an event already inside the
-    incident graph and a bounded timestamp window. The returned object is separate
-    from IncidentGraph, so it cannot alter severity, priority, stages, rules, or edges.
+    an exact shared approved asset reference with an event already inside the incident
+    graph and a bounded timestamp window. Interface references may further corroborate
+    that already asset-bound relationship, but an interface name/hash alone is never
+    authoritative because interface labels are not globally unique across devices.
+    The returned object is separate from IncidentGraph, so it cannot alter severity,
+    priority, stages, rules, or edges.
     """
 
     cfg = (config or CorrelationSupportConfig()).validate()
@@ -94,11 +93,15 @@ def attach_supporting_evidence(
             raise MonitoringContractError("support attachment requires all graph events")
 
         core = tuple(unique[event_id] for event_id in graph.event_ids)
-        exact_core_refs: set[str] = set()
+        core_assets: set[str] = set()
+        core_interfaces: set[str] = set()
         for item in core:
-            exact_core_refs |= _support_refs(item)
+            core_assets |= _refs(item, "asset")
+            core_interfaces |= _refs(item, "interface")
 
-        if not exact_core_refs:
+        # Monitoring/syslog support originates from approved inventory identity.
+        # Fail closed when the incident has no exact approved asset reference to bind.
+        if not core_assets:
             continue
 
         first_seen = min(item.observed for item in core)
@@ -116,9 +119,17 @@ def attach_supporting_evidence(
                 continue
             if candidate.observed < lower or candidate.observed > upper:
                 continue
-            shared = _support_refs(candidate) & exact_core_refs
-            if not shared:
+
+            shared_assets = _refs(candidate, "asset") & core_assets
+            if not shared_assets:
                 continue
+
+            # Interface hashes are only supporting detail inside an already
+            # exact asset match. Same-named interfaces on different devices
+            # must never attach unrelated operational evidence.
+            shared_interfaces = _refs(candidate, "interface") & core_interfaces
+            shared = shared_assets | shared_interfaces
+
             support_events_seen += 1
             support_refs_seen += len(shared)
             if support_events_seen > cfg.max_support_events:
