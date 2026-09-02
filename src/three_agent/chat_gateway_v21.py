@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from . import chat_gateway_v17 as _v17
 from .chat_gateway_v18 import CurrentRequestProjectChatService
 from .chat_gateway_v20 import WorkflowDraftApplication, WorkflowDraftHTTPHandler
+from .security_monitoring.asset_onboarding import SecurityAssetOnboardingService
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG
 from .security_monitoring.ui_config_v2 import SecurityMonitoringUIConfigManagerV2
@@ -160,7 +161,7 @@ class SecurityAwareProjectChatService(CurrentRequestProjectChatService):
 
 
 class SecurityE2EApplication(WorkflowDraftApplication):
-    """V20 application with the hardened current-generation monitoring config manager."""
+    """V20 application with the hardened current-generation monitoring control plane."""
 
     def __init__(
         self,
@@ -172,11 +173,12 @@ class SecurityE2EApplication(WorkflowDraftApplication):
     ) -> None:
         super().__init__(service, auth, artifact_root, external_store, external_settings)
         self.security_config = SecurityMonitoringUIConfigManagerV2.from_environment()
+        self.security_onboarding = SecurityAssetOnboardingService(self.security_config)
         self.refresh_security_monitoring()
 
 
 class SecurityE2EHTTPHandler(WorkflowDraftHTTPHandler):
-    """V20 HTTP surface plus strong monitoring configuration/audit boundaries."""
+    """V20 HTTP surface plus strong monitoring configuration/onboarding boundaries."""
 
     server_version = "WorkSpaceChat/ver.0.0.2-security-e2e-v1"
 
@@ -248,6 +250,39 @@ class SecurityE2EHTTPHandler(WorkflowDraftHTTPHandler):
                 {"error": "Invalid configuration audit query", "code": "SECURITY_CONFIG_AUDIT_INVALID"},
             )
 
+    def _security_onboarding_candidates(self, parsed) -> None:
+        if self._require_admin() is None:
+            return
+        try:
+            query = parse_qs(parsed.query, keep_blank_values=False)
+            limit = int(str(query.get("limit", ["50"])[0]))
+            result = self.app.security_onboarding.list_candidates(limit=limit)
+            self._json(HTTPStatus.OK, result)
+        except (MonitoringContractError, OSError, ValueError, TypeError, sqlite3.DatabaseError) as exc:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": str(exc)[:240] or "Approved asset onboarding candidates unavailable",
+                    "code": "SECURITY_ONBOARDING_CANDIDATES_REJECTED",
+                },
+            )
+
+    def _security_onboarding_prepare(self) -> None:
+        if self._require_admin() is None:
+            return
+        try:
+            payload = self._read_json_large(64 * 1024)
+            result = self.app.security_onboarding.prepare(payload)
+            self._json(HTTPStatus.OK, result)
+        except (MonitoringContractError, OSError, ValueError, TypeError, json.JSONDecodeError, sqlite3.DatabaseError) as exc:
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "error": str(exc)[:240] or "Approved asset onboarding rejected",
+                    "code": "SECURITY_ONBOARDING_REJECTED",
+                },
+            )
+
     def _security_runtime(self) -> None:
         if self._require_admin() is None:
             return
@@ -260,6 +295,8 @@ class SecurityE2EHTTPHandler(WorkflowDraftHTTPHandler):
                 "chat_security_context": SECURITY_CAPABILITY_CONTEXT_VERSION,
                 "network_authority": "approved_inventory_read_only",
                 "autonomous_remediation": False,
+                "discovery_self_enrollment": False,
+                "asset_onboarding_authority": "configuration_center_only",
             },
         )
 
@@ -268,10 +305,19 @@ class SecurityE2EHTTPHandler(WorkflowDraftHTTPHandler):
         if parsed.path == "/api/security/config/audit":
             self._security_config_audit(parsed)
             return
+        if parsed.path == "/api/security/onboarding/candidates":
+            self._security_onboarding_candidates(parsed)
+            return
         if parsed.path == "/api/security/runtime":
             self._security_runtime()
             return
         super().do_GET()
+
+    def do_POST(self) -> None:
+        if urlparse(self.path).path == "/api/security/onboarding/prepare":
+            self._security_onboarding_prepare()
+            return
+        super().do_POST()
 
 
 # V20 remains an intact rollback boundary. V21 only replaces the final composed
