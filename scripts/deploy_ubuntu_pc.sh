@@ -14,6 +14,7 @@ ALLOW_ROOT="${THREE_AGENT_ALLOW_ROOT:-0}"
 BOOTSTRAP_URL_OVERRIDE="${THREE_AGENT_BOOTSTRAP_URL:-}"
 SELF_TEST=0
 TMP_BOOTSTRAP=""
+BOOTSTRAP_PATH=""
 
 for arg in "$@"; do
   case "$arg" in
@@ -70,20 +71,18 @@ check_ubuntu_host() {
   esac
 }
 
-resolve_local_bootstrap() {
+resolve_bootstrap() {
   local source_path="${BASH_SOURCE[0]:-}"
   if [[ -n "$source_path" && -f "$source_path" ]]; then
     local script_dir
     script_dir="$(cd "$(dirname "$source_path")" && pwd)"
     if [[ -f "${script_dir}/bootstrap.sh" ]]; then
-      printf '%s\n' "${script_dir}/bootstrap.sh"
+      BOOTSTRAP_PATH="${script_dir}/bootstrap.sh"
+      log "Using repository-local bootstrap: ${BOOTSTRAP_PATH}"
       return 0
     fi
   fi
-  return 1
-}
 
-download_bootstrap() {
   command -v curl >/dev/null 2>&1 || die "curl is required to download bootstrap.sh"
 
   local bootstrap_url
@@ -97,19 +96,15 @@ download_bootstrap() {
   fi
 
   TMP_BOOTSTRAP="$(mktemp)"
+  BOOTSTRAP_PATH="$TMP_BOOTSTRAP"
   log "Downloading canonical bootstrap"
-  curl -fsSL --retry 3 --connect-timeout 15 "$bootstrap_url" -o "$TMP_BOOTSTRAP"
-  bash -n "$TMP_BOOTSTRAP" || die "Downloaded bootstrap.sh failed Bash syntax validation"
-  printf '%s\n' "$TMP_BOOTSTRAP"
+  curl -fsSL --retry 3 --connect-timeout 15 "$bootstrap_url" -o "$BOOTSTRAP_PATH"
+  bash -n "$BOOTSTRAP_PATH" || die "Downloaded bootstrap.sh failed Bash syntax validation"
 }
 
 run_bootstrap() {
-  local bootstrap_path
-  if bootstrap_path="$(resolve_local_bootstrap)"; then
-    log "Using repository-local bootstrap: ${bootstrap_path}"
-  else
-    bootstrap_path="$(download_bootstrap)"
-  fi
+  resolve_bootstrap
+  [[ -n "$BOOTSTRAP_PATH" && -f "$BOOTSTRAP_PATH" ]] || die "bootstrap.sh could not be resolved"
 
   export THREE_AGENT_REPO_URL="$REPO_URL"
   export THREE_AGENT_REPO_REF="$REPO_REF"
@@ -121,7 +116,7 @@ run_bootstrap() {
   export THREE_AGENT_PULL_MODEL="$PULL_MODEL"
   export THREE_AGENT_SKIP_SYSTEM_PACKAGES="$SKIP_SYSTEM_PACKAGES"
 
-  bash "$bootstrap_path"
+  bash "$BOOTSTRAP_PATH"
 }
 
 verify_result() {
