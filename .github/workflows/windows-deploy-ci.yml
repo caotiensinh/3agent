@@ -31,9 +31,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-deploy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   contract:
     runs-on: windows-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Windows PowerShell 5.1 syntax and contract
@@ -44,6 +49,7 @@ jobs:
         run: .\scripts\test_bootstrap_windows_contract.ps1
 
   clean-install:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +60,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Resolve exact source candidate
         id: source
         shell: pwsh
