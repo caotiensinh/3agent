@@ -5,12 +5,16 @@ on:
     branches: [main]
     paths:
       - 'src/three_agent/security_monitoring/normalized_evidence.py'
+      - 'src/three_agent/security_monitoring/evidence_lineage.py'
       - 'tests/test_security_normalized_evidence.py'
+      - 'tests/test_security_evidence_lineage.py'
       - '.github/workflows/security-normalized-evidence-cross-platform.yml'
   pull_request:
     paths:
       - 'src/three_agent/security_monitoring/normalized_evidence.py'
+      - 'src/three_agent/security_monitoring/evidence_lineage.py'
       - 'tests/test_security_normalized_evidence.py'
+      - 'tests/test_security_evidence_lineage.py'
       - '.github/workflows/security-normalized-evidence-cross-platform.yml'
 
 permissions:
@@ -40,7 +44,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install project dependencies
         run: python -m pip install -e "."
-      - name: Compile normalized evidence module and tests
-        run: python -m compileall -q src/three_agent/security_monitoring/normalized_evidence.py tests/test_security_normalized_evidence.py
+      - name: Compile normalized evidence modules and tests
+        run: python -m compileall -q src/three_agent/security_monitoring/normalized_evidence.py src/three_agent/security_monitoring/evidence_lineage.py tests/test_security_normalized_evidence.py tests/test_security_evidence_lineage.py
       - name: Run normalized evidence security tests
-        run: python -m unittest tests.test_security_normalized_evidence -v
+        run: python -m unittest discover -s tests -p "test_security_*evidence*.py" -v
