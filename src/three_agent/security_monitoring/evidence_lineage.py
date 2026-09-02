@@ -4,15 +4,12 @@ import re
 from dataclasses import asdict, dataclass
 
 from .contracts import APPROVED_DATA_CLASSES, sha256_fingerprint
-from .normalized_evidence import (
-    MAX_BATCH_EVIDENCE,
-    NormalizedEvidenceBatch,
-    NormalizedEvidenceError,
-)
+from .normalized_evidence import MAX_BATCH_EVIDENCE, NormalizedEvidenceBatch, NormalizedEvidenceError
 
 EVIDENCE_LINEAGE_POLICY_SCHEMA = "workspace-security-evidence-lineage-policy/v1"
 EVIDENCE_LINEAGE_RECEIPT_SCHEMA = "workspace-security-evidence-lineage-receipt/v1"
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_EVIDENCE_ID_RE = re.compile(r"^evidence:[0-9a-f]{24}$")
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+\-/]{0,255}$")
 
 
@@ -89,36 +86,27 @@ class EvidenceLineageReceipt:
     def validate(self) -> "EvidenceLineageReceipt":
         if self.schema_version != EVIDENCE_LINEAGE_RECEIPT_SCHEMA:
             raise EvidenceLineageError("unsupported evidence lineage receipt schema")
-        for name, value in (
-            ("task_ref_sha256", self.task_ref_sha256),
-            ("policy_fingerprint", self.policy_fingerprint),
-            ("evidence_batch_fingerprint", self.evidence_batch_fingerprint),
-        ):
+        for name, value in (("task_ref_sha256", self.task_ref_sha256), ("policy_fingerprint", self.policy_fingerprint), ("evidence_batch_fingerprint", self.evidence_batch_fingerprint)):
             _sha(value, name)
         if self.status != "validated" or self.reason_code != "EVIDENCE_LINEAGE_VALIDATED":
             raise EvidenceLineageError("lineage receipt must represent a validated gate result")
+        if not isinstance(self.automatic_action_allowed, bool):
+            raise EvidenceLineageError("lineage receipt automatic_action_allowed must be boolean")
         if self.authority != "advisory" or self.automatic_action_allowed:
             raise EvidenceLineageError("lineage receipt cannot grant automatic action authority")
-        if self.evidence_count != len(self.evidence_ids) or self.evidence_count < 1:
-            raise EvidenceLineageError("lineage receipt evidence count mismatch")
+        if isinstance(self.evidence_count, bool) or not isinstance(self.evidence_count, int):
+            raise EvidenceLineageError("lineage receipt evidence_count must be an integer")
+        if self.evidence_count != len(self.evidence_ids) or not 1 <= self.evidence_count <= MAX_BATCH_EVIDENCE:
+            raise EvidenceLineageError("lineage receipt evidence count mismatch or bound exceeded")
         if len(set(self.evidence_ids)) != len(self.evidence_ids):
             raise EvidenceLineageError("lineage receipt evidence IDs must be unique")
+        if any(not _EVIDENCE_ID_RE.fullmatch(str(value or "")) for value in self.evidence_ids):
+            raise EvidenceLineageError("lineage receipt contains invalid evidence ID")
         return self
 
     def public_dict(self) -> dict[str, object]:
         self.validate()
-        return {
-            "schema_version": self.schema_version,
-            "task_ref_sha256": self.task_ref_sha256,
-            "policy_fingerprint": self.policy_fingerprint,
-            "evidence_batch_fingerprint": self.evidence_batch_fingerprint,
-            "evidence_ids": list(self.evidence_ids),
-            "evidence_count": self.evidence_count,
-            "status": self.status,
-            "reason_code": self.reason_code,
-            "authority": self.authority,
-            "automatic_action_allowed": self.automatic_action_allowed,
-        }
+        return {"schema_version": self.schema_version, "task_ref_sha256": self.task_ref_sha256, "policy_fingerprint": self.policy_fingerprint, "evidence_batch_fingerprint": self.evidence_batch_fingerprint, "evidence_ids": list(self.evidence_ids), "evidence_count": self.evidence_count, "status": self.status, "reason_code": self.reason_code, "authority": self.authority, "automatic_action_allowed": self.automatic_action_allowed}
 
 
 class EvidenceLineageGate:
@@ -150,10 +138,4 @@ class EvidenceLineageGate:
                 raise EvidenceLineageError("EVIDENCE_LINEAGE_SOURCE_HASH_NOT_IN_PROVENANCE")
             if row.integrity.content_sha256 == row.task_ref_sha256 or row.integrity.content_sha256 == row.authorization_ref_sha256:
                 raise EvidenceLineageError("EVIDENCE_LINEAGE_DOMAIN_HASH_COLLISION")
-        return EvidenceLineageReceipt(
-            task_ref_sha256=self.policy.task_ref_sha256,
-            policy_fingerprint=self.policy.fingerprint,
-            evidence_batch_fingerprint=batch.fingerprint,
-            evidence_ids=tuple(row.evidence_id for row in batch.evidence),
-            evidence_count=len(batch.evidence),
-        ).validate()
+        return EvidenceLineageReceipt(task_ref_sha256=self.policy.task_ref_sha256, policy_fingerprint=self.policy.fingerprint, evidence_batch_fingerprint=batch.fingerprint, evidence_ids=tuple(row.evidence_id for row in batch.evidence), evidence_count=len(batch.evidence)).validate()

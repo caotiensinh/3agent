@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -16,7 +17,6 @@ EVIDENCE_ANALYSIS_AUDIT_SCHEMA = "workspace-security-evidence-analysis-audit-rec
 EVIDENCE_ANALYSIS_AUDIT_VERIFY_SCHEMA = "workspace-security-evidence-analysis-audit-verification/v1"
 EVIDENCE_ANALYSIS_EVENT = "ANALYST_FINDING_RECORDED"
 MAX_ANALYSIS_AUDIT_RECORD_BYTES = 16 * 1024
-
 _SHA256_PREFIX = "sha256:"
 _SHA256_HEX_LENGTH = 64
 
@@ -109,28 +109,8 @@ class EvidenceAnalysisAuditRecord:
         return self
 
     @classmethod
-    def build(
-        cls,
-        *,
-        record_index: int,
-        occurred_at: str,
-        task_ref_sha256: str,
-        workflow_audit_anchor_sha256: str,
-        evidence_batch_sha256: str,
-        lineage_receipt_sha256: str,
-        finding_sha256: str,
-        previous_record_sha256: str,
-    ) -> "EvidenceAnalysisAuditRecord":
-        base = cls(
-            record_index=record_index,
-            occurred_at=_utc(occurred_at),
-            task_ref_sha256=task_ref_sha256,
-            workflow_audit_anchor_sha256=workflow_audit_anchor_sha256,
-            evidence_batch_sha256=evidence_batch_sha256,
-            lineage_receipt_sha256=lineage_receipt_sha256,
-            finding_sha256=finding_sha256,
-            previous_record_sha256=previous_record_sha256,
-        )
+    def build(cls, *, record_index: int, occurred_at: str, task_ref_sha256: str, workflow_audit_anchor_sha256: str, evidence_batch_sha256: str, lineage_receipt_sha256: str, finding_sha256: str, previous_record_sha256: str) -> "EvidenceAnalysisAuditRecord":
+        base = cls(record_index=record_index, occurred_at=_utc(occurred_at), task_ref_sha256=task_ref_sha256, workflow_audit_anchor_sha256=workflow_audit_anchor_sha256, evidence_batch_sha256=evidence_batch_sha256, lineage_receipt_sha256=lineage_receipt_sha256, finding_sha256=finding_sha256, previous_record_sha256=previous_record_sha256)
         result = cls(**{**asdict(base), "record_sha256": sha256_fingerprint(base._identity_payload())})
         return result.validate()
 
@@ -143,38 +123,10 @@ class EvidenceAnalysisAuditRecord:
 
     @classmethod
     def from_dict(cls, payload: dict[str, object]) -> "EvidenceAnalysisAuditRecord":
-        expected = {
-            "schema_version",
-            "record_index",
-            "event_type",
-            "occurred_at",
-            "task_ref_sha256",
-            "workflow_audit_anchor_sha256",
-            "evidence_batch_sha256",
-            "lineage_receipt_sha256",
-            "finding_sha256",
-            "previous_record_sha256",
-            "authority",
-            "automatic_action_allowed",
-            "record_sha256",
-        }
+        expected = {"schema_version", "record_index", "event_type", "occurred_at", "task_ref_sha256", "workflow_audit_anchor_sha256", "evidence_batch_sha256", "lineage_receipt_sha256", "finding_sha256", "previous_record_sha256", "authority", "automatic_action_allowed", "record_sha256"}
         if set(payload) != expected:
             raise EvidenceAnalysisAuditError("finding audit record fields do not match schema")
-        return cls(
-            schema_version=str(payload["schema_version"]),
-            record_index=payload["record_index"],
-            event_type=str(payload["event_type"]),
-            occurred_at=str(payload["occurred_at"]),
-            task_ref_sha256=str(payload["task_ref_sha256"]),
-            workflow_audit_anchor_sha256=str(payload["workflow_audit_anchor_sha256"]),
-            evidence_batch_sha256=str(payload["evidence_batch_sha256"]),
-            lineage_receipt_sha256=str(payload["lineage_receipt_sha256"]),
-            finding_sha256=str(payload["finding_sha256"]),
-            previous_record_sha256=str(payload["previous_record_sha256"]),
-            authority=str(payload["authority"]),
-            automatic_action_allowed=payload["automatic_action_allowed"],
-            record_sha256=str(payload["record_sha256"]),
-        ).validate()
+        return cls(schema_version=str(payload["schema_version"]), record_index=payload["record_index"], event_type=str(payload["event_type"]), occurred_at=str(payload["occurred_at"]), task_ref_sha256=str(payload["task_ref_sha256"]), workflow_audit_anchor_sha256=str(payload["workflow_audit_anchor_sha256"]), evidence_batch_sha256=str(payload["evidence_batch_sha256"]), lineage_receipt_sha256=str(payload["lineage_receipt_sha256"]), finding_sha256=str(payload["finding_sha256"]), previous_record_sha256=str(payload["previous_record_sha256"]), authority=str(payload["authority"]), automatic_action_allowed=payload["automatic_action_allowed"], record_sha256=str(payload["record_sha256"])).validate()
 
 
 @dataclass(frozen=True)
@@ -192,6 +144,8 @@ class EvidenceAnalysisAuditVerification:
             raise EvidenceAnalysisAuditError("finding audit verification requires at least one record")
         _sha(self.anchor_record_sha256, "anchor_record_sha256")
         _sha(self.last_record_sha256, "last_record_sha256")
+        if not isinstance(self.valid, bool):
+            raise EvidenceAnalysisAuditError("finding audit verification valid must be boolean")
         if not self.valid:
             raise EvidenceAnalysisAuditError("invalid finding audit chain must fail closed")
         return self
@@ -200,13 +154,7 @@ class EvidenceAnalysisAuditVerification:
 class EvidenceAnalysisAuditJournal:
     """Append-only finding journal anchored to an already-verified workflow audit record."""
 
-    def __init__(
-        self,
-        path: str | Path,
-        *,
-        anchor_record_sha256: str,
-        lock_timeout_seconds: float = 2.0,
-    ) -> None:
+    def __init__(self, path: str | Path, *, anchor_record_sha256: str, lock_timeout_seconds: float = 2.0) -> None:
         raw = Path(path)
         if not raw.is_absolute():
             raise EvidenceAnalysisAuditError("finding audit journal path must be absolute")
@@ -234,16 +182,25 @@ class EvidenceAnalysisAuditJournal:
         flags |= getattr(os, "O_NOFOLLOW", 0)
         return flags
 
+    def _validate_open_fd(self, fd: int) -> None:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise EvidenceAnalysisAuditError("finding audit target must be a regular file")
+        try:
+            current = os.stat(self.path, follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise EvidenceAnalysisAuditError("finding audit target disappeared after open") from exc
+        if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode):
+            raise EvidenceAnalysisAuditError("finding audit target must be a regular file")
+        if getattr(opened, "st_ino", 0) and getattr(current, "st_ino", 0) and (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            raise EvidenceAnalysisAuditError("finding audit target changed during open")
+
     def _acquire_lock(self) -> int:
         self._validate_paths()
         deadline = time.monotonic() + self.lock_timeout_seconds
         while True:
             try:
-                return os.open(
-                    self.lock_path,
-                    self._open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY),
-                    0o600,
-                )
+                return os.open(self.lock_path, self._open_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY), 0o600)
             except FileExistsError:
                 if time.monotonic() >= deadline:
                     raise EvidenceAnalysisAuditBusy("EVIDENCE_ANALYSIS_AUDIT_BUSY")
@@ -263,38 +220,36 @@ class EvidenceAnalysisAuditJournal:
             return ()
         records: list[EvidenceAnalysisAuditRecord] = []
         previous = self.anchor_record_sha256
-        with self.path.open("r", encoding="utf-8") as handle:
-            for line_number, raw in enumerate(handle, 1):
-                text = raw.rstrip("\n")
-                if not text:
-                    raise EvidenceAnalysisAuditError(f"empty finding audit record at line {line_number}")
-                if len(text.encode("utf-8")) > MAX_ANALYSIS_AUDIT_RECORD_BYTES:
-                    raise EvidenceAnalysisAuditError("finding audit record exceeds size bound")
-                try:
-                    payload = json.loads(text)
-                except json.JSONDecodeError as exc:
-                    raise EvidenceAnalysisAuditError(f"invalid finding audit JSON at line {line_number}") from exc
-                if not isinstance(payload, dict):
-                    raise EvidenceAnalysisAuditError("finding audit record must be a JSON object")
-                record = EvidenceAnalysisAuditRecord.from_dict(payload)
-                if record.record_index != line_number:
-                    raise EvidenceAnalysisAuditError("finding audit record_index is not contiguous")
-                if record.workflow_audit_anchor_sha256 != self.anchor_record_sha256:
-                    raise EvidenceAnalysisAuditError("finding audit workflow anchor changed")
-                if record.previous_record_sha256 != previous:
-                    raise EvidenceAnalysisAuditError("finding audit hash chain is broken")
-                records.append(record)
-                previous = record.record_sha256
+        read_fd = os.open(self.path, self._open_flags(os.O_RDONLY))
+        try:
+            self._validate_open_fd(read_fd)
+            with os.fdopen(read_fd, "r", encoding="utf-8", closefd=False) as handle:
+                for line_number, raw in enumerate(handle, 1):
+                    text = raw.rstrip("\n")
+                    if not text:
+                        raise EvidenceAnalysisAuditError(f"empty finding audit record at line {line_number}")
+                    if len(text.encode("utf-8")) > MAX_ANALYSIS_AUDIT_RECORD_BYTES:
+                        raise EvidenceAnalysisAuditError("finding audit record exceeds size bound")
+                    try:
+                        payload = json.loads(text)
+                    except json.JSONDecodeError as exc:
+                        raise EvidenceAnalysisAuditError(f"invalid finding audit JSON at line {line_number}") from exc
+                    if not isinstance(payload, dict):
+                        raise EvidenceAnalysisAuditError("finding audit record must be a JSON object")
+                    record = EvidenceAnalysisAuditRecord.from_dict(payload)
+                    if record.record_index != line_number:
+                        raise EvidenceAnalysisAuditError("finding audit record_index is not contiguous")
+                    if record.workflow_audit_anchor_sha256 != self.anchor_record_sha256:
+                        raise EvidenceAnalysisAuditError("finding audit workflow anchor changed")
+                    if record.previous_record_sha256 != previous:
+                        raise EvidenceAnalysisAuditError("finding audit hash chain is broken")
+                    records.append(record)
+                    previous = record.record_sha256
+        finally:
+            os.close(read_fd)
         return tuple(records)
 
-    def append(
-        self,
-        *,
-        finding: AnalystFinding,
-        batch: NormalizedEvidenceBatch,
-        lineage_receipt: EvidenceLineageReceipt,
-        occurred_at: str,
-    ) -> EvidenceAnalysisAuditRecord:
+    def append(self, *, finding: AnalystFinding, batch: NormalizedEvidenceBatch, lineage_receipt: EvidenceLineageReceipt, occurred_at: str) -> EvidenceAnalysisAuditRecord:
         finding.validate()
         batch.validate()
         lineage_receipt.validate()
@@ -306,30 +261,23 @@ class EvidenceAnalysisAuditJournal:
             raise EvidenceAnalysisAuditError("finding lineage receipt does not match validated lineage")
         if batch.fingerprint != lineage_receipt.evidence_batch_fingerprint:
             raise EvidenceAnalysisAuditError("evidence batch does not match validated lineage receipt")
-
         fd = self._acquire_lock()
         try:
             records = self._records_unlocked()
+            if any(record.finding_sha256 == finding.identity_sha256 for record in records):
+                raise EvidenceAnalysisAuditError("duplicate finding audit replay denied")
+            finding_created = datetime.fromisoformat(finding.created_at.replace("Z", "+00:00"))
+            audit_occurred = datetime.fromisoformat(_utc(occurred_at).replace("Z", "+00:00"))
+            if audit_occurred < finding_created:
+                raise EvidenceAnalysisAuditError("finding audit occurred_at cannot precede finding created_at")
             previous = records[-1].record_sha256 if records else self.anchor_record_sha256
-            record = EvidenceAnalysisAuditRecord.build(
-                record_index=len(records) + 1,
-                occurred_at=occurred_at,
-                task_ref_sha256=finding.task_ref_sha256,
-                workflow_audit_anchor_sha256=self.anchor_record_sha256,
-                evidence_batch_sha256=batch.fingerprint,
-                lineage_receipt_sha256=sha256_fingerprint(lineage_receipt.public_dict()),
-                finding_sha256=finding.identity_sha256,
-                previous_record_sha256=previous,
-            )
+            record = EvidenceAnalysisAuditRecord.build(record_index=len(records) + 1, occurred_at=occurred_at, task_ref_sha256=finding.task_ref_sha256, workflow_audit_anchor_sha256=self.anchor_record_sha256, evidence_batch_sha256=batch.fingerprint, lineage_receipt_sha256=sha256_fingerprint(lineage_receipt.public_dict()), finding_sha256=finding.identity_sha256, previous_record_sha256=previous)
             encoded = record.to_json() + "\n"
             if len(encoded.encode("utf-8")) > MAX_ANALYSIS_AUDIT_RECORD_BYTES:
                 raise EvidenceAnalysisAuditError("finding audit record exceeds size bound")
-            journal_fd = os.open(
-                self.path,
-                self._open_flags(os.O_APPEND | os.O_CREAT | os.O_WRONLY),
-                0o600,
-            )
+            journal_fd = os.open(self.path, self._open_flags(os.O_APPEND | os.O_CREAT | os.O_WRONLY), 0o600)
             try:
+                self._validate_open_fd(journal_fd)
                 os.write(journal_fd, encoded.encode("utf-8"))
                 os.fsync(journal_fd)
             finally:
@@ -349,8 +297,4 @@ class EvidenceAnalysisAuditJournal:
         records = self.records()
         if not records:
             raise EvidenceAnalysisAuditError("finding audit journal is empty")
-        return EvidenceAnalysisAuditVerification(
-            record_count=len(records),
-            anchor_record_sha256=self.anchor_record_sha256,
-            last_record_sha256=records[-1].record_sha256,
-        ).validate()
+        return EvidenceAnalysisAuditVerification(record_count=len(records), anchor_record_sha256=self.anchor_record_sha256, last_record_sha256=records[-1].record_sha256).validate()
