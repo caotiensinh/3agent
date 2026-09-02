@@ -168,6 +168,23 @@ jobs:
             echo "Generated updater must not re-run bootstrap.sh" >&2
             exit 1
           fi
+      - name: One-command real Ubuntu updater from exact GitHub source
+        shell: bash
+        env:
+          UPDATE_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/update_workspace_ubuntu.sh
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.expected_head }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
+        run: |
+          before="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          curl -fsSL "$UPDATE_ENTRYPOINT_URL" | bash
+          after="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          test "$before" = "$after"
+          test "$(tail -n 1 "${{ runner.temp }}/three-agent-state/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
+          "${{ runner.temp }}/three-agent-bin/3agent" smoke
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:

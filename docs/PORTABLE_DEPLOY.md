@@ -157,6 +157,7 @@ For a dedicated Ubuntu 24.04 + dual RTX 5090 workstation where GPU/runtime confi
 - a clean deployment from GitHub;
 - exact installed-source commit lineage;
 - installed `3agent smoke`;
+- end-to-end execution of the real Ubuntu updater from an exact GitHub commit, including configuration preservation and activation-lineage verification;
 - a second idempotent deployment;
 - preservation of existing configuration and operator-local sentinels;
 - Ubuntu 22.04 with Python 3.11;
