@@ -7,18 +7,26 @@ on:
       - 'src/three_agent/security_monitoring/normalized_evidence.py'
       - 'src/three_agent/security_monitoring/evidence_lineage.py'
       - 'src/three_agent/security_monitoring/analyst_finding.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_audit.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_workflow.py'
+      - 'src/three_agent/security_monitoring/workflow_audit.py'
       - 'tests/test_security_normalized_evidence.py'
       - 'tests/test_security_evidence_lineage.py'
       - 'tests/test_security_analyst_finding.py'
+      - 'tests/test_security_evidence_analysis_workflow.py'
       - '.github/workflows/security-normalized-evidence-cross-platform.yml'
   pull_request:
     paths:
       - 'src/three_agent/security_monitoring/normalized_evidence.py'
       - 'src/three_agent/security_monitoring/evidence_lineage.py'
       - 'src/three_agent/security_monitoring/analyst_finding.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_audit.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_workflow.py'
+      - 'src/three_agent/security_monitoring/workflow_audit.py'
       - 'tests/test_security_normalized_evidence.py'
       - 'tests/test_security_evidence_lineage.py'
       - 'tests/test_security_analyst_finding.py'
+      - 'tests/test_security_evidence_analysis_workflow.py'
       - '.github/workflows/security-normalized-evidence-cross-platform.yml'
 
 permissions:
@@ -30,7 +38,7 @@ concurrency:
 
 jobs:
   normalized-evidence:
-    name: evidence-contracts (${{ matrix.os }}, py${{ matrix.python-version }})
+    name: evidence-pipeline (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -48,7 +56,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install project dependencies
         run: python -m pip install -e "."
-      - name: Compile evidence contract modules and tests
-        run: python -m compileall -q src/three_agent/security_monitoring/normalized_evidence.py src/three_agent/security_monitoring/evidence_lineage.py src/three_agent/security_monitoring/analyst_finding.py tests/test_security_normalized_evidence.py tests/test_security_evidence_lineage.py tests/test_security_analyst_finding.py
-      - name: Run evidence contract security tests
-        run: python -m unittest tests.test_security_normalized_evidence tests.test_security_evidence_lineage tests.test_security_analyst_finding -v
+      - name: Compile evidence pipeline modules and tests
+        run: python -m compileall -q src/three_agent/security_monitoring/normalized_evidence.py src/three_agent/security_monitoring/evidence_lineage.py src/three_agent/security_monitoring/analyst_finding.py src/three_agent/security_monitoring/evidence_analysis_audit.py src/three_agent/security_monitoring/evidence_analysis_workflow.py tests/test_security_normalized_evidence.py tests/test_security_evidence_lineage.py tests/test_security_analyst_finding.py tests/test_security_evidence_analysis_workflow.py
+      - name: Run evidence pipeline security tests
+        run: python -m unittest tests.test_security_normalized_evidence tests.test_security_evidence_lineage tests.test_security_analyst_finding tests.test_security_evidence_analysis_workflow -v
