@@ -152,7 +152,7 @@ class SecurityMonitoringUIConfigManagerV2(SecurityMonitoringUIConfigManager):
         }
         try:
             self._append_audit(record)
-        except OSError:
+        except (OSError, MonitoringContractError):
             self._restore(previous_bytes)
             raise
 
