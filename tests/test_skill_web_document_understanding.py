@@ -5,14 +5,16 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "skills" / "web-document-understanding" / "SKILL.md"
+SKILL = ROOT / "skill_candidates" / "web-document-understanding" / "SKILL.md"
+APPROVED_SKILL = ROOT / "skills" / "web-document-understanding" / "SKILL.md"
 EXPECTED_SHA256 = "9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55"
 
 
 class WebDocumentUnderstandingSkillTest(unittest.TestCase):
-    def test_candidate_integrity_and_size(self) -> None:
+    def test_candidate_integrity_size_and_quarantine(self) -> None:
         raw = SKILL.read_bytes()
         text = raw.decode("utf-8")
+        self.assertFalse(APPROVED_SKILL.exists())
         self.assertLessEqual(len(raw), 3072)
         self.assertIn("name: web-document-understanding", text)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), EXPECTED_SHA256)

@@ -18,6 +18,10 @@ Analyze local HTML/Markdown and already-retrieved web evidence without implicitl
 
 No upstream converter, browser, plugin, MCP service, prompt text, or package is vendored. The candidate is WorkSpace-owned instruction text.
 
+## Quarantine boundary
+
+The candidate lives under `skill_candidates/`, outside the approved loader root. It cannot acquire network or browser authority without a separate reviewed integration.
+
 ## Removed / denied capabilities
 
 - JavaScript/WASM/event-handler execution
