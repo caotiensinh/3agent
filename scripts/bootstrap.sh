@@ -11,6 +11,8 @@ INSTALL_OLLAMA="${THREE_AGENT_INSTALL_OLLAMA:-0}"
 PULL_MODEL="${THREE_AGENT_PULL_MODEL:-0}"
 SKIP_SYSTEM_PACKAGES="${THREE_AGENT_SKIP_SYSTEM_PACKAGES:-0}"
 SELF_TEST=0
+CANONICAL_REPO_URL="https://github.com/caotiensinh/3agent.git"
+UPDATE_BOOTSTRAP_URL="${THREE_AGENT_UPDATE_BOOTSTRAP_URL:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -100,6 +102,21 @@ install_ollama_if_requested() {
   command -v ollama >/dev/null 2>&1 || die "Ollama installation failed"
 }
 
+clean_workspace_generated_artifacts() {
+  log "Cleaning only WorkSpace-owned generated artifacts"
+
+  rm -rf -- \
+    "${INSTALL_DIR}/.venv" \
+    "${INSTALL_DIR}/src/workspace_local_ai.egg-info"
+
+  local root
+  for root in "${INSTALL_DIR}/src" "${INSTALL_DIR}/tests"; do
+    if [[ -d "$root" ]]; then
+      find "$root" -type d -name __pycache__ -prune -exec rm -rf -- {} +
+    fi
+  done
+}
+
 deploy_repository() {
   log "Deploying repository ref '${REPO_REF}' into ${INSTALL_DIR}"
   mkdir -p "$(dirname "$INSTALL_DIR")"
@@ -119,7 +136,7 @@ deploy_repository() {
   local resolved
   resolved="$(git -C "$INSTALL_DIR" rev-parse FETCH_HEAD)"
   git -C "$INSTALL_DIR" checkout --detach "$resolved"
-  git -C "$INSTALL_DIR" clean -fdx -e config/local.json -e data/
+  clean_workspace_generated_artifacts
   log "Repository deployed at commit ${resolved}"
 }
 
@@ -155,8 +172,19 @@ write_config() {
   set_model_in_config
 }
 
+resolve_update_bootstrap_url() {
+  if [[ -n "$UPDATE_BOOTSTRAP_URL" ]]; then
+    return 0
+  fi
+  if [[ "$REPO_URL" != "$CANONICAL_REPO_URL" ]]; then
+    die "A custom THREE_AGENT_REPO_URL requires THREE_AGENT_UPDATE_BOOTSTRAP_URL for the generated updater"
+  fi
+  UPDATE_BOOTSTRAP_URL="https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh"
+}
+
 install_launchers() {
   mkdir -p "$BIN_DIR"
+  resolve_update_bootstrap_url
 
   cat >"${BIN_DIR}/3agent" <<EOF
 #!/usr/bin/env bash
@@ -175,7 +203,7 @@ export THREE_AGENT_REPO_REF=$(printf '%q' "$REPO_REF")
 export THREE_AGENT_INSTALL_DIR=$(printf '%q' "$INSTALL_DIR")
 export THREE_AGENT_BIN_DIR=$(printf '%q' "$BIN_DIR")
 export THREE_AGENT_CONFIG_PATH=$(printf '%q' "$CONFIG_PATH")
-exec bash -c 'curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh | bash'
+exec bash -c $(printf '%q' "curl -fsSL --retry 3 --connect-timeout 15 '${UPDATE_BOOTSTRAP_URL}' | bash")
 EOF
   chmod 0755 "${BIN_DIR}/3agent-update"
 
