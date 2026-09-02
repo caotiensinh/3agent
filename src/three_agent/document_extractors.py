@@ -15,9 +15,9 @@ from pptx import Presentation
 from pypdf import PdfReader
 
 try:
-    import fitz  # PyMuPDF
+    import pypdfium2 as pdfium
 except Exception:  # pragma: no cover - dependency/runtime guard
-    fitz = None
+    pdfium = None
 
 MAX_EXTRACTED_CHARS = 200_000
 MAX_OOXML_ENTRIES = 512
@@ -93,7 +93,7 @@ def _guard_ooxml(data: bytes) -> None:
         raise DocumentExtractionError("Invalid Office Open XML document") from exc
 
 
-def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
+def _pdf_reader(data: bytes) -> PdfReader:
     try:
         reader = PdfReader(BytesIO(data), strict=False)
         if reader.is_encrypted:
@@ -104,21 +104,29 @@ def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
                 if isinstance(exc, DocumentExtractionError):
                     raise
                 raise DocumentExtractionError("Encrypted PDF is not supported") from exc
-        chunks: list[str] = []
-        total_chars = 0
-        for index, page in enumerate(reader.pages[:MAX_PDF_PAGES], 1):
-            text = str(page.extract_text() or "").strip()
-            if text:
-                block = f"[PDF page {index}]\n{text}"
-                chunks.append(block)
-                total_chars += len(block)
-            if total_chars >= MAX_EXTRACTED_CHARS:
-                break
-        rendered = _bounded("\n\n".join(chunks))
+        return reader
     except DocumentExtractionError:
         raise
     except Exception as exc:
         raise DocumentExtractionError(f"PDF parsing failed: {type(exc).__name__}") from exc
+
+
+def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
+    reader = _pdf_reader(data)
+    chunks: list[str] = []
+    total_chars = 0
+    for index, page in enumerate(reader.pages[:MAX_PDF_PAGES], 1):
+        try:
+            text = str(page.extract_text() or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            block = f"[PDF page {index}]\n{text}"
+            chunks.append(block)
+            total_chars += len(block)
+        if total_chars >= MAX_EXTRACTED_CHARS:
+            break
+    rendered = _bounded("\n\n".join(chunks))
     warnings: list[str] = []
     if len(reader.pages) > MAX_PDF_PAGES:
         warnings.append(f"PDF text extraction truncated after {MAX_PDF_PAGES} pages.")
@@ -328,6 +336,7 @@ def extract_native_visual(filename: str, data: bytes) -> VisualAsset:
 
 
 def _office_visuals(filename: str, data: bytes, prefix: str) -> tuple[list[VisualAsset], list[str]]:
+    del filename
     _guard_ooxml(data)
     visuals: list[VisualAsset] = []
     warnings: list[str] = []
@@ -352,46 +361,84 @@ def _office_visuals(filename: str, data: bytes, prefix: str) -> tuple[list[Visua
     return visuals, warnings
 
 
+def _pdf_visual_candidates(data: bytes, page_count: int) -> list[int]:
+    if page_count <= MAX_PDF_VISION_PAGES:
+        return list(range(page_count))
+    reader = _pdf_reader(data)
+    low_text: list[int] = []
+    for index in range(min(page_count, len(reader.pages))):
+        try:
+            text = str(reader.pages[index].extract_text() or "").strip()
+        except Exception:
+            text = ""
+        if len(text) < 160:
+            low_text.append(index)
+    selected: list[int] = []
+    for index in low_text:
+        if index not in selected:
+            selected.append(index)
+        if len(selected) >= MAX_PDF_VISION_PAGES:
+            break
+    if len(selected) < MAX_PDF_VISION_PAGES:
+        slots = MAX_PDF_VISION_PAGES
+        for position in range(slots):
+            index = round(position * (page_count - 1) / max(1, slots - 1))
+            if index not in selected:
+                selected.append(index)
+            if len(selected) >= MAX_PDF_VISION_PAGES:
+                break
+    return sorted(selected)
+
+
 def _pdf_visuals(filename: str, data: bytes) -> tuple[list[VisualAsset], list[str]]:
     del filename
-    if fitz is None:
-        return [], ["PyMuPDF is unavailable; PDF visual rendering is disabled."]
+    if pdfium is None:
+        return [], ["pypdfium2 is unavailable; PDF visual rendering is disabled."]
     visuals: list[VisualAsset] = []
     warnings: list[str] = []
     try:
-        document = fitz.open(stream=data, filetype="pdf")
+        document = pdfium.PdfDocument(data)
     except Exception as exc:
         raise DocumentExtractionError(f"PDF visual rendering failed: {type(exc).__name__}") from exc
     try:
-        page_count = min(document.page_count, MAX_PDF_PAGES)
-        candidates: list[int] = []
-        for index in range(page_count):
-            page = document.load_page(index)
-            text = str(page.get_text("text") or "").strip()
-            has_images = bool(page.get_images(full=True))
-            if len(text) < 160 or has_images:
-                candidates.append(index)
-        if page_count:
-            for index in {0, page_count // 2, page_count - 1}:
-                if index not in candidates:
-                    candidates.append(index)
-        candidates = sorted(candidates)[:MAX_PDF_VISION_PAGES]
-        if len(candidates) >= MAX_PDF_VISION_PAGES and page_count > MAX_PDF_VISION_PAGES:
+        page_count = min(len(document), MAX_PDF_PAGES)
+        candidates = _pdf_visual_candidates(data, page_count)
+        if len(document) > MAX_PDF_PAGES:
+            warnings.append(f"PDF visual inspection is limited to the first {MAX_PDF_PAGES} pages.")
+        if page_count > MAX_PDF_VISION_PAGES:
             warnings.append(
                 f"PDF visual analysis is bounded to {MAX_PDF_VISION_PAGES} selected pages per upload."
             )
         for index in candidates:
-            page = document.load_page(index)
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
-            visuals.append(
-                _normalize_visual(
-                    f"page-{index + 1}.png",
-                    f"pdf:page:{index + 1}",
-                    pix.tobytes("png"),
+            page = document[index]
+            bitmap = None
+            try:
+                bitmap = page.render(scale=1.5)
+                image = bitmap.to_pil().copy()
+                out = BytesIO()
+                image.save(out, format="PNG", optimize=True)
+                visuals.append(
+                    _normalize_visual(
+                        f"page-{index + 1}.png",
+                        f"pdf:page:{index + 1}",
+                        out.getvalue(),
+                    )
                 )
-            )
+            finally:
+                if bitmap is not None:
+                    try:
+                        bitmap.close()
+                    except Exception:
+                        pass
+                try:
+                    page.close()
+                except Exception:
+                    pass
     finally:
-        document.close()
+        try:
+            document.close()
+        except Exception:
+            pass
     return visuals, warnings
 
 
