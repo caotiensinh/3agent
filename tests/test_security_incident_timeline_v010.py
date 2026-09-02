@@ -85,11 +85,19 @@ def _timeline_plan(registry: SecurityCapabilityRegistry):
     decision = SecurityCapabilityRouter(registry).route("build incident timeline")
     if decision.status != "routed":
         raise AssertionError("timeline test fixture did not route")
-    selected = [(row.capability_id, row.operation_id) for row in decision.selections]
-    expected = [("security.incident_triage.analyze", "build_incident_timeline")]
-    if selected != expected:
-        raise AssertionError(f"unexpected timeline route: {selected!r}")
-    return SecurityOperationPlanCompiler(registry).compile(decision)
+    selected = {(row.capability_id, row.operation_id) for row in decision.selections}
+    timeline_key = ("security.incident_triage.analyze", "build_incident_timeline")
+    if timeline_key not in selected:
+        raise AssertionError(f"timeline route missing reviewed operation: {selected!r}")
+    plan = SecurityOperationPlanCompiler(registry).compile(decision)
+    timeline_steps = [
+        step
+        for step in plan.steps
+        if (step.capability_id, step.operation_id) == timeline_key
+    ]
+    if len(timeline_steps) != 1:
+        raise AssertionError(f"unexpected timeline step count: {len(timeline_steps)}")
+    return plan, timeline_steps[0]
 
 
 class SecurityIncidentTimelineV010Tests(unittest.TestCase):
@@ -201,12 +209,12 @@ class SecurityIncidentTimelineV010Tests(unittest.TestCase):
 
     def test_opt_in_timeline_invocation_uses_internal_authority_and_emits_receipt(self) -> None:
         registry = SecurityCapabilityRegistry()
-        plan = _timeline_plan(registry)
+        plan, timeline_step = _timeline_plan(registry)
         dns, flow = _dns_flow_pair()
         request = IncidentTimelineInvocationRequest(events=(flow, dns))
         invoker = IncidentTimelineSecurityOperationInvoker(registry=registry)
 
-        result = invoker.invoke(plan, step_id=plan.steps[0].step_id, request=request)
+        result = invoker.invoke(plan, step_id=timeline_step.step_id, request=request)
 
         self.assertIsInstance(result.output, IncidentTimeline)
         self.assertEqual(result.output.authority, "advisory")
@@ -218,26 +226,26 @@ class SecurityIncidentTimelineV010Tests(unittest.TestCase):
         self.assertEqual(result.receipt.input_fingerprint, request.fingerprint)
         self.assertEqual(result.receipt.output_fingerprint, result.output.fingerprint)
         self.assertEqual(result.receipt.binding_fingerprint, invoker.binding_registry.fingerprint)
-        self.assertIsNone(plan.steps[0].backend_capability)
-        self.assertEqual(plan.steps[0].effect, "compute")
-        self.assertEqual(plan.steps[0].preflight_state, "ready_internal")
+        self.assertIsNone(timeline_step.backend_capability)
+        self.assertEqual(timeline_step.effect, "compute")
+        self.assertEqual(timeline_step.preflight_state, "ready_internal")
 
     def test_default_invoker_still_rejects_timeline_operation(self) -> None:
         registry = SecurityCapabilityRegistry()
-        plan = _timeline_plan(registry)
+        plan, timeline_step = _timeline_plan(registry)
         dns, flow = _dns_flow_pair()
         request = IncidentTimelineInvocationRequest(events=(dns, flow))
         with self.assertRaises(SecurityOperationHandlerUnbound) as caught:
             SecurityOperationInvoker(registry=registry).invoke(
                 plan,
-                step_id=plan.steps[0].step_id,
+                step_id=timeline_step.step_id,
                 request=request,  # type: ignore[arg-type]
             )
         self.assertEqual(caught.exception.reason_code, "UNBOUND_TIMELINE_ADAPTER_REQUIRED")
 
     def test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan(self) -> None:
         registry = SecurityCapabilityRegistry()
-        plan = _timeline_plan(registry)
+        plan, timeline_step = _timeline_plan(registry)
         invoker = IncidentTimelineSecurityOperationInvoker(registry=registry)
         wrong_request = DNSAnalysisInvocationRequest(
             event_id="evt-dns-wrong-timeline-type",
@@ -245,14 +253,14 @@ class SecurityIncidentTimelineV010Tests(unittest.TestCase):
             raw_line='{"dns":{"rrname":"example.invalid"}}',
         )
         with self.assertRaisesRegex(SecurityOperationInvocationDenied, "INVOCATION_REQUEST_TYPE_MISMATCH"):
-            invoker.invoke(plan, step_id=plan.steps[0].step_id, request=wrong_request)
+            invoker.invoke(plan, step_id=timeline_step.step_id, request=wrong_request)
 
         dns, flow = _dns_flow_pair()
         tampered = replace(plan, plan_fingerprint="sha256:" + "0" * 64)
         with self.assertRaisesRegex(SecurityOperationPlanError, "INVOCATION_PLAN_FINGERPRINT_TAMPERED"):
             invoker.invoke(
                 tampered,
-                step_id=tampered.steps[0].step_id,
+                step_id=timeline_step.step_id,
                 request=IncidentTimelineInvocationRequest(events=(dns, flow)),
             )
 
