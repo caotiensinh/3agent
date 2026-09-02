@@ -157,6 +157,8 @@ sudo WORKSPACE_INSTALL_DIR=/opt/workspace bash scripts/install_workspace_secure_
 
 WorkSpace grows by **capabilities and reviewed skills**, not by adding a fixed number of agents. Current areas include research/evidence synthesis, data quality, presentation/report generation, daily reporting, coding/software-development guidance, language quality, local file/Office/PDF safety, skill approval, model/resource routing, dual RTX 5090 scheduling and deterministic citation/evidence validation.
 
+For the planned network/cybersecurity analyst subsystem, see `docs/SECURITY_ANALYST_HACKINGTOOL_DISTILLATION.md`. It defines the WorkSpace-native integration of closed security taxonomy, approved capability registry, curated-first runbooks, evidence-only analyst reasoning, continuous monitoring/correlation, bounded active diagnostics and tool promotion gates without vendoring a general offensive toolkit runtime.
+
 ## Repository transition
 
 The repository is still hosted as `caotiensinh/3agent` so existing installation URLs keep working. **WorkSpace** is the product name from this release onward. Repository/module renaming should be a separate migration after deployment URLs/services are updated deliberately.
