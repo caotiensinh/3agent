@@ -31,9 +31,13 @@ grep -Fq '"${INSTALL_DIR}/.venv"' "$BOOTSTRAP" || fail "venv cleanup allowlist m
 # shellcheck disable=SC2016
 grep -Fq '"${INSTALL_DIR}/src/workspace_local_ai.egg-info"' "$BOOTSTRAP" || fail "egg-info cleanup allowlist missing"
 # shellcheck disable=SC2016
-grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh' "$BOOTSTRAP" || fail "generated updater must follow repository ref"
+grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/update_code_safe.sh' "$BOOTSTRAP" || fail "generated updater must use non-destructive updater from repository ref"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_RELEASES_DIR=$(printf' "$BOOTSTRAP" || fail "generated updater must preserve immutable release location"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_ACTIVATION_LOG=$(printf' "$BOOTSTRAP" || fail "generated updater must preserve activation history location"
 if grep -Fq "curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh" "$BOOTSTRAP"; then
-  fail "generated updater must not hardcode main bootstrap lineage"
+  fail "generated updater must not re-run the destructive bootstrap path"
 fi
 
 # shellcheck disable=SC2016
