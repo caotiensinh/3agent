@@ -83,13 +83,21 @@ def _time_ns(result: object, ns_name: str, seconds_name: str) -> int:
     return int(seconds * 1_000_000_000)
 
 
-def _file_snapshot(result: object) -> tuple[int, int, int, int, int]:
-    """Return immutable metadata used to detect replacement/in-place mutation."""
+def _file_identity(result: object) -> tuple[int, int, int]:
+    """Stable cross-platform identity used only to detect path replacement before read."""
 
     return (
         int(getattr(result, "st_dev")),
         int(getattr(result, "st_ino")),
         int(getattr(result, "st_size")),
+    )
+
+
+def _file_snapshot(result: object) -> tuple[int, int, int, int, int]:
+    """Opened-fd snapshot used to detect same-file mutation during the bounded read."""
+
+    return (
+        *_file_identity(result),
         _time_ns(result, "st_mtime_ns", "st_mtime"),
         _time_ns(result, "st_ctime_ns", "st_ctime"),
     )
@@ -360,7 +368,10 @@ class BoundedPCAPEvidenceReader:
             opened = os.fstat(fd)
             if not stat_module.S_ISREG(opened.st_mode):
                 raise PCAPEvidenceDenied("PCAP_RESOURCE_NOT_REGULAR_FILE")
-            if _file_snapshot(opened) != _file_snapshot(before_open):
+            # Path-stat timestamp semantics differ across Windows/Python versions.
+            # Before reading, compare only stable identity/size to detect replacement.
+            # Mutation of the opened object is checked separately with two fstat snapshots.
+            if _file_identity(opened) != _file_identity(before_open):
                 raise PCAPEvidenceDenied("PCAP_RESOURCE_CHANGED_BEFORE_READ")
             if opened.st_size > resource.max_file_bytes:
                 raise PCAPEvidenceError("PCAP_FILE_BOUND_EXCEEDED")
@@ -380,7 +391,7 @@ class BoundedPCAPEvidenceReader:
         finally:
             os.close(fd)
 
-        if len(data) != before_open.st_size:
+        if len(data) != opened.st_size:
             raise PCAPEvidenceError("PCAP_FILE_SIZE_CHANGED_DURING_READ")
         return self._parse(resource, data, mode=mode)
 
