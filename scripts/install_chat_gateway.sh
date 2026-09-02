@@ -56,6 +56,11 @@ detect_lan_host() {
 [[ -x "$ROOT/.venv/bin/python" ]] || fail "Python environment missing: $ROOT/.venv"
 
 cd "$ROOT"
+SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+if [[ ! "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  SOURCE_SHA="unknown"
+fi
+
 "$ROOT/.venv/bin/python" -m pip install -e . >/dev/null
 [[ -x "$ROOT/.venv/bin/three-agent-chat" ]] || fail "three-agent-chat command was not installed"
 
@@ -81,6 +86,7 @@ THREE_AGENT_WEB_ACCESS_TOKEN=$WEB_TOKEN
 THREE_AGENT_WEB_HOST=$HOST
 THREE_AGENT_WEB_PORT=$PORT
 THREE_AGENT_CHAT_LANGUAGE=ja
+THREE_AGENT_SOURCE_SHA=$SOURCE_SHA
 THREE_AGENT_TELEGRAM_BOT_TOKEN=
 THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS=
 WORKSPACE_SECURITY_MONITORING_CONFIG=$SECURITY_CONFIG_DEFAULT
@@ -98,6 +104,11 @@ else
     sed -i "s/^THREE_AGENT_WEB_PORT=.*/THREE_AGENT_WEB_PORT=$PORT/" "$ENV_FILE"
   else
     printf 'THREE_AGENT_WEB_PORT=%s\n' "$PORT" >>"$ENV_FILE"
+  fi
+  if grep -q '^THREE_AGENT_SOURCE_SHA=' "$ENV_FILE"; then
+    sed -i "s/^THREE_AGENT_SOURCE_SHA=.*/THREE_AGENT_SOURCE_SHA=$SOURCE_SHA/" "$ENV_FILE"
+  else
+    printf 'THREE_AGENT_SOURCE_SHA=%s\n' "$SOURCE_SHA" >>"$ENV_FILE"
   fi
   if ! grep -q '^WORKSPACE_SECURITY_MONITORING_CONFIG=' "$ENV_FILE"; then
     printf 'WORKSPACE_SECURITY_MONITORING_CONFIG=%s\n' "$SECURITY_CONFIG_DEFAULT" >>"$ENV_FILE"
@@ -208,6 +219,7 @@ echo "=========================================="
 printf 'URL:        http://%s:%s/\n' "$HOST" "$PORT"
 printf 'Access key: %s\n' "$WEB_TOKEN"
 printf 'Bind:       %s:%s (private LAN IPv4 only)\n' "$HOST" "$PORT"
+printf 'Source SHA: %s\n' "$SOURCE_SHA"
 printf 'Security:   %s\n' "$SECURITY_CONFIG"
 printf 'Service:    systemctl --user status 3agent-chat.service\n'
 printf 'Logs:       journalctl --user -u 3agent-chat.service -f\n'
