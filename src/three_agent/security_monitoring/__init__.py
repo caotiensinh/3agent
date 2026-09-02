@@ -76,6 +76,11 @@ from .forensic_evidence import (
 from .forensic_store import ForensicMetadataStore, ForensicStoreReceipt
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
+from .incident_timeline_evidence import (
+    INCIDENT_TIMELINE_DERIVATION_ID,
+    INCIDENT_TIMELINE_EVIDENCE_ADAPTER_VERSION,
+    timeline_to_derived_evidence,
+)
 from .network_triage import (
     DeterministicNetworkIncidentTriage,
     NetworkIncidentTriage,
@@ -189,6 +194,9 @@ __all__ = [
     "CaseRecord",
     "ForensicStoreReceipt",
     "ForensicMetadataStore",
+    "INCIDENT_TIMELINE_DERIVATION_ID",
+    "INCIDENT_TIMELINE_EVIDENCE_ADAPTER_VERSION",
+    "timeline_to_derived_evidence",
     "CorrelationEvent",
     "CorrelationGraphConfig",
     "CorrelationStoreReader",
