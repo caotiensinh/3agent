@@ -22,7 +22,11 @@ if bash "$ENTRYPOINT" --unknown-option >/dev/null 2>&1; then
 fi
 
 grep -Fq 'https://github.com/caotiensinh/3agent.git' "$ENTRYPOINT" || fail "default GitHub repository missing"
-grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh' "$ENTRYPOINT" || fail "canonical bootstrap URL missing"
+# shellcheck disable=SC2016
+grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh' "$ENTRYPOINT" || fail "bootstrap URL must follow repository ref"
+if grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh' "$ENTRYPOINT"; then
+  fail "Ubuntu entrypoint must not hardcode main for bootstrap lineage"
+fi
 grep -Fq '22.04|24.04' "$ENTRYPOINT" || fail "validated Ubuntu versions missing"
 grep -Fq 'Run this script as the normal Ubuntu user, not with sudo' "$ENTRYPOINT" || fail "root safety boundary missing"
 # shellcheck disable=SC2016

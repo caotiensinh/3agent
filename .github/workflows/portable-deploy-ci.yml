@@ -127,6 +127,7 @@ jobs:
         shell: bash
         env:
           DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/deploy_ubuntu_pc.sh
+          THREE_AGENT_BOOTSTRAP_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/bootstrap.sh
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
@@ -143,10 +144,15 @@ jobs:
             echo "Installed commit does not match expected source head" >&2
             exit 1
           }
+          grep -Fq "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.ref }}/scripts/bootstrap.sh" "${{ runner.temp }}/three-agent-bin/3agent-update" || {
+            echo "Generated updater is not bound to the configured repository ref" >&2
+            exit 1
+          }
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
           DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/deploy_ubuntu_pc.sh
+          THREE_AGENT_BOOTSTRAP_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/bootstrap.sh
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install

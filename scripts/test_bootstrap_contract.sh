@@ -30,6 +30,11 @@ grep -Fq 'Cleaning only WorkSpace-owned generated artifacts' "$BOOTSTRAP" || fai
 grep -Fq '"${INSTALL_DIR}/.venv"' "$BOOTSTRAP" || fail "venv cleanup allowlist missing"
 # shellcheck disable=SC2016
 grep -Fq '"${INSTALL_DIR}/src/workspace_local_ai.egg-info"' "$BOOTSTRAP" || fail "egg-info cleanup allowlist missing"
+# shellcheck disable=SC2016
+grep -Fq 'https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh' "$BOOTSTRAP" || fail "generated updater must follow repository ref"
+if grep -Fq "curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh" "$BOOTSTRAP"; then
+  fail "generated updater must not hardcode main bootstrap lineage"
+fi
 
 # shellcheck disable=SC2016
 if grep -Fq 'git -C "$INSTALL_DIR" clean' "$BOOTSTRAP"; then
