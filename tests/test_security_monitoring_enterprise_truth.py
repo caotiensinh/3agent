@@ -2,8 +2,10 @@ import unittest
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.enterprise_truth import (
+    ANALYST_LABEL_TO_ENTERPRISE_STATE,
     ENTERPRISE_TRUTH_STATES,
     EnterpriseFinding,
+    map_analyst_finding,
 )
 
 
@@ -80,6 +82,87 @@ class EnterpriseTruthContractTests(unittest.TestCase):
             "severity",
         ):
             self.assertNotIn(forbidden, public)
+
+
+class EnterpriseTruthMappingTests(unittest.TestCase):
+    def test_internal_label_mapping_is_explicit_and_complete(self):
+        self.assertEqual(
+            ANALYST_LABEL_TO_ENTERPRISE_STATE,
+            {
+                "FACT": "VERIFIED FACT",
+                "CORRELATION": "INFERENCE",
+                "HYPOTHESIS": "INFERENCE",
+                "RISK": "INFERENCE",
+                "ACTION": "INFERENCE",
+                "DATA GAP": "UNKNOWN",
+            },
+        )
+
+    def test_fact_maps_to_verified_fact_and_preserves_evidence(self):
+        finding = map_analyst_finding(
+            label="FACT",
+            statement="Authentication was observed.",
+            evidence_ids=("event:auth-1", "finding:F-7"),
+            allowed_evidence_ids=("event:auth-1", "finding:F-7"),
+        )
+        self.assertEqual(finding.truth_state, "VERIFIED FACT")
+        self.assertEqual(finding.evidence_ids, ("event:auth-1", "finding:F-7"))
+
+    def test_analytical_and_advisory_labels_map_to_inference(self):
+        for label in ("CORRELATION", "HYPOTHESIS", "RISK", "ACTION"):
+            with self.subTest(label=label):
+                finding = map_analyst_finding(
+                    label=label,
+                    statement="Analyst interpretation.",
+                    evidence_ids=("event:known",),
+                    allowed_evidence_ids=("event:known",),
+                )
+                self.assertEqual(finding.truth_state, "INFERENCE")
+
+    def test_data_gap_maps_to_unknown(self):
+        finding = map_analyst_finding(
+            label="DATA GAP",
+            statement="Required evidence is unavailable.",
+            evidence_ids=(),
+            allowed_evidence_ids=(),
+        )
+        self.assertEqual(finding.truth_state, "UNKNOWN")
+
+    def test_mapper_has_no_fallback_for_unknown_internal_labels(self):
+        with self.assertRaises(MonitoringContractError):
+            map_analyst_finding(
+                label="OPINION",
+                statement="Unsupported label.",
+                evidence_ids=(),
+                allowed_evidence_ids=(),
+            )
+
+    def test_fact_without_evidence_cannot_become_verified_fact(self):
+        with self.assertRaises(MonitoringContractError):
+            map_analyst_finding(
+                label="FACT",
+                statement="Uncited claim.",
+                evidence_ids=(),
+                allowed_evidence_ids=(),
+            )
+
+    def test_mapper_rejects_fabricated_evidence_reference(self):
+        with self.assertRaises(MonitoringContractError):
+            map_analyst_finding(
+                label="FACT",
+                statement="Claim with fabricated evidence.",
+                evidence_ids=("event:fabricated",),
+                allowed_evidence_ids=("event:known",),
+            )
+
+    def test_mapper_rejects_string_as_evidence_collection(self):
+        with self.assertRaises(MonitoringContractError):
+            map_analyst_finding(
+                label="FACT",
+                statement="Malformed evidence collection.",
+                evidence_ids="event:known",
+                allowed_evidence_ids=("event:known",),
+            )
 
 
 if __name__ == "__main__":

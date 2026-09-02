@@ -6,6 +6,14 @@ from typing import Iterable
 from .contracts import MonitoringContractError
 
 ENTERPRISE_TRUTH_STATES = ("VERIFIED FACT", "INFERENCE", "UNKNOWN")
+ANALYST_LABEL_TO_ENTERPRISE_STATE = {
+    "FACT": "VERIFIED FACT",
+    "CORRELATION": "INFERENCE",
+    "HYPOTHESIS": "INFERENCE",
+    "RISK": "INFERENCE",
+    "ACTION": "INFERENCE",
+    "DATA GAP": "UNKNOWN",
+}
 MAX_ENTERPRISE_STATEMENT_CHARS = 2000
 MAX_ENTERPRISE_EVIDENCE_REFS = 8
 MAX_ENTERPRISE_EVIDENCE_REF_CHARS = 256
@@ -56,3 +64,33 @@ class EnterpriseFinding:
             "statement": self.statement,
             "evidence_ids": list(self.evidence_ids),
         }
+
+
+def map_analyst_finding(
+    *,
+    label: str,
+    statement: str,
+    evidence_ids: Iterable[str],
+    allowed_evidence_ids: Iterable[str],
+) -> EnterpriseFinding:
+    """Map one internal analyst label to the bounded enterprise truth model.
+
+    The mapping is deliberately explicit and has no default branch. A mapped
+    finding remains advisory and is revalidated against the same evidence
+    allowlist before it crosses the enterprise boundary.
+    """
+
+    if not isinstance(label, str) or label not in ANALYST_LABEL_TO_ENTERPRISE_STATE:
+        raise MonitoringContractError("unsupported analyst label")
+    if isinstance(evidence_ids, (str, bytes)):
+        raise MonitoringContractError("analyst evidence references must be a bounded iterable")
+    try:
+        normalized_evidence_ids = tuple(evidence_ids)
+    except TypeError as exc:
+        raise MonitoringContractError("analyst evidence references must be iterable") from exc
+
+    return EnterpriseFinding(
+        truth_state=ANALYST_LABEL_TO_ENTERPRISE_STATE[label],
+        statement=statement,
+        evidence_ids=normalized_evidence_ids,
+    ).validate(allowed_evidence_ids=allowed_evidence_ids)
