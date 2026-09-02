@@ -20,6 +20,10 @@ Inspect ZIP and ZIP-based Office/document containers without path traversal, dec
 
 No CPython/OWASP text, implementation, package, utility, or extraction code is copied. The skill is project-owned instruction text.
 
+## Quarantine boundary
+
+The candidate is stored under `skill_candidates/`, outside the approved loader root. It cannot become trusted until a separate registry-admission change passes exact-head CI.
+
 ## Removed / denied capabilities
 
 - archive member execution
