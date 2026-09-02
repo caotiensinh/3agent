@@ -1,0 +1,117 @@
+name: non-destructive-update-ci
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/update_code_safe.sh'
+      - 'scripts/test_update_code_safe_contract.sh'
+      - '.github/workflows/non-destructive-update-ci.yml'
+  pull_request:
+    paths:
+      - 'scripts/update_code_safe.sh'
+      - 'scripts/test_update_code_safe_contract.sh'
+      - '.github/workflows/non-destructive-update-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y shellcheck
+      - name: Non-destructive updater contract
+        run: bash scripts/test_update_code_safe_contract.sh
+      - name: ShellCheck
+        run: shellcheck scripts/update_code_safe.sh scripts/test_update_code_safe_contract.sh
+
+  immutable-update:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: ubuntu-24.04
+            python: '3.12'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Prepare protected legacy state
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          legacy="${{ runner.temp }}/legacy-install"
+          bin="${{ runner.temp }}/bin"
+          mkdir -p "$legacy/config" "$legacy/actions-runner" "$bin"
+          cp config/test.example.json "$legacy/config/local.json"
+          printf 'runner-credential-sentinel\n' > "$legacy/actions-runner/.credentials"
+          printf 'operator-state-sentinel\n' > "$legacy/operator-local-state.keep"
+          printf '#!/usr/bin/env bash\necho legacy-launcher\n' > "$bin/3agent"
+          printf '#!/usr/bin/env bash\necho legacy-updater\n' > "$bin/3agent-update"
+          chmod 0755 "$bin/3agent" "$bin/3agent-update"
+          sha256sum \
+            "$legacy/config/local.json" \
+            "$legacy/actions-runner/.credentials" \
+            "$legacy/operator-local-state.keep" \
+            > "${{ runner.temp }}/legacy-before.sha256"
+      - name: Update into an immutable release
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/legacy-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/bin
+          THREE_AGENT_CONFIG_PATH: ${{ runner.temp }}/legacy-install/config/local.json
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/state
+          THREE_AGENT_ACTIVATION_LOG: ${{ runner.temp }}/state/active-releases.log
+        run: bash scripts/update_code_safe.sh
+      - name: Verify no legacy file was deleted or changed
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          legacy="${{ runner.temp }}/legacy-install"
+          state="${{ runner.temp }}/state"
+          activation="$state/active-releases.log"
+          (cd / && sha256sum -c "${{ runner.temp }}/legacy-before.sha256")
+          test -f "$legacy/config/local.json"
+          test -f "$legacy/actions-runner/.credentials"
+          test -f "$legacy/operator-local-state.keep"
+          test -d "$state/launcher-history"
+          test "$(find "$state/launcher-history" -maxdepth 1 -type f | wc -l)" -ge 2
+          test "$(wc -l < "$activation")" -eq 1
+          release="$(tail -n 1 "$activation" | awk -F '\t' 'NF >= 3 {print $3}')"
+          test -d "$release/.git"
+          test "$(git -C "$release" rev-parse HEAD)" = "$EXPECTED_HEAD"
+          "${{ runner.temp }}/bin/3agent" smoke
+      - name: Verify same-SHA update is a no-op for releases and activation history
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/legacy-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/bin
+          THREE_AGENT_CONFIG_PATH: ${{ runner.temp }}/legacy-install/config/local.json
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/state
+          THREE_AGENT_ACTIVATION_LOG: ${{ runner.temp }}/state/active-releases.log
+        run: |
+          set -Eeuo pipefail
+          releases_before="$(find "$THREE_AGENT_RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          activations_before="$(wc -l < "$THREE_AGENT_ACTIVATION_LOG")"
+          bash scripts/update_code_safe.sh
+          test "$(find "$THREE_AGENT_RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$releases_before"
+          test "$(wc -l < "$THREE_AGENT_ACTIVATION_LOG")" -eq "$activations_before"
+          "${{ runner.temp }}/bin/3agent" smoke
