@@ -18,7 +18,9 @@ bash -n "$UPDATER" || fail "bash syntax"
 bash "$UPDATER" --self-test >/dev/null || fail "self-test"
 
 grep -Fq 'active-releases.log' "$UPDATER" || fail "append-only activation log missing"
+# shellcheck disable=SC2016
 grep -Fq '>> "$ACTIVATION_LOG"' "$UPDATER" || fail "activation must append instead of replace history"
+# shellcheck disable=SC2016
 grep -Fq 'mktemp -d "${RELEASES_DIR}/release-' "$UPDATER" || fail "immutable release directory creation missing"
 grep -Fq 'git clone --filter=blob:none --no-checkout' "$UPDATER" || fail "isolated release checkout missing"
 grep -Fq 'backup_launcher' "$UPDATER" || fail "launcher backup missing"
