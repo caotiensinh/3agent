@@ -10,6 +10,8 @@ on:
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
+      - 'scripts/update_workspace_ubuntu.sh'
+      - 'scripts/test_update_workspace_ubuntu_contract.sh'
       - '.github/workflows/portable-deploy-ci.yml'
       - '.github/workflows/live-chat-multiturn-acceptance.yml'
       - 'src/three_agent/adaptive_learning*.py'
@@ -46,6 +48,8 @@ on:
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
+      - 'scripts/update_workspace_ubuntu.sh'
+      - 'scripts/test_update_workspace_ubuntu_contract.sh'
       - '.github/workflows/portable-deploy-ci.yml'
       - '.github/workflows/live-chat-multiturn-acceptance.yml'
       - 'src/three_agent/adaptive_learning*.py'
@@ -93,6 +97,7 @@ jobs:
           bash scripts/test_bootstrap_contract.sh
           bash scripts/test_deploy_ubuntu_pc_contract.sh
           bash scripts/test_update_code_safe_contract.sh
+          bash scripts/test_update_workspace_ubuntu_contract.sh
       - name: ShellCheck
         run: |
           shellcheck \
@@ -101,7 +106,9 @@ jobs:
             scripts/deploy_ubuntu_pc.sh \
             scripts/test_deploy_ubuntu_pc_contract.sh \
             scripts/update_code_safe.sh \
-            scripts/test_update_code_safe_contract.sh
+            scripts/test_update_code_safe_contract.sh \
+            scripts/update_workspace_ubuntu.sh \
+            scripts/test_update_workspace_ubuntu_contract.sh
 
   clean-install:
     strategy:
