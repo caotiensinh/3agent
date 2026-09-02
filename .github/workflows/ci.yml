@@ -33,6 +33,18 @@ jobs:
         run: python scripts/scan_skills.py
       - name: Compile
         run: python -m compileall -q src tests
+      - name: Diagnostic - Draft Library store tests
+        continue-on-error: true
+        run: python -m unittest -v tests.test_workflow_drafts
+      - name: Diagnostic - Draft Library gateway tests
+        continue-on-error: true
+        run: python -m unittest -v tests.test_workflow_draft_gateway_contract
+      - name: Diagnostic - Draft Library frontend tests
+        continue-on-error: true
+        run: python -m unittest -v tests.test_workflow_draft_frontend_composition
+      - name: Diagnostic - Workflow Studio provenance tests
+        continue-on-error: true
+        run: python -m unittest -v tests.test_workflow_studio_provenance
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
