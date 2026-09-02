@@ -60,6 +60,19 @@ from .flow_process_graph import (
     FLOW_PROCESS_GRAPH_SOURCE_TYPE,
     attribution_to_correlation_event,
 )
+from .forensic_evidence import (
+    FORENSIC_EVIDENCE_TYPES,
+    CaseAuthorization,
+    CaseRecord,
+    CollectionFootprint,
+    CustodyEvent,
+    DerivedEvidence,
+    EvidenceObject,
+    EvidenceProvenance,
+    EvidenceReference,
+    ForensicEventTime,
+    verify_custody_chain,
+)
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
 from .network_triage import (
@@ -162,6 +175,17 @@ __all__ = [
     "FLOW_PROCESS_GRAPH_SOURCE_ID",
     "FLOW_PROCESS_GRAPH_SOURCE_TYPE",
     "attribution_to_correlation_event",
+    "FORENSIC_EVIDENCE_TYPES",
+    "ForensicEventTime",
+    "EvidenceProvenance",
+    "EvidenceReference",
+    "EvidenceObject",
+    "DerivedEvidence",
+    "CustodyEvent",
+    "verify_custody_chain",
+    "CaseAuthorization",
+    "CollectionFootprint",
+    "CaseRecord",
     "CorrelationEvent",
     "CorrelationGraphConfig",
     "CorrelationStoreReader",
