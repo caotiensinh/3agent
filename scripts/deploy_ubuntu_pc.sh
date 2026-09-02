@@ -15,6 +15,7 @@ BOOTSTRAP_URL_OVERRIDE="${THREE_AGENT_BOOTSTRAP_URL:-}"
 SELF_TEST=0
 TMP_BOOTSTRAP=""
 BOOTSTRAP_PATH=""
+CANONICAL_REPO_URL="https://github.com/caotiensinh/3agent.git"
 
 for arg in "$@"; do
   case "$arg" in
@@ -89,15 +90,15 @@ resolve_bootstrap() {
   if [[ -n "$BOOTSTRAP_URL_OVERRIDE" ]]; then
     bootstrap_url="$BOOTSTRAP_URL_OVERRIDE"
   else
-    if [[ "$REPO_URL" != "https://github.com/caotiensinh/3agent.git" ]]; then
+    if [[ "$REPO_URL" != "$CANONICAL_REPO_URL" ]]; then
       die "A custom THREE_AGENT_REPO_URL requires THREE_AGENT_BOOTSTRAP_URL to avoid mixing repositories"
     fi
-    bootstrap_url="https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh"
+    bootstrap_url="https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh"
   fi
 
   TMP_BOOTSTRAP="$(mktemp)"
   BOOTSTRAP_PATH="$TMP_BOOTSTRAP"
-  log "Downloading canonical bootstrap"
+  log "Downloading canonical bootstrap for ref ${REPO_REF}"
   curl -fsSL --retry 3 --connect-timeout 15 "$bootstrap_url" -o "$BOOTSTRAP_PATH"
   bash -n "$BOOTSTRAP_PATH" || die "Downloaded bootstrap.sh failed Bash syntax validation"
 }
