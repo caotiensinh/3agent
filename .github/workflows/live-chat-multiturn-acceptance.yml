@@ -18,6 +18,7 @@ on:
       - 'src/three_agent/chat_service_fidelity_v2.py'
       - 'src/three_agent/chat_multiturn_acceptance.py'
       - 'src/three_agent/chat_multiturn_acceptance_v2.py'
+      - 'src/three_agent/llm.py'
       - 'src/three_agent/resource_budget.py'
       - 'tests/test_chat_multiturn_acceptance.py'
       - 'tests/test_chat_output_contract.py'
