@@ -79,7 +79,7 @@ class CaseAuthorization:
         if not assets or len(assets) > MAX_CASE_ASSET_REFS or len(set(assets)) != len(assets):
             raise DFIRCaseEvidenceError("approved assets must be non-empty, unique, and bounded")
         sensitivities = tuple(str(value or "").strip() for value in self.allowed_sensitivities)
-        if not sensitivities or len(set(sensitivities)) != len(sensitivities) or set(sensitivities) - APPROVED_DATA_CLASSES:
+        if not sensitivities or len(set(sensitivities)) != len(sensitivities) or set(sensitivities) - set(APPROVED_DATA_CLASSES):
             raise DFIRCaseEvidenceError("allowed sensitivities are invalid")
         if self.read_only is not True or self.remediation_allowed or self.network_execution_allowed:
             raise DFIRCaseEvidenceError("DFIR case authorization cannot grant execution/remediation")
