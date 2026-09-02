@@ -20,6 +20,10 @@ Add traceable PDF understanding above the existing `file-pdf-safety` boundary wi
 
 No upstream code, prompts, parser package, plugin, model, or dependency is vendored. This skill is project-owned instruction text derived from general document-processing concepts.
 
+## Quarantine boundary
+
+The candidate lives under `skill_candidates/`, outside the approved loader root. Promotion to `skills/` and registry entry is a separate exact-head admission change.
+
 ## Removed / denied capabilities
 
 - JavaScript/action execution
