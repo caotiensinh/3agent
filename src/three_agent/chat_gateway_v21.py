@@ -9,8 +9,11 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from . import chat_gateway_v17 as _v17
-from .chat_gateway_v18 import CurrentRequestProjectChatService
-from .chat_gateway_v20 import WorkflowDraftApplication, WorkflowDraftHTTPHandler
+from .chat_gateway_v20 import (
+    IntelligenceAwareProjectChatService,
+    WorkflowDraftApplication,
+    WorkflowDraftHTTPHandler,
+)
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG
 from .security_monitoring.ui_config_v2 import SecurityMonitoringUIConfigManagerV2
@@ -151,7 +154,7 @@ def _bounded_security_context(message: str) -> str:
     )
 
 
-class SecurityAwareProjectChatService(CurrentRequestProjectChatService):
+class SecurityAwareProjectChatService(IntelligenceAwareProjectChatService):
     """Current direct-chat fidelity plus bounded awareness of installed Security Analyst."""
 
     def _direct_prompt(self, job: Any, upload_ids: list[str]) -> str:
