@@ -33,15 +33,15 @@ jobs:
         run: python scripts/scan_skills.py
       - name: Compile
         run: python -m compileall -q src tests
-      - name: Diagnostic - unittest cumulative prefix 13/16
+      - name: Diagnostic - unittest cumulative prefix 61/64
         continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 13 --parts 16
-      - name: Diagnostic - unittest cumulative prefix 14/16
+        run: python scripts/ci_unittest_prefix.py --prefix 61 --parts 64
+      - name: Diagnostic - unittest cumulative prefix 62/64
         continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 14 --parts 16
-      - name: Diagnostic - unittest cumulative prefix 15/16
+        run: python scripts/ci_unittest_prefix.py --prefix 62 --parts 64
+      - name: Diagnostic - unittest cumulative prefix 63/64
         continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 15 --parts 16
+        run: python scripts/ci_unittest_prefix.py --prefix 63 --parts 64
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
