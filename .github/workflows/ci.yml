@@ -33,18 +33,15 @@ jobs:
         run: python scripts/scan_skills.py
       - name: Compile
         run: python -m compileall -q src tests
-      - name: Diagnostic - Draft Library store tests
+      - name: Diagnostic - unittest cumulative prefix 1/4
         continue-on-error: true
-        run: python -m unittest -v tests.test_workflow_drafts
-      - name: Diagnostic - Draft Library gateway tests
+        run: python scripts/ci_unittest_prefix.py --prefix 1 --parts 4
+      - name: Diagnostic - unittest cumulative prefix 2/4
         continue-on-error: true
-        run: python -m unittest -v tests.test_workflow_draft_gateway_contract
-      - name: Diagnostic - Draft Library frontend tests
+        run: python scripts/ci_unittest_prefix.py --prefix 2 --parts 4
+      - name: Diagnostic - unittest cumulative prefix 3/4
         continue-on-error: true
-        run: python -m unittest -v tests.test_workflow_draft_frontend_composition
-      - name: Diagnostic - Workflow Studio provenance tests
-        continue-on-error: true
-        run: python -m unittest -v tests.test_workflow_studio_provenance
+        run: python scripts/ci_unittest_prefix.py --prefix 3 --parts 4
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
