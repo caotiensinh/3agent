@@ -17,7 +17,7 @@ def link(link_id: str, source: str, destination: str, *, relation: str = "authen
         to_asset_ref=destination,
         relation=relation,
         observed_at=f"2026-09-03T00:{minute:02d}:00Z",
-        evidence_ref=f"evidence:{link_id}",
+        evidence_ref=f"evidence:{link_id[:80]}",
     )
 
 
@@ -78,6 +78,25 @@ class IncidentScopeBuilderTests(unittest.TestCase):
                 seed_asset_refs=("asset:unknown",),
                 authorized_asset_refs=("asset:a",),
             )
+
+    def test_seed_count_cannot_exceed_output_asset_bound(self) -> None:
+        with self.assertRaisesRegex(MonitoringContractError, "seed asset count exceeds max_assets"):
+            build_incident_scope(
+                (),
+                seed_asset_refs=("asset:a", "asset:b"),
+                authorized_asset_refs=("asset:a", "asset:b"),
+                max_assets=1,
+            )
+
+    def test_long_valid_link_id_does_not_overflow_reverse_link_contract(self) -> None:
+        long_id = "l" * 128
+        assessment = build_incident_scope(
+            (link(long_id, "asset:a", "asset:b"),),
+            seed_asset_refs=("asset:b",),
+            authorized_asset_refs=("asset:a", "asset:b"),
+        )
+        self.assertEqual([asset.asset_ref for asset in assessment.scoped_assets], ["asset:b", "asset:a"])
+        self.assertEqual(assessment.scoped_assets[1].evidence_ref, "evidence:" + ("l" * 80))
 
     def test_contract_explicitly_forbids_active_discovery(self) -> None:
         valid = build_incident_scope(

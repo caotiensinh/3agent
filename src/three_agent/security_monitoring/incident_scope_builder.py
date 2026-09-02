@@ -43,6 +43,20 @@ def _strict_bool(value: bool, field_name: str) -> bool:
     return value
 
 
+def _reverse_link_id(link: "ScopeEvidenceLink") -> str:
+    digest = sha256_fingerprint(
+        {
+            "link_id": link.link_id,
+            "from_asset_ref": link.from_asset_ref,
+            "to_asset_ref": link.to_asset_ref,
+            "relation": link.relation,
+            "evidence_ref": link.evidence_ref,
+            "schema": SCOPE_LINK_SCHEMA,
+        }
+    ).split(":", 1)[1][:24]
+    return f"scope-reverse:{digest}"
+
+
 @dataclass(frozen=True)
 class ScopeEvidenceLink:
     link_id: str
@@ -166,6 +180,8 @@ def build_incident_scope(
     authorized = tuple(sorted({_identifier(v, "authorized_asset_ref", max_len=128) for v in authorized_asset_refs}))
     if not seeds or not authorized:
         raise MonitoringContractError("incident scope requires seed and authorized assets")
+    if len(seeds) > max_assets:
+        raise MonitoringContractError("seed asset count exceeds max_assets")
     allowed = set(authorized)
     if not set(seeds).issubset(allowed):
         raise MonitoringContractError("seed assets must exist in authorized inventory")
@@ -182,7 +198,7 @@ def build_incident_scope(
         adjacency.setdefault(link.from_asset_ref, []).append(link)
         adjacency.setdefault(link.to_asset_ref, []).append(
             ScopeEvidenceLink(
-                link_id=link.link_id + ":reverse",
+                link_id=_reverse_link_id(link),
                 from_asset_ref=link.to_asset_ref,
                 to_asset_ref=link.from_asset_ref,
                 relation=link.relation,
