@@ -18,6 +18,10 @@ Create a WorkSpace-native visual-document analysis contract that keeps visible f
 
 No upstream code, prompts, package, model, plugin, OCR engine, MCP service, or dependency is vendored. The candidate uses project-owned wording and only adapts general processing concepts.
 
+## Quarantine boundary
+
+The candidate is stored under `skill_candidates/`, outside the approved `skills/` root scanned by `ApprovedSkillLoader`. Registry admission is a separate exact-head reviewed change.
+
 ## Removed / denied capabilities
 
 - image-triggered tool execution
