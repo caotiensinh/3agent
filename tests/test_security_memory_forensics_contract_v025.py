@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+import unittest
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.memory_forensics_contract import (
@@ -32,59 +32,53 @@ def row(
     )
 
 
-def test_high_signal_requires_corroboration_before_candidate() -> None:
-    single = assess_memory_observations((row("inject", observation_type="code_injection"),))
-    assert single.candidates == ()
-
-    correlated = assess_memory_observations(
-        (
-            row("inject", observation_type="code_injection", minute=1),
-            row("module", observation_type="module", minute=2),
+class MemoryForensicsContractTests(unittest.TestCase):
+    def test_high_signal_requires_corroboration_before_candidate(self) -> None:
+        single = assess_memory_observations((row("inject", observation_type="code_injection"),))
+        self.assertEqual(single.candidates, ())
+        correlated = assess_memory_observations(
+            (
+                row("inject", observation_type="code_injection", minute=1),
+                row("module", observation_type="module", minute=2),
+            )
         )
-    )
-    assert len(correlated.candidates) == 1
-    candidate = correlated.candidates[0]
-    assert candidate.observation_types == ("code_injection", "module")
-    assert "multi_evidence_corroboration" in candidate.reasons
-    assert correlated.acquisition_performed is False
-    assert correlated.authority == "advisory"
-    assert correlated.fingerprint.startswith("sha256:")
+        self.assertEqual(len(correlated.candidates), 1)
+        candidate = correlated.candidates[0]
+        self.assertEqual(candidate.observation_types, ("code_injection", "module"))
+        self.assertIn("multi_evidence_corroboration", candidate.reasons)
+        self.assertFalse(correlated.acquisition_performed)
+        self.assertEqual(correlated.authority, "advisory")
+        self.assertTrue(correlated.fingerprint.startswith("sha256:"))
 
-
-def test_external_corroboration_can_support_high_signal_observation() -> None:
-    assessment = assess_memory_observations(
-        (row("yara", observation_type="yara_match", externally_corroborated=True),)
-    )
-    assert len(assessment.candidates) == 1
-    assert "external_corroboration" in assessment.candidates[0].reasons
-
-
-def test_low_signal_metadata_alone_does_not_become_compromise_claim() -> None:
-    assessment = assess_memory_observations(
-        (
-            row("socket", observation_type="socket", minute=1),
-            row("module", observation_type="module", minute=2),
+    def test_external_corroboration_can_support_high_signal_observation(self) -> None:
+        assessment = assess_memory_observations(
+            (row("yara", observation_type="yara_match", externally_corroborated=True),)
         )
-    )
-    assert assessment.candidates == ()
+        self.assertEqual(len(assessment.candidates), 1)
+        self.assertIn("external_corroboration", assessment.candidates[0].reasons)
+
+    def test_low_signal_metadata_alone_does_not_become_compromise_claim(self) -> None:
+        assessment = assess_memory_observations(
+            (
+                row("socket", observation_type="socket", minute=1),
+                row("module", observation_type="module", minute=2),
+            )
+        )
+        self.assertEqual(assessment.candidates, ())
+
+    def test_raw_memory_payload_and_raw_paths_are_rejected(self) -> None:
+        with self.assertRaisesRegex(MonitoringContractError, "raw memory payload"):
+            row("raw", observation_type="hidden_process", raw_payload_embedded=True).validate()
+        with self.assertRaisesRegex(MonitoringContractError, "raw content"):
+            row("path", observation_type="module", subject_ref=r"C:\\Windows\\System32\\x.dll").validate()
+
+    def test_analyzer_contract_forbids_acquisition_authority(self) -> None:
+        assessment = assess_memory_observations(())
+        self.assertFalse(assessment.acquisition_performed)
+        invalid = type(assessment)(candidates=(), observations_analyzed=0, acquisition_performed=True)
+        with self.assertRaisesRegex(MonitoringContractError, "must not perform acquisition"):
+            invalid.validate()
 
 
-def test_raw_memory_payload_and_raw_paths_are_rejected() -> None:
-    with pytest.raises(MonitoringContractError, match="raw memory payload"):
-        row("raw", observation_type="hidden_process", raw_payload_embedded=True).validate()
-
-    with pytest.raises(MonitoringContractError, match="raw content"):
-        row("path", observation_type="module", subject_ref=r"C:\\Windows\\System32\\x.dll").validate()
-
-
-def test_analyzer_contract_forbids_acquisition_authority() -> None:
-    assessment = assess_memory_observations(())
-    assert assessment.acquisition_performed is False
-
-    invalid = type(assessment)(
-        candidates=(),
-        observations_analyzed=0,
-        acquisition_performed=True,
-    )
-    with pytest.raises(MonitoringContractError, match="must not perform acquisition"):
-        invalid.validate()
+if __name__ == "__main__":
+    unittest.main()
