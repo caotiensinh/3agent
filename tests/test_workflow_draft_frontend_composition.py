@@ -33,6 +33,30 @@ class WorkflowDraftFrontendCompositionTests(unittest.TestCase):
         self.assertLess(library_at, compile_at)
         self.assertIn("Draft = design only · execution authority unchanged", html)
 
+    def test_workflow_draft_library_preserves_hardened_security_surfaces(self) -> None:
+        html = WORKSPACE_HTML_V16
+        for token in (
+            'data-security-tab="soc"',
+            'id="securitySocView"',
+            'data-security-tab="boundaries"',
+            'id="securityBoundaryView"',
+            'data-security-tab="configuration"',
+            'id="securityConfigView"',
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, html)
+
+        for element_id in (
+            "securitySocTab",
+            "securityBoundaryTab",
+            "securityConfigTab",
+            "securitySocView",
+            "securityBoundaryView",
+            "securityConfigView",
+        ):
+            with self.subTest(element_id=element_id):
+                self.assertEqual(html.count(f'id="{element_id}"'), 1)
+
     def test_workflow_draft_composition_is_copy_independent_but_shape_fail_closed(self) -> None:
         base = '<section><p>Copy can change.</p><textarea class="x" id="workflowDescription">text</textarea><button id="workflowCompileBtn">Compile</button></section>'
         composed = _insert_after_workflow_description(base, '<div id="draftLibrary">library</div>')
