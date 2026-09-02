@@ -77,8 +77,6 @@ class CurrentRequestProjectChatService(ContractAwareProjectChatService):
             selected_language="auto",
             fallback_language=self.default_language,
         )
-        # Explicit current-message language instructions and current-message
-        # language detection always outrank conversation continuity.
         if controls.language_source != "fallback":
             return language
 
@@ -129,13 +127,11 @@ class SecurityMonitoringApplication(_BASE_WORKFLOW_V4_APPLICATION):
         external_settings: Any,
     ) -> None:
         super().__init__(service, auth, artifact_root, external_store, external_settings)
-        # Query-only read model. No discovery, write connection, or collection authority.
         self.security_monitoring = SecurityMonitoringUIReadModel.from_environment()
         try:
             self.security_pcap_policy = IncidentCapturePolicy.from_environment()
             self.security_pcap_state = "configured"
         except (MonitoringContractError, OSError, ValueError):
-            # Optional PCAP misconfiguration must fail closed without taking down chat.
             self.security_pcap_policy = None
             self.security_pcap_state = "configuration_error"
 
@@ -154,6 +150,8 @@ class SecurityMonitoringHTTPHandler(_BASE_WORKFLOW_V4_HANDLER):
             model = self.app.security_monitoring
             if view == "summary":
                 payload = model.summary()
+            elif view == "soc":
+                payload = model.soc()
             elif view == "assets":
                 payload = model.assets()
             elif view == "admin":
@@ -268,6 +266,7 @@ class SecurityMonitoringHTTPHandler(_BASE_WORKFLOW_V4_HANDLER):
         path = urlparse(self.path).path
         security_routes = {
             "/api/security/summary": "summary",
+            "/api/security/soc": "soc",
             "/api/security/network": "network",
             "/api/security/findings": "findings",
             "/api/security/events": "events",
@@ -291,9 +290,6 @@ class SecurityMonitoringHTTPHandler(_BASE_WORKFLOW_V4_HANDLER):
         super().do_POST()
 
 
-# Keep the fully hardened v17 HTTP/auth/workflow runtime and the current-request
-# fidelity behavior. The new surface adds authenticated read-only monitoring plus
-# approval-only incident-capture metadata. Web/chat never executes packet capture.
 _v4.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = CurrentRequestProjectChatService
