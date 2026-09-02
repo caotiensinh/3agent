@@ -18,6 +18,10 @@ Add workbook understanding above `file-xlsx-safety`, preserving formula/value pr
 
 No upstream converter code, parser package, prompt, plugin, macro engine, or dependency is vendored. The skill is project-owned instruction text.
 
+## Quarantine boundary
+
+The candidate is stored under `skill_candidates/`, outside the approved loader root. Promotion is a separate registry-admission change after exact-head CI.
+
 ## Removed / denied capabilities
 
 - VBA/Office Scripts/add-ins/DDE execution
