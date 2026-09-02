@@ -70,7 +70,7 @@ def _sha(value: str, field_name: str) -> str:
     return text
 
 
-def _timestamp(value: str, field_name: str, *, normalize_utc: bool = True) -> str:
+def _parse_timestamp(value: str, field_name: str) -> datetime:
     text = str(value or "").strip()
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
@@ -78,13 +78,19 @@ def _timestamp(value: str, field_name: str, *, normalize_utc: bool = True) -> st
         raise MonitoringContractError(f"{field_name} must be ISO-8601") from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise MonitoringContractError(f"{field_name} must include timezone")
+    return parsed
+
+
+def _timestamp(value: str, field_name: str, *, normalize_utc: bool = True) -> str:
+    text = str(value or "").strip()
+    parsed = _parse_timestamp(text, field_name)
     if not normalize_utc:
         return text
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _canonical_ids(values: Iterable[str], field_name: str, *, limit: int) -> tuple[str, ...]:
-    rows = tuple(_identifier(value, field_name, max_len=256) for value in values)
+    rows = tuple(_identifier(value, field_name) for value in values)
     if len(rows) > limit:
         raise MonitoringContractError(f"{field_name} bound exceeded")
     if len(rows) != len(set(rows)):
@@ -109,10 +115,10 @@ class ForensicEventTime:
 
     def validate(self) -> "ForensicEventTime":
         original = _timestamp(self.original_timestamp, "original_timestamp", normalize_utc=False)
-        normalized = _timestamp(self.normalized_utc, "normalized_utc", normalize_utc=True)
-        original_dt = datetime.fromisoformat(original.replace("Z", "+00:00")).astimezone(timezone.utc)
-        normalized_dt = datetime.fromisoformat(normalized.replace("Z", "+00:00")).astimezone(timezone.utc)
-        if original_dt != normalized_dt:
+        normalized = _timestamp(self.normalized_utc, "normalized_utc")
+        if _parse_timestamp(original, "original_timestamp").astimezone(timezone.utc) != _parse_timestamp(
+            normalized, "normalized_utc"
+        ).astimezone(timezone.utc):
             raise MonitoringContractError("normalized_utc must represent the same instant as original_timestamp")
         if isinstance(self.uncertainty_ms, bool) or not isinstance(self.uncertainty_ms, int):
             raise MonitoringContractError("uncertainty_ms must be an integer")
@@ -270,11 +276,7 @@ class EvidenceObject:
         return sha256_fingerprint(self.public_dict())
 
     def reference(self, relation: str = "source") -> EvidenceReference:
-        return EvidenceReference(
-            evidence_id=self.evidence_id,
-            content_sha256=self.content_sha256,
-            relation=relation,
-        ).validate()
+        return EvidenceReference(self.evidence_id, self.content_sha256, relation).validate()
 
 
 @dataclass(frozen=True)
@@ -295,15 +297,16 @@ class DerivedEvidence:
         refs = tuple(ref.validate() for ref in self.input_evidence_refs)
         if not refs or len(refs) > MAX_DERIVATION_INPUTS:
             raise MonitoringContractError("derived evidence requires bounded input evidence")
-        by_id = {ref.evidence_id: ref for ref in refs}
-        if len(by_id) != len(refs):
+        if len({ref.evidence_id for ref in refs}) != len(refs):
             raise MonitoringContractError("derived evidence inputs must have unique evidence_id values")
+        if any(ref.relation != "derived_from" for ref in refs):
+            raise MonitoringContractError("derived evidence inputs must use derived_from relation")
         refs = tuple(sorted(refs, key=lambda ref: ref.evidence_id))
         object.__setattr__(self, "input_evidence_refs", refs)
-        expected_parents = tuple(ref.evidence_id for ref in refs)
-        if self.evidence.parent_evidence_refs != expected_parents:
+        expected = tuple(ref.evidence_id for ref in refs)
+        if self.evidence.parent_evidence_refs != expected:
             raise MonitoringContractError("derived evidence parent refs must exactly match input evidence refs")
-        if self.evidence.provenance.upstream_evidence_refs != expected_parents:
+        if self.evidence.provenance.upstream_evidence_refs != expected:
             raise MonitoringContractError("derived evidence provenance must preserve exact upstream lineage")
         if self.authority != "advisory":
             raise MonitoringContractError("derived evidence must remain advisory")
@@ -362,17 +365,12 @@ class CustodyEvent:
         object.__setattr__(self, "actor_ref", actor)
         object.__setattr__(self, "occurred_at", _timestamp(self.occurred_at, "occurred_at"))
         if self.previous_event_sha256 is not None:
-            object.__setattr__(
-                self,
-                "previous_event_sha256",
-                _sha(self.previous_event_sha256, "previous_event_sha256"),
-            )
+            object.__setattr__(self, "previous_event_sha256", _sha(self.previous_event_sha256, "previous_event_sha256"))
         if self.note_sha256 is not None:
             object.__setattr__(self, "note_sha256", _sha(self.note_sha256, "note_sha256"))
         if self.schema_version != FORENSIC_CUSTODY_EVENT_SCHEMA:
             raise MonitoringContractError("unsupported custody event schema")
-        expected = sha256_fingerprint(self._identity_payload())
-        if self.record_sha256 != expected:
+        if self.record_sha256 != sha256_fingerprint(self._identity_payload()):
             raise MonitoringContractError("custody record_sha256 does not match event content")
         return self
 
@@ -388,22 +386,14 @@ class CustodyEvent:
         previous_event_sha256: str | None,
         note_sha256: str | None = None,
     ) -> "CustodyEvent":
-        base = cls(
-            event_index=event_index,
-            evidence_id=evidence_id,
-            action=action,
-            actor_ref=actor_ref,
-            occurred_at=occurred_at,
-            previous_event_sha256=previous_event_sha256,
-            note_sha256=note_sha256,
-        )
-        object.__setattr__(base, "evidence_id", _evidence_id(base.evidence_id))
-        object.__setattr__(base, "occurred_at", _timestamp(base.occurred_at, "occurred_at"))
-        object.__setattr__(base, "actor_ref", str(base.actor_ref or "").strip())
-        if base.previous_event_sha256 is not None:
-            object.__setattr__(base, "previous_event_sha256", _sha(base.previous_event_sha256, "previous_event_sha256"))
-        if base.note_sha256 is not None:
-            object.__setattr__(base, "note_sha256", _sha(base.note_sha256, "note_sha256"))
+        evidence = _evidence_id(evidence_id)
+        actor = str(actor_ref or "").strip()
+        if not _ACTOR_RE.fullmatch(actor):
+            raise MonitoringContractError("actor_ref must be a typed SHA-256 reference")
+        occurred = _timestamp(occurred_at, "occurred_at")
+        previous = None if previous_event_sha256 is None else _sha(previous_event_sha256, "previous_event_sha256")
+        note = None if note_sha256 is None else _sha(note_sha256, "note_sha256")
+        base = cls(event_index, evidence, action, actor, occurred, previous, note)
         record_sha256 = sha256_fingerprint(base._identity_payload())
         return cls(**{**asdict(base), "record_sha256": record_sha256}).validate()
 
@@ -495,11 +485,9 @@ class CollectionFootprint:
                 raise MonitoringContractError(f"{field_name} is outside the forensic collection bound")
         if self.active_probe_used:
             raise MonitoringContractError("P0-A forensic collection footprint does not admit active probing")
-        if self.network_read_used:
-            if self.authority_fingerprint is None:
-                raise MonitoringContractError("network-read collection requires an authority fingerprint")
-            object.__setattr__(self, "authority_fingerprint", _sha(self.authority_fingerprint, "authority_fingerprint"))
-        elif self.authority_fingerprint is not None:
+        if self.network_read_used and self.authority_fingerprint is None:
+            raise MonitoringContractError("network-read collection requires an authority fingerprint")
+        if self.authority_fingerprint is not None:
             object.__setattr__(self, "authority_fingerprint", _sha(self.authority_fingerprint, "authority_fingerprint"))
         if self.schema_version != FORENSIC_COLLECTION_FOOTPRINT_SCHEMA:
             raise MonitoringContractError("unsupported forensic collection footprint schema")
@@ -537,22 +525,17 @@ class CaseRecord:
             raise MonitoringContractError("unsupported forensic case status")
         created = _timestamp(self.created_at, "created_at")
         updated = _timestamp(self.updated_at, "updated_at")
-        if updated < created:
+        if _parse_timestamp(updated, "updated_at") < _parse_timestamp(created, "created_at"):
             raise MonitoringContractError("case updated_at cannot precede created_at")
         object.__setattr__(self, "created_at", created)
         object.__setattr__(self, "updated_at", updated)
-        object.__setattr__(
-            self,
-            "authorization_fingerprint",
-            _sha(self.authorization_fingerprint, "authorization_fingerprint"),
-        )
+        object.__setattr__(self, "authorization_fingerprint", _sha(self.authorization_fingerprint, "authorization_fingerprint"))
         refs = tuple(ref.validate() for ref in self.evidence_refs)
         if len(refs) > MAX_CASE_EVIDENCE_REFS:
             raise MonitoringContractError("case evidence reference bound exceeded")
         if len({ref.evidence_id for ref in refs}) != len(refs):
             raise MonitoringContractError("case evidence_refs must have unique evidence_id values")
-        refs = tuple(sorted(refs, key=lambda ref: ref.evidence_id))
-        object.__setattr__(self, "evidence_refs", refs)
+        object.__setattr__(self, "evidence_refs", tuple(sorted(refs, key=lambda ref: ref.evidence_id)))
         if self.custody_head_sha256 is not None:
             object.__setattr__(self, "custody_head_sha256", _sha(self.custody_head_sha256, "custody_head_sha256"))
         if self.timeline_fingerprint is not None:
