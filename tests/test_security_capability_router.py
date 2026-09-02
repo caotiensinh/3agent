@@ -6,6 +6,7 @@ from three_agent.security_monitoring.capability_registry import (
     SecurityCapabilityRegistry,
 )
 from three_agent.security_monitoring.capability_router import (
+    MAX_ROUTE_PROPOSALS,
     MAX_ROUTE_SELECTIONS,
     SecurityCapabilityRouter,
     SecurityRouteProposal,
@@ -20,6 +21,14 @@ class SecurityCapabilityRouterTests(unittest.TestCase):
     @staticmethod
     def _pairs(decision):
         return {(row.capability_id, row.operation_id) for row in decision.selections}
+
+    @staticmethod
+    def _auth_proposal():
+        return SecurityRouteProposal(
+            taxonomy_id="security.authentication",
+            capability_id="security.authentication.analyze",
+            operation_id="analyze_authentication_evidence",
+        )
 
     def test_dns_request_routes_to_closed_internal_analysis(self):
         decision = self.router.route(
@@ -113,13 +122,7 @@ class SecurityCapabilityRouterTests(unittest.TestCase):
     def test_model_style_proposal_is_validated_against_closed_registry(self):
         decision = self.router.validate_proposals(
             "analyze authentication evidence",
-            (
-                SecurityRouteProposal(
-                    taxonomy_id="security.authentication",
-                    capability_id="security.authentication.analyze",
-                    operation_id="analyze_authentication_evidence",
-                ),
-            ),
+            (self._auth_proposal(),),
         )
         self.assertEqual(decision.status, "routed")
         self.assertEqual(
@@ -161,6 +164,33 @@ class SecurityCapabilityRouterTests(unittest.TestCase):
                     ),
                 ),
             )
+
+    def test_external_proposal_input_is_bounded_before_accumulation(self):
+        consumed = 0
+        proposal = self._auth_proposal()
+
+        def guarded():
+            nonlocal consumed
+            for _ in range(MAX_ROUTE_PROPOSALS + 1):
+                consumed += 1
+                yield proposal
+            raise AssertionError("router consumed proposals after the fail-closed bound")
+
+        with self.assertRaisesRegex(
+            SecurityCapabilityError,
+            "ROUTE_PROPOSAL_INPUT_BOUND_EXCEEDED",
+        ):
+            self.router.validate_proposals("analyze authentication evidence", guarded())
+        self.assertEqual(consumed, MAX_ROUTE_PROPOSALS + 1)
+
+    def test_external_proposals_at_bound_remain_deterministic_and_output_bounded(self):
+        decision = self.router.validate_proposals(
+            "analyze authentication evidence",
+            (self._auth_proposal() for _ in range(MAX_ROUTE_PROPOSALS)),
+        )
+        self.assertEqual(decision.status, "routed")
+        self.assertEqual(len(decision.selections), 1)
+        self.assertLessEqual(len(decision.selections), MAX_ROUTE_SELECTIONS)
 
     def test_route_is_deterministic_and_request_body_is_not_exposed(self):
         request = "Điều tra sự cố và xây dựng incident timeline từ evidence"
