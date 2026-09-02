@@ -36,11 +36,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy_sensitive: ${{ steps.changes.outputs.deploy_sensitive }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify Windows deployment impact
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "deploy_sensitive=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
+            echo "Missing pull-request base/head SHA" >&2
+            exit 1
+          fi
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(scripts/bootstrap\.ps1|scripts/test_bootstrap_windows_contract\.ps1|\.github/workflows/windows-deploy-ci\.yml|\.gitattributes|pyproject\.toml|config/test\.example\.json|README\.md|docs/WINDOWS_DEPLOY\.md)$'; then
+            echo "deploy_sensitive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
   contract:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive == 'true'
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Windows PowerShell 5.1 syntax and contract
         shell: powershell
         run: .\scripts\test_bootstrap_windows_contract.ps1
@@ -48,7 +89,38 @@ jobs:
         shell: pwsh
         run: .\scripts\test_bootstrap_windows_contract.ps1
 
+  runtime-smoke:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate in Windows runtime
+        shell: pwsh
+        run: python -m pip install -e .
+      - name: Compile source and tests on Windows
+        shell: pwsh
+        run: python -m compileall -q src tests
+      - name: Run installed WorkSpace smoke command
+        shell: pwsh
+        run: three-agent smoke
+
   clean-install:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive == 'true'
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -57,6 +129,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -100,6 +175,7 @@ jobs:
           if ($installed -ne $env:EXPECTED_HEAD) { throw "Installed SHA $installed does not match $env:EXPECTED_HEAD" }
           $global:LASTEXITCODE = 0
       - name: Re-run remotely and preserve configuration
+        if: matrix.python == '3.12'
         shell: powershell
         env:
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
