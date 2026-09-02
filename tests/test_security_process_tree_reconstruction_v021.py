@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+import unittest
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.process_tree_reconstruction import (
@@ -27,93 +27,84 @@ def obs(
     )
 
 
-def test_reconstructs_deterministic_descendant_tree_without_cross_asset_contamination() -> None:
-    rows = (
-        obs("process:child-b", parent="process:root", minute=2),
-        obs("process:root", minute=0),
-        obs("process:grandchild", parent="process:child-a", minute=3),
-        obs("process:child-a", parent="process:root", minute=1),
-        obs("process:foreign", asset="asset:host-b", minute=4),
-    )
+class ProcessTreeReconstructionTests(unittest.TestCase):
+    def test_reconstructs_deterministic_descendant_tree_without_cross_asset_contamination(self) -> None:
+        rows = (
+            obs("process:child-b", parent="process:root", minute=2),
+            obs("process:root", minute=0),
+            obs("process:grandchild", parent="process:child-a", minute=3),
+            obs("process:child-a", parent="process:root", minute=1),
+            obs("process:foreign", asset="asset:host-b", minute=4),
+        )
+        result = reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
+        self.assertEqual(
+            [node.process_ref for node in result.nodes],
+            ["process:root", "process:child-a", "process:child-b", "process:grandchild"],
+        )
+        self.assertEqual([node.depth for node in result.nodes], [0, 1, 1, 2])
+        self.assertEqual(result.orphan_process_refs, ())
+        self.assertEqual(result.cycle_process_refs, ())
+        self.assertFalse(result.truncated)
+        self.assertEqual(result.authority, "advisory")
+        self.assertTrue(result.fingerprint.startswith("sha256:"))
 
-    result = reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
+    def test_reports_orphans_and_cycles_without_guessing_edges(self) -> None:
+        rows = (
+            obs("process:root"),
+            obs("process:orphan", parent="process:missing", minute=1),
+            obs("process:cycle-a", parent="process:cycle-b", minute=2),
+            obs("process:cycle-b", parent="process:cycle-a", minute=3),
+        )
+        result = reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
+        self.assertEqual([node.process_ref for node in result.nodes], ["process:root"])
+        self.assertEqual(result.orphan_process_refs, ("process:orphan",))
+        self.assertEqual(result.cycle_process_refs, ("process:cycle-a", "process:cycle-b"))
 
-    assert [node.process_ref for node in result.nodes] == [
-        "process:root",
-        "process:child-a",
-        "process:child-b",
-        "process:grandchild",
-    ]
-    assert [node.depth for node in result.nodes] == [0, 1, 1, 2]
-    assert result.orphan_process_refs == ()
-    assert result.cycle_process_refs == ()
-    assert result.truncated is False
-    assert result.authority == "advisory"
-    assert result.fingerprint.startswith("sha256:")
+    def test_rejects_conflicting_parentage_for_same_process_identity(self) -> None:
+        rows = (
+            obs("process:root"),
+            obs("process:child", parent="process:root", minute=1),
+            obs("process:child", parent="process:other", minute=1),
+        )
+        with self.assertRaisesRegex(MonitoringContractError, "conflicting observations"):
+            reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
 
+    def test_enforces_node_and_depth_bounds(self) -> None:
+        rows = (
+            obs("process:root"),
+            obs("process:a", parent="process:root", minute=1),
+            obs("process:b", parent="process:a", minute=2),
+        )
+        by_nodes = reconstruct_process_tree(
+            rows,
+            asset_ref="asset:host-a",
+            root_process_ref="process:root",
+            max_nodes=1,
+        )
+        self.assertEqual([node.process_ref for node in by_nodes.nodes], ["process:root"])
+        self.assertTrue(by_nodes.truncated)
+        by_depth = reconstruct_process_tree(
+            rows,
+            asset_ref="asset:host-a",
+            root_process_ref="process:root",
+            max_depth=1,
+        )
+        self.assertEqual([node.process_ref for node in by_depth.nodes], ["process:root", "process:a"])
+        self.assertTrue(by_depth.truncated)
 
-def test_reports_orphans_and_cycles_without_guessing_edges() -> None:
-    rows = (
-        obs("process:root"),
-        obs("process:orphan", parent="process:missing", minute=1),
-        obs("process:cycle-a", parent="process:cycle-b", minute=2),
-        obs("process:cycle-b", parent="process:cycle-a", minute=3),
-    )
-
-    result = reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
-
-    assert [node.process_ref for node in result.nodes] == ["process:root"]
-    assert result.orphan_process_refs == ("process:orphan",)
-    assert result.cycle_process_refs == ("process:cycle-a", "process:cycle-b")
-
-
-def test_rejects_conflicting_parentage_for_same_process_identity() -> None:
-    rows = (
-        obs("process:root"),
-        obs("process:child", parent="process:root", minute=1),
-        obs("process:child", parent="process:other", minute=1),
-    )
-
-    with pytest.raises(MonitoringContractError, match="conflicting observations"):
-        reconstruct_process_tree(rows, asset_ref="asset:host-a", root_process_ref="process:root")
-
-
-def test_enforces_node_and_depth_bounds() -> None:
-    rows = (
-        obs("process:root"),
-        obs("process:a", parent="process:root", minute=1),
-        obs("process:b", parent="process:a", minute=2),
-    )
-
-    by_nodes = reconstruct_process_tree(
-        rows,
-        asset_ref="asset:host-a",
-        root_process_ref="process:root",
-        max_nodes=1,
-    )
-    assert [node.process_ref for node in by_nodes.nodes] == ["process:root"]
-    assert by_nodes.truncated is True
-
-    by_depth = reconstruct_process_tree(
-        rows,
-        asset_ref="asset:host-a",
-        root_process_ref="process:root",
-        max_depth=1,
-    )
-    assert [node.process_ref for node in by_depth.nodes] == ["process:root", "process:a"]
-    assert by_depth.truncated is True
+    def test_requires_timezone_and_exact_root_evidence(self) -> None:
+        invalid = ProcessObservation(
+            event_id="event:1",
+            asset_ref="asset:host-a",
+            process_ref="process:root",
+            observed_at="2026-09-03T00:00:00",
+            evidence_ref="evidence:1",
+        )
+        with self.assertRaisesRegex(MonitoringContractError, "timezone"):
+            reconstruct_process_tree((invalid,), asset_ref="asset:host-a", root_process_ref="process:root")
+        with self.assertRaisesRegex(MonitoringContractError, "root process"):
+            reconstruct_process_tree((obs("process:other"),), asset_ref="asset:host-a", root_process_ref="process:root")
 
 
-def test_requires_timezone_and_exact_root_evidence() -> None:
-    invalid = ProcessObservation(
-        event_id="event:1",
-        asset_ref="asset:host-a",
-        process_ref="process:root",
-        observed_at="2026-09-03T00:00:00",
-        evidence_ref="evidence:1",
-    )
-    with pytest.raises(MonitoringContractError, match="timezone"):
-        reconstruct_process_tree((invalid,), asset_ref="asset:host-a", root_process_ref="process:root")
-
-    with pytest.raises(MonitoringContractError, match="root process"):
-        reconstruct_process_tree((obs("process:other"),), asset_ref="asset:host-a", root_process_ref="process:root")
+if __name__ == "__main__":
+    unittest.main()
