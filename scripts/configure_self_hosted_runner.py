@@ -88,6 +88,8 @@ def _safe_payload(status: str, **extra: Any) -> dict[str, Any]:
         "replace_existing_runner": False,
         "host_identity_included": False,
         "server_job_assignment_required": True,
+        "helper_requires_unprivileged_user": True,
+        "service_privilege_mode": "sudo-noninteractive",
     }
     payload.update(extra)
     return payload
@@ -126,11 +128,21 @@ def _write_marker(runner_dir: Path) -> None:
     tmp.replace(path)
 
 
-def _child_env(environ: Mapping[str, str], token: str) -> dict[str, str]:
+def _sanitized_runtime_env(environ: Mapping[str, str]) -> dict[str, str]:
     env = dict(environ)
     env.pop("ACTIONS_RUNNER_TOKEN", None)
+    env.pop("ACTIONS_RUNNER_INPUT_TOKEN", None)
+    return env
+
+
+def _child_env(environ: Mapping[str, str], token: str) -> dict[str, str]:
+    env = _sanitized_runtime_env(environ)
     env["ACTIONS_RUNNER_INPUT_TOKEN"] = token
     return env
+
+
+def _sudo_svc_command(svc_sh: Path, action: str) -> list[str]:
+    return ["sudo", "-n", str(svc_sh), action]
 
 
 def bootstrap_runner(
@@ -141,6 +153,7 @@ def bootstrap_runner(
     install_service: bool = False,
     system_name: str | None = None,
     machine: str | None = None,
+    effective_uid: int | None = None,
     environ: Mapping[str, str] | None = None,
     run_process: RunProcess = _run_process,
     readiness_probe: ReadinessProbe = _probe_readiness,
@@ -151,6 +164,11 @@ def bootstrap_runner(
     x64 = machine.lower() in {"x86_64", "amd64"}
     if not linux or not x64:
         return _safe_payload("UNSUPPORTED_HOST", linux=linux, x64=x64), 2
+
+    if effective_uid is None:
+        effective_uid = os.geteuid() if hasattr(os, "geteuid") else -1
+    if effective_uid == 0:
+        return _safe_payload("HELPER_MUST_RUN_UNPRIVILEGED"), 2
 
     runner_dir = runner_dir.expanduser().resolve()
     config_sh = runner_dir / "config.sh"
@@ -166,7 +184,8 @@ def bootstrap_runner(
     if runner_config.exists() and not marker_valid:
         return _safe_payload("EXISTING_CONFIGURATION_UNVERIFIED"), 2
 
-    base_env = dict(os.environ if environ is None else environ)
+    raw_env = dict(os.environ if environ is None else environ)
+    runtime_env = _sanitized_runtime_env(raw_env)
 
     if not runner_config.exists():
         if not token.strip():
@@ -183,7 +202,7 @@ def bootstrap_runner(
             "--work",
             "_work",
         ]
-        rc = run_process(command, runner_dir, _child_env(base_env, token))
+        rc = run_process(command, runner_dir, _child_env(raw_env, token))
         if rc != 0:
             return _safe_payload("CONFIGURATION_FAILED", configuration_return_code=rc), 2
         if not runner_config.exists():
@@ -205,38 +224,61 @@ def bootstrap_runner(
             "SERVICE_SCRIPT_MISSING",
             configuration_performed=configured_now,
             service_install_requested=True,
+            service_mutation_performed=False,
         ), 2
 
-    install_needed = configured_now
-    if not configured_now:
-        pre_status_rc = run_process([str(svc_sh), "status"], runner_dir, base_env)
-        install_needed = pre_status_rc != 0
+    privilege_rc = run_process(["sudo", "-n", "true"], runner_dir, runtime_env)
+    if privilege_rc != 0:
+        return _safe_payload(
+            "SERVICE_PRIVILEGE_REQUIRED",
+            configuration_performed=configured_now,
+            service_install_requested=True,
+            service_mutation_performed=False,
+        ), 4
 
-    if install_needed:
-        install_rc = run_process([str(svc_sh), "install"], runner_dir, base_env)
+    service_config = runner_dir / ".service"
+    installed_now = False
+    if not service_config.is_file():
+        install_rc = run_process(
+            _sudo_svc_command(svc_sh, "install"),
+            runner_dir,
+            runtime_env,
+        )
         if install_rc != 0:
             return _safe_payload(
                 "SERVICE_INSTALL_FAILED",
                 configuration_performed=configured_now,
                 service_install_requested=True,
+                service_mutation_performed=True,
                 service_install_return_code=install_rc,
             ), 2
+        installed_now = True
 
-    start_rc = run_process([str(svc_sh), "start"], runner_dir, base_env)
+    start_rc = run_process(
+        _sudo_svc_command(svc_sh, "start"),
+        runner_dir,
+        runtime_env,
+    )
     if start_rc != 0:
         return _safe_payload(
             "SERVICE_START_FAILED",
             configuration_performed=configured_now,
             service_install_requested=True,
+            service_mutation_performed=True,
             service_start_return_code=start_rc,
         ), 2
 
-    status_rc = run_process([str(svc_sh), "status"], runner_dir, base_env)
+    status_rc = run_process(
+        _sudo_svc_command(svc_sh, "status"),
+        runner_dir,
+        runtime_env,
+    )
     if status_rc != 0:
         return _safe_payload(
             "SERVICE_STATUS_FAILED",
             configuration_performed=configured_now,
             service_install_requested=True,
+            service_mutation_performed=True,
             service_status_return_code=status_rc,
         ), 2
 
@@ -246,6 +288,7 @@ def bootstrap_runner(
         "READY" if ready else "BOOTSTRAPPED_NOT_READY",
         configuration_performed=configured_now,
         service_install_requested=True,
+        service_installed_now=installed_now,
         service_mutation_performed=True,
         readiness=readiness,
     ), 0 if ready else 3
@@ -263,7 +306,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--install-service",
         action="store_true",
-        help="Explicitly install/start the GitHub Actions runner systemd service.",
+        help=(
+            "Explicitly install/start the runner systemd service via non-interactive sudo. "
+            "Run 'sudo -v' first if the current user requires an interactive sudo grant."
+        ),
     )
     return parser
 

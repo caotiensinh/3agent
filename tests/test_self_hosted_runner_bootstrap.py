@@ -36,6 +36,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 token="",
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={},
                 run_process=lambda *args: calls.append(args) or 0,
             )
@@ -59,6 +60,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 token=token,
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={"ACTIONS_RUNNER_TOKEN": token, "PATH": os.environ.get("PATH", "")},
                 run_process=fake_run,
             )
@@ -89,6 +91,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 token="secret",
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={},
                 run_process=lambda *args: calls.append(args) or 0,
             )
@@ -112,6 +115,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 token="secret",
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={},
                 run_process=fake_run,
             )
@@ -120,24 +124,43 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertTrue(calls[0][0].endswith("config.sh"))
 
-    def test_explicit_service_install_runs_install_start_status_and_readiness(self) -> None:
+    def test_root_invocation_is_refused_before_runner_or_token_access(self) -> None:
+        calls = []
+        payload, rc = MODULE.bootstrap_runner(
+            runner_dir=Path("/does/not/matter"),
+            token="secret",
+            system_name="Linux",
+            machine="x86_64",
+            effective_uid=0,
+            environ={},
+            run_process=lambda *args: calls.append(args) or 0,
+        )
+        self.assertEqual(rc, 2)
+        self.assertEqual(payload["status"], "HELPER_MUST_RUN_UNPRIVILEGED")
+        self.assertEqual(calls, [])
+
+    def test_explicit_service_install_uses_noninteractive_sudo_only_for_service(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runner = self._runner_dir(Path(tmp))
             calls = []
+            token = "secret"
 
             def fake_run(argv, cwd, env):
-                calls.append(list(argv))
+                calls.append((list(argv), dict(env)))
                 if str(argv[0]).endswith("config.sh"):
                     (runner / ".runner").write_text("configured\n", encoding="utf-8")
+                if list(argv)[-1] == "install":
+                    (runner / ".service").write_text("actions.runner.example.service\n", encoding="utf-8")
                 return 0
 
             payload, rc = MODULE.bootstrap_runner(
                 runner_dir=runner,
-                token="secret",
+                token=token,
                 install_service=True,
                 system_name="Linux",
                 machine="x86_64",
-                environ={},
+                effective_uid=1000,
+                environ={"ACTIONS_RUNNER_TOKEN": token},
                 run_process=fake_run,
                 readiness_probe=lambda: {
                     "status": "READY",
@@ -148,23 +171,60 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
             )
             self.assertEqual(rc, 0)
             self.assertEqual(payload["status"], "READY")
-            self.assertEqual(
-                [call[1:] for call in calls[1:]],
-                [["install"], ["start"], ["status"]],
-            )
-            self.assertNotIn("secret", json.dumps(payload))
+            self.assertTrue(payload["service_installed_now"])
+            self.assertTrue(calls[0][0][0].endswith("config.sh"))
+            self.assertEqual(calls[1][0], ["sudo", "-n", "true"])
+            self.assertEqual(calls[2][0][0:2], ["sudo", "-n"])
+            self.assertEqual(calls[2][0][-1], "install")
+            self.assertEqual(calls[3][0][-1], "start")
+            self.assertEqual(calls[4][0][-1], "status")
+            for argv, env in calls[1:]:
+                self.assertNotIn(token, argv)
+                self.assertNotIn("ACTIONS_RUNNER_TOKEN", env)
+                self.assertNotIn("ACTIONS_RUNNER_INPUT_TOKEN", env)
+            self.assertNotIn(token, json.dumps(payload))
 
-    def test_marker_backed_rerun_can_install_service_without_token(self) -> None:
+    def test_service_privilege_failure_is_explicit_and_non_mutating(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runner = self._runner_dir(Path(tmp))
-            (runner / ".runner").write_text("configured\n", encoding="utf-8")
-            MODULE._write_marker(runner)
             calls = []
-            responses = iter([1, 0, 0, 0])
 
             def fake_run(argv, cwd, env):
                 calls.append(list(argv))
-                return next(responses)
+                if str(argv[0]).endswith("config.sh"):
+                    (runner / ".runner").write_text("configured\n", encoding="utf-8")
+                    return 0
+                if list(argv) == ["sudo", "-n", "true"]:
+                    return 1
+                self.fail(f"unexpected privileged command: {argv}")
+
+            payload, rc = MODULE.bootstrap_runner(
+                runner_dir=runner,
+                token="secret",
+                install_service=True,
+                system_name="Linux",
+                machine="x86_64",
+                effective_uid=1000,
+                environ={},
+                run_process=fake_run,
+            )
+            self.assertEqual(rc, 4)
+            self.assertEqual(payload["status"], "SERVICE_PRIVILEGE_REQUIRED")
+            self.assertTrue(payload["configuration_performed"])
+            self.assertFalse(payload["service_mutation_performed"])
+            self.assertEqual(len(calls), 2)
+
+    def test_marker_backed_rerun_uses_existing_service_without_token_or_reinstall(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = self._runner_dir(Path(tmp))
+            (runner / ".runner").write_text("configured\n", encoding="utf-8")
+            (runner / ".service").write_text("actions.runner.example.service\n", encoding="utf-8")
+            MODULE._write_marker(runner)
+            calls = []
+
+            def fake_run(argv, cwd, env):
+                calls.append(list(argv))
+                return 0
 
             payload, rc = MODULE.bootstrap_runner(
                 runner_dir=runner,
@@ -172,16 +232,46 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 install_service=True,
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={},
                 run_process=fake_run,
                 readiness_probe=lambda: {"status": "READY"},
             )
             self.assertEqual(rc, 0)
             self.assertEqual(payload["status"], "READY")
-            self.assertEqual(
-                [call[1:] for call in calls],
-                [["status"], ["install"], ["start"], ["status"]],
+            self.assertFalse(payload["service_installed_now"])
+            self.assertEqual(calls[0], ["sudo", "-n", "true"])
+            self.assertEqual(calls[1][-1], "start")
+            self.assertEqual(calls[2][-1], "status")
+            self.assertFalse(any(call[-1] == "install" for call in calls))
+
+    def test_marker_backed_rerun_installs_missing_service_without_new_token(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = self._runner_dir(Path(tmp))
+            (runner / ".runner").write_text("configured\n", encoding="utf-8")
+            MODULE._write_marker(runner)
+            calls = []
+
+            def fake_run(argv, cwd, env):
+                calls.append(list(argv))
+                return 0
+
+            payload, rc = MODULE.bootstrap_runner(
+                runner_dir=runner,
+                token="",
+                install_service=True,
+                system_name="Linux",
+                machine="x86_64",
+                effective_uid=1000,
+                environ={},
+                run_process=fake_run,
+                readiness_probe=lambda: {"status": "READY"},
             )
+            self.assertEqual(rc, 0)
+            self.assertEqual(payload["status"], "READY")
+            self.assertTrue(payload["service_installed_now"])
+            self.assertEqual(calls[0], ["sudo", "-n", "true"])
+            self.assertEqual([call[-1] for call in calls[1:]], ["install", "start", "status"])
 
     def test_config_failure_is_sanitized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -192,6 +282,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
                 token=secret,
                 system_name="Linux",
                 machine="x86_64",
+                effective_uid=1000,
                 environ={},
                 run_process=lambda *_args: 17,
             )
@@ -207,6 +298,7 @@ class SelfHostedRunnerBootstrapTests(unittest.TestCase):
             token="secret",
             system_name="Windows",
             machine="AMD64",
+            effective_uid=1000,
             environ={},
         )
         self.assertEqual(rc, 2)
