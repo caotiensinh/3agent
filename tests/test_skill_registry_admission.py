@@ -5,14 +5,16 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "skills" / "skill-registry-admission" / "SKILL.md"
+SKILL = ROOT / "skill_candidates" / "skill-registry-admission" / "SKILL.md"
+APPROVED_SKILL = ROOT / "skills" / "skill-registry-admission" / "SKILL.md"
 EXPECTED_SHA256 = "14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3"
 
 
 class SkillRegistryAdmissionTest(unittest.TestCase):
-    def test_candidate_integrity_and_size(self) -> None:
+    def test_candidate_integrity_size_and_quarantine(self) -> None:
         raw = SKILL.read_bytes()
         text = raw.decode("utf-8")
+        self.assertFalse(APPROVED_SKILL.exists())
         self.assertLessEqual(len(raw), 3072)
         self.assertIn("name: skill-registry-admission", text)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), EXPECTED_SHA256)

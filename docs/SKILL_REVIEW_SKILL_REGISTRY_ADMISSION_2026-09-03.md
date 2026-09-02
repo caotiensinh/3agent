@@ -18,6 +18,10 @@ Create the single controlled release gate that promotes WorkSpace-native candida
 
 This is a project-internal governance skill. It vendors no external skill, package, code, prompt, plugin, or dependency.
 
+## Quarantine boundary
+
+The governance candidate itself is stored under `skill_candidates/`, outside the approved loader root. It cannot promote itself and introduces no registry mutation in this PR.
+
 ## Removed / denied capabilities
 
 - candidate self-approval
