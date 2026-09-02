@@ -8,6 +8,8 @@ on:
       - 'scripts/test_bootstrap_contract.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
+      - 'scripts/update_code_safe.sh'
+      - 'scripts/test_update_code_safe_contract.sh'
       - '.github/workflows/portable-deploy-ci.yml'
       - '.github/workflows/live-chat-multiturn-acceptance.yml'
       - 'src/three_agent/adaptive_learning*.py'
@@ -42,6 +44,8 @@ on:
       - 'scripts/test_bootstrap_contract.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
+      - 'scripts/update_code_safe.sh'
+      - 'scripts/test_update_code_safe_contract.sh'
       - '.github/workflows/portable-deploy-ci.yml'
       - '.github/workflows/live-chat-multiturn-acceptance.yml'
       - 'src/three_agent/adaptive_learning*.py'
@@ -88,13 +92,16 @@ jobs:
         run: |
           bash scripts/test_bootstrap_contract.sh
           bash scripts/test_deploy_ubuntu_pc_contract.sh
+          bash scripts/test_update_code_safe_contract.sh
       - name: ShellCheck
         run: |
           shellcheck \
             scripts/bootstrap.sh \
             scripts/test_bootstrap_contract.sh \
             scripts/deploy_ubuntu_pc.sh \
-            scripts/test_deploy_ubuntu_pc_contract.sh
+            scripts/test_deploy_ubuntu_pc_contract.sh \
+            scripts/update_code_safe.sh \
+            scripts/test_update_code_safe_contract.sh
 
   clean-install:
     strategy:
@@ -132,6 +139,8 @@ jobs:
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: curl -fsSL "$DEPLOY_ENTRYPOINT_URL" | bash
       - name: Verify installed command and source lineage
@@ -144,10 +153,14 @@ jobs:
             echo "Installed commit does not match expected source head" >&2
             exit 1
           }
-          grep -Fq "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.ref }}/scripts/bootstrap.sh" "${{ runner.temp }}/three-agent-bin/3agent-update" || {
-            echo "Generated updater is not bound to the configured repository ref" >&2
+          grep -Fq "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.ref }}/scripts/update_code_safe.sh" "${{ runner.temp }}/three-agent-bin/3agent-update" || {
+            echo "Generated updater is not bound to the non-destructive updater on the configured repository ref" >&2
             exit 1
           }
+          if grep -Fq '/scripts/bootstrap.sh' "${{ runner.temp }}/three-agent-bin/3agent-update"; then
+            echo "Generated updater must not re-run bootstrap.sh" >&2
+            exit 1
+          fi
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
@@ -157,6 +170,8 @@ jobs:
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: |
           install_dir="${{ runner.temp }}/three-agent-install"

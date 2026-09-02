@@ -49,27 +49,3 @@ jobs:
           path: ${{ runner.temp }}/security-enterprise-verification.json
           if-no-files-found: error
           retention-days: 14
-
-  order-diagnostic:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        suffix-index: [0, 1, 2, 3]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install project dependencies including monitoring SNMP extra
-        run: python -m pip install -e ".[monitoring-snmp]"
-      - name: Probe prefix plus one excluded suffix module
-        run: >-
-          python scripts/ci_unittest_prefix.py
-          --prefix 63
-          --parts 64
-          --append-suffix-index ${{ matrix.suffix-index }}

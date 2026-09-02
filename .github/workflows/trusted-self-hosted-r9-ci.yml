@@ -100,6 +100,65 @@ jobs:
             exit 1
           }
 
+      - name: Verify security monitoring physical fail-closed boundary
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.sha }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-r9-install-py${{ matrix.python-version }}
+        run: |
+          set -Eeuo pipefail
+          SECURITY_CONFIG="$THREE_AGENT_INSTALL_DIR/config/security_monitoring.example.json"
+          SECURITY_BIN="$THREE_AGENT_INSTALL_DIR/.venv/bin/workspace-security-monitor"
+          VALIDATION_JSON="$RUNNER_TEMP/security-monitoring-readiness-py${{ matrix.python-version }}.validation.json"
+          GUARD_STDERR="$RUNNER_TEMP/security-monitoring-readiness-py${{ matrix.python-version }}.guard.stderr"
+          RECEIPT="$RUNNER_TEMP/security-monitoring-physical-readiness-py${{ matrix.python-version }}.json"
+
+          test -x "$SECURITY_BIN"
+          test -f "$SECURITY_CONFIG"
+          "$SECURITY_BIN" --config "$SECURITY_CONFIG" validate-config > "$VALIDATION_JSON"
+          "$VENV/bin/python" - "$VALIDATION_JSON" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if payload.get("enabled") is not False:
+              raise SystemExit("example monitoring config must remain disabled")
+          if payload.get("allow_real_network") is not False:
+              raise SystemExit("example monitoring config must keep real network disabled")
+          if payload.get("contains_raw_credentials") is not False:
+              raise SystemExit("monitoring config summary must not contain raw credentials")
+          PY
+
+          set +e
+          "$SECURITY_BIN" --config "$SECURITY_CONFIG" run-hourly --execute-readonly >/dev/null 2>"$GUARD_STDERR"
+          guard_rc=$?
+          set -e
+          test "$guard_rc" -ne 0
+          grep -Fq "MONITORING_DISABLED" "$GUARD_STDERR"
+
+          "$VENV/bin/python" - "$VALIDATION_JSON" "$RECEIPT" <<'PY'
+          import json
+          import os
+          import sys
+          from pathlib import Path
+
+          validation = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          receipt = {
+              "schema": "workspace-security-monitoring/physical-readiness-v1",
+              "target_sha": os.environ["TARGET_SHA"],
+              "python_version": os.environ["PYTHON_VERSION"],
+              "config_summary": validation,
+              "run_hourly_guard": "MONITORING_DISABLED",
+              "real_network_executed": False,
+              "network_mutation_executed": False,
+              "result": "PASS",
+          }
+          Path(sys.argv[2]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          rm -f "$VALIDATION_JSON" "$GUARD_STDERR"
+
       - name: Verify idempotent re-deploy preserves configuration
         shell: bash
         env:
@@ -153,6 +212,7 @@ jobs:
           name: trusted-self-hosted-r9-py${{ matrix.python-version }}
           path: |
             ${{ runner.temp }}/security-enterprise-verification-py${{ matrix.python-version }}.json
+            ${{ runner.temp }}/security-monitoring-physical-readiness-py${{ matrix.python-version }}.json
             ${{ runner.temp }}/self-hosted-r9-evidence-py${{ matrix.python-version }}.json
           if-no-files-found: error
           retention-days: 14
