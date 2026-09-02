@@ -7,7 +7,7 @@ from pathlib import Path
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
-from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15
+from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15, config_js, config_markup
 
 
 class SecurityMonitoringUIConfigTests(unittest.TestCase):
@@ -49,8 +49,6 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
                 manager.validate(payload)
 
     def test_save_is_atomic_private_and_round_trips(self) -> None:
-        if os.name != "posix":
-            self.skipTest("POSIX mode assertion")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             manager = self.manager(root)
@@ -69,7 +67,8 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             ]
             result = manager.save(payload)
             self.assertTrue(result["saved"])
-            self.assertEqual(manager.path.stat().st_mode & 0o777, 0o600)
+            if os.name == "posix":
+                self.assertEqual(manager.path.stat().st_mode & 0o777, 0o600)
             loaded = manager.get()
             self.assertEqual(loaded["config"]["assets"][0]["asset_id"], "switch-01")
             self.assertEqual(loaded["summary"]["asset_count"], 1)
@@ -144,7 +143,9 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             "passive_only",
         ):
             self.assertIn(marker, WORKSPACE_HTML_V15)
-        self.assertNotIn('type="password"', WORKSPACE_HTML_V15)
+        monitoring_ui = config_markup + config_js
+        self.assertNotIn('type="password"', monitoring_ui)
+        self.assertNotIn('name="password"', monitoring_ui)
 
 
 if __name__ == "__main__":

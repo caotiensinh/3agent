@@ -12,6 +12,7 @@ from typing import Any, Iterable
 from ..runtime_efficiency import StructuredOutputValidationError, validate_json_schema_subset
 from .contracts import MonitoringContractError, SEVERITIES
 from .correlation_graph import STAGE_ORDER
+from .enterprise_truth import map_analyst_finding
 from .network_triage import (
     CONFIDENCE_LEVELS,
     INVESTIGATION_PRIORITIES,
@@ -23,6 +24,7 @@ from .network_triage import (
 from .reporting import DeterministicReport, PeriodSummary
 
 AI_ANALYSIS_SCHEMA_VERSION = "workspace-security-monitoring/ai-analysis-v1"
+AI_ENTERPRISE_ANALYSIS_SCHEMA_VERSION = "workspace-security-monitoring/enterprise-ai-analysis-v1"
 AI_EVIDENCE_PACK_SCHEMA_VERSION = "workspace-security-monitoring/ai-evidence-pack-v1"
 AI_ANALYSIS_SCHEMA_ID = "workspace-security-monitoring/ai-analysis-schema-v1"
 MAX_EVIDENCE_PACK_BYTES = 16 * 1024
@@ -32,6 +34,7 @@ MAX_NETWORK_TRIAGE_IN_PACK = 16
 MAX_TRIAGE_EVIDENCE_REFS = 8
 MAX_METRICS_PER_PERIOD = 6
 MAX_ANALYSIS_ITEMS = 16
+MAX_ALLOWED_EVIDENCE_IDS = 512
 ANALYSIS_LABELS = ("FACT", "CORRELATION", "HYPOTHESIS", "RISK", "ACTION", "DATA GAP")
 
 _SAFE_MODEL_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+\-/]{0,255}$")
@@ -108,6 +111,7 @@ class AIAnalysisResult:
     retry_count: int
     failure_code: str | None = None
     schema_version: str = AI_ANALYSIS_SCHEMA_VERSION
+    allowed_evidence_ids: tuple[str, ...] = ()
 
     def validate(self) -> "AIAnalysisResult":
         if self.status not in {"valid", "fallback", "not_requested"}:
@@ -130,7 +134,60 @@ class AIAnalysisResult:
             raise MonitoringContractError("AI analysis failure_code is too long")
         if not self.evidence_pack_sha256.startswith("sha256:") or len(self.evidence_pack_sha256) != 71:
             raise MonitoringContractError("AI evidence pack SHA-256 is invalid")
+        if not isinstance(self.allowed_evidence_ids, tuple):
+            raise MonitoringContractError("AI allowed evidence IDs must be a tuple")
+        if len(self.allowed_evidence_ids) > MAX_ALLOWED_EVIDENCE_IDS:
+            raise MonitoringContractError("AI allowed evidence IDs exceed bounds")
+        if any(
+            not isinstance(value, str) or not value or len(value) > 256
+            for value in self.allowed_evidence_ids
+        ):
+            raise MonitoringContractError("AI allowed evidence ID is invalid")
+        if len(set(self.allowed_evidence_ids)) != len(self.allowed_evidence_ids):
+            raise MonitoringContractError("AI allowed evidence IDs must be unique")
+        if self.status == "valid":
+            try:
+                _validate_model_analysis(
+                    {"summary": self.summary, "items": [dict(item) for item in self.items]},
+                    allowed_evidence_ids=self.allowed_evidence_ids,
+                )
+            except AnalystValidationError as exc:
+                raise MonitoringContractError(
+                    f"AI analysis result failed evidence validation: {exc.reason_code}"
+                ) from exc
         return self
+
+    def enterprise_findings(self) -> tuple[dict[str, object], ...]:
+        """Return the public three-state analyst boundary without internal labels."""
+
+        self.validate()
+        if self.status != "valid":
+            return ()
+        return tuple(
+            map_analyst_finding(
+                label=str(item["label"]),
+                statement=str(item["text"]),
+                evidence_ids=tuple(item["evidence_refs"]),
+                allowed_evidence_ids=self.allowed_evidence_ids,
+            ).public_dict()
+            for item in self.items
+        )
+
+    def public_dict(self) -> dict[str, object]:
+        """Serialize only the enterprise truth-state boundary for external consumers."""
+
+        self.validate()
+        return {
+            "schema_version": AI_ENTERPRISE_ANALYSIS_SCHEMA_VERSION,
+            "report_id": self.report_id,
+            "status": self.status,
+            "summary": self.summary,
+            "findings": list(self.enterprise_findings()),
+            "evidence_pack_sha256": self.evidence_pack_sha256,
+            "model_calls": self.model_calls,
+            "retry_count": self.retry_count,
+            "failure_code": self.failure_code,
+        }
 
 
 def _compact_metric(metric: Any) -> dict[str, Any]:
@@ -549,6 +606,7 @@ class LocalAIAnalyst:
                 evidence_pack_sha256=pack.sha256,
                 model_calls=model_calls,
                 retry_count=retry_count,
+                allowed_evidence_ids=pack.allowed_evidence_ids,
             ).validate()
 
         raise AssertionError("unreachable")
@@ -565,7 +623,7 @@ def write_ai_analysis_sidecar(result: AIAnalysisResult, *, root: Path) -> Path:
     destination_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     final = destination_dir / f"{result.report_id}.json"
     temp = destination_dir / f".{result.report_id}.{os.getpid()}.tmp"
-    payload = json.dumps(asdict(result), ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    payload = json.dumps(result.public_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     temp.write_text(payload, encoding="utf-8")
     os.replace(temp, final)
     return final

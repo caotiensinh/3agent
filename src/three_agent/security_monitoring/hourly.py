@@ -10,7 +10,9 @@ from zoneinfo import ZoneInfo
 
 from .collectors import CollectorResult
 from .contracts import AssetInventoryRecord, HourlyRunReceipt, sha256_fingerprint
+from .entity_context_storage import EventEntityContextStore
 from .locking import HourlyRunLockManager
+from .observation_normalization import normalize_observation_evidence
 from .plan import CollectorWorkItem, compile_collection_plan
 from .policy import MonitoringPolicy
 from .storage import MonitoringStore
@@ -41,6 +43,7 @@ class HourlyMonitoringRunner:
         self.policy = policy.validate()
         self.execute_work_item = execute_work_item
         self.locks = HourlyRunLockManager(store)
+        self.entity_store = EventEntityContextStore(store)
 
     def _next_attempt(self, slot_key: str) -> int:
         with self.store.connect() as conn:
@@ -100,6 +103,7 @@ class HourlyMonitoringRunner:
 
     def run(self, *, scheduled_at: str) -> HourlyRunReceipt:
         self.store.initialize()
+        self.entity_store.initialize()
         assets = self.store.list_enabled_assets()
         slot_key = hourly_slot_key(self.policy.profile_id, scheduled_at)
         owner_id = "owner-" + uuid4().hex
@@ -168,7 +172,10 @@ class HourlyMonitoringRunner:
                 if result.observations:
                     covered_assets.add(item.asset_id)
                     for observation in result.observations:
-                        self.store.add_observation(observation)
+                        normalized = normalize_observation_evidence(observation)
+                        self.store.add_observation(normalized.observation)
+                        self.store.add_event(normalized.event)
+                        self.entity_store.put(normalized.entity_context)
                 if result.failure_code:
                     failure_codes.add(result.failure_code)
                 if attempts_used > 1:

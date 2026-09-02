@@ -9,7 +9,7 @@ from .contracts import MonitoringContractError, _compact
 
 ENTITY_CONTEXT_SCHEMA = "workspace-security-monitoring/event-entity-context-v1"
 MAX_ENTITY_REFERENCES = 16
-ENTITY_KINDS = {"ip", "dns", "user", "process", "asset", "service"}
+ENTITY_KINDS = {"ip", "dns", "user", "process", "asset", "service", "interface"}
 ENTITY_ROLES = {
     "source_ip": "ip",
     "destination_ip": "ip",
@@ -19,6 +19,7 @@ ENTITY_ROLES = {
     "auth_user": "user",
     "process_image": "process",
     "service": "service",
+    "interface": "interface",
 }
 _HASHED_REF_RE = re.compile(r"^entity:([a-z]+):sha256:([0-9a-f]{64})$")
 _ASSET_REF_RE = re.compile(r"^asset:([A-Za-z0-9][A-Za-z0-9._:@+\-/]{0,127})$")
@@ -47,9 +48,9 @@ def _normalize_entity_value(kind: str, value: str) -> str:
         if not re.fullmatch(r"[a-z0-9][a-z0-9._:+\-/]{0,95}", normalized):
             raise MonitoringContractError("service entity is invalid")
         return normalized
-    # User/process identifiers are intentionally not case-folded: identity
-    # semantics differ across operating systems. Exact normalized input must
-    # match exactly to create a future correlation edge.
+    # User/process/interface identifiers are intentionally not case-folded:
+    # their identity semantics are source/platform specific. Exact normalized
+    # input must match exactly to create a future correlation edge.
     return text
 
 

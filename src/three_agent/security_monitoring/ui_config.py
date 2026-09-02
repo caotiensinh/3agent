@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .contracts import MonitoringContractError
+from .readiness import evaluate_monitoring_readiness
 from .runtime_config import MonitoringRuntimeConfig, load_runtime_config
 
 CONFIG_SCHEMA = "workspace-security-monitoring/ui-config-v1"
@@ -170,22 +171,32 @@ class SecurityMonitoringUIConfigManager:
         config = _validate_payload(payload)
         self._path_safe()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        try:
-            os.chmod(self.path.parent, 0o700)
-        except OSError:
-            pass
+        if os.name == "posix":
+            try:
+                os.chmod(self.path.parent, 0o700)
+            except OSError:
+                pass
         encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
         fd, name = tempfile.mkstemp(prefix=".security-monitoring-", suffix=".tmp", dir=self.path.parent)
         temp = Path(name)
         try:
-            os.fchmod(fd, 0o600)
-            with os.fdopen(fd, "wb") as handle:
+            if os.name == "posix":
+                os.fchmod(fd, 0o600)
+            handle = os.fdopen(fd, "wb")
+            fd = -1
+            with handle:
                 handle.write(encoded)
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp, self.path)
-            os.chmod(self.path, 0o600)
+            if os.name == "posix":
+                os.chmod(self.path, 0o600)
         finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
             try:
                 temp.unlink()
             except FileNotFoundError:
@@ -209,39 +220,5 @@ class SecurityMonitoringUIConfigManager:
     def _readiness_for(
         self, config: MonitoringRuntimeConfig, *, config_saved: bool | None = None
     ) -> dict[str, Any]:
-        issues: list[dict[str, str]] = []
-        warnings: list[dict[str, str]] = []
         saved = self.path.is_file() if config_saved is None else config_saved
-        if not saved:
-            issues.append({"code": "CONFIG_NOT_SAVED", "message": "Save configuration before monitoring can run."})
-        if not config.enabled:
-            warnings.append({"code": "MONITORING_DISABLED", "message": "Monitoring is currently disabled."})
-        if config.enabled and not config.allow_real_network:
-            issues.append({"code": "REAL_NETWORK_NOT_ALLOWED", "message": "Enable approved real-network reads before running the collector."})
-        if not config.assets:
-            warnings.append({"code": "NO_ASSETS", "message": "No approved monitoring assets are configured."})
-        secret_dir = config.secret_directory
-        for asset in config.assets:
-            if not asset.enabled:
-                continue
-            if "snmpv3_read" in asset.collector_capabilities:
-                if secret_dir is None:
-                    issues.append({"code": "SECRET_DIRECTORY_REQUIRED", "message": f"{asset.asset_id}: SNMPv3 requires a secret directory."})
-                    continue
-                if asset.credential_ref is None:
-                    issues.append({"code": "CREDENTIAL_REF_REQUIRED", "message": f"{asset.asset_id}: SNMPv3 requires an opaque credential reference."})
-                    continue
-                secret_name = asset.credential_ref.handle.removeprefix("secret-ref:")
-                secret_file = secret_dir / f"{secret_name}.json"
-                if not secret_file.is_file() or secret_file.is_symlink():
-                    issues.append({"code": "SECRET_REF_UNRESOLVED", "message": f"{asset.asset_id}: credential reference is not present in the local secret boundary."})
-        return {
-            "ready": not issues,
-            "config_saved": saved,
-            "issues": issues,
-            "warnings": warnings,
-            "network_test_executed": False,
-            "secret_values_read": False,
-            "packet_capture_executed": False,
-            "remediation_executed": False,
-        }
+        return evaluate_monitoring_readiness(config, config_saved=saved)

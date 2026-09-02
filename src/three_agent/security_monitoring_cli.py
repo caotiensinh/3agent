@@ -11,6 +11,7 @@ from .security_monitoring.dispatch import DefaultCollectorDispatcher
 from .security_monitoring.hourly import HourlyMonitoringRunner
 from .security_monitoring.locking import MonitoringRunAlreadyLocked
 from .security_monitoring.policy import MonitoringPolicyEngine
+from .security_monitoring.readiness import evaluate_monitoring_readiness
 from .security_monitoring.runtime_config import MonitoringRuntimeConfig, load_runtime_config
 from .security_monitoring.snmp_backend import FileSecretResolver, PySnmpV3Backend
 from .security_monitoring.storage import MonitoringStore
@@ -73,6 +74,14 @@ def cmd_run_hourly(config_path: Path, *, execute_readonly: bool) -> int:
         raise RuntimeError("REAL_NETWORK_NOT_ALLOWED_BY_CONFIG")
     if not execute_readonly:
         raise RuntimeError("EXPLICIT_READONLY_EXECUTION_FLAG_REQUIRED")
+
+    readiness = evaluate_monitoring_readiness(
+        config,
+        config_saved=config_path.is_file(),
+    )
+    if not readiness["ready"]:
+        reason_codes = sorted({str(item["code"]) for item in readiness["issues"]})
+        raise RuntimeError(f"MONITORING_READINESS_BLOCKED:{','.join(reason_codes)}")
 
     config.database_path.parent.mkdir(parents=True, exist_ok=True)
     store = MonitoringStore(config.database_path)
