@@ -31,6 +31,7 @@ grep -Fq '"${INSTALL_DIR}/.venv"' "$BOOTSTRAP" || fail "venv cleanup allowlist m
 # shellcheck disable=SC2016
 grep -Fq '"${INSTALL_DIR}/src/workspace_local_ai.egg-info"' "$BOOTSTRAP" || fail "egg-info cleanup allowlist missing"
 
+# shellcheck disable=SC2016
 if grep -Fq 'git -C "$INSTALL_DIR" clean' "$BOOTSTRAP"; then
   fail "portable bootstrap must not broadly delete untracked local state"
 fi
