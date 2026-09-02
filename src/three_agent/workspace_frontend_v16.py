@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from .workspace_frontend_v3 import _replace_once
-from .workspace_frontend_v15 import WORKSPACE_HTML_V15
+from .workspace_frontend_security_v3 import WORKSPACE_HTML_SECURITY_V3
 
 
-html = WORKSPACE_HTML_V15
+html = WORKSPACE_HTML_SECURITY_V3
 
 
 def _insert_after_workflow_description(document: str, markup: str) -> str:
