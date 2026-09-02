@@ -1,0 +1,77 @@
+name: security-readonly-pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type READ_ONLY_SECURITY_PILOT to authorize one bounded real-network read-only pilot.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-readonly-pilot-r9
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    name: controlled read-only physical pilot
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, r9]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact selected main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: true
+          persist-credentials: false
+
+      - name: Validate explicit operator confirmation
+        shell: bash
+        env:
+          PILOT_CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -Eeuo pipefail
+          test "$PILOT_CONFIRMATION" = "READ_ONLY_SECURITY_PILOT"
+
+      - name: Bootstrap exact source on R9
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-security-pilot-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-security-pilot-bin
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$THREE_AGENT_INSTALL_DIR" "$THREE_AGENT_BIN_DIR"
+          bash scripts/bootstrap.sh
+
+      - name: Run bounded real-network read-only pilot
+        shell: bash
+        env:
+          PILOT_CONFIRMATION: ${{ inputs.confirmation }}
+          TARGET_SHA: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-security-pilot-install
+          PILOT_RECEIPT: ${{ runner.temp }}/security-monitoring-readonly-pilot.json
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="$HOME/.config/workspace/security_monitoring.pilot.json"
+          "$THREE_AGENT_INSTALL_DIR/.venv/bin/python" scripts/run_security_readonly_pilot.py \
+            --config "$CONFIG_PATH" \
+            --installed-dir "$THREE_AGENT_INSTALL_DIR" \
+            --expected-sha "$TARGET_SHA" \
+            --confirmation "$PILOT_CONFIRMATION" \
+            --output "$PILOT_RECEIPT"
+
+      - name: Upload sanitized pilot evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-readonly-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/security-monitoring-readonly-pilot.json
+          if-no-files-found: warn
+          retention-days: 14
