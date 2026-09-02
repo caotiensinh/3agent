@@ -32,7 +32,6 @@ grep -Fq 'export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"' "$ENTRYPOINT" || fail "
 # shellcheck disable=SC2016
 grep -Fq 'export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"' "$ENTRYPOINT" || fail "configuration path delegation missing"
 grep -Fq 'bash "$BOOTSTRAP_PATH"' "$ENTRYPOINT" || fail "bootstrap delegation missing"
-grep -Fq 'three_agent' /dev/null 2>/dev/null || true
 
 if grep -Eq 'apt(-get)? .*nvidia|ubuntu-drivers|modprobe|update-grub|grub-install|reboot|shutdown|rm -rf /' "$ENTRYPOINT"; then
   fail "Ubuntu entrypoint must not mutate GPU drivers, bootloader, reboot policy, or destructively remove the host filesystem"
