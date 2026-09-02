@@ -14,8 +14,8 @@ class FullE2ERtx5090WorkflowContractTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", self.workflow)
         self.assertIn("inputs.confirm == 'FULL_E2E'", self.workflow)
 
-    def test_workflow_targets_exact_rtx5090_runner_without_hardware_mutation(self) -> None:
-        self.assertIn("runs-on: [self-hosted, Linux, X64, rtx5090]", self.workflow)
+    def test_workflow_targets_exact_managed_rtx5090_runner_without_hardware_mutation(self) -> None:
+        self.assertIn("runs-on: [self-hosted, Linux, X64, r9, rtx5090]", self.workflow)
         lowered = self.workflow.lower()
         self.assertNotIn("ollama pull", lowered)
         self.assertNotIn("apt install", lowered)
