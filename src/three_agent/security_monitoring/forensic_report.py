@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from typing import Iterable
 
 from .contracts import APPROVED_DATA_CLASSES, MonitoringContractError, sha256_fingerprint
-from .forensic_evidence import CaseRecord, EvidenceObject, EvidenceReference
-from .forensic_hypothesis import ForensicHypothesis
+from .forensic_evidence import CaseRecord, EvidenceObject, EvidenceReference, FORENSIC_EVIDENCE_TYPES
+from .forensic_hypothesis import ForensicHypothesis, HYPOTHESIS_STATUSES
 
 FORENSIC_REPORT_SCHEMA = "workspace-security-forensics/case-report-v1"
 FORENSIC_REPORT_EVIDENCE_ENTRY_SCHEMA = "workspace-security-forensics/report-evidence-entry-v1"
@@ -89,18 +89,12 @@ class ForensicReportEvidenceEntry:
     def validate(self) -> "ForensicReportEvidenceEntry":
         if not self.evidence_id.startswith("evidence:"):
             raise MonitoringContractError("forensic report evidence_id is invalid")
+        if self.evidence_type not in FORENSIC_EVIDENCE_TYPES:
+            raise MonitoringContractError("forensic report evidence_type is invalid")
         object.__setattr__(self, "content_sha256", _sha(self.content_sha256, "content_sha256"))
-        object.__setattr__(
-            self,
-            "provenance_fingerprint",
-            _sha(self.provenance_fingerprint, "provenance_fingerprint"),
-        )
+        object.__setattr__(self, "provenance_fingerprint", _sha(self.provenance_fingerprint, "provenance_fingerprint"))
         if self.event_time_fingerprint is not None:
-            object.__setattr__(
-                self,
-                "event_time_fingerprint",
-                _sha(self.event_time_fingerprint, "event_time_fingerprint"),
-            )
+            object.__setattr__(self, "event_time_fingerprint", _sha(self.event_time_fingerprint, "event_time_fingerprint"))
         if self.data_class not in APPROVED_DATA_CLASSES:
             raise MonitoringContractError("forensic report evidence data_class is invalid")
         if not self.producer_id or "://" in self.producer_id or "\\" in self.producer_id:
@@ -148,17 +142,15 @@ class ForensicReportHypothesisSummary:
             supporting=hypothesis.evidence.supporting,
             contradicting=hypothesis.evidence.contradicting,
             missing_evidence_codes=hypothesis.evidence.missing_evidence_codes,
-            human_confirmation_sha256=(
-                None
-                if hypothesis.human_confirmation is None
-                else hypothesis.human_confirmation.record_sha256
-            ),
+            human_confirmation_sha256=(None if hypothesis.human_confirmation is None else hypothesis.human_confirmation.record_sha256),
         ).validate()
 
     def validate(self) -> "ForensicReportHypothesisSummary":
         if not self.hypothesis_id.startswith("hypothesis:"):
             raise MonitoringContractError("forensic report hypothesis_id is invalid")
         object.__setattr__(self, "statement_sha256", _sha(self.statement_sha256, "statement_sha256"))
+        if self.status not in HYPOTHESIS_STATUSES:
+            raise MonitoringContractError("forensic report hypothesis status is invalid")
         supporting = tuple(ref.validate() for ref in self.supporting)
         contradicting = tuple(ref.validate() for ref in self.contradicting)
         if any(ref.relation != "supports" for ref in supporting):
@@ -169,11 +161,7 @@ class ForensicReportHypothesisSummary:
         object.__setattr__(self, "contradicting", tuple(sorted(contradicting, key=lambda ref: ref.evidence_id)))
         object.__setattr__(self, "missing_evidence_codes", _reason_codes(self.missing_evidence_codes))
         if self.human_confirmation_sha256 is not None:
-            object.__setattr__(
-                self,
-                "human_confirmation_sha256",
-                _sha(self.human_confirmation_sha256, "human_confirmation_sha256"),
-            )
+            object.__setattr__(self, "human_confirmation_sha256", _sha(self.human_confirmation_sha256, "human_confirmation_sha256"))
         if self.schema_version != FORENSIC_REPORT_HYPOTHESIS_SCHEMA:
             raise MonitoringContractError("unsupported forensic report hypothesis schema")
         return self
@@ -181,11 +169,7 @@ class ForensicReportHypothesisSummary:
     @property
     def evidence_ids(self) -> tuple[str, ...]:
         self.validate()
-        return tuple(
-            sorted(
-                {ref.evidence_id for ref in (*self.supporting, *self.contradicting)}
-            )
-        )
+        return tuple(sorted({ref.evidence_id for ref in (*self.supporting, *self.contradicting)}))
 
     def public_dict(self) -> dict[str, object]:
         self.validate()
@@ -246,23 +230,11 @@ class ForensicCaseReport:
             raise MonitoringContractError("forensic report case_id is invalid")
         object.__setattr__(self, "generated_at", _timestamp(self.generated_at, "generated_at"))
         object.__setattr__(self, "case_fingerprint", _sha(self.case_fingerprint, "case_fingerprint"))
-        object.__setattr__(
-            self,
-            "authorization_fingerprint",
-            _sha(self.authorization_fingerprint, "authorization_fingerprint"),
-        )
+        object.__setattr__(self, "authorization_fingerprint", _sha(self.authorization_fingerprint, "authorization_fingerprint"))
         if self.custody_head_sha256 is not None:
-            object.__setattr__(
-                self,
-                "custody_head_sha256",
-                _sha(self.custody_head_sha256, "custody_head_sha256"),
-            )
+            object.__setattr__(self, "custody_head_sha256", _sha(self.custody_head_sha256, "custody_head_sha256"))
         if self.timeline_fingerprint is not None:
-            object.__setattr__(
-                self,
-                "timeline_fingerprint",
-                _sha(self.timeline_fingerprint, "timeline_fingerprint"),
-            )
+            object.__setattr__(self, "timeline_fingerprint", _sha(self.timeline_fingerprint, "timeline_fingerprint"))
         if self.data_class not in APPROVED_DATA_CLASSES:
             raise MonitoringContractError("forensic report data_class is invalid")
         evidence = tuple(item.validate() for item in self.evidence_manifest)
@@ -314,57 +286,35 @@ def build_forensic_case_report(
     if not isinstance(case, CaseRecord):
         raise MonitoringContractError("forensic report requires CaseRecord")
     case.validate()
-
-    evidence_rows = tuple(evidence)
     by_id: dict[str, EvidenceObject] = {}
-    for raw in evidence_rows:
+    for raw in tuple(evidence):
         if not isinstance(raw, EvidenceObject):
             raise MonitoringContractError("forensic report evidence type is invalid")
         item = raw.validate()
         if item.evidence_id in by_id:
             raise MonitoringContractError("forensic report evidence IDs must be unique")
         by_id[item.evidence_id] = item
-
     case_refs = {ref.evidence_id: ref for ref in case.evidence_refs}
     if set(by_id) != set(case_refs):
         raise MonitoringContractError("forensic report evidence must exactly match case evidence refs")
     for evidence_id, item in by_id.items():
         if item.content_sha256 != case_refs[evidence_id].content_sha256:
             raise MonitoringContractError("forensic report case evidence content hash mismatch")
-
     if case.timeline_fingerprint is not None:
-        timeline_matches = [
-            item
-            for item in by_id.values()
-            if item.evidence_type == "timeline" and item.content_sha256 == case.timeline_fingerprint
-        ]
+        timeline_matches = [item for item in by_id.values() if item.evidence_type == "timeline" and item.content_sha256 == case.timeline_fingerprint]
         if len(timeline_matches) != 1:
             raise MonitoringContractError("forensic report requires exactly one case-bound timeline evidence object")
-
-    hypothesis_rows = tuple(hypotheses)
-    summaries = tuple(ForensicReportHypothesisSummary.from_hypothesis(item) for item in hypothesis_rows)
+    summaries = tuple(ForensicReportHypothesisSummary.from_hypothesis(item) for item in tuple(hypotheses))
     manifest_ids = set(by_id)
     if any(not set(summary.evidence_ids) <= manifest_ids for summary in summaries):
         raise MonitoringContractError("forensic hypothesis evidence is outside case scope")
-
-    missing_codes = {
-        code
-        for summary in summaries
-        for code in summary.missing_evidence_codes
-    }
-    combined_limitations = _reason_codes((*tuple(limitation_codes), *tuple(missing_codes)))
-    data_class = max(
-        (item.data_class for item in by_id.values()),
-        key=lambda value: _DATA_CLASS_RANK[value],
-    )
-    manifest = tuple(
-        sorted(
-            (ForensicReportEvidenceEntry.from_evidence(item) for item in by_id.values()),
-            key=lambda item: item.evidence_id,
-        )
-    )
+    missing_codes = {code for summary in summaries for code in summary.missing_evidence_codes}
+    combined_limitations = _reason_codes(set(tuple(limitation_codes)) | missing_codes)
+    if not by_id:
+        raise MonitoringContractError("forensic report requires case evidence")
+    data_class = max((item.data_class for item in by_id.values()), key=lambda value: _DATA_CLASS_RANK[value])
+    manifest = tuple(sorted((ForensicReportEvidenceEntry.from_evidence(item) for item in by_id.values()), key=lambda item: item.evidence_id))
     generated = _timestamp(generated_at, "generated_at")
-
     provisional = ForensicCaseReport(
         report_id="forensic-report:" + "0" * 24,
         case_id=case.case_id,
@@ -378,8 +328,7 @@ def build_forensic_case_report(
         hypotheses=summaries,
         limitation_codes=combined_limitations,
     )
-    identity = provisional._identity_payload()
-    report_id = "forensic-report:" + sha256_fingerprint(identity).split(":", 1)[1][:24]
+    report_id = "forensic-report:" + sha256_fingerprint(provisional._identity_payload()).split(":", 1)[1][:24]
     return ForensicCaseReport(
         report_id=report_id,
         case_id=provisional.case_id,
