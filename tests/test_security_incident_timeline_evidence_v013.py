@@ -169,7 +169,7 @@ class SecurityIncidentTimelineEvidenceV013Tests(unittest.TestCase):
         self.assertNotIn("10.44.0.10", rendered)
         self.assertNotIn("10.44.0.20", rendered)
 
-    def test_timeline_fingerprint_change_changes_derived_evidence_identity(self) -> None:
+    def test_adapter_rejects_structurally_tampered_timeline(self) -> None:
         timeline = _timeline()
         dns = _source("evidence:dns-source", data_class="internal")
         flow = _source("evidence:flow-source", data_class="internal")
@@ -179,14 +179,9 @@ class SecurityIncidentTimelineEvidenceV013Tests(unittest.TestCase):
             produced_at="2026-09-02T14:01:00Z",
         )
 
-        changed_graph = replace(timeline.incident_graphs[0], priority="urgent")
-        changed = replace(
-            timeline,
-            incident_graphs=(changed_graph,),
-        )
-        # Existing timeline validation rejects the mutation rather than allowing the
-        # adapter to bless a tampered derived object.
-        with self.assertRaises(MonitoringContractError):
+        changed_graph = replace(timeline.incident_graphs[0], graph_id="incident-tampered")
+        changed = replace(timeline, incident_graphs=(changed_graph,))
+        with self.assertRaisesRegex(MonitoringContractError, "graph_ids do not match graph order"):
             timeline_to_derived_evidence(
                 changed,
                 (dns, flow),
