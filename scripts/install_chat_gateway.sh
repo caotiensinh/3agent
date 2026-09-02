@@ -9,6 +9,9 @@ SERVICE_FILE="$SYSTEMD_DIR/3agent-chat.service"
 PORT="${THREE_AGENT_WEB_PORT:-8787}"
 MODEL="${THREE_AGENT_MODEL:-qwen3:30b}"
 HOST="${THREE_AGENT_WEB_HOST:-}"
+SECURITY_CONFIG_DEFAULT="$CONFIG_DIR/security_monitoring.json"
+SECURITY_DATA_DIR="$HOME/.local/share/3agent/security-monitoring"
+SECURITY_SECRET_DIR="$CONFIG_DIR/security-monitoring-secrets"
 
 log() { printf '[3Agent-Chat-Setup] %s\n' "$*"; }
 fail() { printf '[3Agent-Chat-Setup][ERROR] %s\n' "$*" >&2; exit 1; }
@@ -53,6 +56,11 @@ detect_lan_host() {
 [[ -x "$ROOT/.venv/bin/python" ]] || fail "Python environment missing: $ROOT/.venv"
 
 cd "$ROOT"
+SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+if [[ ! "$SOURCE_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  SOURCE_SHA="unknown"
+fi
+
 "$ROOT/.venv/bin/python" -m pip install -e . >/dev/null
 [[ -x "$ROOT/.venv/bin/three-agent-chat" ]] || fail "three-agent-chat command was not installed"
 
@@ -62,8 +70,8 @@ fi
 [[ -n "$HOST" ]] || fail "Unable to detect a private LAN IPv4 address. Set THREE_AGENT_WEB_HOST explicitly."
 private_ipv4 "$HOST" || fail "THREE_AGENT_WEB_HOST must be a private non-loopback IPv4 address for LAN mode"
 
-mkdir -p "$CONFIG_DIR" "$SYSTEMD_DIR"
-chmod 700 "$CONFIG_DIR"
+mkdir -p "$CONFIG_DIR" "$SYSTEMD_DIR" "$SECURITY_DATA_DIR" "$SECURITY_SECRET_DIR"
+chmod 700 "$CONFIG_DIR" "$SECURITY_DATA_DIR" "$SECURITY_SECRET_DIR"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   WEB_TOKEN="$("$ROOT/.venv/bin/python" - <<'PY'
@@ -78,8 +86,10 @@ THREE_AGENT_WEB_ACCESS_TOKEN=$WEB_TOKEN
 THREE_AGENT_WEB_HOST=$HOST
 THREE_AGENT_WEB_PORT=$PORT
 THREE_AGENT_CHAT_LANGUAGE=ja
+THREE_AGENT_SOURCE_SHA=$SOURCE_SHA
 THREE_AGENT_TELEGRAM_BOT_TOKEN=
 THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS=
+WORKSPACE_SECURITY_MONITORING_CONFIG=$SECURITY_CONFIG_DEFAULT
 EOF
   chmod 600 "$ENV_FILE"
   log "Created local secret/config file: $ENV_FILE"
@@ -95,7 +105,56 @@ else
   else
     printf 'THREE_AGENT_WEB_PORT=%s\n' "$PORT" >>"$ENV_FILE"
   fi
+  if grep -q '^THREE_AGENT_SOURCE_SHA=' "$ENV_FILE"; then
+    sed -i "s/^THREE_AGENT_SOURCE_SHA=.*/THREE_AGENT_SOURCE_SHA=$SOURCE_SHA/" "$ENV_FILE"
+  else
+    printf 'THREE_AGENT_SOURCE_SHA=%s\n' "$SOURCE_SHA" >>"$ENV_FILE"
+  fi
+  if ! grep -q '^WORKSPACE_SECURITY_MONITORING_CONFIG=' "$ENV_FILE"; then
+    printf 'WORKSPACE_SECURITY_MONITORING_CONFIG=%s\n' "$SECURITY_CONFIG_DEFAULT" >>"$ENV_FILE"
+    log "Added Security Monitoring config path to existing chat environment."
+  else
+    log "Preserving existing WORKSPACE_SECURITY_MONITORING_CONFIG path."
+  fi
   log "Preserving existing local secret/config file while refreshing LAN bind settings: $ENV_FILE"
+fi
+
+SECURITY_CONFIG="$(awk -F= '$1=="WORKSPACE_SECURITY_MONITORING_CONFIG" {sub(/^[^=]*=/, ""); print; exit}' "$ENV_FILE")"
+[[ -n "$SECURITY_CONFIG" ]] || fail "WORKSPACE_SECURITY_MONITORING_CONFIG is empty"
+
+# Only bootstrap the application-owned default path. A pre-existing custom path is
+# preserved and never created/overwritten by this installer.
+if [[ "$SECURITY_CONFIG" == "$SECURITY_CONFIG_DEFAULT" && ! -e "$SECURITY_CONFIG" ]]; then
+  cat >"$SECURITY_CONFIG" <<EOF
+{
+  "enabled": false,
+  "allow_real_network": false,
+  "database_path": "$SECURITY_DATA_DIR/monitoring.sqlite3",
+  "secret_directory": "$SECURITY_SECRET_DIR",
+  "policy": {
+    "profile_id": "default",
+    "network_scope": "approved_inventory_only",
+    "read_only": true,
+    "production_safety_profile": "non_disruptive_v1",
+    "allow_active_liveness": false,
+    "bandwidth_measurement_mode": "counter_only",
+    "packet_analysis_mode": "passive_only",
+    "max_workers": 4,
+    "timeout_seconds": 3.0,
+    "max_retries": 1,
+    "max_catch_up_runs": 1,
+    "allowed_capabilities": ["snmpv3_read", "local_net_read"]
+  },
+  "assets": []
+}
+EOF
+  chmod 600 "$SECURITY_CONFIG"
+  log "Created fail-closed Security Monitoring config: $SECURITY_CONFIG"
+elif [[ -f "$SECURITY_CONFIG" ]]; then
+  chmod 600 "$SECURITY_CONFIG" 2>/dev/null || true
+  log "Preserving existing Security Monitoring config: $SECURITY_CONFIG"
+else
+  log "Custom Security Monitoring path is not a regular file; web configuration will fail closed until the operator prepares it: $SECURITY_CONFIG"
 fi
 
 cat >"$SERVICE_FILE" <<EOF
@@ -160,6 +219,8 @@ echo "=========================================="
 printf 'URL:        http://%s:%s/\n' "$HOST" "$PORT"
 printf 'Access key: %s\n' "$WEB_TOKEN"
 printf 'Bind:       %s:%s (private LAN IPv4 only)\n' "$HOST" "$PORT"
+printf 'Source SHA: %s\n' "$SOURCE_SHA"
+printf 'Security:   %s\n' "$SECURITY_CONFIG"
 printf 'Service:    systemctl --user status 3agent-chat.service\n'
 printf 'Logs:       journalctl --user -u 3agent-chat.service -f\n'
 echo

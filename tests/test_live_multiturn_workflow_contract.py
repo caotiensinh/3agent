@@ -110,8 +110,8 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v20:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v20:main"', text)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v21:main"', text)
         self.assertTrue((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").is_file())
         v18 = (ROOT / "src/three_agent/chat_gateway_v18.py").read_text(encoding="utf-8")
         self.assertIn("CurrentRequestProjectChatService", v18)
@@ -119,6 +119,7 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v17.py").is_file())
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v19.py").is_file())
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v20.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v21.py").is_file())
 
 
 if __name__ == "__main__":
