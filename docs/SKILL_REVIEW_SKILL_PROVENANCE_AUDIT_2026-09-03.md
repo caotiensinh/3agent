@@ -20,6 +20,10 @@ Create a deterministic pre-admission audit skill so upstream popularity or permi
 
 No upstream skill text, source code, browser implementation, package, prompt, or dependency is vendored. The candidate is project-owned governance wording.
 
+## Quarantine boundary
+
+The candidate lives under `skill_candidates/`, outside the approved loader root. It cannot approve itself or modify registry state.
+
 ## Removed / denied capabilities
 
 - popularity-based trust
