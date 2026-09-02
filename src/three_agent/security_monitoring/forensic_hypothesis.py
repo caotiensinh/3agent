@@ -60,6 +60,10 @@ def _timestamp(value: str, field_name: str) -> str:
     return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _instant(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _reason_codes(values: Iterable[str]) -> tuple[str, ...]:
     rows = tuple(str(value or "").strip() for value in values)
     if len(rows) > MAX_HYPOTHESIS_MISSING_CODES:
@@ -208,7 +212,7 @@ class ForensicHypothesis:
         object.__setattr__(self, "statement_sha256", _sha(self.statement_sha256, "statement_sha256"))
         created = _timestamp(self.created_at, "created_at")
         updated = _timestamp(self.updated_at, "updated_at")
-        if datetime.fromisoformat(updated.replace("Z", "+00:00")) < datetime.fromisoformat(created.replace("Z", "+00:00")):
+        if _instant(updated) < _instant(created):
             raise MonitoringContractError("hypothesis updated_at cannot precede created_at")
         object.__setattr__(self, "created_at", created)
         object.__setattr__(self, "updated_at", updated)
@@ -233,7 +237,7 @@ class ForensicHypothesis:
                 raise MonitoringContractError("human confirmation hypothesis_id mismatch")
             if confirmation.evidence_fingerprint != self.evidence.fingerprint:
                 raise MonitoringContractError("human confirmation evidence fingerprint mismatch")
-            if confirmation.confirmed_at < self.created_at:
+            if _instant(confirmation.confirmed_at) < _instant(self.created_at):
                 raise MonitoringContractError("human confirmation cannot precede hypothesis creation")
             if self.updated_at != confirmation.confirmed_at:
                 raise MonitoringContractError("confirmed hypothesis updated_at must equal confirmation time")
