@@ -73,9 +73,33 @@ from .forensic_evidence import (
     ForensicEventTime,
     verify_custody_chain,
 )
+from .forensic_hypothesis import (
+    HYPOTHESIS_CONFIRMED_BY_HUMAN,
+    HYPOTHESIS_CONTRADICTED,
+    HYPOTHESIS_INCONCLUSIVE,
+    HYPOTHESIS_OPEN,
+    HYPOTHESIS_STATUSES,
+    HYPOTHESIS_SUPPORTED,
+    ForensicHypothesis,
+    HumanHypothesisConfirmation,
+    HypothesisEvidenceSet,
+    confirm_hypothesis,
+    evaluate_hypothesis,
+)
+from .forensic_report import (
+    ForensicCaseReport,
+    ForensicReportEvidenceEntry,
+    ForensicReportHypothesisSummary,
+    build_forensic_case_report,
+)
 from .forensic_store import ForensicMetadataStore, ForensicStoreReceipt
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
+from .incident_timeline_evidence import (
+    INCIDENT_TIMELINE_DERIVATION_ID,
+    INCIDENT_TIMELINE_EVIDENCE_ADAPTER_VERSION,
+    timeline_to_derived_evidence,
+)
 from .network_triage import (
     DeterministicNetworkIncidentTriage,
     NetworkIncidentTriage,
@@ -189,6 +213,24 @@ __all__ = [
     "CaseRecord",
     "ForensicStoreReceipt",
     "ForensicMetadataStore",
+    "HYPOTHESIS_OPEN",
+    "HYPOTHESIS_SUPPORTED",
+    "HYPOTHESIS_CONTRADICTED",
+    "HYPOTHESIS_INCONCLUSIVE",
+    "HYPOTHESIS_CONFIRMED_BY_HUMAN",
+    "HYPOTHESIS_STATUSES",
+    "HypothesisEvidenceSet",
+    "HumanHypothesisConfirmation",
+    "ForensicHypothesis",
+    "evaluate_hypothesis",
+    "confirm_hypothesis",
+    "ForensicReportEvidenceEntry",
+    "ForensicReportHypothesisSummary",
+    "ForensicCaseReport",
+    "build_forensic_case_report",
+    "INCIDENT_TIMELINE_DERIVATION_ID",
+    "INCIDENT_TIMELINE_EVIDENCE_ADAPTER_VERSION",
+    "timeline_to_derived_evidence",
     "CorrelationEvent",
     "CorrelationGraphConfig",
     "CorrelationStoreReader",
