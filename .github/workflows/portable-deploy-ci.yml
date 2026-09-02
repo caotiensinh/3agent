@@ -143,7 +143,7 @@ jobs:
             echo "Installed commit does not match expected source head" >&2
             exit 1
           }
-      - name: Re-run Ubuntu PC entrypoint idempotently and preserve config
+      - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
           DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/deploy_ubuntu_pc.sh
