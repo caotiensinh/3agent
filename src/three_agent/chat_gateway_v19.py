@@ -10,7 +10,7 @@ from . import chat_gateway_v18 as _v18
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG, SecurityMonitoringUIConfigManager
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
-from .workspace_frontend_v15 import WORKSPACE_HTML_V15
+from .workspace_frontend_security_v2 import WORKSPACE_HTML_SECURITY_V2
 
 
 _BASE_APPLICATION = _v18.SecurityMonitoringApplication
@@ -105,7 +105,7 @@ class SecurityMonitoringConfigHTTPHandler(_BASE_HANDLER):
 
 # Preserve the complete hardened v18 runtime. Only the UI document and the
 # application/handler subclasses move forward; v18 remains a rollback boundary.
-_v17.HTML_V17 = WORKSPACE_HTML_V15
+_v17.HTML_V17 = WORKSPACE_HTML_SECURITY_V2
 _v17.WorkflowV4ContextApplication = SecurityMonitoringConfigApplication
 _v17.WorkflowV4ContextHTTPHandler = SecurityMonitoringConfigHTTPHandler
 
