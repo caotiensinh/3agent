@@ -31,6 +31,7 @@ grep -Fq 'export THREE_AGENT_REPO_REF="$REPO_REF"' "$ENTRYPOINT" || fail "reposi
 grep -Fq 'export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"' "$ENTRYPOINT" || fail "install directory delegation missing"
 # shellcheck disable=SC2016
 grep -Fq 'export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"' "$ENTRYPOINT" || fail "configuration path delegation missing"
+# shellcheck disable=SC2016
 grep -Fq 'bash "$BOOTSTRAP_PATH"' "$ENTRYPOINT" || fail "bootstrap delegation missing"
 
 if grep -Eq 'apt(-get)? .*nvidia|ubuntu-drivers|modprobe|update-grub|grub-install|reboot|shutdown|rm -rf /' "$ENTRYPOINT"; then
