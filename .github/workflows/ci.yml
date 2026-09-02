@@ -33,15 +33,6 @@ jobs:
         run: python scripts/scan_skills.py
       - name: Compile
         run: python -m compileall -q src tests
-      - name: Diagnostic - unittest cumulative prefix 61/64
-        continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 61 --parts 64
-      - name: Diagnostic - unittest cumulative prefix 62/64
-        continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 62 --parts 64
-      - name: Diagnostic - unittest cumulative prefix 63/64
-        continue-on-error: true
-        run: python scripts/ci_unittest_prefix.py --prefix 63 --parts 64
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
@@ -58,3 +49,31 @@ jobs:
           path: ${{ runner.temp }}/security-enterprise-verification.json
           if-no-files-found: error
           retention-days: 14
+
+  order-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        victim:
+          - test_workflow_draft_frontend_composition.py
+          - test_workflow_draft_gateway_contract.py
+          - test_workflow_drafts.py
+          - test_workflow_studio_provenance.py
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install project dependencies including monitoring SNMP extra
+        run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Probe prefix plus victim in one process
+        run: >-
+          python scripts/ci_unittest_prefix.py
+          --prefix 63
+          --parts 64
+          --append "${{ matrix.victim }}"
