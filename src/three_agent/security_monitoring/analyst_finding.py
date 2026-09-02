@@ -59,10 +59,10 @@ def _statement(value: str, field_name: str) -> str:
     text = str(value or "").strip()
     if not text or len(text) > MAX_STATEMENT_LENGTH:
         raise AnalystFindingError(f"{field_name} must be non-empty and bounded")
-    if any(ord(ch) < 32 and ch not in "\t" for ch in text):
-        raise AnalystFindingError(f"{field_name} contains control characters")
     if "\n" in text or "\r" in text:
         raise AnalystFindingError(f"{field_name} must be single-line")
+    if any(ord(ch) < 32 and ch not in "\t" for ch in text):
+        raise AnalystFindingError(f"{field_name} contains control characters")
     return text
 
 
