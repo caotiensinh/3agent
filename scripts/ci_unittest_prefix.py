@@ -41,7 +41,8 @@ def main() -> int:
     if args.parts < 1 or not 1 <= args.prefix <= args.parts:
         raise SystemExit("--prefix must be between 1 and --parts")
 
-    tests_dir = Path("tests").resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    tests_dir = repo_root / "tests"
     files = sorted(tests_dir.glob("test_*.py"))
     if not files:
         raise SystemExit("no tests/test_*.py files found")
@@ -80,12 +81,19 @@ def main() -> int:
         flush=True,
     )
 
-    # unittest discovery adds the start directory to sys.path and imports each
-    # test module by stem. Reproduce that import model without calling discover
-    # repeatedly, which carries discovery state and can make the helper fail.
+    # unittest discovery imports tests by stem while project tests also import
+    # top-level project packages such as ``scripts``. Reproduce both import
+    # roots explicitly so the localization helper does not create path-only
+    # failures that the real ``python -m unittest discover -s tests`` gate
+    # would never see.
+    repo_root_text = str(repo_root)
     tests_dir_text = str(tests_dir)
-    if tests_dir_text not in sys.path:
-        sys.path.insert(0, tests_dir_text)
+    for import_root in (repo_root_text, tests_dir_text):
+        try:
+            sys.path.remove(import_root)
+        except ValueError:
+            pass
+    sys.path[:0] = [repo_root_text, tests_dir_text]
 
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
