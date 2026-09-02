@@ -24,6 +24,12 @@ class SecurityReadonlyPilotWorkflowContractTests(unittest.TestCase):
         self.assertIn('--expected-sha "$TARGET_SHA"', self.workflow)
         self.assertIn('--installed-dir "$THREE_AGENT_INSTALL_DIR"', self.workflow)
 
+    def test_workflow_installs_snmp_monitoring_extra_in_isolated_pilot_env(self) -> None:
+        self.assertIn(
+            '"$THREE_AGENT_INSTALL_DIR/.venv/bin/python" -m pip install -e "${THREE_AGENT_INSTALL_DIR}[monitoring-snmp]"',
+            self.workflow,
+        )
+
     def test_workflow_uploads_only_sanitized_receipt(self) -> None:
         self.assertIn("security-monitoring-readonly-pilot.json", self.workflow)
         self.assertNotIn("security_monitoring.pilot.json\n          ", self.workflow)

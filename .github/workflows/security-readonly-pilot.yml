@@ -49,6 +49,7 @@ jobs:
           set -Eeuo pipefail
           rm -rf "$THREE_AGENT_INSTALL_DIR" "$THREE_AGENT_BIN_DIR"
           bash scripts/bootstrap.sh
+          "$THREE_AGENT_INSTALL_DIR/.venv/bin/python" -m pip install -e "${THREE_AGENT_INSTALL_DIR}[monitoring-snmp]"
 
       - name: Run bounded real-network read-only pilot
         shell: bash
