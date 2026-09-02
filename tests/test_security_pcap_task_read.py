@@ -175,7 +175,11 @@ class SecurityPCAPTaskReadTests(unittest.TestCase):
                 BoundedPCAPEvidenceReader(self._registry(root)).read_capture("evidence/capture-001")
 
             path.write_bytes(valid)
-            registry = self._registry(root, max_file_bytes=len(valid) - 1)
+            registry = self._registry(
+                root,
+                max_file_bytes=len(valid) - 1,
+                max_packet_bytes=len(valid) - 1,
+            )
             with self.assertRaisesRegex(PCAPEvidenceError, "FILE_BOUND_EXCEEDED"):
                 BoundedPCAPEvidenceReader(registry).read_capture("evidence/capture-001")
 
