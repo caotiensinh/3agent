@@ -77,17 +77,29 @@ jobs:
           & ([ScriptBlock]::Create($scriptText))
           if (-not $?) { throw 'Downloaded bootstrap reported a PowerShell failure' }
           $global:LASTEXITCODE = 0
-      - name: Verify installed command and exact GitHub lineage
+      - name: Verify installed smoke
+        shell: powershell
+        run: |
+          $bin = Join-Path $env:RUNNER_TEMP 'three-agent-bin'
+          & (Join-Path $bin '3agent.cmd') smoke
+          if ($LASTEXITCODE -ne 0) { throw '3agent smoke failed' }
+          $global:LASTEXITCODE = 0
+      - name: Verify updater command exists
+        shell: powershell
+        run: |
+          $bin = Join-Path $env:RUNNER_TEMP 'three-agent-bin'
+          if (-not (Test-Path (Join-Path $bin '3agent-update.cmd'))) { throw '3agent-update.cmd missing' }
+      - name: Verify local configuration exists
+        shell: powershell
+        run: |
+          $install = Join-Path $env:RUNNER_TEMP 'three-agent-install'
+          if (-not (Test-Path (Join-Path $install 'config\local.json'))) { throw 'config/local.json missing' }
+      - name: Verify installed exact GitHub lineage
         shell: powershell
         env:
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
         run: |
           $install = Join-Path $env:RUNNER_TEMP 'three-agent-install'
-          $bin = Join-Path $env:RUNNER_TEMP 'three-agent-bin'
-          & (Join-Path $bin '3agent.cmd') smoke
-          if ($LASTEXITCODE -ne 0) { throw '3agent smoke failed' }
-          if (-not (Test-Path (Join-Path $bin '3agent-update.cmd'))) { throw '3agent-update.cmd missing' }
-          if (-not (Test-Path (Join-Path $install 'config\local.json'))) { throw 'config/local.json missing' }
           $installed = (& git -C $install rev-parse HEAD | Select-Object -First 1).Trim()
           if ($installed -ne $env:EXPECTED_HEAD) { throw "Installed SHA $installed does not match $env:EXPECTED_HEAD" }
           $global:LASTEXITCODE = 0
