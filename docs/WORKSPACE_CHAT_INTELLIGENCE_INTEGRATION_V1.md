@@ -120,9 +120,20 @@ Raw reference bodies and the user query are not copied into this integration rec
 
 ## UI capability truthfulness
 
-This integration does not falsely enable unrelated frontend controls.
+Production capability metadata is additionally guarded by `workspace-chat-capability-authority/v1`.
 
-The following remain unavailable until a real, separately authorized runtime exists:
+A capability can report `enabled=true` only when it is present in the reviewed executable web-chat contract. The currently bound executable capabilities are:
+
+| Capability | Transport | Endpoint | Authority |
+| --- | --- | --- | --- |
+| upload | POST | `/api/upload` | authenticated local upload |
+| library | GET | `/api/uploads` | authenticated owner-scoped read |
+| deep_research | POST | `/api/chat` | policy-bounded research mode |
+| web_search | POST | `/api/chat` | policy-authorized public research only |
+
+Discovery/status controls are allowed to remain visible, but cannot become executable merely because a frontend row or config flag changes. If an unsupported feature is accidentally marked enabled, the production capability filter forces it back to `enabled=false` and reports that no reviewed handler/authority contract is bound.
+
+The following remain discovery-only or unavailable until a real, separately authorized runtime exists:
 
 - image generation;
 - voice recording/STT;
@@ -131,18 +142,22 @@ The following remain unavailable until a real, separately authorized runtime exi
 - Canva connector authority;
 - GitHub repository mutation from web chat.
 
-Security Analyst remains a dedicated read-only UI surface in addition to the new bounded conversational read path.
+Security Analyst remains a dedicated read-only UI surface in addition to the bounded conversational read path.
 
 ## Acceptance tests
 
-The change includes regression coverage proving:
+The integration regression suite proves:
 
 1. generic conceptual chat does not query internal intelligence;
 2. explicit knowledge requests use local public knowledge plus promoted adaptive learning;
 3. current company-network requests use Security Monitoring plus promoted adaptive learning;
 4. source failures fall back to plain chat without new authority;
 5. Security Monitoring reference data cannot grant PCAP/remediation execution;
-6. the production `v20` entrypoint is pinned to the intelligence-aware chat service.
+6. the production `v20` entrypoint is pinned to the intelligence-aware chat service;
+7. only reviewed web-chat capabilities can report enabled;
+8. a rogue future capability fails closed without a handler contract;
+9. discovery controls remain disabled until separately authorized;
+10. the production entrypoint is pinned to the capability authority filter.
 
 ## Remaining integration work
 

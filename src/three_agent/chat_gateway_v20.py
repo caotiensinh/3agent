@@ -19,7 +19,19 @@ from .workflow_drafts import (
     WorkflowDraftNotFound,
     WorkflowDraftStore,
 )
+from .workspace_chat_capabilities import enforce_web_chat_capability_authority
 from .workspace_frontend_v16 import WORKSPACE_HTML_V16
+
+
+_BASE_PRODUCTION_UI_CAPABILITIES = _v17.workspace_ui_capabilities
+
+
+def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
+    """Return production UI metadata bounded by reviewed executable handlers."""
+
+    return enforce_web_chat_capability_authority(
+        _BASE_PRODUCTION_UI_CAPABILITIES(config)
+    )
 
 
 class IntelligenceAwareProjectChatService(CurrentRequestProjectChatService):
@@ -196,6 +208,7 @@ class WorkflowDraftHTTPHandler(SecurityMonitoringConfigHTTPHandler):
         super().do_POST()
 
 
+_v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = IntelligenceAwareProjectChatService
 _v17.HTML_V17 = WORKSPACE_HTML_V16
 _v17.WorkflowV4ContextApplication = WorkflowDraftApplication
