@@ -24,6 +24,20 @@ grep -Fq 'git -C "$INSTALL_DIR" fetch --prune origin "$REPO_REF"' "$BOOTSTRAP" |
 grep -Fq 'pip install -e "$INSTALL_DIR"' "$BOOTSTRAP" || fail "editable project install contract missing"
 grep -Fq 'three-agent" smoke' "$BOOTSTRAP" || fail "post-deploy smoke contract missing"
 grep -Fq '3agent-update' "$BOOTSTRAP" || fail "update launcher missing"
+grep -Fq 'clean_workspace_generated_artifacts' "$BOOTSTRAP" || fail "allowlisted cleanup function missing"
+grep -Fq 'Cleaning only WorkSpace-owned generated artifacts' "$BOOTSTRAP" || fail "allowlisted cleanup audit log missing"
+# shellcheck disable=SC2016
+grep -Fq '"${INSTALL_DIR}/.venv"' "$BOOTSTRAP" || fail "venv cleanup allowlist missing"
+# shellcheck disable=SC2016
+grep -Fq '"${INSTALL_DIR}/src/workspace_local_ai.egg-info"' "$BOOTSTRAP" || fail "egg-info cleanup allowlist missing"
+
+if grep -Fq 'git -C "$INSTALL_DIR" clean' "$BOOTSTRAP"; then
+  fail "portable bootstrap must not broadly delete untracked local state"
+fi
+
+if grep -Eq 'rm .*actions-runner|rm .*config/.*(backup|before)' "$BOOTSTRAP"; then
+  fail "portable bootstrap must not delete runner state or local configuration backups"
+fi
 
 if grep -Eq 'apt(-get)? .*nvidia|ubuntu-drivers|modprobe|update-grub|grub-install|reboot|shutdown' "$BOOTSTRAP"; then
   fail "portable bootstrap must not mutate NVIDIA driver, bootloader, or reboot the host"

@@ -153,8 +153,30 @@ jobs:
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: |
-          printf '\n' >> "${{ runner.temp }}/three-agent-install/config/local.json"
-          before="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          install_dir="${{ runner.temp }}/three-agent-install"
+          config_path="$install_dir/config/local.json"
+          runner_state="$install_dir/actions-runner/.credentials"
+          backup_path="$install_dir/config/local.json.backup-ci"
+          before_path="$install_dir/config/local.json.before-ci"
+          operator_state="$install_dir/operator-local-state.keep"
+
+          mkdir -p "$install_dir/actions-runner"
+          printf '\n' >> "$config_path"
+          printf 'runner-sentinel\n' > "$runner_state"
+          printf 'backup-sentinel\n' > "$backup_path"
+          printf 'before-sentinel\n' > "$before_path"
+          printf 'operator-sentinel\n' > "$operator_state"
+
+          config_before="$(sha256sum "$config_path" | awk '{print $1}')"
+          runner_before="$(sha256sum "$runner_state" | awk '{print $1}')"
+          backup_before="$(sha256sum "$backup_path" | awk '{print $1}')"
+          before_before="$(sha256sum "$before_path" | awk '{print $1}')"
+          operator_before="$(sha256sum "$operator_state" | awk '{print $1}')"
+
           curl -fsSL "$DEPLOY_ENTRYPOINT_URL" | bash
-          after="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
-          test "$before" = "$after"
+
+          test "$config_before" = "$(sha256sum "$config_path" | awk '{print $1}')"
+          test "$runner_before" = "$(sha256sum "$runner_state" | awk '{print $1}')"
+          test "$backup_before" = "$(sha256sum "$backup_path" | awk '{print $1}')"
+          test "$before_before" = "$(sha256sum "$before_path" | awk '{print $1}')"
+          test "$operator_before" = "$(sha256sum "$operator_state" | awk '{print $1}')"

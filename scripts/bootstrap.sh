@@ -100,6 +100,21 @@ install_ollama_if_requested() {
   command -v ollama >/dev/null 2>&1 || die "Ollama installation failed"
 }
 
+clean_workspace_generated_artifacts() {
+  log "Cleaning only WorkSpace-owned generated artifacts"
+
+  rm -rf -- \
+    "${INSTALL_DIR}/.venv" \
+    "${INSTALL_DIR}/src/workspace_local_ai.egg-info"
+
+  local root
+  for root in "${INSTALL_DIR}/src" "${INSTALL_DIR}/tests"; do
+    if [[ -d "$root" ]]; then
+      find "$root" -type d -name __pycache__ -prune -exec rm -rf -- {} +
+    fi
+  done
+}
+
 deploy_repository() {
   log "Deploying repository ref '${REPO_REF}' into ${INSTALL_DIR}"
   mkdir -p "$(dirname "$INSTALL_DIR")"
@@ -119,7 +134,7 @@ deploy_repository() {
   local resolved
   resolved="$(git -C "$INSTALL_DIR" rev-parse FETCH_HEAD)"
   git -C "$INSTALL_DIR" checkout --detach "$resolved"
-  git -C "$INSTALL_DIR" clean -fdx -e config/local.json -e data/
+  clean_workspace_generated_artifacts
   log "Repository deployed at commit ${resolved}"
 }
 
