@@ -20,6 +20,10 @@ Add slide-deck understanding above `file-pptx-safety`, with slide-level provenan
 
 No upstream code, prompt, package, plugin, embedded-workbook handler, or dependency is vendored. This is project-owned instruction text.
 
+## Quarantine boundary
+
+The candidate is stored under `skill_candidates/`, outside the approved loader root. Promotion requires a separate exact-head registry-admission change.
+
 ## Removed / denied capabilities
 
 - macro/OLE/embedded package execution
