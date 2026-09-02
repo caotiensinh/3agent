@@ -30,6 +30,23 @@ class TrustedSelfHostedRunnerWorkflowContractTests(unittest.TestCase):
         self.assertIn('git -C "$THREE_AGENT_INSTALL_DIR" rev-parse HEAD', self.workflow)
         self.assertIn('test "$before" = "$after"', self.workflow)
 
+    def test_security_monitoring_physical_probe_is_fail_closed_and_evidenced(self) -> None:
+        required = (
+            'SECURITY_BIN="$THREE_AGENT_INSTALL_DIR/.venv/bin/workspace-security-monitor"',
+            '"$SECURITY_BIN" --config "$SECURITY_CONFIG" validate-config',
+            'payload.get("enabled") is not False',
+            'payload.get("allow_real_network") is not False',
+            'payload.get("contains_raw_credentials") is not False',
+            'run-hourly --execute-readonly',
+            'grep -Fq "MONITORING_DISABLED" "$GUARD_STDERR"',
+            '"schema": "workspace-security-monitoring/physical-readiness-v1"',
+            '"real_network_executed": False',
+            '"network_mutation_executed": False',
+            'security-monitoring-physical-readiness-py${{ matrix.python-version }}.json',
+        )
+        for marker in required:
+            self.assertIn(marker, self.workflow)
+
     def test_evidence_receipt_captures_required_runner_fields(self) -> None:
         for required in (
             '"workflow": os.environ["GITHUB_WORKFLOW"]',
