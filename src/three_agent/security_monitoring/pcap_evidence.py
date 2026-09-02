@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import stat as stat_module
 import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
@@ -17,6 +18,7 @@ PCAP_CAPTURE_EVIDENCE_SCHEMA = "workspace-security-monitoring/pcap-capture-evide
 DEFAULT_MAX_PCAP_BYTES = 32 * 1024 * 1024
 DEFAULT_MAX_PCAP_PACKETS = 4096
 DEFAULT_MAX_PACKET_BYTES = 1024 * 1024
+MAX_ORIGINAL_PACKET_BYTES = 64 * 1024 * 1024
 MAX_RESOURCE_REF_LENGTH = 128
 MAX_RELATIVE_PATH_LENGTH = 240
 
@@ -69,6 +71,36 @@ def _bounded_int(value: int, field_name: str, minimum: int, maximum: int) -> int
     if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
         raise PCAPEvidenceError(f"{field_name} must be within {minimum}..{maximum}")
     return value
+
+
+def _time_ns(result: object, ns_name: str, seconds_name: str) -> int:
+    value = getattr(result, ns_name, None)
+    if isinstance(value, int):
+        return value
+    seconds = getattr(result, seconds_name, None)
+    if not isinstance(seconds, (int, float)):
+        raise PCAPEvidenceError("PCAP_FILE_STAT_TIMESTAMP_UNAVAILABLE")
+    return int(seconds * 1_000_000_000)
+
+
+def _file_identity(result: object) -> tuple[int, int, int]:
+    """Stable cross-platform identity used only to detect path replacement before read."""
+
+    return (
+        int(getattr(result, "st_dev")),
+        int(getattr(result, "st_ino")),
+        int(getattr(result, "st_size")),
+    )
+
+
+def _file_snapshot(result: object) -> tuple[int, int, int, int, int]:
+    """Opened-fd snapshot used to detect same-file mutation during the bounded read."""
+
+    return (
+        *_file_identity(result),
+        _time_ns(result, "st_mtime_ns", "st_mtime"),
+        _time_ns(result, "st_ctime_ns", "st_ctime"),
+    )
 
 
 @dataclass(frozen=True)
@@ -193,7 +225,7 @@ class PCAPPacketEvidence:
         if isinstance(self.timestamp_epoch_ns, bool) or not isinstance(self.timestamp_epoch_ns, int) or self.timestamp_epoch_ns < 0:
             raise PCAPEvidenceError("timestamp_epoch_ns must be a non-negative integer")
         _bounded_int(self.captured_length, "captured_length", 0, 16 * 1024 * 1024)
-        _bounded_int(self.original_length, "original_length", 0, 64 * 1024 * 1024)
+        _bounded_int(self.original_length, "original_length", 0, MAX_ORIGINAL_PACKET_BYTES)
         if self.original_length < self.captured_length:
             raise PCAPEvidenceError("original_length cannot be smaller than captured_length")
         if not _SHA256_RE.fullmatch(self.payload_sha256):
@@ -317,48 +349,64 @@ class BoundedPCAPEvidenceReader:
 
     def _read(self, resource_ref: str, *, mode: str) -> PCAPCaptureEvidence:
         resource, path = self.registry.resolve(resource_ref)
-        stat = path.stat()
-        if stat.st_size < 24:
+        before_open = path.stat()
+        if before_open.st_size < 24:
             raise PCAPEvidenceError("PCAP_FILE_TOO_SMALL")
-        if stat.st_size > resource.max_file_bytes:
+        if before_open.st_size > resource.max_file_bytes:
             raise PCAPEvidenceError("PCAP_FILE_BOUND_EXCEEDED")
-        # Re-check immediately before open to reduce path-replacement races. O_NOFOLLOW
-        # prevents the final component from becoming a symlink between validation/open.
+
+        # Validate the opened object, not just the path. O_NOFOLLOW prevents the final
+        # component from becoming a symlink between resolve/open where the platform
+        # supports it. O_BINARY avoids platform text translation on Windows.
         flags = os.O_RDONLY
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
+        if hasattr(os, "O_BINARY"):
+            flags |= os.O_BINARY
         fd = os.open(path, flags)
         try:
             opened = os.fstat(fd)
-            if opened.st_size != stat.st_size or opened.st_ino != stat.st_ino or opened.st_dev != stat.st_dev:
+            if not stat_module.S_ISREG(opened.st_mode):
+                raise PCAPEvidenceDenied("PCAP_RESOURCE_NOT_REGULAR_FILE")
+            # Path-stat timestamp semantics differ across Windows/Python versions.
+            # Before reading, compare only stable identity/size to detect replacement.
+            # Mutation of the opened object is checked separately with two fstat snapshots.
+            if _file_identity(opened) != _file_identity(before_open):
                 raise PCAPEvidenceDenied("PCAP_RESOURCE_CHANGED_BEFORE_READ")
             if opened.st_size > resource.max_file_bytes:
                 raise PCAPEvidenceError("PCAP_FILE_BOUND_EXCEEDED")
-            data = b""
+
+            data = bytearray()
             remaining = opened.st_size
             while remaining:
                 chunk = os.read(fd, min(1024 * 1024, remaining))
                 if not chunk:
                     raise PCAPEvidenceError("PCAP_FILE_TRUNCATED_DURING_READ")
-                data += chunk
+                data.extend(chunk)
                 remaining -= len(chunk)
+
+            after_read = os.fstat(fd)
+            if _file_snapshot(after_read) != _file_snapshot(opened):
+                raise PCAPEvidenceDenied("PCAP_RESOURCE_CHANGED_DURING_READ")
         finally:
             os.close(fd)
-        if len(data) != stat.st_size:
+
+        if len(data) != opened.st_size:
             raise PCAPEvidenceError("PCAP_FILE_SIZE_CHANGED_DURING_READ")
         return self._parse(resource, data, mode=mode)
 
     @staticmethod
-    def _parse(resource: PCAPResource, data: bytes, *, mode: str) -> PCAPCaptureEvidence:
-        magic = data[:4]
+    def _parse(resource: PCAPResource, data: bytes | bytearray, *, mode: str) -> PCAPCaptureEvidence:
+        view = memoryview(data)
+        magic = bytes(view[:4])
         descriptor = _MAGIC.get(magic)
         if descriptor is None:
             raise PCAPEvidenceError("PCAP_MAGIC_UNSUPPORTED")
         byte_order, resolution, endian, fraction_base = descriptor
-        if len(data) < 24:
+        if len(view) < 24:
             raise PCAPEvidenceError("PCAP_GLOBAL_HEADER_TRUNCATED")
         version_major, version_minor, _thiszone, _sigfigs, snaplen, linktype = struct.unpack(
-            endian + "HHiIII", data[4:24]
+            endian + "HHiIII", view[4:24]
         )
         if (version_major, version_minor) != (2, 4):
             raise PCAPEvidenceError("PCAP_VERSION_UNSUPPORTED")
@@ -372,11 +420,11 @@ class BoundedPCAPEvidenceReader:
         total_original = 0
         first_timestamp: int | None = None
         last_timestamp: int | None = None
-        while offset < len(data):
-            if len(data) - offset < 16:
+        while offset < len(view):
+            if len(view) - offset < 16:
                 raise PCAPEvidenceError("PCAP_PACKET_HEADER_TRUNCATED")
             ts_sec, ts_fraction, captured_len, original_len = struct.unpack(
-                endian + "IIII", data[offset : offset + 16]
+                endian + "IIII", view[offset : offset + 16]
             )
             offset += 16
             packet_index += 1
@@ -388,9 +436,11 @@ class BoundedPCAPEvidenceReader:
                 raise PCAPEvidenceError("PCAP_PACKET_LENGTH_BOUND_EXCEEDED")
             if original_len < captured_len:
                 raise PCAPEvidenceError("PCAP_ORIGINAL_LENGTH_INVALID")
-            if len(data) - offset < captured_len:
+            if original_len > MAX_ORIGINAL_PACKET_BYTES:
+                raise PCAPEvidenceError("PCAP_ORIGINAL_LENGTH_BOUND_EXCEEDED")
+            if len(view) - offset < captured_len:
                 raise PCAPEvidenceError("PCAP_PACKET_PAYLOAD_TRUNCATED")
-            payload = data[offset : offset + captured_len]
+            payload = view[offset : offset + captured_len]
             offset += captured_len
             timestamp_ns = ts_sec * 1_000_000_000 + (
                 ts_fraction * 1_000 if resolution == "microsecond" else ts_fraction
@@ -412,13 +462,13 @@ class BoundedPCAPEvidenceReader:
                         payload_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
                     ).validate()
                 )
-        if offset != len(data):
+        if offset != len(view):
             raise PCAPEvidenceError("PCAP_TRAILING_STRUCTURE_INVALID")
         return PCAPCaptureEvidence(
             resource_ref=resource.resource_ref,
             mode=mode,
-            file_sha256="sha256:" + hashlib.sha256(data).hexdigest(),
-            file_size_bytes=len(data),
+            file_sha256="sha256:" + hashlib.sha256(view).hexdigest(),
+            file_size_bytes=len(view),
             byte_order=byte_order,
             timestamp_resolution=resolution,
             version_major=version_major,
