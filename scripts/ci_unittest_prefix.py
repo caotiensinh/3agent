@@ -8,6 +8,7 @@ order/import contamination with observable PASS/FAIL boundaries.
 from __future__ import annotations
 
 import argparse
+import importlib
 import math
 import sys
 import unittest
@@ -40,7 +41,8 @@ def main() -> int:
     if args.parts < 1 or not 1 <= args.prefix <= args.parts:
         raise SystemExit("--prefix must be between 1 and --parts")
 
-    files = sorted(Path("tests").glob("test_*.py"))
+    tests_dir = Path("tests").resolve()
+    files = sorted(tests_dir.glob("test_*.py"))
     if not files:
         raise SystemExit("no tests/test_*.py files found")
 
@@ -78,19 +80,18 @@ def main() -> int:
         flush=True,
     )
 
+    # unittest discovery adds the start directory to sys.path and imports each
+    # test module by stem. Reproduce that import model without calling discover
+    # repeatedly, which carries discovery state and can make the helper fail.
+    tests_dir_text = str(tests_dir)
+    if tests_dir_text not in sys.path:
+        sys.path.insert(0, tests_dir_text)
+
+    loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for path in selected:
-        # unittest.TestLoader.discover() retains top-level discovery state. A fresh
-        # loader per module prevents the diagnostic helper itself from creating
-        # cross-discovery state that the production one-shot discovery does not.
-        loader = unittest.TestLoader()
-        suite.addTests(
-            loader.discover(
-                start_dir="tests",
-                pattern=path.name,
-                top_level_dir=".",
-            )
-        )
+        module = importlib.import_module(path.stem)
+        suite.addTests(loader.loadTestsFromModule(module))
 
     result = unittest.TextTestRunner(verbosity=1).run(suite)
     return 0 if result.wasSuccessful() else 1
