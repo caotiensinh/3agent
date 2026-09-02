@@ -20,6 +20,10 @@ Add DOCX semantic understanding above `file-docx-safety` while keeping OOXML act
 
 No upstream code, prompt, package, plugin, converter, or dependency is copied or vendored. This is project-owned instruction text.
 
+## Quarantine boundary
+
+The candidate lives under `skill_candidates/`, outside the approved `skills/` root. It cannot be loaded until a separate registry-admission change passes exact-head CI.
+
 ## Removed / denied capabilities
 
 - VBA/macro/OLE execution
