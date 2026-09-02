@@ -52,15 +52,20 @@ class PcapIntegrationBoundaryTests(unittest.TestCase):
         self.assertNotIn("AF_INET6", service)
         self.assertNotIn("Restart=", service)
 
-    def test_package_entrypoints_keep_current_v19_and_separate_security_tools(self):
+    def test_package_entrypoints_use_v20_and_keep_v19_security_boundary(self):
         project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v19:main"', project)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v19:main"', project)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway_v20:main"', project)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v20:main"', project)
         self.assertIn('workspace-security-pcap = "three_agent.security_pcap_runner:main"', project)
         self.assertIn('workspace-security-monitor = "three_agent.security_monitoring_cli:main"', project)
         self.assertIn('workspace-security-report = "three_agent.security_reporting_cli:main"', project)
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v18.py").is_file())
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v19.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v20.py").is_file())
+        v20 = (ROOT / "src/three_agent/chat_gateway_v20.py").read_text(encoding="utf-8")
+        self.assertIn("return _v19.main()", v20)
+        self.assertNotIn("WorkflowV4ContextApplication =", v20)
+        self.assertNotIn("WorkflowV4ContextHTTPHandler =", v20)
 
 
 if __name__ == "__main__":
