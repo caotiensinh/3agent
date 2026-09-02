@@ -86,6 +86,12 @@ from .forensic_hypothesis import (
     confirm_hypothesis,
     evaluate_hypothesis,
 )
+from .forensic_report import (
+    ForensicCaseReport,
+    ForensicReportEvidenceEntry,
+    ForensicReportHypothesisSummary,
+    build_forensic_case_report,
+)
 from .forensic_store import ForensicMetadataStore, ForensicStoreReceipt
 from .health_evaluator import DeterministicHealthEvaluator, HealthEvaluation
 from .health_state import HEALTH_STATES, HealthPolicyConfig, HealthStateRecord, HealthTransitionRecord
@@ -218,6 +224,10 @@ __all__ = [
     "ForensicHypothesis",
     "evaluate_hypothesis",
     "confirm_hypothesis",
+    "ForensicReportEvidenceEntry",
+    "ForensicReportHypothesisSummary",
+    "ForensicCaseReport",
+    "build_forensic_case_report",
     "INCIDENT_TIMELINE_DERIVATION_ID",
     "INCIDENT_TIMELINE_EVIDENCE_ADAPTER_VERSION",
     "timeline_to_derived_evidence",
