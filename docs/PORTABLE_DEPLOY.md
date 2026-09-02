@@ -1,14 +1,36 @@
 # Portable one-command deployment
 
-The portable deployment path installs the 3Agent application directly from GitHub on a supported Linux host without touching the NVIDIA driver, kernel, bootloader, or reboot policy.
+WorkSpace provides two deployment layers:
 
-## One command
+- `scripts/deploy_ubuntu_pc.sh` is the preferred user-facing one-command entrypoint for validated Ubuntu PCs.
+- `scripts/bootstrap.sh` remains the canonical portable deployment primitive used by the Ubuntu entrypoint and by generic Linux deployment.
+
+Neither path changes the NVIDIA driver, kernel, bootloader, or reboot policy.
+
+## Ubuntu PC: preferred one-command deployment
+
+Run this command as the normal Ubuntu user. Do not prefix it with `sudo`; the underlying bootstrap requests sudo only when normal system packages must be installed.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/deploy_ubuntu_pc.sh | bash
 ```
 
-The bootstrap performs the following actions:
+Validated Ubuntu releases:
+
+- Ubuntu 22.04
+- Ubuntu 24.04
+
+Default installation path:
+
+```text
+~/3agent
+```
+
+The Ubuntu entrypoint validates the host, delegates installation to the canonical bootstrap, verifies the installed command and configuration, runs a final smoke check, and reports the exact installed Git commit when available.
+
+## What the canonical bootstrap does
+
+The delegated `scripts/bootstrap.sh` performs the following actions:
 
 1. installs basic prerequisites when `apt`, `dnf`, or `yum` is available;
 2. verifies Linux and Python >=3.11;
@@ -20,18 +42,12 @@ The bootstrap performs the following actions:
 8. installs user launchers `~/.local/bin/3agent` and `~/.local/bin/3agent-update`;
 9. runs compile, unit-test, and smoke validation before reporting PASS.
 
-Default installation path:
-
-```text
-~/3agent
-```
-
 ## Full local-AI bootstrap
 
-The portable installer does not download a large model unless explicitly requested. To also install Ollama and pull a model:
+The default Ubuntu deployment does not download a large model. To also install Ollama and pull a selected model:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh \
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/deploy_ubuntu_pc.sh \
   | THREE_AGENT_INSTALL_OLLAMA=1 \
     THREE_AGENT_MODEL=qwen3:30b \
     THREE_AGENT_PULL_MODEL=1 \
@@ -50,31 +66,41 @@ After installation:
 
 The updater fetches the configured repository/ref again and re-runs the same idempotent deployment path. Existing `config/local.json` and `data/` are preserved.
 
-## Pin a branch, tag, or commit
+## Pin a reviewed branch, tag, or commit
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh \
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/deploy_ubuntu_pc.sh \
   | THREE_AGENT_REPO_REF=<branch-tag-or-sha> bash
 ```
 
 For repeated fleet deployment, pin a reviewed tag or commit rather than relying on a moving branch.
 
-## Custom installation path
+## Custom user-writable installation path
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh \
-  | THREE_AGENT_INSTALL_DIR=/opt/3agent \
-    THREE_AGENT_BIN_DIR=$HOME/.local/bin \
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/deploy_ubuntu_pc.sh \
+  | THREE_AGENT_INSTALL_DIR="$HOME/workspace-3agent" \
+    THREE_AGENT_BIN_DIR="$HOME/.local/bin" \
     bash
 ```
 
 The target directory must be writable by the deploying user.
 
-## Supported host contract
+## Generic Linux fallback
 
-Portable bootstrap currently supports Linux. The application requires Python >=3.11. The script can install normal prerequisites through `apt`, `dnf`, or `yum`, but it deliberately does not install or change NVIDIA drivers.
+For a non-Ubuntu Linux host, use the canonical portable bootstrap directly:
 
-For the dedicated Ubuntu 24.04 + dual RTX 5090 workstation, use `scripts/setup_ai_stack_ubuntu2404.sh` when GPU/runtime configuration is also required.
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.sh | bash
+```
+
+The generic bootstrap supports Linux with Python >=3.11 and can install normal prerequisites through `apt`, `dnf`, or `yum`.
+
+## GPU/runtime boundary
+
+The portable Ubuntu entrypoint deliberately does not install or change NVIDIA drivers, kernel packages, bootloader settings, or reboot policy.
+
+For a dedicated Ubuntu 24.04 + dual RTX 5090 workstation where GPU/runtime configuration is also required, use the separately reviewed `scripts/setup_ai_stack_ubuntu2404.sh` workflow.
 
 ## CI acceptance
 
@@ -82,10 +108,12 @@ For the dedicated Ubuntu 24.04 + dual RTX 5090 workstation, use `scripts/setup_a
 
 - Bash syntax;
 - ShellCheck;
-- bootstrap contract checks;
-- a clean deployment that fetches source from GitHub;
-- exact source commit lineage;
+- bootstrap and Ubuntu-entrypoint contract checks;
+- the exact `deploy_ubuntu_pc.sh` file downloaded from raw GitHub by commit SHA;
+- a clean deployment from GitHub;
+- exact installed-source commit lineage;
 - installed `3agent smoke`;
 - a second idempotent deployment;
 - preservation of existing configuration;
-- Ubuntu 22.04 with Python 3.11 and Ubuntu 24.04 with Python 3.12.
+- Ubuntu 22.04 with Python 3.11;
+- Ubuntu 24.04 with Python 3.12.

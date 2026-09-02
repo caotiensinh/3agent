@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Iterable
 
 from .behavior_intelligence import (
     BehaviorAssessment,
@@ -19,6 +20,12 @@ from .dns_behavior_storage import DNSBehaviorFeatureStore
 from .entity_context import ENTITY_CONTEXT_SCHEMA, EventEntityContext, EventEntityReference
 from .entity_context_storage import EventEntityContextStore
 from .storage import MonitoringStore
+from .temporal_behavior import TemporalAnalysisWindow, TemporalBucketConfig
+from .temporal_scenarios import (
+    DeterministicTemporalScenarioEngine,
+    TemporalScenario,
+    TemporalScenarioAssessment,
+)
 
 MAX_BEHAVIOR_LOOKBACK_SECONDS = 30 * 24 * 3600
 MAX_BEHAVIOR_CURRENT_WINDOW_SECONDS = 3600
@@ -229,6 +236,18 @@ class BehaviorStoreReader:
         )
         return current, history, features
 
+    def read_temporal_events(self, window: BehaviorAnalysisWindow) -> tuple[CorrelationEvent, ...]:
+        """Read only the current [start, end) event window required by temporal scenarios."""
+        bound = window.validate()
+        self.entity_store.initialize()
+        start = datetime.fromisoformat(bound.starts_at).astimezone(timezone.utc)
+        end = datetime.fromisoformat(bound.ends_at).astimezone(timezone.utc)
+        return self._read_events(
+            starts_at=start.isoformat(),
+            ends_at=end.isoformat(),
+            include_end=False,
+        )
+
     def analyze_window(self, window: BehaviorAnalysisWindow) -> tuple[BehaviorAssessment, ...]:
         current, history, features = self.read_inputs(window)
         return DeterministicBehaviorAnalyzer(self.analyzer_config).analyze(
@@ -236,3 +255,24 @@ class BehaviorStoreReader:
             history_events=history,
             current_dns_features=features,
         )
+
+    def analyze_temporal_window(
+        self,
+        window: BehaviorAnalysisWindow,
+        *,
+        scenarios: Iterable[TemporalScenario],
+        bucket_config: TemporalBucketConfig | None = None,
+    ) -> tuple[TemporalScenarioAssessment, ...]:
+        """Evaluate temporal scenarios over the existing bounded behavior store without creating findings or response actions."""
+        bound = window.validate()
+        current = self.read_temporal_events(bound)
+        start = datetime.fromisoformat(bound.starts_at).astimezone(timezone.utc)
+        end = datetime.fromisoformat(bound.ends_at).astimezone(timezone.utc)
+        temporal_window = TemporalAnalysisWindow(
+            starts_at=start.isoformat().replace("+00:00", "Z"),
+            ends_at=end.isoformat().replace("+00:00", "Z"),
+        )
+        return DeterministicTemporalScenarioEngine(
+            scenarios,
+            bucket_config=bucket_config,
+        ).evaluate(window=temporal_window, events=current)
