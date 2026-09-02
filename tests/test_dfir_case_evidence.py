@@ -1,6 +1,5 @@
 from dataclasses import replace
-
-import pytest
+import unittest
 
 from three_agent.security_monitoring.dfir_case_evidence import (
     CaseAuthorization,
@@ -64,133 +63,158 @@ def _time() -> ForensicTimeProvenance:
     ).validate()
 
 
-def test_case_identity_is_deterministic_and_authority_is_read_only():
-    auth = _authorization()
-    first = CaseRecord.create(title_ref="incident-2026-09-02", created_at="2026-09-02T12:05:00+09:00", authorization=auth)
-    second = CaseRecord.create(title_ref="incident-2026-09-02", created_at="2026-09-02T03:05:00Z", authorization=auth)
+class TestDFIRCaseEvidence(unittest.TestCase):
+    def test_case_identity_is_deterministic_and_authority_is_read_only(self):
+        auth = _authorization()
+        first = CaseRecord.create(
+            title_ref="incident-2026-09-02",
+            created_at="2026-09-02T12:05:00+09:00",
+            authorization=auth,
+        )
+        second = CaseRecord.create(
+            title_ref="incident-2026-09-02",
+            created_at="2026-09-02T03:05:00Z",
+            authorization=auth,
+        )
 
-    assert first.case_id == second.case_id
-    assert first.authority == "advisory"
-    assert auth.read_only is True
-    assert auth.remediation_allowed is False
-    assert auth.network_execution_allowed is False
+        self.assertEqual(first.case_id, second.case_id)
+        self.assertEqual(first.authority, "advisory")
+        self.assertTrue(auth.read_only)
+        self.assertFalse(auth.remediation_allowed)
+        self.assertFalse(auth.network_execution_allowed)
 
+    def test_case_authorization_rejects_execution_authority(self):
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "cannot grant execution/remediation"):
+            replace(_authorization(), network_execution_allowed=True).validate()
 
-def test_case_authorization_rejects_execution_authority():
-    with pytest.raises(DFIRCaseEvidenceError, match="cannot grant execution/remediation"):
-        replace(_authorization(), network_execution_allowed=True).validate()
+    def test_forensic_time_preserves_original_and_requires_exact_utc_projection(self):
+        value = _time()
+        self.assertTrue(value.original_timestamp.endswith("+09:00"))
+        self.assertEqual(value.original_timezone, "Asia/Tokyo")
+        self.assertEqual(value.normalized_utc, "2026-09-02T03:00:00Z")
+        self.assertEqual(value.clock_uncertainty_ms, 250)
 
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "normalized_utc"):
+            replace(value, normalized_utc="2026-09-02T03:00:01Z").validate()
 
-def test_forensic_time_preserves_original_and_requires_exact_utc_projection():
-    value = _time()
-    assert value.original_timestamp.endswith("+09:00")
-    assert value.original_timezone == "Asia/Tokyo"
-    assert value.normalized_utc == "2026-09-02T03:00:00Z"
-    assert value.clock_uncertainty_ms == 250
-
-    with pytest.raises(DFIRCaseEvidenceError, match="normalized_utc"):
-        replace(value, normalized_utc="2026-09-02T03:00:01Z").validate()
-
-
-def test_normalized_evidence_is_admitted_without_replacing_existing_evidence_contract():
-    case = CaseRecord.create(title_ref="incident-1", created_at="2026-09-02T12:05:00+09:00", authorization=_authorization())
-    normalized = _normalized()
-    item = ForensicEvidenceObject.from_normalized(
-        case_id=case.case_id,
-        evidence=normalized,
-        evidence_kind="raw",
-        acquisition_sha256=_sha("e"),
-        transport_sha256=_sha("f"),
-        time_provenance=_time(),
-    )
-
-    admitted = admit_case_evidence(case, item, normalized)
-
-    assert admitted.evidence_ids == (normalized.evidence_id,)
-    assert item.normalized_evidence_sha256 == normalized.identity_sha256
-    assert item.content_sha256 == normalized.integrity.content_sha256
-
-
-def test_hash_or_case_scope_mismatch_fails_closed():
-    case = CaseRecord.create(title_ref="incident-1", created_at="2026-09-02T12:05:00+09:00", authorization=_authorization())
-    normalized = _normalized()
-    item = ForensicEvidenceObject.from_normalized(
-        case_id=case.case_id,
-        evidence=normalized,
-        evidence_kind="raw",
-        acquisition_sha256=_sha("e"),
-        transport_sha256=_sha("f"),
-        time_provenance=_time(),
-    )
-
-    with pytest.raises(DFIRCaseEvidenceError, match="evidence hash mismatch"):
-        admit_case_evidence(case, replace(item, content_sha256=_sha("9")), normalized)
-
-    out_of_scope = _normalized(asset_ref="asset-2")
-    out_item = ForensicEvidenceObject.from_normalized(
-        case_id=case.case_id,
-        evidence=out_of_scope,
-        evidence_kind="raw",
-        acquisition_sha256=_sha("e"),
-        transport_sha256=_sha("f"),
-        time_provenance=_time(),
-    )
-    with pytest.raises(DFIRCaseEvidenceError, match="outside approved case scope"):
-        admit_case_evidence(case, out_item, out_of_scope)
-
-
-def test_derived_evidence_requires_explicit_source_evidence_refs():
-    case = CaseRecord.create(title_ref="incident-1", created_at="2026-09-02T12:05:00+09:00", authorization=_authorization())
-    normalized = _normalized()
-
-    with pytest.raises(DFIRCaseEvidenceError, match="derived evidence requires"):
-        ForensicEvidenceObject.from_normalized(
+    def test_normalized_evidence_is_admitted_without_replacing_existing_evidence_contract(self):
+        case = CaseRecord.create(
+            title_ref="incident-1",
+            created_at="2026-09-02T12:05:00+09:00",
+            authorization=_authorization(),
+        )
+        normalized = _normalized()
+        item = ForensicEvidenceObject.from_normalized(
             case_id=case.case_id,
             evidence=normalized,
-            evidence_kind="derived",
+            evidence_kind="raw",
             acquisition_sha256=_sha("e"),
             transport_sha256=_sha("f"),
             time_provenance=_time(),
         )
 
+        admitted = admit_case_evidence(case, item, normalized)
 
-def test_custody_chain_is_hash_chained_append_only_and_deterministic():
-    case = CaseRecord.create(title_ref="incident-1", created_at="2026-09-02T12:05:00+09:00", authorization=_authorization())
-    normalized = _normalized()
-    item = ForensicEvidenceObject.from_normalized(
-        case_id=case.case_id,
-        evidence=normalized,
-        evidence_kind="raw",
-        acquisition_sha256=_sha("e"),
-        transport_sha256=_sha("f"),
-        time_provenance=_time(),
-    )
-    first = CustodyEvent.build(
-        event_index=1,
-        case_id=case.case_id,
-        evidence_id=item.evidence_id,
-        event_type="REGISTERED",
-        occurred_at="2026-09-02T03:05:10Z",
-        actor_ref_sha256=_sha("1"),
-        evidence_fingerprint=item.fingerprint,
-        previous_event_sha256=None,
-    )
-    second = CustodyEvent.build(
-        event_index=2,
-        case_id=case.case_id,
-        evidence_id=item.evidence_id,
-        event_type="VERIFIED",
-        occurred_at="2026-09-02T03:05:20Z",
-        actor_ref_sha256=_sha("2"),
-        evidence_fingerprint=item.fingerprint,
-        previous_event_sha256=first.event_sha256,
-    )
+        self.assertEqual(admitted.evidence_ids, (normalized.evidence_id,))
+        self.assertEqual(item.normalized_evidence_sha256, normalized.identity_sha256)
+        self.assertEqual(item.content_sha256, normalized.integrity.content_sha256)
 
-    chain = CustodyChain.from_events((first, second))
-    same = CustodyChain.from_events((first, second))
+    def test_hash_or_case_scope_mismatch_fails_closed(self):
+        case = CaseRecord.create(
+            title_ref="incident-1",
+            created_at="2026-09-02T12:05:00+09:00",
+            authorization=_authorization(),
+        )
+        normalized = _normalized()
+        item = ForensicEvidenceObject.from_normalized(
+            case_id=case.case_id,
+            evidence=normalized,
+            evidence_kind="raw",
+            acquisition_sha256=_sha("e"),
+            transport_sha256=_sha("f"),
+            time_provenance=_time(),
+        )
 
-    assert chain.fingerprint == same.fingerprint
-    assert chain.canonical_json() == same.canonical_json()
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "evidence hash mismatch"):
+            admit_case_evidence(case, replace(item, content_sha256=_sha("9")), normalized)
 
-    with pytest.raises(DFIRCaseEvidenceError, match="previous hash mismatch"):
-        CustodyChain.from_events((first, replace(second, previous_event_sha256=_sha("8"))))
+        out_of_scope = _normalized(asset_ref="asset-2")
+        out_item = ForensicEvidenceObject.from_normalized(
+            case_id=case.case_id,
+            evidence=out_of_scope,
+            evidence_kind="raw",
+            acquisition_sha256=_sha("e"),
+            transport_sha256=_sha("f"),
+            time_provenance=_time(),
+        )
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "outside approved case scope"):
+            admit_case_evidence(case, out_item, out_of_scope)
+
+    def test_derived_evidence_requires_explicit_source_evidence_refs(self):
+        case = CaseRecord.create(
+            title_ref="incident-1",
+            created_at="2026-09-02T12:05:00+09:00",
+            authorization=_authorization(),
+        )
+        normalized = _normalized()
+
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "derived evidence requires"):
+            ForensicEvidenceObject.from_normalized(
+                case_id=case.case_id,
+                evidence=normalized,
+                evidence_kind="derived",
+                acquisition_sha256=_sha("e"),
+                transport_sha256=_sha("f"),
+                time_provenance=_time(),
+            )
+
+    def test_custody_chain_is_hash_chained_append_only_and_deterministic(self):
+        case = CaseRecord.create(
+            title_ref="incident-1",
+            created_at="2026-09-02T12:05:00+09:00",
+            authorization=_authorization(),
+        )
+        normalized = _normalized()
+        item = ForensicEvidenceObject.from_normalized(
+            case_id=case.case_id,
+            evidence=normalized,
+            evidence_kind="raw",
+            acquisition_sha256=_sha("e"),
+            transport_sha256=_sha("f"),
+            time_provenance=_time(),
+        )
+        first = CustodyEvent.build(
+            event_index=1,
+            case_id=case.case_id,
+            evidence_id=item.evidence_id,
+            event_type="REGISTERED",
+            occurred_at="2026-09-02T03:05:10Z",
+            actor_ref_sha256=_sha("1"),
+            evidence_fingerprint=item.fingerprint,
+            previous_event_sha256=None,
+        )
+        second = CustodyEvent.build(
+            event_index=2,
+            case_id=case.case_id,
+            evidence_id=item.evidence_id,
+            event_type="VERIFIED",
+            occurred_at="2026-09-02T03:05:20Z",
+            actor_ref_sha256=_sha("2"),
+            evidence_fingerprint=item.fingerprint,
+            previous_event_sha256=first.event_sha256,
+        )
+
+        chain = CustodyChain.from_events((first, second))
+        same = CustodyChain.from_events((first, second))
+
+        self.assertEqual(chain.fingerprint, same.fingerprint)
+        self.assertEqual(chain.canonical_json(), same.canonical_json())
+
+        with self.assertRaisesRegex(DFIRCaseEvidenceError, "previous hash mismatch"):
+            CustodyChain.from_events(
+                (first, replace(second, previous_event_sha256=_sha("8")))
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
