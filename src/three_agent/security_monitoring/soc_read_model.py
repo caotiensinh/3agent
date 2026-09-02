@@ -57,7 +57,7 @@ def _period_view(period: PeriodSummary) -> dict[str, object]:
     if not isinstance(period, PeriodSummary):
         raise MonitoringContractError("SOC period must be PeriodSummary")
     return {
-        "label": _token(period.label, "period label", max_len=32),
+        "period": _token(period.label, "period label", max_len=32),
         "starts_at": _token(period.starts_at, "period starts_at", max_len=64),
         "ends_at": _token(period.ends_at, "period ends_at", max_len=64),
         "hourly_runs": int(period.hourly_runs),
