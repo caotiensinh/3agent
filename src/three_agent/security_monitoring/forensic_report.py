@@ -7,7 +7,13 @@ from typing import Iterable
 
 from .contracts import APPROVED_DATA_CLASSES, MonitoringContractError, sha256_fingerprint
 from .forensic_evidence import CaseRecord, EvidenceObject, EvidenceReference, FORENSIC_EVIDENCE_TYPES
-from .forensic_hypothesis import ForensicHypothesis, HYPOTHESIS_STATUSES
+from .forensic_hypothesis import (
+    HYPOTHESIS_CONFIRMED_BY_HUMAN,
+    HYPOTHESIS_STATUSES,
+    HYPOTHESIS_SUPPORTED,
+    ForensicHypothesis,
+    HypothesisEvidenceSet,
+)
 
 FORENSIC_REPORT_SCHEMA = "workspace-security-forensics/case-report-v1"
 FORENSIC_REPORT_EVIDENCE_ENTRY_SCHEMA = "workspace-security-forensics/report-evidence-entry-v1"
@@ -151,17 +157,24 @@ class ForensicReportHypothesisSummary:
         object.__setattr__(self, "statement_sha256", _sha(self.statement_sha256, "statement_sha256"))
         if self.status not in HYPOTHESIS_STATUSES:
             raise MonitoringContractError("forensic report hypothesis status is invalid")
-        supporting = tuple(ref.validate() for ref in self.supporting)
-        contradicting = tuple(ref.validate() for ref in self.contradicting)
-        if any(ref.relation != "supports" for ref in supporting):
-            raise MonitoringContractError("report supporting evidence relation is invalid")
-        if any(ref.relation != "contradicts" for ref in contradicting):
-            raise MonitoringContractError("report contradicting evidence relation is invalid")
-        object.__setattr__(self, "supporting", tuple(sorted(supporting, key=lambda ref: ref.evidence_id)))
-        object.__setattr__(self, "contradicting", tuple(sorted(contradicting, key=lambda ref: ref.evidence_id)))
-        object.__setattr__(self, "missing_evidence_codes", _reason_codes(self.missing_evidence_codes))
+        evidence = HypothesisEvidenceSet(
+            supporting=tuple(self.supporting),
+            contradicting=tuple(self.contradicting),
+            missing_evidence_codes=tuple(self.missing_evidence_codes),
+        ).validate()
+        object.__setattr__(self, "supporting", evidence.supporting)
+        object.__setattr__(self, "contradicting", evidence.contradicting)
+        object.__setattr__(self, "missing_evidence_codes", evidence.missing_evidence_codes)
         if self.human_confirmation_sha256 is not None:
             object.__setattr__(self, "human_confirmation_sha256", _sha(self.human_confirmation_sha256, "human_confirmation_sha256"))
+        if self.status == HYPOTHESIS_CONFIRMED_BY_HUMAN:
+            if evidence.deterministic_status != HYPOTHESIS_SUPPORTED or self.human_confirmation_sha256 is None:
+                raise MonitoringContractError("confirmed report hypothesis requires supported evidence and human confirmation hash")
+        else:
+            if self.human_confirmation_sha256 is not None:
+                raise MonitoringContractError("unconfirmed report hypothesis cannot expose human confirmation hash")
+            if self.status != evidence.deterministic_status:
+                raise MonitoringContractError("report hypothesis status must match deterministic evidence status")
         if self.schema_version != FORENSIC_REPORT_HYPOTHESIS_SCHEMA:
             raise MonitoringContractError("unsupported forensic report hypothesis schema")
         return self
