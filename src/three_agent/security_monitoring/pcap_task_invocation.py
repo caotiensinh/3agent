@@ -4,15 +4,16 @@ import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from three_agent.capability_authority import CapabilityAuthorityDenied, TaskCapabilityAuthority
 from three_agent.task_contract import TaskContract
 
-from .capability_registry import SecurityBindingCoverage, SecurityCapabilityRegistry
+from .capability_registry import SecurityCapabilityRegistry
 from .contracts import sha256_fingerprint
 from .operation_binding import (
     DEFAULT_SECURITY_OPERATION_BINDINGS,
+    SecurityBindingCoverage,
     SecurityOperationBinding,
     SecurityOperationBindingError,
     SecurityOperationHandlerUnbound,
