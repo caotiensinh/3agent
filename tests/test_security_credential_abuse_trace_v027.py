@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pytest
+import unittest
 
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.credential_abuse_trace import (
@@ -31,76 +31,74 @@ def event(
     )
 
 
-def test_detects_success_after_bounded_failure_burst() -> None:
-    events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 6)) + (
-        event("success", outcome="success", minute=6, privileged_context=True),
-    )
-    assessment = trace_credential_abuse(
-        events,
-        authorized_asset_refs=("asset:host-a",),
-        failure_threshold=5,
-        window_minutes=15,
-    )
+class CredentialAbuseTraceTests(unittest.TestCase):
+    def test_detects_success_after_bounded_failure_burst(self) -> None:
+        events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 6)) + (
+            event("success", outcome="success", minute=6, privileged_context=True),
+        )
+        assessment = trace_credential_abuse(
+            events,
+            authorized_asset_refs=("asset:host-a",),
+            failure_threshold=5,
+            window_minutes=15,
+        )
+        self.assertEqual(len(assessment.candidates), 1)
+        candidate = assessment.candidates[0]
+        self.assertEqual(candidate.failure_count, 5)
+        self.assertEqual(candidate.reasons, ("privileged_success", "success_after_failure_burst"))
+        self.assertEqual(candidate.success_event_id, "success")
+        self.assertEqual(len(candidate.evidence_refs), 6)
+        self.assertFalse(assessment.credential_material_accessed)
+        self.assertEqual(assessment.authority, "advisory")
+        self.assertTrue(assessment.fingerprint.startswith("sha256:"))
 
-    assert len(assessment.candidates) == 1
-    candidate = assessment.candidates[0]
-    assert candidate.failure_count == 5
-    assert candidate.reasons == ("privileged_success", "success_after_failure_burst")
-    assert candidate.success_event_id == "success"
-    assert len(candidate.evidence_refs) == 6
-    assert assessment.credential_material_accessed is False
-    assert assessment.authority == "advisory"
-    assert assessment.fingerprint.startswith("sha256:")
+    def test_does_not_flag_failures_without_later_success(self) -> None:
+        events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 8))
+        assessment = trace_credential_abuse(events, authorized_asset_refs=("asset:host-a",))
+        self.assertEqual(assessment.candidates, ())
+
+    def test_time_window_excludes_old_failures(self) -> None:
+        events = (
+            event("old-1", outcome="failure", minute=1),
+            event("old-2", outcome="failure", minute=2),
+            event("old-3", outcome="failure", minute=3),
+            event("old-4", outcome="failure", minute=4),
+            event("old-5", outcome="failure", minute=5),
+            event("success", outcome="success", minute=30),
+        )
+        assessment = trace_credential_abuse(
+            events,
+            authorized_asset_refs=("asset:host-a",),
+            window_minutes=10,
+        )
+        self.assertEqual(assessment.candidates, ())
+
+    def test_multi_asset_identity_use_requires_assets_to_be_authorized(self) -> None:
+        events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 5)) + (
+            event("fail-b", outcome="failure", minute=5, asset_ref="asset:host-b"),
+            event("success", outcome="success", minute=6, asset_ref="asset:host-b"),
+        )
+        assessment = trace_credential_abuse(
+            events,
+            authorized_asset_refs=("asset:host-a", "asset:host-b"),
+        )
+        self.assertIn("multi_asset_identity_use", assessment.candidates[0].reasons)
+        with self.assertRaisesRegex(MonitoringContractError, "authorized asset scope"):
+            trace_credential_abuse(events, authorized_asset_refs=("asset:host-a",))
+
+    def test_rejects_invalid_threshold_and_never_allows_credential_material_access(self) -> None:
+        with self.assertRaisesRegex(MonitoringContractError, "failure_threshold"):
+            trace_credential_abuse((), authorized_asset_refs=("asset:host-a",), failure_threshold=1)
+        assessment = trace_credential_abuse((), authorized_asset_refs=("asset:host-a",))
+        invalid = type(assessment)(
+            candidates=(),
+            events_analyzed=0,
+            authorized_asset_refs=("asset:host-a",),
+            credential_material_accessed=True,
+        )
+        with self.assertRaisesRegex(MonitoringContractError, "must not access credential material"):
+            invalid.validate()
 
 
-def test_does_not_flag_failures_without_later_success() -> None:
-    events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 8))
-    assessment = trace_credential_abuse(events, authorized_asset_refs=("asset:host-a",))
-    assert assessment.candidates == ()
-
-
-def test_time_window_excludes_old_failures() -> None:
-    events = (
-        event("old-1", outcome="failure", minute=1),
-        event("old-2", outcome="failure", minute=2),
-        event("old-3", outcome="failure", minute=3),
-        event("old-4", outcome="failure", minute=4),
-        event("old-5", outcome="failure", minute=5),
-        event("success", outcome="success", minute=30),
-    )
-    assessment = trace_credential_abuse(
-        events,
-        authorized_asset_refs=("asset:host-a",),
-        window_minutes=10,
-    )
-    assert assessment.candidates == ()
-
-
-def test_multi_asset_identity_use_requires_assets_to_be_authorized() -> None:
-    events = tuple(event(f"fail-{minute}", outcome="failure", minute=minute) for minute in range(1, 5)) + (
-        event("fail-b", outcome="failure", minute=5, asset_ref="asset:host-b"),
-        event("success", outcome="success", minute=6, asset_ref="asset:host-b"),
-    )
-    assessment = trace_credential_abuse(
-        events,
-        authorized_asset_refs=("asset:host-a", "asset:host-b"),
-    )
-    assert "multi_asset_identity_use" in assessment.candidates[0].reasons
-
-    with pytest.raises(MonitoringContractError, match="authorized asset scope"):
-        trace_credential_abuse(events, authorized_asset_refs=("asset:host-a",))
-
-
-def test_rejects_invalid_threshold_and_never_allows_credential_material_access() -> None:
-    with pytest.raises(MonitoringContractError, match="failure_threshold"):
-        trace_credential_abuse((), authorized_asset_refs=("asset:host-a",), failure_threshold=1)
-
-    assessment = trace_credential_abuse((), authorized_asset_refs=("asset:host-a",))
-    invalid = type(assessment)(
-        candidates=(),
-        events_analyzed=0,
-        authorized_asset_refs=("asset:host-a",),
-        credential_material_accessed=True,
-    )
-    with pytest.raises(MonitoringContractError, match="must not access credential material"):
-        invalid.validate()
+if __name__ == "__main__":
+    unittest.main()
