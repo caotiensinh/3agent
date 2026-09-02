@@ -5,7 +5,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from scripts.run_security_readonly_pilot import PilotError, sanitize_run_receipt, validate_host_local_config
+from scripts.run_security_readonly_pilot import (
+    PilotError,
+    sanitize_run_receipt,
+    validate_host_local_config,
+    write_ephemeral_runtime_config,
+)
 
 
 class SecurityReadonlyPilotTests(unittest.TestCase):
@@ -68,6 +73,17 @@ class SecurityReadonlyPilotTests(unittest.TestCase):
             with self.assertRaisesRegex(PilotError, "HOST_LOCAL_CONFIG_MUST_BE_OUTSIDE_INSTALL"):
                 validate_host_local_config(config, install)
 
+    def test_ephemeral_runtime_config_forces_fresh_database_without_mutating_source(self) -> None:
+        payload = self._safe_config()
+        original_database = payload["database_path"]
+        with TemporaryDirectory() as tmp:
+            runtime_config = write_ephemeral_runtime_config(payload, Path(tmp))
+            derived = json.loads(runtime_config.read_text(encoding="utf-8"))
+            self.assertEqual(payload["database_path"], original_database)
+            self.assertNotEqual(derived["database_path"], original_database)
+            self.assertEqual(Path(derived["database_path"]).parent, Path(tmp).resolve())
+            self.assertEqual(Path(derived["database_path"]).name, "monitoring.db")
+
     def test_sanitized_receipt_drops_asset_ids_hosts_raw_failures_and_paths(self) -> None:
         payload = sanitize_run_receipt(
             {
@@ -95,6 +111,8 @@ class SecurityReadonlyPilotTests(unittest.TestCase):
         self.assertNotIn("/private/path", encoded)
         self.assertNotIn("run-secret-value", encoded)
         self.assertNotIn("slot_key", payload)
+        self.assertTrue(payload["fresh_ephemeral_store"])
+        self.assertFalse(payload["persistent_monitoring_store_modified"])
         self.assertFalse(payload["packet_capture_executed"])
         self.assertFalse(payload["network_mutation_executed"])
         self.assertFalse(payload["remediation_executed"])
@@ -116,6 +134,8 @@ class SecurityReadonlyPilotTests(unittest.TestCase):
         self.assertEqual(payload["result"], "PASS")
         self.assertEqual(payload["failure_count"], 0)
         self.assertTrue(payload["readonly_collector_invoked"])
+        self.assertTrue(payload["fresh_ephemeral_store"])
+        self.assertFalse(payload["persistent_monitoring_store_modified"])
         self.assertTrue(payload["real_network_authorized"])
         self.assertFalse(payload["active_liveness_allowed"])
 

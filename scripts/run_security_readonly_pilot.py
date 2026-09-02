@@ -6,8 +6,8 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 CONFIRMATION = "READ_ONLY_SECURITY_PILOT"
@@ -73,6 +73,16 @@ def validate_host_local_config(config_path: Path, installed_dir: Path) -> dict[s
     if not any(isinstance(asset, dict) and asset.get("enabled", True) is True for asset in assets):
         raise PilotError("ENABLED_APPROVED_ASSET_REQUIRED")
     return payload
+
+
+def write_ephemeral_runtime_config(payload: dict[str, Any], directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    derived = dict(payload)
+    derived["database_path"] = str((directory / "monitoring.db").resolve())
+    runtime_config = directory / "runtime-config.json"
+    runtime_config.write_text(json.dumps(derived, sort_keys=True) + "\n", encoding="utf-8")
+    runtime_config.chmod(0o600)
+    return runtime_config
 
 
 def verify_installed_sha(installed_dir: Path, expected_sha: str) -> str:
@@ -154,6 +164,8 @@ def sanitize_run_receipt(
         "coverage_pct": coverage_pct,
         "failure_count": len(failure_codes),
         "readonly_collector_invoked": True,
+        "fresh_ephemeral_store": True,
+        "persistent_monitoring_store_modified": False,
         "real_network_authorized": True,
         "active_liveness_allowed": False,
         "packet_capture_executed": False,
@@ -172,6 +184,8 @@ def _failure_receipt(*, target_sha: str, reason_code: str) -> dict[str, Any]:
         "result": "FAIL",
         "reason_code": reason_code,
         "readonly_collector_invoked": False,
+        "fresh_ephemeral_store": False,
+        "persistent_monitoring_store_modified": False,
         "packet_capture_executed": False,
         "network_mutation_executed": False,
         "remediation_executed": False,
@@ -187,12 +201,18 @@ def _write_receipt(path: Path, payload: dict[str, Any]) -> None:
 def run_pilot(*, config_path: Path, installed_dir: Path, expected_sha: str, confirmation: str) -> dict[str, Any]:
     if confirmation != CONFIRMATION:
         raise PilotError("EXPLICIT_CONFIRMATION_REQUIRED")
-    validate_host_local_config(config_path, installed_dir)
+    host_payload = validate_host_local_config(config_path, installed_dir)
     installed_sha = verify_installed_sha(installed_dir, expected_sha)
     security_bin = installed_dir / ".venv" / "bin" / "workspace-security-monitor"
-    runtime_summary = validate_installed_runtime(security_bin, config_path)
     config_fingerprint = _sha256_bytes(config_path.read_bytes())
-    run_payload = _run_security_cli(security_bin, config_path, ["run-hourly", "--execute-readonly"])
+
+    # Each physical pilot gets a clean local DB so an already-finalized hourly slot
+    # can never be replayed as evidence for a new exact-head execution.
+    with TemporaryDirectory(prefix="workspace-security-pilot-") as temp_dir:
+        runtime_config = write_ephemeral_runtime_config(host_payload, Path(temp_dir))
+        runtime_summary = validate_installed_runtime(security_bin, runtime_config)
+        run_payload = _run_security_cli(security_bin, runtime_config, ["run-hourly", "--execute-readonly"])
+
     return sanitize_run_receipt(
         run_payload,
         target_sha=installed_sha,
