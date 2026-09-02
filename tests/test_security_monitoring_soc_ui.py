@@ -56,8 +56,9 @@ class SecurityMonitoringSOCUITests(unittest.TestCase):
 
     def test_current_gateway_serves_composed_soc_ui_without_new_handler(self):
         source = inspect.getsource(chat_gateway_v19)
-        self.assertIn("WORKSPACE_HTML_SECURITY_V2", source)
-        self.assertIn("_v17.HTML_V17 = WORKSPACE_HTML_SECURITY_V2", source)
+        self.assertIn('data-security-tab="soc"', chat_gateway_v19._v17.HTML_V17)
+        self.assertIn("_BASE_HANDLER = _v18.SecurityMonitoringHTTPHandler", source)
+        self.assertIn("_v17.HTML_V17 =", source)
         self.assertNotIn('"/api/security/soc"', source)
         self.assertNotIn("build_soc_read_model", source)
 
