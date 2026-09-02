@@ -26,6 +26,16 @@ class LocalLLMError(RuntimeError):
 _OLLAMA_GRAMMAR_INCOMPATIBLE_LIMIT_KEYS = frozenset(
     {"minLength", "maxLength", "minItems", "maxItems"}
 )
+_THINK_BLOCK_RE = re.compile(
+    r"<think(?:\s[^>]*)?>.*?</think\s*>",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_THINK_TAG_RE = re.compile(r"</?think(?:\s[^>]*)?>", flags=re.IGNORECASE)
+_JSON_FENCE_RE = re.compile(
+    r"```(?P<label>[A-Za-z0-9_+./-]*)[ \t]*\r?\n(?P<body>.*?)```",
+    flags=re.DOTALL,
+)
+_JSON_FENCE_LABELS = frozenset({"json", "application/json"})
 
 
 def _ollama_transport_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -55,25 +65,127 @@ def _ollama_transport_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return sanitize(schema)
 
 
-def _extract_json_object(text: str) -> dict[str, Any]:
-    candidate = text.strip()
-    if candidate.startswith("```"):
-        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
-        candidate = re.sub(r"\s*```$", "", candidate)
-    try:
-        parsed = json.loads(candidate)
-    except json.JSONDecodeError:
-        start = candidate.find("{")
-        end = candidate.rfind("}")
-        if start < 0 or end <= start:
-            raise LocalLLMError("Local LLM did not return a JSON object")
-        try:
-            parsed = json.loads(candidate[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise LocalLLMError(f"Local LLM returned invalid JSON: {exc}") from exc
+def _parse_json_object_exact(candidate: str) -> dict[str, Any]:
+    parsed = json.loads(candidate.strip())
     if not isinstance(parsed, dict):
         raise LocalLLMError("Local LLM JSON response must be an object")
     return parsed
+
+
+def _balanced_json_object_candidates(text: str):
+    """Yield lexical top-level object spans without descending into bad outers.
+
+    This deliberately does not repair JSON. The scanner only finds balanced
+    object-shaped spans while respecting JSON string escaping; ``json.loads``
+    remains the authority on whether each span is valid JSON.
+    """
+
+    start: int | None = None
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                yield text[start : index + 1]
+                start = None
+
+
+def _valid_json_objects_from_text(text: str) -> list[dict[str, Any]]:
+    objects: list[dict[str, Any]] = []
+    for candidate in _balanced_json_object_candidates(text):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            objects.append(parsed)
+    return objects
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """Extract one deterministic JSON object from a structured model response.
+
+    Qwen-family models can emit complete ``<think>`` wrappers or Markdown around
+    an otherwise valid structured response. Those wrappers are treated as
+    transport noise, not as authority to repair or reinterpret malformed JSON.
+    Multiple valid final objects are rejected as ambiguous.
+    """
+
+    candidate = text.strip()
+    try:
+        return _parse_json_object_exact(candidate)
+    except json.JSONDecodeError:
+        pass
+
+    cleaned = _THINK_BLOCK_RE.sub("", candidate).strip()
+    if _THINK_TAG_RE.search(cleaned):
+        raise LocalLLMError("Local LLM returned an unterminated thinking wrapper")
+
+    if cleaned != candidate:
+        try:
+            return _parse_json_object_exact(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+    fence_matches = list(_JSON_FENCE_RE.finditer(cleaned))
+    json_fenced_objects: list[dict[str, Any]] = []
+    for match in fence_matches:
+        label = match.group("label").strip().lower()
+        if label not in _JSON_FENCE_LABELS:
+            continue
+        try:
+            parsed = _parse_json_object_exact(match.group("body"))
+        except (json.JSONDecodeError, LocalLLMError):
+            continue
+        json_fenced_objects.append(parsed)
+
+    if len(json_fenced_objects) > 1:
+        raise LocalLLMError("Local LLM returned multiple JSON objects")
+    if json_fenced_objects:
+        return json_fenced_objects[0]
+
+    if len(fence_matches) == 1:
+        match = fence_matches[0]
+        label = match.group("label").strip().lower()
+        if (
+            match.start() == 0
+            and match.end() == len(cleaned)
+            and label in {"", *_JSON_FENCE_LABELS}
+        ):
+            try:
+                return _parse_json_object_exact(match.group("body"))
+            except json.JSONDecodeError:
+                pass
+
+    had_object_start = "{" in cleaned
+    prose_only = _JSON_FENCE_RE.sub(" ", cleaned)
+    objects = _valid_json_objects_from_text(prose_only)
+    if len(objects) > 1:
+        raise LocalLLMError("Local LLM returned multiple JSON objects")
+    if objects:
+        return objects[0]
+
+    if had_object_start:
+        raise LocalLLMError("Local LLM returned invalid JSON")
+    raise LocalLLMError("Local LLM did not return a JSON object")
 
 
 class OllamaClient:
