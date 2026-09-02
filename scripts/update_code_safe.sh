@@ -122,7 +122,7 @@ build_release() {
 
 verify_release() {
   local release="$1"
-  log "Verifying new release before activation"
+  log "Verifying release with policy: ${VERIFY_MODE}"
   "${release}/.venv/bin/python" -m compileall -q "${release}/src" "${release}/tests"
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${release}/.venv/bin/three-agent" smoke >/dev/null
 
@@ -209,9 +209,10 @@ main() {
   if current_release_matches "$target_sha"; then
     active="$(current_release)"
     ensure_config "$active"
+    verify_release "$active"
     install_launchers
     THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
-    log "Already current at ${target_sha}; no release files changed"
+    log "Already current at ${target_sha}; verification policy '${VERIFY_MODE}' completed; no release files changed"
     exit 0
   fi
 
