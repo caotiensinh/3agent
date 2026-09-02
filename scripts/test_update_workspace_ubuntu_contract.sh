@@ -18,6 +18,7 @@ bash -n "$ENTRYPOINT" || fail "bash syntax"
 bash "$ENTRYPOINT" --self-test >/dev/null || fail "self-test"
 
 grep -Fq 'scripts/update_code_safe.sh' "$ENTRYPOINT" || fail "safe updater delegation missing"
+# shellcheck disable=SC2016
 grep -Fq 'raw.githubusercontent.com/caotiensinh/3agent/${sha}/scripts/update_code_safe.sh' "$ENTRYPOINT" \
   || fail "updater must be downloaded by exact source SHA"
 grep -Fq 'git ls-remote' "$ENTRYPOINT" || fail "remote ref resolution missing"
