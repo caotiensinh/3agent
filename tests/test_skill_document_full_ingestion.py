@@ -6,14 +6,16 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "skills" / "document-full-ingestion" / "SKILL.md"
+SKILL = ROOT / "skill_candidates" / "document-full-ingestion" / "SKILL.md"
+APPROVED_SKILL = ROOT / "skills" / "document-full-ingestion" / "SKILL.md"
 EXPECTED_SHA256 = "d348999cdbb42d7c51bffc98f421ad7cef2bbe8fb903d1aa6dedebfd23426d66"
 
 
 class DocumentFullIngestionSkillTest(unittest.TestCase):
-    def test_candidate_is_small_named_and_integrity_pinned(self) -> None:
+    def test_candidate_is_quarantined_small_named_and_integrity_pinned(self) -> None:
         raw = SKILL.read_bytes()
         text = raw.decode("utf-8")
+        self.assertFalse(APPROVED_SKILL.exists())
         self.assertLessEqual(len(raw), 3072)
         self.assertIn("name: document-full-ingestion", text)
         self.assertEqual(hashlib.sha256(raw).hexdigest(), EXPECTED_SHA256)

@@ -20,6 +20,10 @@ Create a WorkSpace-native instruction skill that forces complete, traceable docu
 
 No upstream source code, prompt text, package, plugin, MCP server, converter implementation, model, or dependency is vendored. The candidate is project-owned wording that adapts general processing concepts only.
 
+## Quarantine boundary
+
+The candidate lives under `skill_candidates/`, outside the fail-closed approved `skills/` root. It cannot be loaded by `ApprovedSkillLoader` and must not be copied to `skills/` until a separate registry-admission change passes exact-head CI.
+
 ## Removed / denied capabilities
 
 - remote URL conversion and remote resource fetching
@@ -48,4 +52,4 @@ No upstream source code, prompt text, package, plugin, MCP server, converter imp
 3. No URL-fetch/install/exec instructions are present.
 4. SHA-256 is recomputed from repository bytes.
 5. Existing harness + installer + portable + Windows CI remain green on exact candidate head.
-6. Registry admission occurs only after this candidate passes review and exact-head CI.
+6. Registry admission is a separate change that copies the already-reviewed bytes into `skills/` and records the exact hash/provenance/scope.
