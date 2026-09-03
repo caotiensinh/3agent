@@ -9,6 +9,7 @@ RESEARCH_MODEL="${THREE_AGENT_RESEARCH_MODEL:-$MODEL}"
 PRESENTATION_MODEL="${THREE_AGENT_PRESENTATION_MODEL:-$FAST_MODEL}"
 REPORT_MODEL="${THREE_AGENT_REPORT_MODEL:-$FAST_MODEL}"
 DEEP_MODEL="${THREE_AGENT_DEEP_MODEL:-deepseek-r1:32b}"
+VISION_MODEL="${THREE_AGENT_VISION_MODEL:-qwen3.6:35b}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-}"
 REQUIRED_GPU_COUNT="${THREE_AGENT_REQUIRED_RTX5090_COUNT:-2}"
 MIN_DRIVER_MAJOR="${THREE_AGENT_MIN_DRIVER_MAJOR:-590}"
@@ -50,7 +51,7 @@ if [[ "$SELF_TEST" == "1" ]]; then
   is_percent "$MAX_RAM_PERCENT" || die "MAX_RAM_PERCENT must be 1..100"
   is_percent "$MAX_GPU_UTIL_PERCENT" || die "MAX_GPU_UTIL_PERCENT must be 1..100"
   is_percent "$MAX_GPU_POWER_PERCENT" || die "MAX_GPU_POWER_PERCENT must be 1..100"
-  [[ -n "$FAST_MODEL" && -n "$RESEARCH_MODEL" && -n "$PRESENTATION_MODEL" && -n "$REPORT_MODEL" ]] || die "model pool contains an empty required model"
+  [[ -n "$FAST_MODEL" && -n "$RESEARCH_MODEL" && -n "$PRESENTATION_MODEL" && -n "$REPORT_MODEL" && -n "$VISION_MODEL" ]] || die "model pool contains an empty required model"
   log "AI stack installer self-test PASS"
   exit 0
 fi
@@ -258,6 +259,8 @@ install_command() {
 set -euo pipefail
 cd $(printf '%q' "$INSTALL_DIR")
 export THREE_AGENT_CONFIG=$(printf '%q' "${INSTALL_DIR}/config/local.json")
+export THREE_AGENT_VISION_MODEL=$(printf '%q' "$VISION_MODEL")
+export THREE_AGENT_VISION_BASE_URL=http://127.0.0.1:11434
 exec $(printf '%q' "${INSTALL_DIR}/.venv/bin/three-agent") "\$@"
 EOF
   as_root install -m 0755 "$tmp" /usr/local/bin/3agent
@@ -272,6 +275,7 @@ pull_models() {
     "$PRESENTATION_MODEL"
     "$REPORT_MODEL"
     "$DEEP_MODEL"
+    "$VISION_MODEL"
   )
   local -a unique=()
   local model seen existing
@@ -294,6 +298,7 @@ pull_models() {
     log "Pulling model: $model"
     as_user ollama pull "$model"
   done
+  as_user ollama show "$VISION_MODEL" >/dev/null || die "Vision model is unavailable after pull: $VISION_MODEL"
 }
 
 verify_stack() {
@@ -339,6 +344,7 @@ verify_stack() {
   log "Presentation model: ${PRESENTATION_MODEL}"
   log "Report model: ${REPORT_MODEL}"
   log "Deep escalation model: ${DEEP_MODEL}"
+  log "Vision model: ${VISION_MODEL}"
   log "VRAM/RAM budgets: ${MAX_VRAM_PERCENT}% / ${MAX_RAM_PERCENT}%"
   log "GPU utilization/power guard: ${MAX_GPU_UTIL_PERCENT}% / ${MAX_GPU_POWER_PERCENT}%"
   log "GPU temperature guard: ${MAX_GPU_TEMP_C}C"
