@@ -97,6 +97,32 @@ Never fabricate sources, execution, tests, approvals or commit SHAs. Audit secur
 
 Security-boundary changes require tests and documentation in the same coherent change-set. Default-deny behavior must not be weakened to make a demo, benchmark or test easier.
 
+## Single Canonical Module Rule
+
+This is a mandatory repository-wide engineering law.
+
+- Every production module or function family MUST have exactly one canonical implementation file.
+- Git history is the version history. A new behavior/version MUST be implemented by editing the existing canonical file and committing that change; do not preserve source versions by creating sibling implementation files.
+- Production source MUST NOT introduce version/copy/archive suffix families such as `*_v2.py`, `*_v3.py`, `*_part2.py`, `*_new.py`, `*_final.py`, `*_old.py`, `*_backup.py`, `*_bak.py`, `*_copy.py`, or equivalent naming used to keep parallel implementations of the same function.
+- When historical variants already exist, their required behavior MUST be reconciled into the canonical file, all imports/references MUST be rewritten, and the stale variant files MUST be removed after verification.
+- A symbol name collision alone is not evidence of duplication. Consolidation is required when files are successive/parallel implementations of the same functional authority, entrypoint, inheritance chain, monkeypatch chain, adapter, workflow, or frontend surface.
+- Runtime monkeypatch/version chains MUST NOT be used as a substitute for one canonical implementation. Final production behavior must be explicit in the canonical module.
+- Production entrypoints MUST reference canonical unversioned modules.
+- Source, tests, scripts, docs, and configuration MUST NOT retain imports or runtime references to removed implementation variants.
+- Creating a new sibling implementation because editing the canonical file is difficult is forbidden. Decompose the change, preserve compatibility deliberately, and update the canonical implementation instead.
+- Any intentional coexistence of multiple implementation versions is an exception, not the default. It is permitted only for a genuine externally supported API/protocol/schema compatibility boundary, must be documented architecturally, must have an explicit allowlist entry, and must not create competing internal runtime authority.
+- Repository verification MUST fail when an unapproved duplicate/version implementation family or stale variant import/reference is introduced.
+
+The desired steady-state repository invariant is:
+
+```text
+version_family_count = 0
+unapproved_parallel_implementation_count = 0
+deprecated_version_import_count = 0
+canonical_entrypoints = PASS
+single_canonical_module_guard = PASS
+```
+
 ## Mandatory execution governance
 
 This section is a project-wide working law for every human, AI agent, sub-agent, automation, CI worker, and future execution role that changes, verifies, or reports on WorkSpace. Detailed policy: `docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md`. Machine-readable contract: `config/workspace.execution-governance.json`.
