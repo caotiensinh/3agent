@@ -28,10 +28,10 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
         self.assertNotIn('<option value="vi">Tiếng Việt</option>', html)
         self.assertNotIn('<option value="en">English</option>', html)
 
-    def test_plus_menu_contains_requested_primary_tools_and_integrations(self) -> None:
+    def test_plus_menu_contains_each_primary_tool_and_integration_exactly_once(self) -> None:
         html = WORKSPACE_HTML_V13
         self.assertEqual(html.count('id="plusBtn"'), 1)
-        for action in (
+        actions = (
             "upload",
             "library",
             "image_generation",
@@ -39,11 +39,12 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
             "deep_research",
             "figma",
             "canva",
-            "github",
             "gmail",
-        ):
+            "github",
+        )
+        for action in actions:
             with self.subTest(action=action):
-                self.assertIn(f'data-action="{action}"', html)
+                self.assertEqual(html.count(f'data-action="{action}"'), 1)
 
         for label in (
             "Add photos & files",
@@ -53,11 +54,24 @@ class WorkspaceFrontendV13Tests(unittest.TestCase):
             "Deep research",
             "Figma",
             "Canva",
-            "GitHub",
             "Gmail",
+            "GitHub",
         ):
             with self.subTest(label=label):
                 self.assertIn(label, html)
+
+        self.assertLess(
+            html.index('data-action="figma"'),
+            html.index('data-action="canva"'),
+        )
+        self.assertLess(
+            html.index('data-action="canva"'),
+            html.index('data-action="gmail"'),
+        )
+        self.assertLess(
+            html.index('data-action="gmail"'),
+            html.index('data-action="github"'),
+        )
 
     def test_unconfigured_external_integrations_remain_fail_closed(self) -> None:
         html = WORKSPACE_HTML_V13

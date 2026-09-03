@@ -23,22 +23,22 @@ html = _replace_once(
 integration_rows = r'''
       <button class="menu-row" type="button" data-action="figma" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">F</span>
-        <span><div class="menu-title">Figma</div><div class="menu-sub">Design-to-code workflows</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Figma</span><span class="menu-sub">Design-to-code workflows</span></span><span class="menu-state">Connect</span>
       </button>
       <button class="menu-row" type="button" data-action="canva" data-connect-action="true" role="menuitem">
         <span class="menu-icon blue">C</span>
-        <span><div class="menu-title">Canva</div><div class="menu-sub">Create, review, and edit designs</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Canva</span><span class="menu-sub">Create, review, and edit designs</span></span><span class="menu-state">Connect</span>
       </button>
       <button class="menu-row" type="button" data-action="gmail" data-connect-action="true" role="menuitem">
         <span class="menu-icon white">M</span>
-        <span><div class="menu-title">Gmail</div><div class="menu-sub">Read and manage Gmail</div></span><span class="menu-state">Connect</span>
+        <span><span class="menu-title">Gmail</span><span class="menu-sub">Read and manage Gmail</span></span><span class="menu-state">Connect</span>
       </button>
 '''
 html = _replace_once(
     html,
-    '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    integration_rows + '      <div class="menu-divider"></div>\n      <div class="menu-options">',
-    "integration-menu-boundary",
+    '      <button class="menu-row" type="button" data-action="github">',
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    "integration-menu-before-github",
 )
 
 # Completed assistant answers are intentionally quiet: a compact WorkSpace mark
