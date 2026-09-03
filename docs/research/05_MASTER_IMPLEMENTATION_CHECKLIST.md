@@ -54,10 +54,12 @@ The following work packages are complete in the current implementation lineage:
 - D3 Verified Work Metrics foundation — `DONE`
 - Evidence Packing Rank v1 — `DONE`
 - Authoritative Packing Receipt v1 — `DONE`
-- Runtime Validator Bridge — `DONE` when its exact-head CI and merge evidence are green
+- Runtime Validator Bridge — `DONE`
 - Benchmark Isolation v1 — `DONE`
+- Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+- D4 Durable Prefix Reuse Measurement — `DONE` when its exact-head CI and merge evidence are green
 
-The next benchmark work is **fixed-task benchmark execution + quality acceptance gating**. Isolation is not to be reimplemented.
+The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/32k benchmark result is still pending execution**. No context-budget candidate is promoted by implementation alone.
 
 ---
 
@@ -211,6 +213,19 @@ Important observed decisions:
 - `ranked-32k` — `NO-GO`; aggregate optimization metrics were acceptable, but a required schema-validator PASS was lost, so required-validator acceptance correctly blocked promotion.
 
 A verified negative result is a completed engineering decision. Do not repeatedly rerun the same unchanged candidate expecting a different governance outcome.
+
+## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+
+The repository now owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
+
+- `legacy_v1 / 48000` baseline;
+- `quality_ranked_v1 / 48000`;
+- `quality_ranked_v1 / 40000`;
+- `quality_ranked_v1 / 32000`.
+
+Each variant uses isolated runtime state, exact Git lineage, deterministic fixture corpus identity and the real Runtime Validator Bridge. Candidate efficiency is not evaluated until exact required-validator parity/PASS non-regression and verified-quality gates pass. The self-hosted RTX5090 workflow publishes metadata-only benchmark evidence and does not download a missing model or dependencies during benchmark setup.
+
+Implementation readiness does not equal benchmark acceptance. The real hardware comparison remains pending until the manual fixed-task benchmark is executed.
 
 ---
 
