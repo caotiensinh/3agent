@@ -60,7 +60,7 @@ PART_4 = r"""        <div class="empty-sub">Your chat history stays in the local
         </button>
       </div>
     </div>
-    <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.markdown,.html,.htm,.zip,.png,.jpg,.jpeg,.webp,text/plain,text/markdown,text/html,application/zip,image/png,image/jpeg,image/webp">
+    <input id="fileInput" type="file" multiple hidden accept=".txt,.md,.markdown,.html,.htm,.pdf,.docx,.pptx,.xlsx,.csv,.tsv,.json,.jsonl,.xml,.yaml,.yml,.log,.ini,.cfg,.conf,.zip,.png,.jpg,.jpeg,.webp,text/plain,text/markdown,text/html,text/csv,application/pdf,application/json,application/xml,application/zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/png,image/jpeg,image/webp">
   </div>
 </div>
 
