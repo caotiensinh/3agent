@@ -17,7 +17,10 @@ public = json.loads(Path("config/workspace.public-research.json").read_text(enco
 assert secure["product_name"] == "WorkSpace"
 assert secure["confidentiality_mode"] == "confidential"
 assert secure["test_mode_full_access"] is False
-assert secure["internet_gateway"]["public_search_enabled"] is False
+assert secure["internet_gateway"]["public_search_enabled"] is True
+assert secure["internet_gateway"]["egress_policy"] == "workspace.internet-egress/v1"
+assert secure["internet_gateway"]["egress_mode"] == "sanitized"
+assert secure["internet_gateway"]["user_warning_on_transform"] is True
 assert secure["internet_gateway"]["direct_egress"] is False
 
 assert public["product_name"] == "WorkSpace"
