@@ -45,6 +45,20 @@ D12   Specialist/fine-tuning/internalization
 
 A later phase may not become production-critical merely because it is interesting. Security defects may always preempt this order.
 
+## Current closure baseline
+
+The following work packages are complete in the current implementation lineage:
+
+- D1 Handoff Trust Boundaries — `DONE`
+- D2 Structured Output + Semantic Validation — `DONE`
+- D3 Verified Work Metrics foundation — `DONE`
+- Evidence Packing Rank v1 — `DONE`
+- Authoritative Packing Receipt v1 — `DONE`
+- Runtime Validator Bridge — `DONE` when its exact-head CI and merge evidence are green
+- Benchmark Isolation v1 — `DONE`
+
+The next benchmark work is **fixed-task benchmark execution + quality acceptance gating**. Isolation is not to be reimplemented.
+
 ---
 
 # Current authoritative closure
