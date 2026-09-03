@@ -23,6 +23,12 @@ from three_agent.workflow_state_machine_v4 import (
 )
 
 
+# Test synchronization bound only; production workflow timeouts are separate.
+# Five seconds was too tight for a second clean-install test pass on slower
+# Windows/Python 3.11 runners and could break an otherwise valid overlap proof.
+PARALLEL_TEST_SYNC_TIMEOUT_SECONDS = 30
+
+
 def node(node_id, label, kind, action, parents=(), condition="", approval=False):
     return {
         "id": node_id,
@@ -84,7 +90,7 @@ class ConcurrentResearchAgent:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
         try:
-            self.barrier.wait(timeout=5)
+            self.barrier.wait(timeout=PARALLEL_TEST_SYNC_TIMEOUT_SECONDS)
             store.set_status(task_id, TaskStatus.RESEARCH_COMPLETED)
             return []
         finally:

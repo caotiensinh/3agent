@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .chat_context import DEFAULT_CONTEXT_MAX_CHARS, DEFAULT_CONTEXT_MAX_MESSAGES
 from .chat_fidelity import resolve_response_language
@@ -25,6 +26,8 @@ from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text
 from .prompt_compiler import PROMPT_COMPILER_VERSION
 from .public_query_compiler import PUBLIC_QUERY_COMPILER_VERSION
+from .security_monitoring.contracts import MonitoringContractError
+from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
 from .version import DISPLAY_VERSION, RELEASE_GENERATION, VERSION_SCHEME
 from .workflow_design_v4 import WorkflowDesignCompilerV4
 from .workflow_state_machine import WorkflowStateError
@@ -40,14 +43,14 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v12 import WORKSPACE_HTML_V12
+from .workspace_frontend_v13 import WORKSPACE_HTML_V13
 
 
-HTML_V17 = WORKSPACE_HTML_V12
+HTML_V17 = WORKSPACE_HTML_V13
 
 
 class WorkflowV4ContextApplication(WorkflowV3Application):
-    """Current context-aware chat service plus the budget-hardened V4 runtime."""
+    """Current context-aware chat plus bounded V4 and read-only security monitoring."""
 
     def __init__(
         self,
@@ -70,6 +73,10 @@ class WorkflowV4ContextApplication(WorkflowV3Application):
         # HTTP boundary at the sole production V4 controller rather than retaining
         # a second executable workflow runtime.
         self.workflow_v3 = self.workflow_v4
+        # The Security Analyst UI reads one validated monitoring config at startup.
+        # It does not discover paths, open a write connection, or acquire monitoring
+        # execution authority from the chat process.
+        self.security_monitoring = SecurityMonitoringUIReadModel.from_environment()
 
 
 class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
@@ -117,6 +124,49 @@ class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
             self._json(
                 HTTPStatus.BAD_REQUEST,
                 {"error": redact_sensitive_text(f"{type(exc).__name__}: {exc}")[:400]},
+            )
+
+    def _security_get(self, view: str) -> None:
+        admin_only = view == "admin"
+        if admin_only:
+            if self._require_admin() is None:
+                return
+        elif not self._authorized_local():
+            return
+
+        try:
+            model = self.app.security_monitoring
+            if view == "summary":
+                payload = model.summary()
+            elif view == "assets":
+                payload = model.assets()
+            elif view == "admin":
+                payload = model.admin_status()
+            else:
+                query = parse_qs(urlparse(self.path).query, keep_blank_values=False)
+                limit = query.get("limit", ["50"])[0]
+                offset = query.get("offset", ["0"])[0]
+                if view == "network":
+                    payload = model.network(limit=limit, offset=offset)
+                elif view == "findings":
+                    payload = model.findings(limit=limit, offset=offset)
+                elif view == "events":
+                    payload = model.events(limit=limit, offset=offset)
+                elif view == "reports":
+                    payload = model.reports(limit=limit, offset=offset)
+                else:
+                    self._json(HTTPStatus.NOT_FOUND, {"error": "Unknown security view"})
+                    return
+            self._json(HTTPStatus.OK, payload)
+        except (MonitoringContractError, TypeError, ValueError):
+            self._json(
+                HTTPStatus.BAD_REQUEST,
+                {"error": "Invalid security query", "code": "SECURITY_QUERY_INVALID"},
+            )
+        except (OSError, sqlite3.DatabaseError):
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "Security monitoring data unavailable", "code": "SECURITY_DATA_UNAVAILABLE"},
             )
 
     def do_GET(self) -> None:
@@ -208,6 +258,19 @@ class WorkflowV4ContextHTTPHandler(ContextAwareWorkflowV3HTTPHandler):
                     "follow_up_reference_anchoring": True,
                 },
             )
+            return
+        security_routes = {
+            "/api/security/summary": "summary",
+            "/api/security/network": "network",
+            "/api/security/findings": "findings",
+            "/api/security/events": "events",
+            "/api/security/assets": "assets",
+            "/api/security/reports": "reports",
+            "/api/security/admin": "admin",
+        }
+        security_view = security_routes.get(path)
+        if security_view is not None:
+            self._security_get(security_view)
             return
         super().do_GET()
 
@@ -304,6 +367,10 @@ def main() -> int:
     )
     print(
         f"[WorkSpace {DISPLAY_VERSION}] Workflow V4 enabled: one bounded two-lane parallel DAG with atomic aggregate parent/child execution budgets. Scheduler/event authority remains disabled.",
+        flush=True,
+    )
+    print(
+        f"[WorkSpace {DISPLAY_VERSION}] Security Analyst UI enabled as authenticated query-only local view; monitoring execution authority remains separate.",
         flush=True,
     )
     try:
