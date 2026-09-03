@@ -7,6 +7,10 @@ on:
         description: Type READ_ONLY_SECURITY_PILOT to authorize one bounded real-network read-only pilot.
         required: true
         type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/security-readonly-pilot.intent'
 
 permissions:
   contents: read
@@ -32,10 +36,29 @@ jobs:
       - name: Validate explicit operator confirmation
         shell: bash
         env:
-          PILOT_CONFIRMATION: ${{ inputs.confirmation }}
+          DISPATCH_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || '' }}
         run: |
           set -Eeuo pipefail
-          test "$PILOT_CONFIRMATION" = "READ_ONLY_SECURITY_PILOT"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            test "$DISPATCH_CONFIRMATION" = "READ_ONLY_SECURITY_PILOT"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            INTENT_PATH=".github/security-readonly-pilot.intent"
+            test -f "$INTENT_PATH"
+            mapfile -t CHANGED_FILES < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+            test "${#CHANGED_FILES[@]}" -eq 1
+            test "${CHANGED_FILES[0]}" = "$INTENT_PATH"
+            read -r -a COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$GITHUB_SHA")"
+            test "${#COMMIT_LINE[@]}" -eq 2
+            PARENT_SHA="${COMMIT_LINE[1]}"
+            mapfile -t INTENT_LINES < "$INTENT_PATH"
+            test "${#INTENT_LINES[@]}" -eq 2
+            test "${INTENT_LINES[0]}" = "READ_ONLY_SECURITY_PILOT"
+            test "${INTENT_LINES[1]}" = "BASE_SHA=$PARENT_SHA"
+            test "$(git log -1 --pretty=%s "$GITHUB_SHA")" = "ops(security): authorize readonly pilot"
+          else
+            exit 64
+          fi
+          printf 'PILOT_CONFIRMATION=READ_ONLY_SECURITY_PILOT\n' >> "$GITHUB_ENV"
 
       - name: Bootstrap exact source on R9
         shell: bash
@@ -54,7 +77,6 @@ jobs:
       - name: Run bounded real-network read-only pilot
         shell: bash
         env:
-          PILOT_CONFIRMATION: ${{ inputs.confirmation }}
           TARGET_SHA: ${{ github.sha }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-security-pilot-install
           PILOT_RECEIPT: ${{ runner.temp }}/security-monitoring-readonly-pilot.json
