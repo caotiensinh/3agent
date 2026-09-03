@@ -53,6 +53,34 @@
     ],
     "blocker_requires_evidence": true
   },
+  "composite_strategy": {
+    "mandatory_for_non_trivial_bottlenecks": true,
+    "prefer_complementary_strategy_portfolio_over_single_fallback": true,
+    "minimum_distinct_strategy_families_when_materially_uncertain": 3,
+    "failed_lane_must_not_idle_independent_strategies": true,
+    "search_failure_is_not_absence_evidence": true,
+    "protocol_first_dependency_isolation_allowed": true,
+    "protocol_adapter_must_preserve_existing_source_of_truth": true,
+    "exact_head_local_inspection_is_escape_strategy": true,
+    "parallel_results_require_evidence_convergence": true,
+    "contradictions_must_be_resolved_before_pass": true,
+    "recommended_strategy_families": [
+      "direct_discovery",
+      "history_archaeology",
+      "dependency_isolation",
+      "protocol_first",
+      "local_exact_head_inspection",
+      "deterministic_verification",
+      "negative_security_testing"
+    ],
+    "bottleneck_session_evidence": [
+      "failure_signature",
+      "strategy_families_used",
+      "strategy_evidence",
+      "rejected_strategies",
+      "convergence_decision"
+    ]
+  },
   "acceptance": {
     "success_requires_all_mandatory_criteria_pass": true,
     "mandatory_pass_requires_evidence": true,
@@ -86,6 +114,7 @@
     "deterministic_work_stays_deterministic",
     "evidence_and_provenance_are_first_class",
     "failure_changes_strategy",
+    "combine_complementary_strategies_before_declaring_blocked",
     "no_false_completion",
     "smallest_high_signal_context",
     "fail_closed_on_authority_or_security_uncertainty"
