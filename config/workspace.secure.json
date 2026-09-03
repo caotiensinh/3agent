@@ -41,7 +41,10 @@
   "internet_gateway": {
     "enabled": true,
     "mode": "strict",
-    "public_search_enabled": false,
+    "public_search_enabled": true,
+    "egress_policy": "workspace.internet-egress/v1",
+    "egress_mode": "sanitized",
+    "user_warning_on_transform": true,
     "allow_all_outbound_in_test": false,
     "allowed_search_hosts": [
       "html.duckduckgo.com",

@@ -22,6 +22,10 @@ _ACTIVE_LEARNING_CONTEXT: ContextVar[LearningContext | None] = ContextVar(
     "workspace_active_learning_context",
     default=None,
 )
+_ACTIVE_PUBLIC_QUERY_POLICY_DIAGNOSTICS: ContextVar[tuple[str, ...]] = ContextVar(
+    "workspace_public_query_policy_diagnostics",
+    default=(),
+)
 
 
 class _CompiledTaskStoreView:
@@ -104,10 +108,11 @@ class ResearchAgent(_RankedResearchAgent):
         # Learned context MUST NOT be added here. Planning output may cross the
         # public InternetGateway after deterministic declassification.
         objective, queries, focus = super()._plan(title, request)
-        public_queries, _diagnostics = compile_public_search_queries(
+        public_queries, diagnostics = compile_public_search_queries(
             queries,
             max_queries=4,
         )
+        _ACTIVE_PUBLIC_QUERY_POLICY_DIAGNOSTICS.set(tuple(diagnostics))
         # Empty is safer than falling back to a raw request. Upload/local evidence
         # can still be processed; public search simply contributes no sources.
         return objective, public_queries, focus
@@ -182,7 +187,20 @@ class ResearchAgent(_RankedResearchAgent):
                     )
 
         token = _ACTIVE_LEARNING_CONTEXT.set(context)
+        policy_token = _ACTIVE_PUBLIC_QUERY_POLICY_DIAGNOSTICS.set(())
         try:
-            return super().run(task_id, view, artifacts, live=live)
+            result = super().run(task_id, view, artifacts, live=live)
+            diagnostics = _ACTIVE_PUBLIC_QUERY_POLICY_DIAGNOSTICS.get()
+            for diagnostic in diagnostics:
+                blocked = diagnostic.startswith("public_query_blocked")
+                store.record_activity(
+                    task_id,
+                    self.agent_id,
+                    "internet_egress_policy_blocked" if blocked else "internet_egress_policy_warning",
+                    "blocked" if blocked else "warning",
+                    diagnostic,
+                )
+            return result
         finally:
+            _ACTIVE_PUBLIC_QUERY_POLICY_DIAGNOSTICS.reset(policy_token)
             _ACTIVE_LEARNING_CONTEXT.reset(token)
