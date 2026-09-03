@@ -34,7 +34,7 @@ PY
 grep -Fq 'workspace-core' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-public' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-egress' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'usermod -a -G "$IPC_GROUP" "$CORE_USER"' scripts/install_workspace_secure_boundary.sh
+grep -Fq "usermod -a -G \"\$IPC_GROUP\" \"\$CORE_USER\"" scripts/install_workspace_secure_boundary.sh
 grep -Fq 'InaccessiblePaths=/var/lib/workspace /var/lib/workspace-public' scripts/install_workspace_secure_boundary.sh
 grep -Fq -- "--allow-uid \${PUBLIC_UID}" scripts/install_workspace_secure_boundary.sh
 grep -Fq -- "--allow-uid \${CORE_UID}" scripts/install_workspace_secure_boundary.sh
