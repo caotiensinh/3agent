@@ -155,10 +155,27 @@ jobs:
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
         run: |
+          $pythonCommand = Get-Command python -ErrorAction Stop
+          Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
+          Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
+          & python --version
+          if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
+          & python -m pip --version
+          if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          $scriptText = Invoke-RestMethod -Uri $url
-          & ([ScriptBlock]::Create($scriptText))
-          if (-not $?) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+          Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
+          try {
+            $scriptText = Invoke-RestMethod -Uri $url
+            & ([ScriptBlock]::Create($scriptText))
+            $bootstrapSucceeded = $?
+            $bootstrapNativeExit = $LASTEXITCODE
+            Write-Host "Bootstrap diagnostic: PowerShell success=$bootstrapSucceeded native_exit=$bootstrapNativeExit"
+            if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+          }
+          catch {
+            Write-Error "Bootstrap diagnostic failure: $($_.Exception.Message)"
+            throw
+          }
           $global:LASTEXITCODE = 0
       - name: Verify installed command and exact GitHub lineage
         shell: powershell
