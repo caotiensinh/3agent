@@ -89,7 +89,7 @@ class HarnessH2MemoryTests(unittest.TestCase):
             },
         )
         digest = self.store.append_event(source)
-        recovered = self.store.get_event("evt-001")
+        recovered = self.store.get_event("evt-001", project_id="workspace")
 
         self.assertEqual(recovered.payload, source.payload)
         self.assertEqual(recovered.source_ref, source.source_ref)
@@ -180,9 +180,12 @@ class HarnessH2MemoryTests(unittest.TestCase):
 
         history = self.store.memory_history(memory_id="router-ip", project_id="workspace")
         self.assertEqual([item.revision_id for item in history], ["rev-old", "rev-new"])
-        self.assertEqual(self.store.get_revision("rev-old").content, old.content)
         self.assertEqual(
-            self.store.effective_valid_until("rev-old"),
+            self.store.get_revision("rev-old", project_id="workspace").content,
+            old.content,
+        )
+        self.assertEqual(
+            self.store.effective_valid_until("rev-old", project_id="workspace"),
             "2026-09-03T01:00:01Z",
         )
         self.assertEqual(

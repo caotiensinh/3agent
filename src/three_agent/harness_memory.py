@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -16,19 +17,44 @@ HARNESS_MEMORY_SCHEMA = "workspace-harness-memory/v1"
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _LAYERS = frozenset({"M1", "M2", "M3", "M4", "M5"})
 _TRUST_DOMAINS = frozenset({"trusted", "derived", "untrusted"})
+_MAX_JSON_DEPTH = 64
 
 
 class HarnessMemoryError(ValueError):
     """Harness memory input or persisted state violates a deterministic invariant."""
 
 
+def _validate_json_value(value: Any, *, depth: int = 0) -> None:
+    if depth > _MAX_JSON_DEPTH:
+        raise HarnessMemoryError("PAYLOAD_JSON_DEPTH_EXCEEDED")
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise HarnessMemoryError("PAYLOAD_NON_FINITE_NUMBER")
+        return
+    if isinstance(value, list):
+        for item in value:
+            _validate_json_value(item, depth=depth + 1)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise HarnessMemoryError("PAYLOAD_OBJECT_KEY_MUST_BE_STRING")
+            _validate_json_value(item, depth=depth + 1)
+        return
+    raise HarnessMemoryError("PAYLOAD_NOT_CANONICAL_JSON")
+
+
 def _canonical_json(payload: Any) -> str:
+    _validate_json_value(payload)
     try:
         return json.dumps(
             payload,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
+            allow_nan=False,
         )
     except (TypeError, ValueError) as exc:
         raise HarnessMemoryError("PAYLOAD_NOT_CANONICAL_JSON") from exc
@@ -43,17 +69,25 @@ def _now() -> str:
 
 
 def _compact_id(value: Any, field_name: str) -> str:
-    text = str(value or "").strip()
-    if not _ID_RE.fullmatch(text):
+    if not isinstance(value, str):
         raise HarnessMemoryError(f"INVALID_{field_name.upper()}")
-    return text
+    if value != value.strip() or not _ID_RE.fullmatch(value):
+        raise HarnessMemoryError(f"INVALID_{field_name.upper()}")
+    return value
 
 
 def _single_line(value: Any, field_name: str, *, max_len: int) -> str:
-    text = str(value or "").strip()
-    if not text or len(text) > max_len or "\n" in text or "\r" in text:
+    if not isinstance(value, str):
         raise HarnessMemoryError(f"INVALID_{field_name.upper()}")
-    return text
+    if (
+        not value
+        or value != value.strip()
+        or len(value) > max_len
+        or "\n" in value
+        or "\r" in value
+    ):
+        raise HarnessMemoryError(f"INVALID_{field_name.upper()}")
+    return value
 
 
 def _timestamp(value: Any, field_name: str) -> str:
@@ -159,9 +193,9 @@ class MemoryRecord:
             raise HarnessMemoryError("INVALID_TRUST_DOMAIN")
         if not isinstance(self.confidence, (int, float)) or isinstance(self.confidence, bool):
             raise HarnessMemoryError("INVALID_MEMORY_CONFIDENCE")
-        if not 0.0 <= float(self.confidence) <= 1.0:
+        if not math.isfinite(float(self.confidence)) or not 0.0 <= float(self.confidence) <= 1.0:
             raise HarnessMemoryError("INVALID_MEMORY_CONFIDENCE")
-        if not self.provenance_event_ids:
+        if not isinstance(self.provenance_event_ids, tuple) or not self.provenance_event_ids:
             raise HarnessMemoryError("MEMORY_PROVENANCE_REQUIRED")
         if len(set(self.provenance_event_ids)) != len(self.provenance_event_ids):
             raise HarnessMemoryError("DUPLICATE_MEMORY_PROVENANCE")
@@ -216,7 +250,7 @@ class HarnessMemoryStore:
 
     Raw events and memory revisions are immutable evidence. This store never
     grants capabilities; TaskContract and TaskCapabilityAuthority remain the
-    only execution-authority path.
+    only execution-authority path. Public reads require project scope.
     """
 
     def __init__(self, task_store: TaskStore):
@@ -378,6 +412,17 @@ class HarnessMemoryStore:
             raise HarnessMemoryError("MEMORY_INTEGRITY_FAILED:RECORD_SHA256_MISMATCH")
         return record
 
+    def _load_event(self, event_id: str) -> HarnessEvent:
+        event_key = _compact_id(event_id, "event_id")
+        with self.task_store.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM harness_events WHERE event_id = ?",
+                (event_key,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown harness event: {event_key}")
+        return self._event_from_row(row)
+
     def append_event(self, event: HarnessEvent) -> str:
         event.validate()
         self._assert_task_exists(event.task_id)
@@ -418,16 +463,12 @@ class HarnessMemoryStore:
             )
         return fingerprint
 
-    def get_event(self, event_id: str) -> HarnessEvent:
-        event_key = _compact_id(event_id, "event_id")
-        with self.task_store.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM harness_events WHERE event_id = ?",
-                (event_key,),
-            ).fetchone()
-        if row is None:
-            raise KeyError(f"Unknown harness event: {event_key}")
-        return self._event_from_row(row)
+    def get_event(self, event_id: str, *, project_id: str) -> HarnessEvent:
+        project = _compact_id(project_id, "project_id")
+        event = self._load_event(event_id)
+        if event.project_id != project:
+            raise KeyError(f"Unknown harness event in project scope: {event_id}")
+        return event
 
     def list_events(
         self,
@@ -458,7 +499,7 @@ class HarnessMemoryStore:
         events: list[HarnessEvent] = []
         for event_id in record.provenance_event_ids:
             try:
-                event = self.get_event(event_id)
+                event = self._load_event(event_id)
             except KeyError as exc:
                 raise HarnessMemoryError("MEMORY_PROVENANCE_EVENT_MISSING") from exc
             if event.project_id != record.project_id:
@@ -580,7 +621,7 @@ class HarnessMemoryStore:
                 raise
         return fingerprint
 
-    def get_revision(self, revision_id: str) -> MemoryRecord:
+    def _load_revision(self, revision_id: str) -> MemoryRecord:
         revision_key = _compact_id(revision_id, "revision_id")
         with self.task_store.connect() as conn:
             row = conn.execute(
@@ -590,6 +631,13 @@ class HarnessMemoryStore:
         if row is None:
             raise KeyError(f"Unknown harness memory revision: {revision_key}")
         return self._memory_from_row(row)
+
+    def get_revision(self, revision_id: str, *, project_id: str) -> MemoryRecord:
+        project = _compact_id(project_id, "project_id")
+        record = self._load_revision(revision_id)
+        if record.project_id != project:
+            raise KeyError(f"Unknown harness memory revision in project scope: {revision_id}")
+        return record
 
     def memory_history(self, *, memory_id: str, project_id: str) -> tuple[MemoryRecord, ...]:
         memory_key = _compact_id(memory_id, "memory_id")
@@ -605,8 +653,9 @@ class HarnessMemoryStore:
             ).fetchall()
         return tuple(self._memory_from_row(row) for row in rows)
 
-    def effective_valid_until(self, revision_id: str) -> str | None:
-        record = self.get_revision(revision_id)
+    def effective_valid_until(self, revision_id: str, *, project_id: str) -> str | None:
+        project = _compact_id(project_id, "project_id")
+        record = self.get_revision(revision_id, project_id=project)
         with self.task_store.connect() as conn:
             child_row = conn.execute(
                 """
@@ -620,6 +669,8 @@ class HarnessMemoryStore:
         child_start = None
         if child_row is not None:
             child = self._memory_from_row(child_row)
+            if child.project_id != project:
+                raise HarnessMemoryError("MEMORY_CHAIN_PROJECT_INTEGRITY_FAILED")
             child_start = child.valid_from
         if record.valid_until is None:
             return child_start
@@ -638,12 +689,13 @@ class HarnessMemoryStore:
         project_id: str,
         at: str,
     ) -> MemoryRecord | None:
+        project = _compact_id(project_id, "project_id")
         point = _as_datetime(_timestamp(at, "at"))
-        history = self.memory_history(memory_id=memory_id, project_id=project_id)
+        history = self.memory_history(memory_id=memory_id, project_id=project)
         matches: list[MemoryRecord] = []
         for record in history:
             start = _as_datetime(record.valid_from)
-            end_text = self.effective_valid_until(record.revision_id)
+            end_text = self.effective_valid_until(record.revision_id, project_id=project)
             end = _as_datetime(end_text) if end_text is not None else None
             if start <= point and (end is None or point < end):
                 matches.append(record)
