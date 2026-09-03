@@ -13,7 +13,7 @@ from pptx import Presentation
 from reportlab.pdfgen import canvas
 
 from three_agent.chat_attachment_memory import ConversationAttachmentMemory
-from three_agent.chat_context_v3 import (
+from three_agent.chat_context import (
     CONTEXT_MODE_CONTINUITY,
     CONTEXT_MODE_FOLLOW_UP,
     build_conversation_context,

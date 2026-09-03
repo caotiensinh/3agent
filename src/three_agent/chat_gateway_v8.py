@@ -13,7 +13,7 @@ from .chat_gateway_v7 import (
     ConversationKnowledgeChatService,
     ConversationKnowledgeHTTPHandler,
 )
-from .chat_history_v3 import ProjectConversationStore
+from .chat_history import ProjectConversationStore
 from .config import load_config
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text

@@ -9,7 +9,7 @@ from . import chat_gateway_v18 as _v18
 from . import chat_gateway_v21 as _v21
 from . import orchestrator as _orchestrator
 from .chat_attachment_memory import ConversationAttachmentMemory
-from .chat_context_v3 import (
+from .chat_context import (
     CONTEXT_MODE_FOLLOW_UP,
     CONVERSATION_CONTEXT_POLICY_VERSION,
     DEFAULT_CONTEXT_MAX_CHARS,

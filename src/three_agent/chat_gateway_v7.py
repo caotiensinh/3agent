@@ -11,7 +11,7 @@ from .chat_gateway import TelegramBridge, _lan_hint, _parse_allowed_ids
 from .chat_gateway_v2 import ProgressApplication
 from .chat_gateway_v5 import SidebarKnowledgeChatService
 from .chat_gateway_v6 import AccountKnowledgeHTTPHandler
-from .chat_history_v2 import ConversationHistoryStore
+from .chat_history import ConversationHistoryStore
 from .config import load_config
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text

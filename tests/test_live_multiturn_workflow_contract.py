@@ -115,7 +115,7 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").is_file())
         v19 = (ROOT / "src/three_agent/chat_gateway_v19.py").read_text(encoding="utf-8")
         self.assertIn("ContinuityProjectChatService", v19)
-        self.assertIn("chat_context_v3", v19)
+        self.assertIn("chat_context", v19)
         self.assertIn("return _v18.main()", v19)
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v18.py").is_file())
         self.assertTrue((ROOT / "src/three_agent/chat_gateway_v17.py").is_file())

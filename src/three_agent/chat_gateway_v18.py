@@ -8,7 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import chat_gateway_v4 as _v4
 from . import chat_gateway_v17 as _v17
-from .chat_context_v2 import (
+from .chat_context import (
     CONTEXT_MODE_FOLLOW_UP,
     DEFAULT_CONTEXT_MAX_CHARS,
     DEFAULT_CONTEXT_MAX_MESSAGES,

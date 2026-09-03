@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from three_agent.chat_history import ChatHistoryStore
-from three_agent.chat_history_v2 import ConversationHistoryStore
+from three_agent.chat_history import ConversationHistoryStore
 
 
 class ConversationHistoryStoreTests(unittest.TestCase):

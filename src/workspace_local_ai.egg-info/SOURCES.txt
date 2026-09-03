@@ -99,6 +99,7 @@ src/three_agent/inference_scope.py
 src/three_agent/knowledge_cli.py
 src/three_agent/knowledge_gateway.py
 src/three_agent/knowledge_gateway_v2.py
+src/three_agent/knowledge_gateway_v3.py
 src/three_agent/knowledge_plane.py
 src/three_agent/linked_execution_budget.py
 src/three_agent/llm.py
@@ -152,6 +153,7 @@ src/three_agent/route_planner.py
 src/three_agent/runtime_efficiency.py
 src/three_agent/runtime_validation.py
 src/three_agent/security_monitoring_cli.py
+src/three_agent/security_monitoring_scheduler.py
 src/three_agent/security_pcap_runner.py
 src/three_agent/security_reporting_cli.py
 src/three_agent/skill_registry.py
@@ -164,6 +166,7 @@ src/three_agent/token_metrics.py
 src/three_agent/validator_ledger.py
 src/three_agent/verified_metrics.py
 src/three_agent/version.py
+src/three_agent/vision.py
 src/three_agent/web_research.py
 src/three_agent/worker_pool.py
 src/three_agent/workflow.py
@@ -222,6 +225,7 @@ src/three_agent/security_monitoring/alerting.py
 src/three_agent/security_monitoring/analyst_finding.py
 src/three_agent/security_monitoring/anti_forensics_detection.py
 src/three_agent/security_monitoring/asset_dependency.py
+src/three_agent/security_monitoring/asset_onboarding.py
 src/three_agent/security_monitoring/baseline_benchmark.py
 src/three_agent/security_monitoring/baselines.py
 src/three_agent/security_monitoring/behavior_intelligence.py
@@ -232,6 +236,8 @@ src/three_agent/security_monitoring/capability_router.py
 src/three_agent/security_monitoring/checkpoint.py
 src/three_agent/security_monitoring/checkpoint_compatibility.py
 src/three_agent/security_monitoring/collectors.py
+src/three_agent/security_monitoring/config_center.py
+src/three_agent/security_monitoring/config_governance.py
 src/three_agent/security_monitoring/contracts.py
 src/three_agent/security_monitoring/correlation_graph.py
 src/three_agent/security_monitoring/correlation_store.py
@@ -374,9 +380,11 @@ tests/test_chat_gateway_v10.py
 tests/test_chat_gateway_v11.py
 tests/test_chat_gateway_v12.py
 tests/test_chat_gateway_v13.py
+tests/test_chat_gateway_v13_contract.py
 tests/test_chat_gateway_v14.py
 tests/test_chat_gateway_v14_contract.py
 tests/test_chat_gateway_v15.py
+tests/test_chat_gateway_v15_contract.py
 tests/test_chat_gateway_v16_context.py
 tests/test_chat_gateway_v16_contract.py
 tests/test_chat_gateway_v17.py
@@ -393,6 +401,7 @@ tests/test_chat_history_v2.py
 tests/test_chat_history_v3.py
 tests/test_chat_intelligence_context.py
 tests/test_chat_memory_attachments_v22.py
+tests/test_chat_memory_attachments_v3.py
 tests/test_chat_multiturn_acceptance.py
 tests/test_chat_multiturn_acceptance_v2.py
 tests/test_chat_output_contract.py
@@ -450,6 +459,7 @@ tests/test_metric_registry.py
 tests/test_metrics_snapshot.py
 tests/test_missing_reference_plain_first.py
 tests/test_model_authority.py
+tests/test_multimodal_attachments_v4.py
 tests/test_network_bots_feasibility.py
 tests/test_network_bots_registry_feasibility.py
 tests/test_network_cic_adapter.py
@@ -505,8 +515,14 @@ tests/test_runtime_validation_precompiled_contract.py
 tests/test_security_analyst_finding.py
 tests/test_security_anti_forensics_detection_v026.py
 tests/test_security_asset_dependency_v001.py
+tests/test_security_asset_onboarding.py
+tests/test_security_asset_onboarding_gateway.py
+tests/test_security_asset_onboarding_gateway_v011.py
+tests/test_security_asset_onboarding_v011.py
 tests/test_security_capability_registry.py
 tests/test_security_capability_router.py
+tests/test_security_configuration_center.py
+tests/test_security_configuration_frontend.py
 tests/test_security_configuration_installer_contract.py
 tests/test_security_credential_abuse_trace_v027.py
 tests/test_security_dfir_conformance_v017.py
@@ -537,6 +553,7 @@ tests/test_security_monitoring_behavior_store.py
 tests/test_security_monitoring_checkpoint.py
 tests/test_security_monitoring_checkpoint_compatibility.py
 tests/test_security_monitoring_collectors.py
+tests/test_security_monitoring_config_governance.py
 tests/test_security_monitoring_correlation_graph.py
 tests/test_security_monitoring_correlation_store.py
 tests/test_security_monitoring_correlation_support.py
@@ -588,6 +605,7 @@ tests/test_security_monitoring_replay_integration.py
 tests/test_security_monitoring_rule_compiler.py
 tests/test_security_monitoring_rule_contracts.py
 tests/test_security_monitoring_runtime_config.py
+tests/test_security_monitoring_scheduler.py
 tests/test_security_monitoring_snmp_backend.py
 tests/test_security_monitoring_snmp_optional_dependency.py
 tests/test_security_monitoring_soc_boundaries_ui.py
@@ -670,6 +688,7 @@ tests/test_workflow_studio_provenance.py
 tests/test_workspace_auth.py
 tests/test_workspace_auth_guard.py
 tests/test_workspace_chat_capability_authority.py
+tests/test_workspace_dispatch_ui.py
 tests/test_workspace_doctrine.py
 tests/test_workspace_egress.py
 tests/test_workspace_external_identity.py
