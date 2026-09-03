@@ -239,7 +239,7 @@ def main() -> int:
             "-nE",
             "chat_context_v[23]|chat_history_v[23]",
             "--",
-            "src",
+            "src/three_agent",
             "tests",
             "pyproject.toml",
         ]
