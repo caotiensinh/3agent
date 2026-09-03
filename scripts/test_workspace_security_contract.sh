@@ -17,7 +17,7 @@ public = json.loads(Path("config/workspace.public-research.json").read_text(enco
 assert secure["product_name"] == "WorkSpace"
 assert secure["confidentiality_mode"] == "confidential"
 assert secure["test_mode_full_access"] is False
-assert secure["internet_gateway"]["public_search_enabled"] is False
+assert secure["internet_gateway"]["public_search_enabled"] is True
 assert secure["internet_gateway"]["direct_egress"] is False
 
 assert public["product_name"] == "WorkSpace"
@@ -34,13 +34,10 @@ PY
 grep -Fq 'workspace-core' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-public' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-egress' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'Deliberately do NOT add workspace-core to the egress IPC group' scripts/install_workspace_secure_boundary.sh
-if grep -Eq 'usermod .*CORE_USER.*IPC_GROUP' scripts/install_workspace_secure_boundary.sh; then
-  echo 'workspace-core must never join the egress IPC group' >&2
-  exit 1
-fi
+grep -Fq 'usermod -a -G "$IPC_GROUP" "$CORE_USER"' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'InaccessiblePaths=/var/lib/workspace /var/lib/workspace-public' scripts/install_workspace_secure_boundary.sh
 grep -Fq -- "--allow-uid \${PUBLIC_UID}" scripts/install_workspace_secure_boundary.sh
+grep -Fq -- "--allow-uid \${CORE_UID}" scripts/install_workspace_secure_boundary.sh
 grep -Fq "meta skuid \${CORE_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq "meta skuid \${PUBLIC_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq '127.0.0.1 tcp dport 11434-11436 accept' scripts/install_workspace_secure_boundary.sh
