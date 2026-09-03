@@ -140,6 +140,7 @@ class SecurityMonitoringUIConfigManager:
         return {
             "schema_version": CONFIG_SCHEMA,
             "state": "configured" if exists else "safe_default_not_saved",
+            "mode": "operator-configured" if exists else "safe-default",
             "path_source": self.path_source,
             "config_path": str(self.path),
             "config": payload,
@@ -204,6 +205,7 @@ class SecurityMonitoringUIConfigManager:
         return {
             "schema_version": CONFIG_SCHEMA,
             "saved": True,
+            "mode": "operator-configured",
             "config_path": str(self.path),
             "summary": _config_summary(config),
             "readiness": self._readiness_for(config),
