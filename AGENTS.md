@@ -130,6 +130,18 @@ If an implementation is wrong, incomplete, or fails verification, revise it and 
 
 Large or difficult problems MUST be recursively decomposed until each leaf task is small enough to have one purpose, bounded side effects, explicit acceptance, and a realistic path to verification within one working session where technically possible.
 
+### Composite strategy default
+
+Detailed supplement: `docs/WORKSPACE_COMPOSITE_STRATEGY_POLICY_V0_0_1.md`.
+
+- For a non-trivial bottleneck, **combine complementary strategies** rather than choosing only one fallback when multiple safe methods can reduce uncertainty independently.
+- When uncertainty is material or the problem is repeatedly failing, use at least three genuinely distinct strategy families where available: direct discovery, history archaeology, dependency isolation, protocol/adapter-first progress, exact-head local inspection, deterministic verification, or negative security testing.
+- Search/index failure is not evidence that implementation is absent. Switch and combine discovery mechanisms instead of retrying the same search blindly.
+- One failed discovery lane MUST NOT block independent contract, adapter, test, security, or documentation lanes.
+- Protocol/adapter-first work may isolate an unknown dependency, but it MUST preserve the existing authoritative source of truth and MUST NOT create a parallel authority or storage system.
+- Parallel strategy results MUST converge through evidence comparison. Contradictions must be resolved before `PASS`, `READY`, or `SUCCESS`.
+- A `BLOCKED` claim requires evidence that viable in-authority composite alternatives were attempted or ruled out.
+
 ### Evidence-gated progress
 
 A work unit counts as complete only after mandatory acceptance criteria PASS with evidence.
