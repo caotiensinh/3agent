@@ -177,7 +177,7 @@ class AssetDependencyV001Tests(unittest.TestCase):
         graph = DeclaredAssetDependencyGraph(assets, [repeated])
 
         def too_many_seeds():
-            for _ in range(MAX_IMACT_SEEDS + 1):
+            for _ in range(MAX_IMPACT_SEEDS + 1):
                 yield "a-01"
             raise AssertionError("seed iterator consumed past hard bound")
 
