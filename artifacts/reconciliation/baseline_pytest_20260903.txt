@@ -1,0 +1,38 @@
+
+==================================== ERRORS ====================================
+____________ ERROR collecting tests/test_security_readonly_pilot.py ____________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_security_readonly_pilot.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_security_readonly_pilot.py:8: in <module>
+    from scripts.run_security_readonly_pilot import (
+E   ModuleNotFoundError: No module named 'scripts'
+_________ ERROR collecting tests/test_self_hosted_runner_readiness.py __________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_self_hosted_runner_readiness.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_self_hosted_runner_readiness.py:6: in <module>
+    from scripts.check_self_hosted_runner_readiness import SCHEMA, evaluate_readiness
+E   ModuleNotFoundError: No module named 'scripts'
+__________ ERROR collecting tests/test_validate_workspace_runtime.py ___________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_validate_workspace_runtime.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_validate_workspace_runtime.py:9: in <module>
+    from scripts import validate_workspace_runtime as validator
+E   ModuleNotFoundError: No module named 'scripts'
+=========================== short test summary info ============================
+ERROR tests/test_security_readonly_pilot.py
+ERROR tests/test_self_hosted_runner_readiness.py
+ERROR tests/test_validate_workspace_runtime.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+3 errors in 3.34s
