@@ -105,7 +105,28 @@ class Orchestrator:
             "WORKSPACE_INFERENCE_TELEMETRY",
             str(config.artifact_root / "activity" / "inference.jsonl"),
         )
+        self.resource_telemetry_path = os.getenv(
+            "WORKSPACE_RESOURCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "resource_events.jsonl"),
+        )
         os.environ.setdefault("WORKSPACE_INFERENCE_TELEMETRY", self.inference_telemetry_path)
+        os.environ.setdefault("WORKSPACE_RESOURCE_TELEMETRY", self.resource_telemetry_path)
+        self.resource_events = ResourceEventRecorder(self.resource_telemetry_path)
+
+        raw_internet_gateway = InternetGateway(
+            config.internet_gateway, config.test_mode_full_access
+        )
+        raw_execution_gateway = ExecutionGateway(
+            config.execution_gateway, config.test_mode_full_access
+        )
+        self.internet_gateway = MeteredInternetGateway(
+            raw_internet_gateway, self.resource_events
+        )
+        self.execution_gateway = MeteredExecutionGateway(
+            raw_execution_gateway, self.resource_events
+        )
+        self.web_research = WebResearchClient(self.internet_gateway)
+        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
