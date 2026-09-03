@@ -12,8 +12,8 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64, workspace-benchmark]", text)
-        self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64, r9, rtx5090]", text)
+        self.assertNotIn("workspace-benchmark", text)
         self.assertIn("group: workspace-live-chat-multiturn-main-v3", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
