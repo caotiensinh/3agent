@@ -6,6 +6,7 @@ on:
       - reconcile/all-branches-v4-final-20260903
     paths:
       - .github/workflows/consolidate-core-version-families.yml
+      - scripts/consolidate_core_version_families.py
   workflow_dispatch:
 
 permissions:
