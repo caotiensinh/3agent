@@ -232,6 +232,19 @@ class InternetGateway:
                         self._record(agent_id, task_id, current, False, "redirect_limit_exceeded", action)
                         raise OutboundSecurityError("Outbound redirect limit exceeded") from exc
                     next_url = urljoin(current, exc.headers["Location"])
+                    try:
+                        _validate_public_url(next_url, https_only=self.secure_mode)
+                    except Exception as redirect_exc:
+                        self._record(
+                            agent_id,
+                            task_id,
+                            current,
+                            False,
+                            f"redirect_target_rejected:{redirect_exc}",
+                            action,
+                        )
+                        exc.close()
+                        raise
                     self._record(agent_id, task_id, current, True, f"redirect_{exc.code}", action)
                     exc.close()
                     current = next_url
