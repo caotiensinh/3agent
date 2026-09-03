@@ -13,8 +13,7 @@ from .models import TaskStatus
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
 from .task_contract import ExecutionBudget, TaskContract
 from .version import DISPLAY_VERSION
-from .workflow_design import WorkflowDesignError
-from .workflow_design_v4 import validate_contract_v4
+from .workflow_design import WorkflowDesignError, validate_contract_v4
 from .workflow_state_machine import (
     TZ,
     WORKFLOW_V3_MAX_WALL_TIME_MS,
