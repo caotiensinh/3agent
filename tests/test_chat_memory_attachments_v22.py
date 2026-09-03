@@ -1,0 +1,350 @@
+from __future__ import annotations
+
+import base64
+import http.client
+import json
+import tempfile
+import threading
+import unittest
+from io import BytesIO
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from docx import Document
+from openpyxl import Workbook
+from pptx import Presentation
+from reportlab.pdfgen import canvas
+
+from three_agent import chat_gateway_v22 as gateway_v22
+from three_agent.chat_attachment_memory import ConversationAttachmentMemory
+from three_agent.chat_context_v3 import (
+    CONTEXT_MODE_CONTINUITY,
+    CONTEXT_MODE_FOLLOW_UP,
+    build_conversation_context,
+)
+from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
+from three_agent.document_extractors import extract_document
+from three_agent.knowledge_gateway_v2 import KnowledgeGatewayV2
+from three_agent.workspace_frontend_v18 import WORKSPACE_HTML_V18
+
+
+class ConversationContinuityTests(unittest.TestCase):
+    def test_same_conversation_is_injected_without_magic_followup_words(self):
+        messages = [
+            {"role": "user", "content": "Chúng ta đang thiết kế server AI dùng hai GPU.", "job_id": "a", "status": "completed"},
+            {"role": "assistant", "content": "Tôi đề xuất Ubuntu làm server duy nhất trong LAN.", "job_id": "a", "status": "completed"},
+            {"role": "user", "content": "Cấu hình firewall nên như thế nào?", "job_id": "b", "status": "completed"},
+        ]
+        plan = build_conversation_context(messages, "Port 8787 có cần mở toàn mạng không?", current_job_id="current")
+        self.assertEqual(plan.mode, CONTEXT_MODE_CONTINUITY)
+        self.assertIn("Ubuntu làm server duy nhất", plan.text)
+        self.assertGreaterEqual(plan.message_count, 2)
+
+    def test_explicit_reference_keeps_followup_mode(self):
+        plan = build_conversation_context(
+            [{"role": "assistant", "content": "Phương án A", "job_id": "x", "status": "completed"}],
+            "tiếp tục phần trên",
+            current_job_id="current",
+        )
+        self.assertEqual(plan.mode, CONTEXT_MODE_FOLLOW_UP)
+        self.assertIn("Phương án A", plan.text)
+
+    def test_current_and_failed_messages_are_not_reinjected(self):
+        messages = [
+            {"role": "user", "content": "old-safe", "job_id": "old", "status": "completed"},
+            {"role": "assistant", "content": "failed-secret", "job_id": "bad", "status": "failed"},
+            {"role": "user", "content": "current-duplicate", "job_id": "now", "status": "completed"},
+        ]
+        plan = build_conversation_context(messages, "new question", current_job_id="now")
+        self.assertIn("old-safe", plan.text)
+        self.assertNotIn("failed-secret", plan.text)
+        self.assertNotIn("current-duplicate", plan.text)
+
+
+class ConversationAttachmentMemoryTests(unittest.TestCase):
+    def test_attachment_references_survive_restart_without_copying_file_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "workspace.db"
+            memory = ConversationAttachmentMemory(db)
+            memory.initialize()
+            conversation = "c" * 16
+            upload_a = "a" * 16
+            upload_b = "b" * 16
+            memory.record(conversation, "job-1", [upload_a, upload_b])
+
+            restarted = ConversationAttachmentMemory(db)
+            restarted.initialize()
+            self.assertEqual(
+                restarted.recent_upload_ids(conversation, max_messages=1),
+                [upload_a, upload_b],
+            )
+
+            with restarted.connect() as conn:
+                columns = [
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(chat_message_attachments)")
+                ]
+            self.assertEqual(
+                columns,
+                ["conversation_id", "job_id", "upload_id", "ordinal", "created_at"],
+            )
+
+    def test_followup_resolves_recent_attachment_through_owner_validation(self):
+        service = object.__new__(ContinuitySecurityAwareProjectChatService)
+        service.history = SimpleNamespace(
+            get_conversation=lambda owner_key, conversation_id: {
+                "conversation_id": conversation_id,
+                "messages": [],
+            }
+        )
+        service.attachment_memory = SimpleNamespace(
+            recent_upload_ids=lambda conversation_id, **kwargs: ["a" * 16]
+        )
+        service.orchestrator = SimpleNamespace(knowledge_gateway=object())
+
+        with patch(
+            "three_agent.chat_gateway_v22._v4._validate_owned_uploads",
+            return_value=["a" * 16],
+        ) as validator:
+            resolved = service._resolve_submit_uploads(
+                "hãy phân tích tiếp file đó",
+                channel="web",
+                sender="workspace-user:test",
+                conversation_id="c" * 16,
+                upload_ids=[],
+            )
+        self.assertEqual(resolved, ["a" * 16])
+        validator.assert_called_once()
+
+    def test_unrelated_turn_does_not_silently_inherit_old_attachment(self):
+        service = object.__new__(ContinuitySecurityAwareProjectChatService)
+        service.history = SimpleNamespace()
+        service.attachment_memory = SimpleNamespace()
+        service.orchestrator = SimpleNamespace(knowledge_gateway=object())
+        resolved = service._resolve_submit_uploads(
+            "Hãy giải thích nguyên lý DNS từ đầu.",
+            channel="web",
+            sender="workspace-user:test",
+            conversation_id="c" * 16,
+            upload_ids=[],
+        )
+        self.assertEqual(resolved, [])
+
+
+class BusinessDocumentExtractionTests(unittest.TestCase):
+    def test_csv_docx_pptx_xlsx_pdf_are_readable(self):
+        text, kind, _ = extract_document("sample.csv", b"name,value\nalpha,42\n")
+        self.assertEqual(kind, "csv")
+        self.assertIn("alpha", text)
+
+        buf = BytesIO()
+        doc = Document()
+        doc.add_paragraph("DOCX evidence 123")
+        doc.save(buf)
+        text, kind, _ = extract_document("sample.docx", buf.getvalue())
+        self.assertEqual(kind, "docx")
+        self.assertIn("DOCX evidence 123", text)
+
+        buf = BytesIO()
+        deck = Presentation()
+        slide = deck.slides.add_slide(deck.slide_layouts[5])
+        box = slide.shapes.add_textbox(0, 0, 1000000, 1000000)
+        box.text_frame.text = "PPTX evidence 456"
+        deck.save(buf)
+        text, kind, _ = extract_document("sample.pptx", buf.getvalue())
+        self.assertEqual(kind, "pptx")
+        self.assertIn("PPTX evidence 456", text)
+
+        buf = BytesIO()
+        book = Workbook()
+        sheet = book.active
+        sheet["A1"] = "XLSX evidence"
+        sheet["B1"] = 789
+        book.save(buf)
+        text, kind, _ = extract_document("sample.xlsx", buf.getvalue())
+        self.assertEqual(kind, "xlsx")
+        self.assertIn("XLSX evidence", text)
+
+        buf = BytesIO()
+        pdf = canvas.Canvas(buf)
+        pdf.drawString(72, 720, "PDF evidence 999")
+        pdf.save()
+        text, kind, _ = extract_document("sample.pdf", buf.getvalue())
+        self.assertEqual(kind, "pdf")
+        self.assertIn("PDF evidence 999", text)
+
+    def test_long_attachment_retrieval_finds_relevant_text_beyond_old_12k_prefix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = KnowledgeGatewayV2(Path(tmp), object())
+            filler = ("ordinary filler line without the target term\n" * 600).encode("utf-8")
+            marker = "DEVICE-ALPHA-9876 requires LAN port 8787 only\n".encode("utf-8")
+            record = gateway.ingest_upload(
+                "long-notes.log",
+                filler + marker,
+                sender="workspace-user:test",
+            )
+            context, diagnostics = gateway.build_attachment_context(
+                [record.upload_id],
+                "What does DEVICE-ALPHA-9876 require?",
+                max_chars=24_000,
+            )
+            self.assertNotIn("image_not_semantically_parsed", " ".join(diagnostics))
+            self.assertIn("DEVICE-ALPHA-9876", context)
+            self.assertIn("8787", context)
+            self.assertLessEqual(len(context), 24_000)
+
+    def test_v22_ui_exposes_business_documents_without_rewriting_rollback_layers(self):
+        self.assertIn(".pdf,.docx,.pptx,.xlsx,.csv", WORKSPACE_HTML_V18)
+        self.assertIn("Uploading and processing files locally", WORKSPACE_HTML_V18)
+        self.assertIn("Attachments processed locally", WORKSPACE_HTML_V18)
+
+
+class _HTTPProductJob:
+    def __init__(self, job_id: str) -> None:
+        self.job_id = job_id
+
+    def public_dict(self) -> dict[str, object]:
+        return {
+            "job_id": self.job_id,
+            "status": "queued",
+            "answer": "",
+            "stages": [],
+            "artifacts": [],
+        }
+
+
+class _HTTPProductService:
+    default_language = "vi"
+
+    def __init__(self, gateway: KnowledgeGatewayV2) -> None:
+        self.orchestrator = SimpleNamespace(
+            knowledge_gateway=gateway,
+            config=SimpleNamespace(),
+        )
+        self.last_submit: dict[str, object] = {}
+
+    def submit(self, message: str, **kwargs):
+        upload_ids = list(kwargs.get("upload_ids") or [])
+        context, diagnostics = self.orchestrator.knowledge_gateway.build_attachment_context(
+            upload_ids,
+            message,
+            max_chars=24_000,
+        )
+        self.last_submit = {
+            "message": message,
+            "conversation_id": kwargs.get("conversation_id"),
+            "upload_ids": upload_ids,
+            "sender": kwargs.get("sender"),
+            "context": context,
+            "diagnostics": diagnostics,
+        }
+        return _HTTPProductJob("e" * 16)
+
+    @staticmethod
+    def conversation_for_job(job_id: str) -> str:
+        return "c" * 16
+
+
+class _HTTPProductHandler(gateway_v22._v17.WorkflowV4ContextHTTPHandler):
+    def _private_or_reject(self) -> bool:
+        return True
+
+    def _authorized(self) -> bool:
+        return True
+
+    def _authorized_local(self) -> bool:
+        return True
+
+    def _current_user(self):
+        return {"user_id": "test", "role": "admin", "username": "test"}
+
+    def _identity(self, user=None) -> str:
+        return "workspace-user:test"
+
+    def log_message(self, format: str, *args) -> None:
+        return None
+
+
+class HTTPProductIntegrationTests(unittest.TestCase):
+    @staticmethod
+    def _request(port: int, method: str, path: str, payload: dict | None = None):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        try:
+            body = None
+            headers = {}
+            if payload is not None:
+                body = json.dumps(payload).encode("utf-8")
+                headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
+            conn.request(method, path, body=body, headers=headers)
+            response = conn.getresponse()
+            raw = response.read()
+            return response.status, response.getheaders(), raw
+        finally:
+            conn.close()
+
+    def test_v22_frontend_upload_parser_owner_validation_and_chat_route_are_connected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = KnowledgeGatewayV2(Path(tmp) / "knowledge", object())
+            service = _HTTPProductService(gateway)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), _HTTPProductHandler)
+            server.app = SimpleNamespace(service=service)  # type: ignore[attr-defined]
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            port = int(server.server_address[1])
+            try:
+                status, _, body = self._request(port, "GET", "/")
+                self.assertEqual(status, 200)
+                html = body.decode("utf-8")
+                self.assertIn(".pdf,.docx,.pptx,.xlsx,.csv", html)
+                self.assertIn("Uploading and processing files locally", html)
+
+                csv_bytes = b"device,port\nDEVICE-HTTP-E2E,8787\n"
+                status, _, body = self._request(
+                    port,
+                    "POST",
+                    "/api/upload",
+                    {
+                        "name": "e2e.csv",
+                        "type": "text/csv",
+                        "data_base64": base64.b64encode(csv_bytes).decode("ascii"),
+                    },
+                )
+                self.assertEqual(status, 201, body.decode("utf-8", errors="replace"))
+                upload = json.loads(body)
+                self.assertEqual(upload["document_count"], 1)
+                self.assertEqual(upload["status"], "accepted")
+                self.assertIsInstance(upload["warnings"], list)
+                upload_id = str(upload["upload_id"])
+
+                status, _, body = self._request(
+                    port,
+                    "POST",
+                    "/api/chat",
+                    {
+                        "message": "DEVICE-HTTP-E2E dùng cổng nào?",
+                        "language": "vi",
+                        "format": "source",
+                        "mode": "chat",
+                        "effort": "standard",
+                        "upload_ids": [upload_id],
+                        "conversation_id": "c" * 16,
+                    },
+                )
+                self.assertEqual(status, 202, body.decode("utf-8", errors="replace"))
+                chat = json.loads(body)
+                self.assertEqual(chat["conversation_id"], "c" * 16)
+                self.assertEqual(service.last_submit["conversation_id"], "c" * 16)
+                self.assertEqual(service.last_submit["upload_ids"], [upload_id])
+                self.assertEqual(service.last_submit["sender"], "workspace-user:test")
+                self.assertIn("DEVICE-HTTP-E2E", str(service.last_submit["context"]))
+                self.assertIn("8787", str(service.last_submit["context"]))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=3)
+
+
+if __name__ == "__main__":
+    unittest.main()
