@@ -212,11 +212,11 @@ class MemoryRecord:
 
 
 class HarnessMemoryStore:
-    """M0-M5 durable memory foundation backed by the existing WorkSpace SQLite DB.
+    """Durable M0-M5 memory foundation backed by the existing WorkSpace SQLite DB.
 
-    The store persists raw M0 events and immutable M1-M5 memory revisions. It
-    never grants capabilities: TaskContract and TaskCapabilityAuthority remain
-    the only execution-authority path.
+    Raw events and memory revisions are immutable evidence. This store never
+    grants capabilities; TaskContract and TaskCapabilityAuthority remain the
+    only execution-authority path.
     """
 
     def __init__(self, task_store: TaskStore):
@@ -273,6 +273,9 @@ class HarnessMemoryStore:
                     ON harness_memories(project_id, conversation_id, task_id, layer, memory_id);
                 CREATE INDEX IF NOT EXISTS idx_harness_memories_chain
                     ON harness_memories(memory_id, supersedes_revision_id, valid_from);
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_harness_memories_predecessor
+                    ON harness_memories(supersedes_revision_id)
+                    WHERE supersedes_revision_id IS NOT NULL;
 
                 CREATE TRIGGER IF NOT EXISTS harness_events_no_update
                 BEFORE UPDATE ON harness_events
@@ -344,7 +347,9 @@ class HarnessMemoryStore:
             revision_id=str(row["revision_id"]),
             memory_id=str(row["memory_id"]),
             project_id=str(row["project_id"]),
-            conversation_id=str(row["conversation_id"]) if row["conversation_id"] is not None else None,
+            conversation_id=(
+                str(row["conversation_id"]) if row["conversation_id"] is not None else None
+            ),
             task_id=str(row["task_id"]) if row["task_id"] is not None else None,
             layer=str(row["layer"]),
             kind=str(row["kind"]),
@@ -378,6 +383,7 @@ class HarnessMemoryStore:
         self._assert_task_exists(event.task_id)
         fingerprint = event.fingerprint
         with self.task_store.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT * FROM harness_events WHERE event_id = ?",
                 (event.event_id,),
@@ -457,11 +463,10 @@ class HarnessMemoryStore:
                 raise HarnessMemoryError("MEMORY_PROVENANCE_EVENT_MISSING") from exc
             if event.project_id != record.project_id:
                 raise HarnessMemoryError("MEMORY_PROVENANCE_PROJECT_SCOPE_MISMATCH")
-            if (
-                record.conversation_id is not None
-                and event.conversation_id != record.conversation_id
-            ):
+            if record.conversation_id is not None and event.conversation_id != record.conversation_id:
                 raise HarnessMemoryError("MEMORY_PROVENANCE_CONVERSATION_SCOPE_MISMATCH")
+            if record.task_id is not None and event.task_id != record.task_id:
+                raise HarnessMemoryError("MEMORY_PROVENANCE_TASK_SCOPE_MISMATCH")
             events.append(event)
         return tuple(events)
 
@@ -469,12 +474,10 @@ class HarnessMemoryStore:
         record.validate()
         self._assert_task_exists(record.task_id)
         events = self._provenance_events(record)
-
         if record.trust_domain == "trusted" and any(
             event.trust_domain != "trusted" for event in events
         ):
             raise HarnessMemoryError("MEMORY_TRUST_ESCALATION_FORBIDDEN")
-
         if record.layer == "M4" or record.kind.lower() == "procedure":
             if record.trust_domain != "trusted":
                 raise HarnessMemoryError("PROCEDURAL_MEMORY_REQUIRES_TRUSTED_DOMAIN")
@@ -504,7 +507,6 @@ class HarnessMemoryStore:
                 """,
                 (record.memory_id, record.project_id),
             ).fetchall()
-
             if record.supersedes_revision_id is None:
                 if history:
                     raise HarnessMemoryError("MEMORY_REVISION_REQUIRES_SUPERSEDES")
@@ -541,36 +543,41 @@ class HarnessMemoryStore:
                     raise HarnessMemoryError("MEMORY_SUPERSESSION_FORK_FORBIDDEN")
 
             content_sha = "sha256:" + hashlib.sha256(record.content.encode("utf-8")).hexdigest()
-            conn.execute(
-                """
-                INSERT INTO harness_memories(
-                    revision_id,memory_id,schema_version,project_id,conversation_id,
-                    task_id,layer,kind,content,content_sha256,provenance_json,
-                    trust_domain,confidence,valid_from,valid_until,
-                    supersedes_revision_id,record_sha256,created_at
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    record.revision_id,
-                    record.memory_id,
-                    record.schema_version,
-                    record.project_id,
-                    record.conversation_id,
-                    record.task_id,
-                    record.layer,
-                    record.kind,
-                    record.content,
-                    content_sha,
-                    _canonical_json(list(record.provenance_event_ids)),
-                    record.trust_domain,
-                    float(record.confidence),
-                    record.valid_from,
-                    record.valid_until,
-                    record.supersedes_revision_id,
-                    fingerprint,
-                    record.created_at,
-                ),
-            )
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO harness_memories(
+                        revision_id,memory_id,schema_version,project_id,conversation_id,
+                        task_id,layer,kind,content,content_sha256,provenance_json,
+                        trust_domain,confidence,valid_from,valid_until,
+                        supersedes_revision_id,record_sha256,created_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        record.revision_id,
+                        record.memory_id,
+                        record.schema_version,
+                        record.project_id,
+                        record.conversation_id,
+                        record.task_id,
+                        record.layer,
+                        record.kind,
+                        record.content,
+                        content_sha,
+                        _canonical_json(list(record.provenance_event_ids)),
+                        record.trust_domain,
+                        float(record.confidence),
+                        record.valid_from,
+                        record.valid_until,
+                        record.supersedes_revision_id,
+                        fingerprint,
+                        record.created_at,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                if record.supersedes_revision_id is not None:
+                    raise HarnessMemoryError("MEMORY_SUPERSESSION_FORK_FORBIDDEN") from exc
+                raise
         return fingerprint
 
     def get_revision(self, revision_id: str) -> MemoryRecord:
@@ -598,36 +605,22 @@ class HarnessMemoryStore:
             ).fetchall()
         return tuple(self._memory_from_row(row) for row in rows)
 
-    def current_memory(self, *, memory_id: str, project_id: str) -> MemoryRecord | None:
-        history = self.memory_history(memory_id=memory_id, project_id=project_id)
-        if not history:
-            return None
-        superseded = {
-            record.supersedes_revision_id
-            for record in history
-            if record.supersedes_revision_id is not None
-        }
-        leaves = [record for record in history if record.revision_id not in superseded]
-        if len(leaves) != 1:
-            raise HarnessMemoryError("MEMORY_CHAIN_INTEGRITY_FAILED")
-        leaf = leaves[0]
-        if leaf.valid_until is not None and _as_datetime(leaf.valid_until) <= datetime.now(timezone.utc):
-            return None
-        return leaf
-
     def effective_valid_until(self, revision_id: str) -> str | None:
         record = self.get_revision(revision_id)
         with self.task_store.connect() as conn:
-            child = conn.execute(
+            child_row = conn.execute(
                 """
-                SELECT valid_from FROM harness_memories
+                SELECT * FROM harness_memories
                 WHERE supersedes_revision_id = ?
                 ORDER BY valid_from, revision_id
                 LIMIT 1
                 """,
                 (record.revision_id,),
             ).fetchone()
-        child_start = str(child["valid_from"]) if child is not None else None
+        child_start = None
+        if child_row is not None:
+            child = self._memory_from_row(child_row)
+            child_start = child.valid_from
         if record.valid_until is None:
             return child_start
         if child_start is None:
@@ -645,8 +638,7 @@ class HarnessMemoryStore:
         project_id: str,
         at: str,
     ) -> MemoryRecord | None:
-        point_text = _timestamp(at, "at")
-        point = _as_datetime(point_text)
+        point = _as_datetime(_timestamp(at, "at"))
         history = self.memory_history(memory_id=memory_id, project_id=project_id)
         matches: list[MemoryRecord] = []
         for record in history:
@@ -659,6 +651,9 @@ class HarnessMemoryStore:
             raise HarnessMemoryError("MEMORY_TEMPORAL_OVERLAP")
         return matches[0] if matches else None
 
+    def current_memory(self, *, memory_id: str, project_id: str) -> MemoryRecord | None:
+        return self.memory_at(memory_id=memory_id, project_id=project_id, at=_now())
+
     def list_current(
         self,
         *,
@@ -667,10 +662,11 @@ class HarnessMemoryStore:
         layer: str | None = None,
     ) -> tuple[MemoryRecord, ...]:
         project = _compact_id(project_id, "project_id")
-        if conversation_id is not None:
-            conversation = _compact_id(conversation_id, "conversation_id")
-        else:
-            conversation = None
+        conversation = (
+            _compact_id(conversation_id, "conversation_id")
+            if conversation_id is not None
+            else None
+        )
         if layer is not None and layer not in _LAYERS:
             raise HarnessMemoryError("INVALID_MEMORY_LAYER")
         with self.task_store.connect() as conn:
