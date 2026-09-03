@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 jobs:
-  no-bypass:
+  focused-egress-security:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -28,25 +28,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Compile no-bypass regression gate
-        run: python -m py_compile tests/test_internet_gateway_no_bypass.py
       - name: Run no-bypass regression gate
-        run: python -m unittest tests.test_internet_gateway_no_bypass -v
-
-  ssrf-boundary:
-    if: ${{ hashFiles('tests/test_internet_gateway_ssrf.py') != '' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install project
-        run: python -m pip install -e .
-      - name: Compile SSRF regression gate
-        run: python -m py_compile tests/test_internet_gateway_ssrf.py
-      - name: Run SSRF regression gate
-        run: python -m unittest tests.test_internet_gateway_ssrf -v
+        shell: bash
+        run: |
+          python -m py_compile tests/test_internet_gateway_no_bypass.py
+          python -m unittest tests.test_internet_gateway_no_bypass -v
+      - name: Run SSRF regression gate when present
+        shell: bash
+        run: |
+          if [[ -f tests/test_internet_gateway_ssrf.py ]]; then
+            python -m pip install -e .
+            python -m py_compile tests/test_internet_gateway_ssrf.py
+            python -m unittest tests.test_internet_gateway_ssrf -v
+          else
+            echo "SSRF regression test not present on this branch; skipping."
+          fi
