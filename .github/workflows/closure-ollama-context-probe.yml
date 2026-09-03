@@ -1,0 +1,81 @@
+name: closure-ollama-context-probe
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-ollama-context-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Probe synthesis schema and context sizing
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+          from src.three_agent.research_schemas import RESEARCH_SYNTHESIS_SCHEMA_V1
+
+          endpoint='http://127.0.0.1:11434/api/generate'
+          schema=RESEARCH_SYNTHESIS_SCHEMA_V1
+          def probe(name, chars, num_ctx=None):
+              options={'num_predict':64,'temperature':0}
+              if num_ctx is not None:
+                  options['num_ctx']=num_ctx
+              payload={
+                  'model':'qwen3:30b',
+                  'prompt':'Return a valid JSON object matching the schema. Evidence:\n' + ('A' * chars),
+                  'stream':False,
+                  'think':False,
+                  'keep_alive':'20m',
+                  'format':schema,
+                  'options':options,
+              }
+              req=Request(endpoint,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'},method='POST')
+              result={'name':name,'chars':chars,'num_ctx':num_ctx,'http_status':None,'success':False,'error_type':None,'error_code':None}
+              try:
+                  with urlopen(req,timeout=120) as r:
+                      body=json.loads(r.read().decode())
+                      result['http_status']=r.status
+                      result['success']=isinstance(body,dict) and isinstance(body.get('response'),str)
+              except HTTPError as exc:
+                  result['http_status']=exc.code
+                  result['error_type']='HTTPError'
+                  try:
+                      body=json.loads(exc.read().decode())
+                      text=str(body.get('error',''))
+                      if 'context' in text.lower(): result['error_code']='CONTEXT_REJECTED'
+                      elif 'format' in text.lower() or 'schema' in text.lower(): result['error_code']='SCHEMA_REJECTED'
+                      else: result['error_code']='OLLAMA_BAD_REQUEST'
+                  except Exception:
+                      result['error_code']='HTTP_ERROR_BODY_UNREADABLE'
+              except Exception as exc:
+                  result['error_type']=type(exc).__name__
+                  result['error_code']=type(exc).__name__
+              return result
+
+          results=[
+              probe('small-schema',1000,None),
+              probe('large-default',32000,None),
+              probe('large-num-ctx-32768',32000,32768),
+              probe('large48-num-ctx-32768',48000,32768),
+          ]
+          print(json.dumps({'schema_version':'workspace-ollama-context-probe/v1','results':results},sort_keys=True))
+          if not results[0]['success']:
+              raise SystemExit(3)
+          PY
