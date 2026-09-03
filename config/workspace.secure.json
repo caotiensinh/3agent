@@ -41,7 +41,7 @@
   "internet_gateway": {
     "enabled": true,
     "mode": "strict",
-    "public_search_enabled": false,
+    "public_search_enabled": true,
     "egress_policy": "workspace.internet-egress/v1",
     "egress_mode": "sanitized",
     "user_warning_on_transform": true,
