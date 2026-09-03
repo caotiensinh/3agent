@@ -1,0 +1,104 @@
+{
+  "policy_id": "workspace_execution_governance_v0_0_1",
+  "version": "0.0.1",
+  "scope": "project_wide",
+  "applies_to": [
+    "human",
+    "agent",
+    "automation"
+  ],
+  "authority": {
+    "inherits_existing_security_policy": true,
+    "cannot_grant_runtime_capabilities": true,
+    "task_contract_remains_authoritative": true,
+    "throughput_never_overrides_security": true
+  },
+  "parallel_execution": {
+    "non_trivial_sessions": true,
+    "minimum_active_lanes": 5,
+    "target_active_lanes": 10,
+    "maximum_active_lanes": 10,
+    "lanes_must_be_independent_or_dependency_isolated": true,
+    "when_fewer_than_minimum_exist": "decompose_until_atomic_or_record_dependency_limit",
+    "do_not_invent_useless_work_to_fill_lanes": true
+  },
+  "decomposition": {
+    "large_or_blocked_work_must_be_split": true,
+    "target": "smallest_safe_acceptance_bounded_unit_finishable_in_one_session",
+    "preserve_architecture_and_security_boundaries": true,
+    "avoid_duplicate_existing_work": true
+  },
+  "adaptive_solver": {
+    "retry_until_acceptance_or_irreducible_blocker": true,
+    "identical_retry_without_new_evidence_is_forbidden": true,
+    "strategy_change_required_after_repeated_failure": true,
+    "repeated_failure_threshold": 2,
+    "allowed_strategy_changes": [
+      "decompose",
+      "reframe",
+      "reduce_scope",
+      "replace_implementation_approach",
+      "use_deterministic_verifier",
+      "isolate_dependency",
+      "rollback_and_rebuild_atomic_unit",
+      "collect_new_evidence"
+    ],
+    "valid_stop_states": [
+      "SUCCESS",
+      "PARTIAL",
+      "BLOCKED",
+      "IMPOSSIBLE",
+      "FAILED_SAFE",
+      "ABORTED"
+    ],
+    "blocker_requires_evidence": true
+  },
+  "acceptance": {
+    "success_requires_all_mandatory_criteria_pass": true,
+    "mandatory_pass_requires_evidence": true,
+    "optional_score_cannot_mask_hard_gate_failure": true,
+    "model_claim_is_not_execution_evidence": true,
+    "false_completion_forbidden": true
+  },
+  "progress": {
+    "measurement_required_every_session": true,
+    "unit": "weighted_acceptance_work",
+    "completed_definition": "acceptance_passed_with_evidence",
+    "formula": "completed_weight / total_planned_weight * 100",
+    "remaining_formula": "100 - completion_percent",
+    "rebaseline_when_scope_changes": true,
+    "report_completed_percent": true,
+    "report_remaining_percent": true,
+    "report_lane_states": true,
+    "report_blockers": true
+  },
+  "commit_discipline": {
+    "commit_after_passed_task_or_module_in_same_session": true,
+    "commit_only_coherent_acceptance_boundary": true,
+    "do_not_commit_known_failing_state_as_complete": true,
+    "commit_message_language": "English",
+    "exact_head_evidence_required_before_ready_claim": true
+  },
+  "harness_principles": [
+    "preserve_user_intent_without_authority_escalation",
+    "reuse_before_rebuild",
+    "correctness_before_optimization",
+    "deterministic_work_stays_deterministic",
+    "evidence_and_provenance_are_first_class",
+    "failure_changes_strategy",
+    "no_false_completion",
+    "smallest_high_signal_context",
+    "fail_closed_on_authority_or_security_uncertainty"
+  ],
+  "session_report_required_fields": [
+    "base_sha",
+    "head_sha",
+    "lane_statuses",
+    "acceptance_results",
+    "test_evidence",
+    "completion_percent",
+    "remaining_percent",
+    "blockers",
+    "commits"
+  ]
+}
