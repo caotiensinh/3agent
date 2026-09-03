@@ -6,12 +6,6 @@ import zipfile
 from io import BytesIO, StringIO
 from pathlib import Path
 
-from defusedxml import ElementTree as SafeElementTree
-from docx import Document
-from openpyxl import load_workbook
-from pptx import Presentation
-from pypdf import PdfReader
-
 MAX_EXTRACTED_CHARS = 200_000
 MAX_OOXML_ENTRIES = 512
 MAX_OOXML_TOTAL_BYTES = 96 * 1024 * 1024
@@ -71,6 +65,8 @@ def _guard_ooxml(data: bytes) -> None:
 
 def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
     try:
+        from pypdf import PdfReader
+
         reader = PdfReader(BytesIO(data), strict=False)
         if reader.is_encrypted:
             try:
@@ -108,6 +104,8 @@ def _extract_pdf(data: bytes) -> tuple[str, list[str]]:
 def _extract_docx(data: bytes) -> tuple[str, list[str]]:
     _guard_ooxml(data)
     try:
+        from docx import Document
+
         doc = Document(BytesIO(data))
         rows: list[str] = []
         for p in doc.paragraphs:
@@ -127,6 +125,8 @@ def _extract_docx(data: bytes) -> tuple[str, list[str]]:
 def _extract_pptx(data: bytes) -> tuple[str, list[str]]:
     _guard_ooxml(data)
     try:
+        from pptx import Presentation
+
         deck = Presentation(BytesIO(data))
         rows: list[str] = []
         total_chars = 0
@@ -150,6 +150,8 @@ def _extract_pptx(data: bytes) -> tuple[str, list[str]]:
 def _extract_xlsx(data: bytes) -> tuple[str, list[str]]:
     _guard_ooxml(data)
     try:
+        from openpyxl import load_workbook
+
         workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)
         rows: list[str] = []
         warnings: list[str] = []
@@ -224,6 +226,8 @@ def _extract_json(data: bytes) -> tuple[str, list[str]]:
 
 def _extract_xml(data: bytes) -> tuple[str, list[str]]:
     try:
+        from defusedxml import ElementTree as SafeElementTree
+
         root = SafeElementTree.fromstring(data)
     except Exception as exc:
         raise DocumentExtractionError("Invalid or unsafe XML document") from exc
