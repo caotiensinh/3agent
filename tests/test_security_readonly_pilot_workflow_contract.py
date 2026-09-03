@@ -14,6 +14,7 @@ class SecurityReadonlyPilotWorkflowContractTests(unittest.TestCase):
         self.assertIn("'.github/security-readonly-pilot.intent'", self.workflow)
         self.assertNotIn("pull_request:", self.workflow)
         self.assertIn("if: github.ref == 'refs/heads/main'", self.workflow)
+        self.assertIn("fetch-depth: 2", self.workflow)
         self.assertIn('git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA"', self.workflow)
         self.assertIn('test "${#CHANGED_FILES[@]}" -eq 1', self.workflow)
         self.assertIn('test "${CHANGED_FILES[0]}" = "$INTENT_PATH"', self.workflow)
