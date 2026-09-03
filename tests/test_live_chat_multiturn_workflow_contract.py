@@ -22,7 +22,7 @@ def test_live_multiturn_tracks_llm_dependency() -> None:
 
 def test_live_multiturn_keeps_trusted_gpu_runner_contract() -> None:
     text = _workflow_text()
-    assert "runs-on: [self-hosted, Linux, X64, workspace-benchmark]" in text
+    assert "runs-on: [self-hosted, Linux, X64, r9, rtx5090]" in text
     assert "grep -c 'RTX 5090'" in text
     assert "--live" in text
     assert "--source-sha \"$GITHUB_SHA\"" in text

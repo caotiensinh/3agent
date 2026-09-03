@@ -37,7 +37,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || inputs.confirm == 'RUN')
-    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
     timeout-minutes: 75
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: '1'

@@ -25,7 +25,7 @@ jobs:
   acceptance:
     name: exact-head live full E2E
     if: github.ref == 'refs/heads/main' && inputs.confirm == 'FULL_E2E'
-    runs-on: [self-hosted, Linux, X64, rtx5090]
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
     timeout-minutes: 180
     steps:
       - name: Checkout exact selected main SHA
