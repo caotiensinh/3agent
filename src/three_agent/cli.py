@@ -260,13 +260,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{task.task_id}\t{task.status.value}\t{task.title}")
     elif args.command == "status":
         task = orchestrator.store.get_task(args.task_id)
-        print(
-            json.dumps(
-                task.__dict__ | {"status": task.status.value},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps(task.__dict__ | {"status": task.status.value}, ensure_ascii=False, indent=2))
     elif args.command == "research":
         orchestrator.store.get_task(args.task_id)
         with _runtime_task_scope(
