@@ -47,6 +47,10 @@ A later phase may not become production-critical merely because it is interestin
 
 ## Current closure baseline
 
+Authoritative implementation lineage at this checklist sync starts from main:
+
+`1b4802125a88ff5f58177ee3a07e52b0d653da7d`
+
 The following work packages are complete in the current implementation lineage:
 
 - D1 Handoff Trust Boundaries — `DONE`
@@ -57,7 +61,22 @@ The following work packages are complete in the current implementation lineage:
 - Runtime Validator Bridge — `DONE`
 - Benchmark Isolation v1 — `DONE`
 - Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
-- D4 Durable Prefix Reuse Measurement — `DONE` when its exact-head CI and merge evidence are green
+- D4 Durable Prefix Reuse Measurement — `DONE`
+- D5-01 Structural-first Context Retrieval Trace — `DONE` baseline
+- D5-03 Hard Evidence Budget — `DONE` baseline
+- D5-04 Atomic Provenance / Critical-span Protection — `DONE` baseline
+- D6-01 Deterministic Route Reason Codes — `DONE`
+- D6-02 Verified `NO_LLM` Retrieval — `DONE`
+- D6-03 Persistent Hard Retry/Escalation Budget — `DONE`
+- D6-04 Security Monotonicity — `DONE`
+- D7-01 Versioned Golden Corpus — `DONE`
+- D7-02 Deterministic Replay — `DONE`
+- D7-03 Regression Corpus — `DONE` baseline
+- D7-04 Adversarial/Security Corpus — `DONE` baseline
+- D7-07 Metric Version Registry — `DONE`
+- D7-08 Fail-closed Promotion Pipeline — `DONE` infrastructure
+
+D7-05 edge/large-context and D7-06 efficiency/cache/concurrency profiles and adapters are implemented, but **representative external results are not yet materialized**, so they remain `EVIDENCE-PENDING` rather than being treated as completed evaluation evidence.
 
 The fixed benchmark harness is implemented, but the **real dual-RTX5090 48k/40k/32k benchmark result is still pending execution**. No context-budget candidate is promoted by implementation alone.
 
@@ -216,7 +235,7 @@ A verified negative result is a completed engineering decision. Do not repeatedl
 
 ## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
 
-The repository now owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
+The repository owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
 
 - `legacy_v1 / 48000` baseline;
 - `quality_ranked_v1 / 48000`;
