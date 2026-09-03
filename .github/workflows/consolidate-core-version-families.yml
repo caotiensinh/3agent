@@ -1,0 +1,206 @@
+name: consolidate-core-version-families
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v4-final-20260903
+    paths:
+      - .github/workflows/consolidate-core-version-families.yml
+      - src/three_agent/chat_context*.py
+      - src/three_agent/chat_history*.py
+      - tests/**
+      - pyproject.toml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reconcile/all-branches-v4-final-20260903
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+      - name: Consolidate chat context and history families
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+          mkdir -p artifacts/consolidation
+
+          python - <<'PY'
+          from __future__ import annotations
+          import pathlib, re, subprocess
+
+          root = pathlib.Path('.')
+          src = root / 'src' / 'three_agent'
+
+          def strip_all_block(text: str) -> str:
+              return re.sub(r'\n__all__\s*=\s*\[.*?\]\s*\Z', '\n', text, flags=re.S)
+
+          base = (src / 'chat_context.py').read_text(encoding='utf-8')
+          v2 = (src / 'chat_context_v2.py').read_text(encoding='utf-8')
+          v3 = (src / 'chat_context_v3.py').read_text(encoding='utf-8')
+
+          v2 = re.sub(r'^from __future__ import annotations\n\n', '', v2)
+          v2 = re.sub(r'^from typing import Any, Sequence\n\n', '', v2)
+          v2 = re.sub(r'^from \.chat_context import \(\n.*?^\)\n\n', '', v2, flags=re.M | re.S)
+          v2 = strip_all_block(v2)
+
+          v3 = re.sub(r'^from __future__ import annotations\n\n', '', v3)
+          v3 = re.sub(r'^from typing import Any, Iterable, Sequence\n\n', '', v3)
+          v3 = re.sub(r'^from \.chat_context import \(\n.*?^\)\n', '', v3, flags=re.M | re.S)
+          v3 = re.sub(r'^from \.chat_context_v2 import classify_context_request\n\n', '', v3, flags=re.M)
+
+          combined_context = (
+              base.rstrip()
+              + '\n\n\n# Compatibility snapshots used internally while flattening the former v2 layer.\n'
+              + '_classify_legacy_context = classify_context_request\n'
+              + '_build_legacy_context = build_conversation_context\n\n'
+              + v2.strip()
+              + '\n\n\n'
+              + v3.strip()
+              + '\n'
+          )
+          (src / 'chat_context.py').write_text(combined_context, encoding='utf-8')
+
+          h1 = (src / 'chat_history.py').read_text(encoding='utf-8')
+          h2 = (src / 'chat_history_v2.py').read_text(encoding='utf-8')
+          h3 = (src / 'chat_history_v3.py').read_text(encoding='utf-8')
+          h2 = re.sub(r'^from __future__ import annotations\n\n', '', h2)
+          h2 = re.sub(r'^from typing import Any\n\n', '', h2)
+          h2 = re.sub(r'^from \.chat_history import ChatHistoryStore\n\n', '', h2)
+          h3 = re.sub(r'^from __future__ import annotations\n\n', '', h3)
+          h3 = re.sub(r'^import re\nimport uuid\nfrom typing import Any\n\n', '', h3)
+          h3 = re.sub(r'^from \.chat_history_v2 import ConversationHistoryStore\n\n', '', h3, flags=re.M)
+          combined_history = h1.rstrip() + '\n\n\n' + h2.strip() + '\n\n\n' + h3.strip() + '\n'
+          (src / 'chat_history.py').write_text(combined_history, encoding='utf-8')
+
+          replacements = {
+              'chat_context_v2': 'chat_context',
+              'chat_context_v3': 'chat_context',
+              'chat_history_v2': 'chat_history',
+              'chat_history_v3': 'chat_history',
+          }
+          allowed = {'.py', '.toml', '.sh', '.ps1', '.yml', '.yaml'}
+          tracked = subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          for name in tracked:
+              if not name:
+                  continue
+              path = pathlib.Path(name)
+              if path.suffix.lower() not in allowed and path.name != 'pyproject.toml':
+                  continue
+              if path in {src/'chat_context_v2.py', src/'chat_context_v3.py', src/'chat_history_v2.py', src/'chat_history_v3.py'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, FileNotFoundError):
+                  continue
+              new = text
+              for old, canonical in replacements.items():
+                  new = new.replace(old, canonical)
+              if new != text:
+                  path.write_text(new, encoding='utf-8')
+
+          for path in (
+              src/'chat_context_v2.py', src/'chat_context_v3.py',
+              src/'chat_history_v2.py', src/'chat_history_v3.py',
+          ):
+              path.unlink()
+          PY
+
+          if git grep -nE 'chat_context_v[23]|chat_history_v[23]' -- '*.py' pyproject.toml 2>/dev/null; then
+            echo 'stale version-family Python reference remains' >&2
+            exit 61
+          fi
+
+          python -m compileall -q src/three_agent tests
+
+          python - <<'PY'
+          from pathlib import Path
+          import tempfile
+          from three_agent.chat_context import (
+              CONTEXT_MODE_CONTINUITY,
+              CONTEXT_MODE_FOLLOW_UP,
+              build_conversation_context,
+              classify_context_request,
+          )
+          from three_agent.chat_history import ChatHistoryStore, ConversationHistoryStore, ProjectConversationStore
+
+          assert classify_context_request('tiếp theo ?')[0] == CONTEXT_MODE_FOLLOW_UP
+          plan = build_conversation_context(
+              [
+                  {'role':'user','content':'Bước một kiểm tra địa chỉ IP','status':'completed','job_id':'j1'},
+                  {'role':'assistant','content':'Đã kiểm tra xong.','status':'completed','job_id':'j2'},
+              ],
+              'bước tiếp theo là gì?',
+          )
+          assert plan.mode in {CONTEXT_MODE_FOLLOW_UP, CONTEXT_MODE_CONTINUITY}
+          assert plan.message_count == 2
+
+          with tempfile.TemporaryDirectory() as td:
+              db = Path(td) / 'chat.sqlite3'
+              base = ChatHistoryStore(db); base.initialize()
+              lifecycle = ConversationHistoryStore(db); lifecycle.initialize()
+              projects = ProjectConversationStore(db); projects.initialize()
+              cid = projects.create_conversation('owner-a', 'Network review')
+              projects.record_message(cid, role='user', content='check network', job_id='j1')
+              p = projects.create_project('owner-a', 'Ops')
+              moved = projects.move_conversation('owner-a', cid, p['project_id'])
+              assert moved['project_id'] == p['project_id']
+          PY
+
+          mapfile -t TESTS < <(git grep -lE 'chat_context|chat_history|ConversationHistoryStore|ProjectConversationStore|ChatHistoryStore' -- 'tests/*.py' | sort -u)
+          printf '%s\n' "${TESTS[@]}" > artifacts/consolidation/core_family_tests.txt
+          if [[ "${#TESTS[@]}" -gt 0 ]]; then
+            python -m pytest -q "${TESTS[@]}" | tee artifacts/consolidation/core_family_pytest.txt
+          fi
+
+          python - <<'PY'
+          import json, pathlib, subprocess
+          src = pathlib.Path('src/three_agent')
+          payload = {
+              'schema': 'workspace-source-consolidation/v1',
+              'families': {
+                  'chat_context': ['src/three_agent/chat_context.py'],
+                  'chat_history': ['src/three_agent/chat_history.py'],
+              },
+              'removed': [
+                  'src/three_agent/chat_context_v2.py',
+                  'src/three_agent/chat_context_v3.py',
+                  'src/three_agent/chat_history_v2.py',
+                  'src/three_agent/chat_history_v3.py',
+              ],
+              'remaining_core_variant_files': sorted(
+                  str(p) for p in src.glob('chat_context_v*.py')
+              ) + sorted(str(p) for p in src.glob('chat_history_v*.py')),
+          }
+          pathlib.Path('artifacts/consolidation/core_families.json').write_text(
+              json.dumps(payload, indent=2) + '\n', encoding='utf-8'
+          )
+          assert payload['remaining_core_variant_files'] == []
+          PY
+
+          git config user.name 'workspace-consolidation-bot'
+          git config user.email 'workspace-consolidation-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor(core): consolidate chat context and history modules'
+          git push origin HEAD:reconcile/all-branches-v4-final-20260903
+      - name: Upload consolidation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-version-family-consolidation
+          path: artifacts/consolidation/
+          if-no-files-found: warn
