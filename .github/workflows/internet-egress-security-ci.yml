@@ -1,0 +1,45 @@
+name: internet-egress-security-ci
+
+on:
+  push:
+    paths:
+      - "src/three_agent/**"
+      - "tests/test_internet_gateway_no_bypass.py"
+      - "tests/test_internet_gateway_ssrf.py"
+      - ".github/workflows/internet-egress-security-ci.yml"
+  pull_request:
+    paths:
+      - "src/three_agent/**"
+      - "tests/test_internet_gateway_no_bypass.py"
+      - "tests/test_internet_gateway_ssrf.py"
+      - ".github/workflows/internet-egress-security-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  focused-egress-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run no-bypass regression gate
+        shell: bash
+        run: |
+          python -m py_compile tests/test_internet_gateway_no_bypass.py
+          python -m unittest tests.test_internet_gateway_no_bypass -v
+      - name: Run SSRF regression gate when present
+        shell: bash
+        run: |
+          if [[ -f tests/test_internet_gateway_ssrf.py ]]; then
+            python -m pip install -e .
+            python -m py_compile tests/test_internet_gateway_ssrf.py
+            python -m unittest tests.test_internet_gateway_ssrf -v
+          else
+            echo "SSRF regression test not present on this branch; skipping."
+          fi
