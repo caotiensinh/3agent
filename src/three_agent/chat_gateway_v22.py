@@ -21,7 +21,7 @@ from .chat_context import (
 )
 from .chat_fidelity import parse_chat_request
 from .chat_gateway_v5 import _history_owner_key
-from .knowledge_gateway_v2 import EXTENDED_UPLOAD_EXTENSIONS, KnowledgeGatewayV2
+from .knowledge_gateway import EXTENDED_UPLOAD_EXTENSIONS, KnowledgeGatewayV2
 from .workspace_frontend_v18 import WORKSPACE_HTML_V18
 
 _BASE_UI_CAPABILITIES = _v18.workspace_ui_capabilities

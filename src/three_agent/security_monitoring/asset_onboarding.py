@@ -8,7 +8,7 @@ from typing import Any
 from .contracts import AssetInventoryRecord, MonitoringContractError, SecretReference
 from .discovery_candidate_store import DiscoveryCandidateStore
 from .discovery_enrollment import DiscoveryEnrollmentRequest, DiscoveryEnrollmentService
-from .ui_config_v2 import SecurityMonitoringUIConfigManagerV2
+from .ui_config import SecurityMonitoringUIConfigManagerV2
 
 ONBOARDING_DRAFT_SCHEMA = "workspace-security-monitoring/asset-onboarding-draft-v1"
 ONBOARDING_CANDIDATES_SCHEMA = "workspace-security-monitoring/onboarding-candidates-v1"

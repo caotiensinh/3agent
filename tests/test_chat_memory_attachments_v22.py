@@ -20,7 +20,7 @@ from three_agent.chat_context import (
 )
 from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
 from three_agent.document_extractors import extract_document
-from three_agent.knowledge_gateway_v2 import KnowledgeGatewayV2
+from three_agent.knowledge_gateway import KnowledgeGatewayV2
 from three_agent.workspace_frontend_v18 import WORKSPACE_HTML_V18
 
 

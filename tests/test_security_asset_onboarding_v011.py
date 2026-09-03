@@ -9,7 +9,7 @@ from three_agent.security_monitoring.asset_onboarding import (
     SecurityMonitoringAssetOnboarding,
 )
 from three_agent.security_monitoring.contracts import MonitoringContractError
-from three_agent.security_monitoring.ui_config_v2 import (
+from three_agent.security_monitoring.ui_config import (
     REAL_NETWORK_CONFIRMATION,
     SecurityMonitoringUIConfigManagerV2,
 )

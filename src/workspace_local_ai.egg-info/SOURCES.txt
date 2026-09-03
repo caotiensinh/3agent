@@ -32,8 +32,6 @@ src/three_agent/capability_revocation.py
 src/three_agent/chat_acceptance.py
 src/three_agent/chat_attachment_memory.py
 src/three_agent/chat_context.py
-src/three_agent/chat_context_v2.py
-src/three_agent/chat_context_v3.py
 src/three_agent/chat_fidelity.py
 src/three_agent/chat_gateway.py
 src/three_agent/chat_gateway_v10.py
@@ -58,8 +56,6 @@ src/three_agent/chat_gateway_v7.py
 src/three_agent/chat_gateway_v8.py
 src/three_agent/chat_gateway_v9.py
 src/three_agent/chat_history.py
-src/three_agent/chat_history_v2.py
-src/three_agent/chat_history_v3.py
 src/three_agent/chat_intelligence_context.py
 src/three_agent/chat_multiturn_acceptance.py
 src/three_agent/chat_multiturn_acceptance_v2.py

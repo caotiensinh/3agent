@@ -20,7 +20,7 @@ from three_agent.chat_context import (
 )
 from three_agent.chat_gateway_v19 import ContinuityProjectChatService
 from three_agent.document_extractors import extract_document
-from three_agent.knowledge_gateway_v2 import KnowledgeGatewayV2
+from three_agent.knowledge_gateway import KnowledgeGatewayV2
 
 
 class ConversationContinuityTests(unittest.TestCase):

@@ -1,0 +1,36 @@
+{
+  "schema": "workspace-source-consolidation/v2",
+  "families": {
+    "knowledge_gateway": [
+      "src/three_agent/knowledge_gateway.py"
+    ],
+    "security_monitoring/ui_config": [
+      "src/three_agent/security_monitoring/ui_config.py"
+    ]
+  },
+  "removed": [
+    "src/three_agent/knowledge_gateway_v2.py",
+    "src/three_agent/security_monitoring/ui_config_v2.py"
+  ],
+  "baseline_returncode": 2,
+  "final_returncode": 2,
+  "baseline_failures": [
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py",
+    "ERROR tests/test_multimodal_attachments_v4.py",
+    "ERROR tests/test_security_asset_onboarding_gateway.py",
+    "ERROR tests/test_security_asset_onboarding_v011.py",
+    "ERROR tests/test_security_monitoring_ui_config.py"
+  ],
+  "final_failures": [
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py",
+    "ERROR tests/test_multimodal_attachments_v4.py",
+    "ERROR tests/test_security_asset_onboarding_gateway.py",
+    "ERROR tests/test_security_asset_onboarding_v011.py",
+    "ERROR tests/test_security_monitoring_ui_config.py"
+  ],
+  "new_failures": [],
+  "removed_failures": [],
+  "remaining_variant_files": []
+}

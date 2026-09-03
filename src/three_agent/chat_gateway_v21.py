@@ -16,7 +16,7 @@ from .chat_gateway_v20 import (
 )
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG
-from .security_monitoring.ui_config_v2 import SecurityMonitoringUIConfigManagerV2
+from .security_monitoring.ui_config import SecurityMonitoringUIConfigManagerV2
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
 from .workspace_frontend_v17 import WORKSPACE_HTML_V17
 

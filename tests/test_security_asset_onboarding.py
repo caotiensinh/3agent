@@ -12,7 +12,7 @@ from three_agent.security_monitoring.discovery_candidate_store import DiscoveryC
 from three_agent.security_monitoring.discovery_candidates import DiscoveryCandidate
 from three_agent.security_monitoring.storage import MonitoringStore
 from three_agent.security_monitoring.ui_config import safe_default_payload
-from three_agent.security_monitoring.ui_config_v2 import SecurityMonitoringUIConfigManagerV2
+from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManagerV2
 
 
 class SecurityAssetOnboardingTests(unittest.TestCase):
