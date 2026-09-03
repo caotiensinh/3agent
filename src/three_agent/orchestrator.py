@@ -101,6 +101,11 @@ class Orchestrator:
         )
         self.web_research = WebResearchClient(self.internet_gateway)
         self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.inference_telemetry_path = os.getenv(
+            "WORKSPACE_INFERENCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "inference.jsonl"),
+        )
+        os.environ.setdefault("WORKSPACE_INFERENCE_TELEMETRY", self.inference_telemetry_path)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
