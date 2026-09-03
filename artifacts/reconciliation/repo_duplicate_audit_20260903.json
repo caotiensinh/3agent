@@ -1,0 +1,2183 @@
+{
+  "schema": "workspace-repo-duplicate-audit/v1",
+  "head_sha": "61fa78e49193fc2f5758bed35434d8aff0d1d8a6",
+  "tracked_file_count": 1073,
+  "python_file_count": 682,
+  "src_python_file_count": 334,
+  "version_family_count": 10,
+  "version_family_member_count": 69,
+  "version_families": [
+    {
+      "family": "src/three_agent/chat_context",
+      "member_count": 3,
+      "members": [
+        "src/three_agent/chat_context.py",
+        "src/three_agent/chat_context_v2.py",
+        "src/three_agent/chat_context_v3.py"
+      ],
+      "total_lines": 451
+    },
+    {
+      "family": "src/three_agent/chat_gateway",
+      "member_count": 22,
+      "members": [
+        "src/three_agent/chat_gateway.py",
+        "src/three_agent/chat_gateway_v10.py",
+        "src/three_agent/chat_gateway_v11.py",
+        "src/three_agent/chat_gateway_v12.py",
+        "src/three_agent/chat_gateway_v13.py",
+        "src/three_agent/chat_gateway_v14.py",
+        "src/three_agent/chat_gateway_v15.py",
+        "src/three_agent/chat_gateway_v16.py",
+        "src/three_agent/chat_gateway_v17.py",
+        "src/three_agent/chat_gateway_v18.py",
+        "src/three_agent/chat_gateway_v19.py",
+        "src/three_agent/chat_gateway_v2.py",
+        "src/three_agent/chat_gateway_v20.py",
+        "src/three_agent/chat_gateway_v21.py",
+        "src/three_agent/chat_gateway_v22.py",
+        "src/three_agent/chat_gateway_v3.py",
+        "src/three_agent/chat_gateway_v4.py",
+        "src/three_agent/chat_gateway_v5.py",
+        "src/three_agent/chat_gateway_v6.py",
+        "src/three_agent/chat_gateway_v7.py",
+        "src/three_agent/chat_gateway_v8.py",
+        "src/three_agent/chat_gateway_v9.py"
+      ],
+      "total_lines": 7141
+    },
+    {
+      "family": "src/three_agent/chat_history",
+      "member_count": 3,
+      "members": [
+        "src/three_agent/chat_history.py",
+        "src/three_agent/chat_history_v2.py",
+        "src/three_agent/chat_history_v3.py"
+      ],
+      "total_lines": 899
+    },
+    {
+      "family": "src/three_agent/chat_multiturn_acceptance",
+      "member_count": 2,
+      "members": [
+        "src/three_agent/chat_multiturn_acceptance.py",
+        "src/three_agent/chat_multiturn_acceptance_v2.py"
+      ],
+      "total_lines": 888
+    },
+    {
+      "family": "src/three_agent/knowledge_gateway",
+      "member_count": 2,
+      "members": [
+        "src/three_agent/knowledge_gateway.py",
+        "src/three_agent/knowledge_gateway_v2.py"
+      ],
+      "total_lines": 722
+    },
+    {
+      "family": "src/three_agent/workflow_design",
+      "member_count": 3,
+      "members": [
+        "src/three_agent/workflow_design.py",
+        "src/three_agent/workflow_design_v3.py",
+        "src/three_agent/workflow_design_v4.py"
+      ],
+      "total_lines": 682
+    },
+    {
+      "family": "src/three_agent/workflow_state_machine",
+      "member_count": 3,
+      "members": [
+        "src/three_agent/workflow_state_machine.py",
+        "src/three_agent/workflow_state_machine_v4.py",
+        "src/three_agent/workflow_state_machine_v4_budgeted.py"
+      ],
+      "total_lines": 1829
+    },
+    {
+      "family": "src/three_agent/workspace_frontend",
+      "member_count": 26,
+      "members": [
+        "src/three_agent/workspace_frontend.py",
+        "src/three_agent/workspace_frontend_v10.py",
+        "src/three_agent/workspace_frontend_v11.py",
+        "src/three_agent/workspace_frontend_v12.py",
+        "src/three_agent/workspace_frontend_v13.py",
+        "src/three_agent/workspace_frontend_v14.py",
+        "src/three_agent/workspace_frontend_v15.py",
+        "src/three_agent/workspace_frontend_v16.py",
+        "src/three_agent/workspace_frontend_v17.py",
+        "src/three_agent/workspace_frontend_v18.py",
+        "src/three_agent/workspace_frontend_v2.py",
+        "src/three_agent/workspace_frontend_v2_part1.py",
+        "src/three_agent/workspace_frontend_v2_part2.py",
+        "src/three_agent/workspace_frontend_v2_part3.py",
+        "src/three_agent/workspace_frontend_v2_part4.py",
+        "src/three_agent/workspace_frontend_v2_part5.py",
+        "src/three_agent/workspace_frontend_v2_part6.py",
+        "src/three_agent/workspace_frontend_v2_part7.py",
+        "src/three_agent/workspace_frontend_v2_part8.py",
+        "src/three_agent/workspace_frontend_v3.py",
+        "src/three_agent/workspace_frontend_v4.py",
+        "src/three_agent/workspace_frontend_v5.py",
+        "src/three_agent/workspace_frontend_v6.py",
+        "src/three_agent/workspace_frontend_v7.py",
+        "src/three_agent/workspace_frontend_v8.py",
+        "src/three_agent/workspace_frontend_v9.py"
+      ],
+      "total_lines": 2019
+    },
+    {
+      "family": "src/three_agent/workspace_frontend_security",
+      "member_count": 3,
+      "members": [
+        "src/three_agent/workspace_frontend_security_v1.py",
+        "src/three_agent/workspace_frontend_security_v2.py",
+        "src/three_agent/workspace_frontend_security_v3.py"
+      ],
+      "total_lines": 262
+    },
+    {
+      "family": "src/three_agent/security_monitoring/ui_config",
+      "member_count": 2,
+      "members": [
+        "src/three_agent/security_monitoring/ui_config.py",
+        "src/three_agent/security_monitoring/ui_config_v2.py"
+      ],
+      "total_lines": 479
+    }
+  ],
+  "exact_duplicate_group_count": 3,
+  "exact_duplicates": [
+    {
+      "sha256": "316c44c9fb2cacbc3a7fd724d5cc9c0cc2db5b067d77a5f8a5279612bd71694f",
+      "members": [
+        "benchmarks/fixtures/d502a_exact_mirror_a.md",
+        "benchmarks/fixtures/d502a_exact_mirror_b.md"
+      ]
+    },
+    {
+      "sha256": "08555deb99422b5c90e9c24c31cc0c9ec3e84426ac395a3a5588bb836d830876",
+      "members": [
+        "data/activity/.gitkeep",
+        "data/daily_reports/.gitkeep",
+        "data/presentations/.gitkeep",
+        "data/research/.gitkeep"
+      ]
+    },
+    {
+      "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "members": [
+        "docs/.ignore-me",
+        "docs/.ignore-me-2",
+        "docs/.ignore-me-3",
+        "docs/.should_not_exist"
+      ]
+    }
+  ],
+  "ast_duplicate_group_count": 0,
+  "ast_duplicates": [],
+  "duplicate_symbol_count": 183,
+  "duplicate_symbols_top100": [
+    {
+      "symbol": "main",
+      "file_count": 66,
+      "files": [
+        "evidence_tools/d7_edge_external.py",
+        "evidence_tools/edge_holdout_evaluator.py",
+        "scripts/check_self_hosted_runner_readiness.py",
+        "scripts/configure_self_hosted_runner.py",
+        "scripts/diagnose_workspace_admin_auth.py",
+        "scripts/install_self_hosted_r9_runner.py",
+        "scripts/run_security_readonly_pilot.py",
+        "scripts/scan_skills.py",
+        "scripts/security_enterprise_verify.py",
+        "scripts/validate_workspace_runtime.py",
+        "scripts/workspace_auth_guard.py",
+        "src/three_agent/adaptive_learning_curation_revision_worker.py",
+        "src/three_agent/adaptive_learning_lifecycle.py",
+        "src/three_agent/adaptive_learning_reflection_worker.py",
+        "src/three_agent/benchmark_artifact_canonicalize.py",
+        "src/three_agent/benchmark_evidence.py",
+        "src/three_agent/benchmark_readiness.py",
+        "src/three_agent/benchmark_suite.py",
+        "src/three_agent/capability_revocation.py",
+        "src/three_agent/chat_acceptance.py",
+        "src/three_agent/chat_gateway.py",
+        "src/three_agent/chat_gateway_v10.py",
+        "src/three_agent/chat_gateway_v11.py",
+        "src/three_agent/chat_gateway_v12.py",
+        "src/three_agent/chat_gateway_v13.py",
+        "src/three_agent/chat_gateway_v14.py",
+        "src/three_agent/chat_gateway_v15.py",
+        "src/three_agent/chat_gateway_v16.py",
+        "src/three_agent/chat_gateway_v17.py",
+        "src/three_agent/chat_gateway_v18.py",
+        "src/three_agent/chat_gateway_v19.py",
+        "src/three_agent/chat_gateway_v2.py",
+        "src/three_agent/chat_gateway_v20.py",
+        "src/three_agent/chat_gateway_v21.py",
+        "src/three_agent/chat_gateway_v22.py",
+        "src/three_agent/chat_gateway_v3.py",
+        "src/three_agent/chat_gateway_v4.py",
+        "src/three_agent/chat_gateway_v5.py",
+        "src/three_agent/chat_gateway_v6.py",
+        "src/three_agent/chat_gateway_v7.py",
+        "src/three_agent/chat_gateway_v8.py",
+        "src/three_agent/chat_gateway_v9.py",
+        "src/three_agent/chat_multiturn_acceptance.py",
+        "src/three_agent/chat_multiturn_acceptance_v2.py",
+        "src/three_agent/chat_simple_e2e_acceptance.py",
+        "src/three_agent/cli.py",
+        "src/three_agent/d502a_benchmark.py",
+        "src/three_agent/deterministic_retrieval_cli.py",
+        "src/three_agent/efficiency_concurrency_observer.py",
+        "src/three_agent/efficiency_evaluator_handoff.py",
+        "src/three_agent/egress_broker.py",
+        "src/three_agent/evaluation_lab.py",
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/external_evaluator_handoff.py",
+        "src/three_agent/knowledge_cli.py",
+        "src/three_agent/network_cic_real_source_evidence.py",
+        "src/three_agent/network_dataset_cli.py",
+        "src/three_agent/network_lanl_operator_handoff.py",
+        "src/three_agent/network_lanl_publisher_access.py",
+        "src/three_agent/network_public_corpus_acquisition.py",
+        "src/three_agent/promotion_gate.py",
+        "src/three_agent/resource_benefit_observer.py",
+        "src/three_agent/security_monitoring_cli.py",
+        "src/three_agent/security_pcap_runner.py",
+        "src/three_agent/security_reporting_cli.py",
+        "src/three_agent/workspace_identity_broker.py"
+      ]
+    },
+    {
+      "symbol": "build_parser",
+      "file_count": 30,
+      "files": [
+        "scripts/check_self_hosted_runner_readiness.py",
+        "scripts/configure_self_hosted_runner.py",
+        "scripts/install_self_hosted_r9_runner.py",
+        "scripts/run_security_readonly_pilot.py",
+        "scripts/workspace_auth_guard.py",
+        "src/three_agent/benchmark_artifact_canonicalize.py",
+        "src/three_agent/benchmark_evidence.py",
+        "src/three_agent/benchmark_readiness.py",
+        "src/three_agent/benchmark_suite.py",
+        "src/three_agent/capability_revocation.py",
+        "src/three_agent/chat_acceptance.py",
+        "src/three_agent/chat_multiturn_acceptance.py",
+        "src/three_agent/chat_simple_e2e_acceptance.py",
+        "src/three_agent/cli.py",
+        "src/three_agent/d502a_benchmark.py",
+        "src/three_agent/deterministic_retrieval_cli.py",
+        "src/three_agent/efficiency_concurrency_observer.py",
+        "src/three_agent/egress_broker.py",
+        "src/three_agent/evaluation_lab.py",
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/external_evaluator_handoff.py",
+        "src/three_agent/knowledge_cli.py",
+        "src/three_agent/network_cic_real_source_evidence.py",
+        "src/three_agent/network_lanl_operator_handoff.py",
+        "src/three_agent/network_lanl_publisher_access.py",
+        "src/three_agent/promotion_gate.py",
+        "src/three_agent/resource_benefit_observer.py",
+        "src/three_agent/security_monitoring_cli.py",
+        "src/three_agent/security_pcap_runner.py",
+        "src/three_agent/security_reporting_cli.py"
+      ]
+    },
+    {
+      "symbol": "_sha",
+      "file_count": 26,
+      "files": [
+        "src/three_agent/adaptive_learning_checkpoint.py",
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_reflection_contract.py",
+        "src/three_agent/adaptive_learning_revision_evaluation.py",
+        "src/three_agent/adaptive_learning_store.py",
+        "src/three_agent/benchmark_evidence.py",
+        "src/three_agent/network_real_source_acceptance_contract.py",
+        "src/three_agent/security_monitoring/analyst_finding.py",
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/evidence_analysis_audit.py",
+        "src/three_agent/security_monitoring/evidence_lineage.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py",
+        "src/three_agent/security_monitoring/forensic_hypothesis.py",
+        "src/three_agent/security_monitoring/forensic_normalized_admission.py",
+        "src/three_agent/security_monitoring/forensic_report.py",
+        "src/three_agent/security_monitoring/security_workflow.py",
+        "src/three_agent/security_monitoring/workflow_audit.py",
+        "tests/test_d705_external_evaluator_handoff.py",
+        "tests/test_dfir_case_evidence.py",
+        "tests/test_evaluation_profiles.py",
+        "tests/test_security_forensic_boolean_contract_v012.py",
+        "tests/test_security_forensic_evidence_v011.py",
+        "tests/test_security_forensic_hypothesis_v014.py",
+        "tests/test_security_forensic_report_v015.py",
+        "tests/test_security_forensic_store_v012.py"
+      ]
+    },
+    {
+      "symbol": "_timestamp",
+      "file_count": 19,
+      "files": [
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_memory.py",
+        "src/three_agent/security_monitoring/analyst_finding.py",
+        "src/three_agent/security_monitoring/anti_forensics_detection.py",
+        "src/three_agent/security_monitoring/credential_abuse_trace.py",
+        "src/three_agent/security_monitoring/dhcp_ip_triage.py",
+        "src/three_agent/security_monitoring/exfiltration_analysis.py",
+        "src/three_agent/security_monitoring/filesystem_artifact_analysis.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py",
+        "src/three_agent/security_monitoring/forensic_hypothesis.py",
+        "src/three_agent/security_monitoring/forensic_report.py",
+        "src/three_agent/security_monitoring/incident_scope_builder.py",
+        "src/three_agent/security_monitoring/lateral_movement_trace.py",
+        "src/three_agent/security_monitoring/memory_forensics_contract.py",
+        "src/three_agent/security_monitoring/normalized_evidence.py",
+        "src/three_agent/security_monitoring/persistence_hunt.py",
+        "src/three_agent/security_monitoring/process_tree_reconstruction.py",
+        "src/three_agent/security_monitoring/windows_evtx_adapter.py"
+      ]
+    },
+    {
+      "symbol": "_canonical_sha256",
+      "file_count": 15,
+      "files": [
+        "src/three_agent/adaptive_learning_evaluation.py",
+        "src/three_agent/adaptive_learning_promotion.py",
+        "src/three_agent/benchmark_evidence.py",
+        "src/three_agent/benchmark_readiness.py",
+        "src/three_agent/benchmark_snapshot.py",
+        "src/three_agent/benchmark_suite.py",
+        "src/three_agent/efficiency_concurrency_observer.py",
+        "src/three_agent/evaluation_lab.py",
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/metric_registry.py",
+        "src/three_agent/network_public_corpus_acquisition.py",
+        "src/three_agent/network_security_intelligence.py",
+        "src/three_agent/promotion_gate.py",
+        "src/three_agent/workflow_dispatch.py",
+        "src/three_agent/workflow_state_machine.py"
+      ]
+    },
+    {
+      "symbol": "_digest",
+      "file_count": 13,
+      "files": [
+        "src/three_agent/adaptive_learning_admission.py",
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_reflection_contract.py",
+        "src/three_agent/adaptive_learning_revision_evaluation.py",
+        "src/three_agent/adaptive_learning_store.py",
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_compiler.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_memory.py",
+        "src/three_agent/security_monitoring/enriched_parsers.py",
+        "src/three_agent/security_monitoring/passive_sensors.py",
+        "src/three_agent/security_monitoring/windows_evtx_adapter.py"
+      ]
+    },
+    {
+      "symbol": "_sha256",
+      "file_count": 13,
+      "files": [
+        "scripts/install_self_hosted_r9_runner.py",
+        "src/three_agent/adaptive_learning_checkpoint.py",
+        "src/three_agent/adaptive_learning_reflection.py",
+        "src/three_agent/chat_multiturn_acceptance.py",
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/network_eval_harness.py",
+        "src/three_agent/network_experience.py",
+        "src/three_agent/promotion_gate.py",
+        "src/three_agent/security_monitoring/asset_dependency.py",
+        "src/three_agent/security_monitoring/normalized_evidence.py",
+        "src/three_agent/security_monitoring/receipts.py"
+      ]
+    },
+    {
+      "symbol": "_canonical",
+      "file_count": 11,
+      "files": [
+        "src/three_agent/adaptive_learning_admission.py",
+        "src/three_agent/adaptive_learning_checkpoint.py",
+        "src/three_agent/adaptive_learning_curation.py",
+        "src/three_agent/adaptive_learning_curation_revision.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_effectiveness.py",
+        "src/three_agent/adaptive_learning_reflection.py",
+        "src/three_agent/adaptive_learning_reflection_contract.py",
+        "src/three_agent/adaptive_learning_retrieval.py",
+        "src/three_agent/adaptive_learning_revision_evaluation.py",
+        "src/three_agent/adaptive_learning_store.py"
+      ]
+    },
+    {
+      "symbol": "_compact",
+      "file_count": 11,
+      "files": [
+        "src/three_agent/capability_authority.py",
+        "src/three_agent/chat_context_v3.py",
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/resource_events.py",
+        "src/three_agent/security_monitoring/capability_registry.py",
+        "src/three_agent/security_monitoring/contracts.py",
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/dhcp_ip_triage.py",
+        "src/three_agent/security_monitoring/evidence_lineage.py",
+        "src/three_agent/security_monitoring/normalized_evidence.py",
+        "src/three_agent/security_monitoring/operation_invocation.py"
+      ]
+    },
+    {
+      "symbol": "FakeLLM",
+      "file_count": 10,
+      "files": [
+        "tests/test_chat_acceptance.py",
+        "tests/test_chat_gateway_v14.py",
+        "tests/test_chat_gateway_v16_context.py",
+        "tests/test_chat_multiturn_acceptance.py",
+        "tests/test_human_report_language.py",
+        "tests/test_packing_receipt.py",
+        "tests/test_web_research.py",
+        "tests/test_workflow_design.py",
+        "tests/test_workflow_design_v3.py",
+        "tests/test_workflow_design_v4.py"
+      ]
+    },
+    {
+      "symbol": "_contract",
+      "file_count": 10,
+      "files": [
+        "tests/test_network_cic_adapter.py",
+        "tests/test_network_ctu13_adapter.py",
+        "tests/test_network_lanl_adapter.py",
+        "tests/test_network_lanl_dns_adapter.py",
+        "tests/test_network_lanl_family_binding.py",
+        "tests/test_network_lanl_flow_adapter.py",
+        "tests/test_network_lanl_process_adapter.py",
+        "tests/test_network_lanl_redteam_matcher.py",
+        "tests/test_network_security_intelligence_v002_regressions.py",
+        "tests/test_workflow_drafts.py"
+      ]
+    },
+    {
+      "symbol": "_identifier",
+      "file_count": 10,
+      "files": [
+        "src/three_agent/security_monitoring/anti_forensics_detection.py",
+        "src/three_agent/security_monitoring/credential_abuse_trace.py",
+        "src/three_agent/security_monitoring/exfiltration_analysis.py",
+        "src/three_agent/security_monitoring/filesystem_artifact_analysis.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py",
+        "src/three_agent/security_monitoring/incident_scope_builder.py",
+        "src/three_agent/security_monitoring/lateral_movement_trace.py",
+        "src/three_agent/security_monitoring/memory_forensics_contract.py",
+        "src/three_agent/security_monitoring/persistence_hunt.py",
+        "src/three_agent/security_monitoring/process_tree_reconstruction.py"
+      ]
+    },
+    {
+      "symbol": "_strict_bool",
+      "file_count": 10,
+      "files": [
+        "src/three_agent/network_bots_feasibility.py",
+        "src/three_agent/network_real_source_acceptance_contract.py",
+        "src/three_agent/security_monitoring/anti_forensics_detection.py",
+        "src/three_agent/security_monitoring/credential_abuse_trace.py",
+        "src/three_agent/security_monitoring/exfiltration_analysis.py",
+        "src/three_agent/security_monitoring/filesystem_artifact_analysis.py",
+        "src/three_agent/security_monitoring/incident_scope_builder.py",
+        "src/three_agent/security_monitoring/lateral_movement_trace.py",
+        "src/three_agent/security_monitoring/memory_forensics_contract.py",
+        "src/three_agent/security_monitoring/persistence_hunt.py"
+      ]
+    },
+    {
+      "symbol": "_utc",
+      "file_count": 10,
+      "files": [
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/discovery_candidates.py",
+        "src/three_agent/security_monitoring/discovery_enrollment.py",
+        "src/three_agent/security_monitoring/edge_agent.py",
+        "src/three_agent/security_monitoring/evidence_analysis_audit.py",
+        "src/three_agent/security_monitoring/flow_process_attribution.py",
+        "src/three_agent/security_monitoring/forensic_normalized_admission.py",
+        "src/three_agent/security_monitoring/temporal_behavior.py",
+        "src/three_agent/security_monitoring/workflow_audit.py"
+      ]
+    },
+    {
+      "symbol": "event",
+      "file_count": 9,
+      "files": [
+        "tests/test_prefix_reuse.py",
+        "tests/test_security_credential_abuse_trace_v027.py",
+        "tests/test_security_monitoring_correlation_store.py",
+        "tests/test_security_monitoring_entity_context_storage.py",
+        "tests/test_security_monitoring_ns2_log_pipeline.py",
+        "tests/test_security_monitoring_rule_compiler.py",
+        "tests/test_security_monitoring_temporal_behavior.py",
+        "tests/test_security_monitoring_temporal_scenarios.py",
+        "tests/test_security_monitoring_temporal_store_integration.py"
+      ]
+    },
+    {
+      "symbol": "_canonical_json",
+      "file_count": 8,
+      "files": [
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_compiler.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_context_rehydration.py",
+        "src/three_agent/harness_memory.py",
+        "src/three_agent/knowledge_plane.py",
+        "src/three_agent/network_bots_feasibility.py",
+        "src/three_agent/workflow_drafts.py"
+      ]
+    },
+    {
+      "symbol": "sha",
+      "file_count": 8,
+      "files": [
+        "evidence_tools/d7_edge_external.py",
+        "tests/test_adaptive_learning_curation.py",
+        "tests/test_adaptive_learning_curation_revision.py",
+        "tests/test_adaptive_learning_effectiveness.py",
+        "tests/test_adaptive_learning_reflection.py",
+        "tests/test_adaptive_learning_revision_evaluation.py",
+        "tests/test_harness_h3_context_manifest.py",
+        "tests/test_harness_h3_context_rehydration.py"
+      ]
+    },
+    {
+      "symbol": "_text",
+      "file_count": 7,
+      "files": [
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_revision_evaluation.py",
+        "src/three_agent/network_security_intelligence.py",
+        "src/three_agent/workflow_design.py",
+        "tests/test_github_rtx5090_remote_bootstrap.py",
+        "tests/test_github_rtx5090_runner_script.py"
+      ]
+    },
+    {
+      "symbol": "config",
+      "file_count": 7,
+      "files": [
+        "tests/test_adaptive_learning_scheduler.py",
+        "tests/test_benchmark_isolation.py",
+        "tests/test_benchmark_snapshot.py",
+        "tests/test_benchmark_suite.py",
+        "tests/test_chat_gateway_v4.py",
+        "tests/test_d502a_benchmark.py",
+        "tests/test_workspace_frontend_v13.py"
+      ]
+    },
+    {
+      "symbol": "_ClosingConnection",
+      "file_count": 6,
+      "files": [
+        "src/three_agent/adaptive_learning_store.py",
+        "src/three_agent/chat_attachment_memory.py",
+        "src/three_agent/chat_history.py",
+        "src/three_agent/store.py",
+        "src/three_agent/workflow_drafts.py",
+        "src/three_agent/workspace_auth.py"
+      ]
+    },
+    {
+      "symbol": "_bounded",
+      "file_count": 6,
+      "files": [
+        "src/three_agent/document_extractors.py",
+        "src/three_agent/network_bots_feasibility.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/network_eval_harness.py",
+        "src/three_agent/network_experience.py",
+        "src/three_agent/network_real_source_acceptance_contract.py"
+      ]
+    },
+    {
+      "symbol": "_compact_id",
+      "file_count": 6,
+      "files": [
+        "src/three_agent/adaptive_learning_store.py",
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_context_rehydration.py",
+        "src/three_agent/harness_memory.py",
+        "src/three_agent/promotion_gate.py"
+      ]
+    },
+    {
+      "symbol": "_row",
+      "file_count": 6,
+      "files": [
+        "tests/test_network_cic_adapter.py",
+        "tests/test_network_ctu13_adapter.py",
+        "tests/test_network_lanl_adapter.py",
+        "tests/test_network_lanl_dns_adapter.py",
+        "tests/test_network_lanl_flow_adapter.py",
+        "tests/test_network_lanl_process_adapter.py"
+      ]
+    },
+    {
+      "symbol": "_sha256_file",
+      "file_count": 6,
+      "files": [
+        "src/three_agent/network_cic_real_source_evidence.py",
+        "src/three_agent/network_real_source_runner.py",
+        "src/three_agent/security_monitoring/incident_capture.py",
+        "src/three_agent/security_monitoring/nas_archive.py",
+        "src/three_agent/security_monitoring/report_orchestrator.py",
+        "src/three_agent/security_monitoring/reporting.py"
+      ]
+    },
+    {
+      "symbol": "_single_line",
+      "file_count": 6,
+      "files": [
+        "src/three_agent/chat_output_contract.py",
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_compiler.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_context_rehydration.py",
+        "src/three_agent/harness_memory.py"
+      ]
+    },
+    {
+      "symbol": "_bounded_int",
+      "file_count": 5,
+      "files": [
+        "src/three_agent/efficiency_concurrency_observer.py",
+        "src/three_agent/security_monitoring/edge_agent.py",
+        "src/three_agent/security_monitoring/health_state.py",
+        "src/three_agent/security_monitoring/pcap_evidence.py",
+        "src/three_agent/security_monitoring/temporal_scenarios.py"
+      ]
+    },
+    {
+      "symbol": "_event",
+      "file_count": 5,
+      "files": [
+        "tests/test_security_flow_analysis_v09.py",
+        "tests/test_security_forensic_timeline_clock_v018.py",
+        "tests/test_security_incident_timeline_evidence_v013.py",
+        "tests/test_security_incident_timeline_v010.py",
+        "tests/test_security_network_protocol_forensics_v020.py"
+      ]
+    },
+    {
+      "symbol": "_manager",
+      "file_count": 5,
+      "files": [
+        "src/three_agent/network_dataset_cli.py",
+        "tests/test_network_public_corpus_acquisition.py",
+        "tests/test_network_public_corpus_dns_pinning.py",
+        "tests/test_network_public_corpus_transport_failclosed.py",
+        "tests/test_network_security_intelligence_v002_final_boundaries.py"
+      ]
+    },
+    {
+      "symbol": "_now",
+      "file_count": 5,
+      "files": [
+        "src/three_agent/adaptive_learning_checkpoint.py",
+        "src/three_agent/adaptive_learning_store.py",
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_memory.py"
+      ]
+    },
+    {
+      "symbol": "_positive_int",
+      "file_count": 5,
+      "files": [
+        "src/three_agent/harness_context_rehydration.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/network_dataset_policy.py",
+        "src/three_agent/network_real_source_acceptance_contract.py",
+        "src/three_agent/security_monitoring/process_tree_reconstruction.py"
+      ]
+    },
+    {
+      "symbol": "_write_rows",
+      "file_count": 5,
+      "files": [
+        "tests/test_network_lanl_adapter.py",
+        "tests/test_network_lanl_dns_adapter.py",
+        "tests/test_network_lanl_flow_adapter.py",
+        "tests/test_network_lanl_process_adapter.py",
+        "tests/test_network_lanl_redteam_matcher.py"
+      ]
+    },
+    {
+      "symbol": "evidence",
+      "file_count": 5,
+      "files": [
+        "tests/test_adaptive_learning_contract.py",
+        "tests/test_adaptive_learning_store.py",
+        "tests/test_chat_multiturn_acceptance_v2.py",
+        "tests/test_network_experience.py",
+        "tests/test_security_monitoring_enterprise_verification.py"
+      ]
+    },
+    {
+      "symbol": "row",
+      "file_count": 5,
+      "files": [
+        "tests/test_security_anti_forensics_detection_v026.py",
+        "tests/test_security_filesystem_artifact_analysis_v024.py",
+        "tests/test_security_lateral_movement_trace_v023.py",
+        "tests/test_security_memory_forensics_contract_v025.py",
+        "tests/test_security_persistence_hunt_v022.py"
+      ]
+    },
+    {
+      "symbol": "source",
+      "file_count": 5,
+      "files": [
+        "evidence_tools/d7_edge_external.py",
+        "evidence_tools/edge_holdout_evaluator.py",
+        "tests/test_security_monitoring_checkpoint_compatibility.py",
+        "tests/test_security_monitoring_replay.py",
+        "tests/test_security_monitoring_replay_integration.py"
+      ]
+    },
+    {
+      "symbol": "FakeDailyAgent",
+      "file_count": 4,
+      "files": [
+        "tests/test_runtime_validation.py",
+        "tests/test_workflow.py",
+        "tests/test_workflow_state_machine_v3.py",
+        "tests/test_workflow_state_machine_v4.py"
+      ]
+    },
+    {
+      "symbol": "FakeExecution",
+      "file_count": 4,
+      "files": [
+        "tests/test_capability_authority.py",
+        "tests/test_capability_revocation.py",
+        "tests/test_execution_budget.py",
+        "tests/test_metered_runtime.py"
+      ]
+    },
+    {
+      "symbol": "FakePresentationAgent",
+      "file_count": 4,
+      "files": [
+        "tests/test_runtime_validation.py",
+        "tests/test_workflow.py",
+        "tests/test_workflow_state_machine_v3.py",
+        "tests/test_workflow_state_machine_v4.py"
+      ]
+    },
+    {
+      "symbol": "FakeRunner",
+      "file_count": 4,
+      "files": [
+        "tests/test_adaptive_learning_curation_revision.py",
+        "tests/test_adaptive_learning_reflection.py",
+        "tests/test_adaptive_learning_revision_evaluation.py",
+        "tests/test_benchmark_readiness.py"
+      ]
+    },
+    {
+      "symbol": "_assessment",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/security_monitoring/behavior_intelligence.py",
+        "tests/test_context_metrics.py",
+        "tests/test_recall_metrics.py",
+        "tests/test_synthesis_citation_scope.py"
+      ]
+    },
+    {
+      "symbol": "_bounded_text",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/network_ctu13_adapter.py",
+        "src/three_agent/workflow_dispatch.py",
+        "src/three_agent/workflow_drafts.py",
+        "src/three_agent/workflow_state_machine.py"
+      ]
+    },
+    {
+      "symbol": "_dt",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/security_monitoring/edge_agent.py",
+        "src/three_agent/security_monitoring/flow_process_engine.py",
+        "src/three_agent/security_monitoring/health_evaluator.py",
+        "src/three_agent/security_monitoring/temporal_behavior.py"
+      ]
+    },
+    {
+      "symbol": "_id",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/adaptive_learning_checkpoint.py",
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_reflection_contract.py"
+      ]
+    },
+    {
+      "symbol": "_nonnegative_int",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/harness_context_compiler.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/network_real_source_acceptance_contract.py",
+        "src/three_agent/security_monitoring/checkpoint.py"
+      ]
+    },
+    {
+      "symbol": "_now_iso",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/security_monitoring/parsers.py",
+        "src/three_agent/vulnerability_intelligence/epss.py",
+        "src/three_agent/vulnerability_intelligence/kev.py",
+        "src/three_agent/vulnerability_intelligence/nvd.py"
+      ]
+    },
+    {
+      "symbol": "_receipt",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/adaptive_learning_lifecycle.py",
+        "src/three_agent/network_lanl_publisher_access.py",
+        "tests/test_adaptive_learning_retrieval.py",
+        "tests/test_adaptive_learning_runtime_wiring.py"
+      ]
+    },
+    {
+      "symbol": "_refs",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/human_report.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/security_monitoring/correlation_graph.py",
+        "src/three_agent/security_monitoring/correlation_support.py"
+      ]
+    },
+    {
+      "symbol": "_source",
+      "file_count": 4,
+      "files": [
+        "tests/test_context_metrics.py",
+        "tests/test_recall_metrics.py",
+        "tests/test_security_incident_timeline_evidence_v013.py",
+        "tests/test_synthesis_citation_scope.py"
+      ]
+    },
+    {
+      "symbol": "_source_ref",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/benchmark_evidence.py",
+        "src/three_agent/benchmark_readiness.py",
+        "src/three_agent/d502a_benchmark.py",
+        "src/three_agent/efficiency_concurrency_observer.py"
+      ]
+    },
+    {
+      "symbol": "asset",
+      "file_count": 4,
+      "files": [
+        "tests/test_security_monitoring_correlation_graph.py",
+        "tests/test_security_monitoring_correlation_support.py",
+        "tests/test_security_monitoring_entity_context_storage.py",
+        "tests/test_security_monitoring_work_clustering.py"
+      ]
+    },
+    {
+      "symbol": "canonical_sha256",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/network_bots_feasibility.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/network_eval_harness.py",
+        "src/three_agent/network_real_source_acceptance_contract.py"
+      ]
+    },
+    {
+      "symbol": "flow",
+      "file_count": 4,
+      "files": [
+        "tests/test_network_security_intelligence.py",
+        "tests/test_security_exfiltration_analysis_v028.py",
+        "tests/test_security_monitoring_flow_process_engine.py",
+        "tests/test_security_monitoring_flow_process_graph.py"
+      ]
+    },
+    {
+      "symbol": "metrics",
+      "file_count": 4,
+      "files": [
+        "tests/test_benchmark_snapshot.py",
+        "tests/test_benchmark_suite.py",
+        "tests/test_d706_efficiency_evaluator_handoff.py",
+        "tests/test_security_monitoring_ns7_advanced_benchmark.py"
+      ]
+    },
+    {
+      "symbol": "period",
+      "file_count": 4,
+      "files": [
+        "tests/test_security_monitoring_enterprise_verification.py",
+        "tests/test_security_monitoring_network_triage_ai_integration.py",
+        "tests/test_security_monitoring_ns5_ai_analyst.py",
+        "tests/test_security_monitoring_soc_read_model.py"
+      ]
+    },
+    {
+      "symbol": "report",
+      "file_count": 4,
+      "files": [
+        "tests/test_security_monitoring_enterprise_verification.py",
+        "tests/test_security_monitoring_network_triage_ai_integration.py",
+        "tests/test_security_monitoring_ns5_ai_analyst.py",
+        "tests/test_security_monitoring_soc_read_model.py"
+      ]
+    },
+    {
+      "symbol": "workspace_ui_capabilities",
+      "file_count": 4,
+      "files": [
+        "src/three_agent/chat_gateway_v18.py",
+        "src/three_agent/chat_gateway_v20.py",
+        "src/three_agent/chat_gateway_v22.py",
+        "src/three_agent/chat_gateway_v4.py"
+      ]
+    },
+    {
+      "symbol": "FakeBridge",
+      "file_count": 3,
+      "files": [
+        "tests/test_capability_authority.py",
+        "tests/test_workflow_state_machine_v3.py",
+        "tests/test_workflow_state_machine_v4.py"
+      ]
+    },
+    {
+      "symbol": "FakeClient",
+      "file_count": 3,
+      "files": [
+        "tests/test_resource_benefit_observer.py",
+        "tests/test_security_monitoring_ns5_ai_analyst.py",
+        "tests/test_worker_pool.py"
+      ]
+    },
+    {
+      "symbol": "FakeGateway",
+      "file_count": 3,
+      "files": [
+        "tests/test_adaptive_learning_reflection.py",
+        "tests/test_chat_gateway.py",
+        "tests/test_web_research.py"
+      ]
+    },
+    {
+      "symbol": "FakeKnowledgeGateway",
+      "file_count": 3,
+      "files": [
+        "tests/test_chat_gateway_v14.py",
+        "tests/test_chat_gateway_v16_context.py",
+        "tests/test_chat_multiturn_acceptance.py"
+      ]
+    },
+    {
+      "symbol": "FakeModel",
+      "file_count": 3,
+      "files": [
+        "tests/test_execution_budget.py",
+        "tests/test_failure_taxonomy.py",
+        "tests/test_metered_runtime.py"
+      ]
+    },
+    {
+      "symbol": "FakeResearchAgent",
+      "file_count": 3,
+      "files": [
+        "tests/test_runtime_validation.py",
+        "tests/test_workflow.py",
+        "tests/test_workflow_state_machine_v3.py"
+      ]
+    },
+    {
+      "symbol": "FakeStore",
+      "file_count": 3,
+      "files": [
+        "tests/test_chat_gateway_v14.py",
+        "tests/test_chat_gateway_v16_context.py",
+        "tests/test_chat_multiturn_acceptance.py"
+      ]
+    },
+    {
+      "symbol": "ResearchAgent",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/agents/research.py",
+        "src/three_agent/agents/research_compiled.py",
+        "src/three_agent/agents/research_ranked.py"
+      ]
+    },
+    {
+      "symbol": "Source",
+      "file_count": 3,
+      "files": [
+        "tests/test_evidence_hard_pack.py",
+        "tests/test_evidence_packing.py",
+        "tests/test_packing_receipt.py"
+      ]
+    },
+    {
+      "symbol": "_NoopStore",
+      "file_count": 3,
+      "files": [
+        "tests/test_live_language_semantic_repair.py",
+        "tests/test_missing_reference_plain_first.py",
+        "tests/test_p2_constrained_generation.py"
+      ]
+    },
+    {
+      "symbol": "_as_datetime",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/harness_checkpoint.py",
+        "src/three_agent/harness_context_manifest.py",
+        "src/three_agent/harness_memory.py"
+      ]
+    },
+    {
+      "symbol": "_asset",
+      "file_count": 3,
+      "files": [
+        "tests/test_security_asset_dependency_v001.py",
+        "tests/test_security_dhcp_ip_triage_v001.py",
+        "tests/test_security_monitoring_collectors.py"
+      ]
+    },
+    {
+      "symbol": "_authorization",
+      "file_count": 3,
+      "files": [
+        "tests/test_dfir_case_evidence.py",
+        "tests/test_security_forensic_normalized_admission_v016.py",
+        "tests/test_security_forensic_store_v012.py"
+      ]
+    },
+    {
+      "symbol": "_event_identity",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/security_monitoring/correlation_graph.py",
+        "src/three_agent/security_monitoring/incident_timeline.py",
+        "src/three_agent/security_monitoring/temporal_behavior.py"
+      ]
+    },
+    {
+      "symbol": "_evidence",
+      "file_count": 3,
+      "files": [
+        "tests/test_security_forensic_boolean_contract_v012.py",
+        "tests/test_security_forensic_report_v015.py",
+        "tests/test_security_forensic_store_v012.py"
+      ]
+    },
+    {
+      "symbol": "_fingerprint",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/network_skill_blueprints.py",
+        "src/three_agent/security_monitoring/edge_agent.py",
+        "src/three_agent/security_monitoring/ui_config_v2.py"
+      ]
+    },
+    {
+      "symbol": "_forbid_durable_keys",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/network_cic_real_source_evidence.py",
+        "src/three_agent/network_lanl_publisher_access.py",
+        "src/three_agent/network_real_source_acceptance_contract.py"
+      ]
+    },
+    {
+      "symbol": "_git_sha",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/evaluation_profiles.py",
+        "src/three_agent/network_corpus_adapter.py",
+        "src/three_agent/promotion_gate.py"
+      ]
+    },
+    {
+      "symbol": "_hash",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/efficiency_evaluator_handoff.py",
+        "tests/test_adaptive_learning_retrieval.py",
+        "tests/test_adaptive_learning_runtime_wiring.py"
+      ]
+    },
+    {
+      "symbol": "_iso",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/security_monitoring/incident_capture.py",
+        "src/three_agent/security_monitoring/network_triage.py",
+        "src/three_agent/security_monitoring/operation_invocation.py"
+      ]
+    },
+    {
+      "symbol": "_number",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/network_security_intelligence.py",
+        "src/three_agent/security_monitoring/advanced_benchmark.py",
+        "src/three_agent/security_monitoring/passive_sensors.py"
+      ]
+    },
+    {
+      "symbol": "_parse_timestamp",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/network_security_intelligence.py",
+        "src/three_agent/security_monitoring/credential_abuse_trace.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py"
+      ]
+    },
+    {
+      "symbol": "_parser",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/adaptive_learning_lifecycle.py",
+        "src/three_agent/network_dataset_cli.py",
+        "src/three_agent/network_public_corpus_acquisition.py"
+      ]
+    },
+    {
+      "symbol": "_plan",
+      "file_count": 3,
+      "files": [
+        "tests/test_network_public_corpus_dns_pinning.py",
+        "tests/test_security_operation_invocation.py",
+        "tests/test_security_pcap_task_read.py"
+      ]
+    },
+    {
+      "symbol": "_quarantine",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/security_monitoring/enriched_parsers.py",
+        "src/three_agent/security_monitoring/passive_sensors.py",
+        "src/three_agent/security_monitoring/windows_evtx_adapter.py"
+      ]
+    },
+    {
+      "symbol": "_reason_codes",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/adaptive_learning_evaluation.py",
+        "src/three_agent/security_monitoring/forensic_hypothesis.py",
+        "src/three_agent/security_monitoring/forensic_report.py"
+      ]
+    },
+    {
+      "symbol": "_sha256_bytes",
+      "file_count": 3,
+      "files": [
+        "scripts/run_security_readonly_pilot.py",
+        "src/three_agent/benchmark_suite.py",
+        "src/three_agent/knowledge_plane.py"
+      ]
+    },
+    {
+      "symbol": "_sha_payload",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/adaptive_learning_curation.py",
+        "src/three_agent/adaptive_learning_curation_revision.py",
+        "src/three_agent/adaptive_learning_effectiveness.py"
+      ]
+    },
+    {
+      "symbol": "_strict",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/adaptive_learning_curation_revision_contract.py",
+        "src/three_agent/adaptive_learning_reflection_contract.py"
+      ]
+    },
+    {
+      "symbol": "build_conversation_context",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/chat_context.py",
+        "src/three_agent/chat_context_v2.py",
+        "src/three_agent/chat_context_v3.py"
+      ]
+    },
+    {
+      "symbol": "checkpoint",
+      "file_count": 3,
+      "files": [
+        "tests/test_security_monitoring_checkpoint.py",
+        "tests/test_security_monitoring_checkpoint_compatibility.py",
+        "tests/test_security_monitoring_replay.py"
+      ]
+    },
+    {
+      "symbol": "contract_summary",
+      "file_count": 3,
+      "files": [
+        "src/three_agent/chat_acceptance.py",
+        "src/three_agent/chat_multiturn_acceptance.py",
+        "src/three_agent/chat_simple_e2e_acceptance.py"
+      ]
+    },
+    {
+      "symbol": "load_module",
+      "file_count": 3,
+      "files": [
+        "evidence_tools/d7_edge_external.py",
+        "tests/test_diagnose_workspace_admin_auth.py",
+        "tests/test_workspace_auth_guard.py"
+      ]
+    },
+    {
+      "symbol": "load_profile",
+      "file_count": 3,
+      "files": [
+        "tests/test_network_lanl_operator_handoff.py",
+        "tests/test_network_lanl_publisher_access.py",
+        "tests/test_network_real_source_acceptance_contract.py"
+      ]
+    },
+    {
+      "symbol": "load_result",
+      "file_count": 3,
+      "files": [
+        "tests/test_d705_external_evaluator_handoff.py",
+        "tests/test_d706_efficiency_evaluator_handoff.py",
+        "tests/test_evaluation_profiles.py"
+      ]
+    },
+    {
+      "symbol": "obs",
+      "file_count": 3,
+      "files": [
+        "tests/test_security_monitoring_health_evaluator.py",
+        "tests/test_security_monitoring_health_replay.py",
+        "tests/test_security_process_tree_reconstruction_v021.py"
+      ]
+    },
+    {
+      "symbol": "result_payload",
+      "file_count": 3,
+      "files": [
+        "tests/test_d705_external_evaluator_handoff.py",
+        "tests/test_d706_efficiency_evaluator_handoff.py",
+        "tests/test_evaluation_profiles.py"
+      ]
+    },
+    {
+      "symbol": "snapshot",
+      "file_count": 3,
+      "files": [
+        "scripts/workspace_auth_guard.py",
+        "tests/test_optimization_gate.py",
+        "tests/test_worker_pool.py"
+      ]
+    },
+    {
+      "symbol": "CaseAuthorization",
+      "file_count": 2,
+      "files": [
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py"
+      ]
+    },
+    {
+      "symbol": "CaseRecord",
+      "file_count": 2,
+      "files": [
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py"
+      ]
+    },
+    {
+      "symbol": "CustodyEvent",
+      "file_count": 2,
+      "files": [
+        "src/three_agent/security_monitoring/dfir_case_evidence.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py"
+      ]
+    },
+    {
+      "symbol": "EvidenceProvenance",
+      "file_count": 2,
+      "files": [
+        "src/three_agent/security_monitoring/forensic_evidence.py",
+        "src/three_agent/security_monitoring/normalized_evidence.py"
+      ]
+    },
+    {
+      "symbol": "EvidenceReference",
+      "file_count": 2,
+      "files": [
+        "src/three_agent/adaptive_learning_contract.py",
+        "src/three_agent/security_monitoring/forensic_evidence.py"
+      ]
+    },
+    {
+      "symbol": "FakeConnection",
+      "file_count": 2,
+      "files": [
+        "tests/test_network_public_corpus_dns_pinning.py",
+        "tests/test_security_monitoring_ns1_collectors.py"
+      ]
+    },
+    {
+      "symbol": "FakeInternet",
+      "file_count": 2,
+      "files": [
+        "tests/test_capability_authority.py",
+        "tests/test_metered_runtime.py"
+      ]
+    }
+  ],
+  "monkeypatch_hit_count": 26,
+  "monkeypatch_hits": [
+    {
+      "file": "src/three_agent/chat_gateway.py",
+      "line": 179,
+      "target": "setattr(job,...)"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 293,
+      "target": "_v4.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 294,
+      "target": "_v17.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 295,
+      "target": "_v17.ContractAwareProjectChatService"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 296,
+      "target": "_v17.HTML_V17"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 297,
+      "target": "_v17.WorkflowV4ContextApplication"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "line": 298,
+      "target": "_v17.WorkflowV4ContextHTTPHandler"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v19.py",
+      "line": 108,
+      "target": "_v17.HTML_V17"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v19.py",
+      "line": 109,
+      "target": "_v17.WorkflowV4ContextApplication"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v19.py",
+      "line": 110,
+      "target": "_v17.WorkflowV4ContextHTTPHandler"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v2.py",
+      "line": 127,
+      "target": "setattr(job,...)"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "line": 211,
+      "target": "_v17.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "line": 212,
+      "target": "_v17.ContractAwareProjectChatService"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "line": 213,
+      "target": "_v17.HTML_V17"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "line": 214,
+      "target": "_v17.WorkflowV4ContextApplication"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "line": 215,
+      "target": "_v17.WorkflowV4ContextHTTPHandler"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v21.py",
+      "line": 282,
+      "target": "_v17.HTML_V17"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v21.py",
+      "line": 283,
+      "target": "_v17.ContractAwareProjectChatService"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v21.py",
+      "line": 284,
+      "target": "_v17.WorkflowV4ContextApplication"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v21.py",
+      "line": 285,
+      "target": "_v17.WorkflowV4ContextHTTPHandler"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 292,
+      "target": "_v4.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 293,
+      "target": "_v17.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 294,
+      "target": "_v18.workspace_ui_capabilities"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 295,
+      "target": "_v17.ContractAwareProjectChatService"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 296,
+      "target": "_v17.CONVERSATION_CONTEXT_POLICY_VERSION"
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "line": 297,
+      "target": "_v17.HTML_V17"
+    }
+  ],
+  "parse_errors": [],
+  "production_entrypoints": [
+    "workspace = \"three_agent.cli:main\"",
+    "workspace-benchmark = \"three_agent.benchmark_suite:main\"",
+    "workspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"",
+    "workspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"",
+    "workspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"",
+    "workspace-capability = \"three_agent.capability_revocation:main\"",
+    "workspace-chat = \"three_agent.chat_gateway_v22:main\"",
+    "workspace-chat-acceptance = \"three_agent.chat_acceptance:main\"",
+    "workspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"",
+    "workspace-egressd = \"three_agent.egress_broker:main\"",
+    "workspace-eval = \"three_agent.evaluation_lab:main\"",
+    "workspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"",
+    "workspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"",
+    "workspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"",
+    "workspace-eval-profile = \"three_agent.evaluation_profiles:main\"",
+    "workspace-identity-broker = \"three_agent.workspace_identity_broker:main\"",
+    "workspace-knowledge = \"three_agent.knowledge_cli:main\"",
+    "workspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"",
+    "workspace-network-data = \"three_agent.network_dataset_cli:main\"",
+    "workspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"",
+    "workspace-promotion = \"three_agent.promotion_gate:main\"",
+    "workspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"",
+    "workspace-security-monitor = \"three_agent.security_monitoring_cli:main\"",
+    "workspace-security-pcap = \"three_agent.security_pcap_runner:main\"",
+    "workspace-security-report = \"three_agent.security_reporting_cli:main\"",
+    "three-agent = \"three_agent.cli:main\"",
+    "three-agent-chat = \"three_agent.chat_gateway_v22:main\""
+  ],
+  "manual_conflict_branch_count": 92,
+  "manual_conflict_file_count": 130,
+  "manual_conflict_files": [
+    {
+      "file": "pyproject.toml",
+      "branch_conflict_count": 28
+    },
+    {
+      "file": "src/three_agent/security_monitoring/__init__.py",
+      "branch_conflict_count": 18
+    },
+    {
+      "file": "tests/test_live_multiturn_workflow_contract.py",
+      "branch_conflict_count": 11
+    },
+    {
+      "file": "tests/test_chat_gateway_v16_contract.py",
+      "branch_conflict_count": 8
+    },
+    {
+      "file": "docs/knowledge/README.md",
+      "branch_conflict_count": 7
+    },
+    {
+      "file": ".github/workflows/live-chat-multiturn-acceptance.yml",
+      "branch_conflict_count": 6
+    },
+    {
+      "file": ".github/workflows/portable-deploy-ci.yml",
+      "branch_conflict_count": 5
+    },
+    {
+      "file": "tests/test_versioning_v4.py",
+      "branch_conflict_count": 5
+    },
+    {
+      "file": "src/three_agent/research_quality.py",
+      "branch_conflict_count": 4
+    },
+    {
+      "file": "tests/test_security_monitoring_pcap_integration.py",
+      "branch_conflict_count": 4
+    },
+    {
+      "file": ".github/workflows/installer-ci.yml",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/cli.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/structured_output_policy.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "tests/test_structured_output_policy.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/agents/research_compiled.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/chat_multiturn_acceptance_v2.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v13.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v20.py",
+      "branch_conflict_count": 3
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "README.md",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/agents/presentation.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_presentation.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "scripts/test_bootstrap_contract.sh",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "AGENTS.md",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/store.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/metered_runtime.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/orchestrator.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "scripts/update_workspace_linux.sh",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_update_workspace_linux.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/workflow_dispatch.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_workflow_dispatch.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/public_query_compiler.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_fidelity.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_chat_fidelity.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_context.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_service_fidelity_v2.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_chat_multiturn_acceptance_v2.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "docs/SECURITY_ANALYST_NETWORK_MONITORING_STATUS_V1.md",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v18.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "tests/test_workspace_frontend_v13.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/security_monitoring/behavior_store.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v19.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v15.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v21.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v22.py",
+      "branch_conflict_count": 2
+    },
+    {
+      "file": "docs/PRESENTATION_AGENT_ACCEPTANCE.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/PRESENTATION_AGENT_SPEC.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "profiles/agent_presentation.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/artifacts.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/presentation_model.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/presentation_renderer.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": ".github/workflows/windows-deploy-ci.yml",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "scripts/bootstrap.ps1",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "config/workspace.public-research.json",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "config/workspace.secure.json",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/context_engine.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/task_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_workspace_doctrine.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/research/05_MASTER_IMPLEMENTATION_CHECKLIST.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_research_quality.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_verified_metrics.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/inference_scope.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workflow.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/evaluation_lab.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_evaluation_lab.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_hardware_workflow_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/__init__.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v11.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v8.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_gateway_v11.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_prompt_compiler.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/WORKFLOW_DISPATCH_V2.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v12.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_gateway_v12.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/WORKSPACE_CHAT_FIDELITY.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v13.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v9.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_gateway_v13.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/WORKFLOW_V3_SECURITY.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v14.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/runtime_validation.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workflow_design_v3.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workflow_state_machine.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v10.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_gateway_v14.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_runtime_validation_precompiled_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_workflow_state_machine_v3.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/version.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/WORKSPACE_CHAT_CONTEXT.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v15.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_gateway_v15.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v16.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_output_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_output_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_p2_constrained_generation.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/knowledge/ADAPTIVE_LEARNING_PHASE3.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/SECURITY_ANALYST_NETWORK_MONITORING_FINAL_RESEARCH_NOTE_V1.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/SECURITY_ANALYST_NETWORK_MONITORING_NO_CODE_NOTICE_V1.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_gateway_v17.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/ai_analyst.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/collectors.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/hourly.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/plan.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/ui_read_model.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring_cli.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_security_monitoring_ns1_collectors.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_security_monitoring_pcap_approval_confirmation.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_security_monitoring_ui_gateway.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_security_monitoring_ui_surface.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/adaptive_learning_scheduler.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/network_public_corpus_acquisition.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": ".github/workflows/trusted-self-hosted-r9-ci.yml",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_trusted_self_hosted_runner_workflow_contract.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "scripts/install_chat_gateway.sh",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/health_evaluator.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/ui_config.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v16.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_security_monitoring_ui_config.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/PORTABLE_DEPLOY.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "scripts/deploy_ubuntu_pc.sh",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "scripts/test_deploy_ubuntu_pc_contract.sh",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "scripts/bootstrap.sh",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/security_monitoring/flow_analysis.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/WORKSPACE_CHAT_INTELLIGENCE_INTEGRATION_V1.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/workspace_frontend_v18.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "docs/CHAT_ATTACHMENT_PIPELINE_V22.md",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/chat_context_v3.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/document_extractors.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "src/three_agent/knowledge_gateway_v2.py",
+      "branch_conflict_count": 1
+    },
+    {
+      "file": "tests/test_chat_memory_attachments_v22.py",
+      "branch_conflict_count": 1
+    }
+  ],
+  "post_reconcile_pytest_rc": 1,
+  "post_reconcile_failures": [
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese",
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content",
+    "FAILED tests/test_dfir_case_evidence.py::TestDFIRCaseEvidence::test_custody_chain_is_hash_chained_append_only_and_deterministic",
+    "FAILED tests/test_enterprise_lean_skills.py::EnterpriseLeanSkillTests::test_repository_registry_full_audit_is_valid",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay",
+    "FAILED tests/test_github_rtx5090_runner_script.py::test_runner_download_is_official_and_digest_verified",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization",
+    "FAILED tests/test_security_filesystem_artifact_analysis_v024.py::FilesystemArtifactAnalysisTests::test_raw_filesystem_paths_are_rejected",
+    "FAILED tests/test_security_flow_analysis_v09.py::SecurityFlowAnalysisV09Tests::test_flow_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_hardening.py::SkillAdmissionScannerTests::test_repository_skill_registry_passes_full_admission",
+    "FAILED tests/test_security_incident_timeline_v010.py::SecurityIncidentTimelineV010Tests::test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_memory_forensics_contract_v025.py::MemoryForensicsContractTests::test_raw_memory_payload_and_raw_paths_are_rejected",
+    "FAILED tests/test_security_monitoring_pcap_integration.py::PcapIntegrationBoundaryTests::test_package_entrypoints_keep_current_v21_and_separate_security_tools",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_plan_fingerprint_fails_before_handler",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_step_id_fails_integrity_check",
+    "FAILED tests/test_security_persistence_hunt_v022.py::PersistenceHuntTests::test_rejects_raw_paths_and_non_boolean_flags",
+    "FAILED tests/test_skill_archive_zip_understanding.py::ArchiveZipUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_document_visual_understanding.py::DocumentVisualUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_docx_understanding.py::DocxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pdf_understanding.py::PdfUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pptx_understanding.py::PptxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_provenance_audit.py::SkillProvenanceAuditTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_registry_admission.py::SkillRegistryAdmissionTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_web_document_understanding.py::WebDocumentUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_xlsx_understanding.py::XlsxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skills.py::ApprovedSkillLoaderTests::test_repository_registry_hashes_and_reviews_are_valid",
+    "FAILED tests/test_versioning_v4.py::WorkSpaceV4VersioningTests::test_pyproject_matches_package_version_and_preserves_both_acceptance_clis",
+    "FAILED tests/test_workspace_chat_capability_authority.py::test_production_entrypoint_binds_authoritative_capability_filter"
+  ],
+  "post_reconcile_tail": [
+    "E       + three_agent.chat_gateway_v21:main",
+    "E       ?                            ^",
+    "",
+    "tests/test_versioning_v4.py:31: AssertionError",
+    "_______ test_production_entrypoint_binds_authoritative_capability_filter _______",
+    "",
+    "    def test_production_entrypoint_binds_authoritative_capability_filter():",
+    ">       assert chat_gateway_v17.workspace_ui_capabilities is workspace_ui_capabilities",
+    "E       assert <function workspace_ui_capabilities at 0x7fc3b0070e00> is workspace_ui_capabilities",
+    "E        +  where <function workspace_ui_capabilities at 0x7fc3b0070e00> = chat_gateway_v17.workspace_ui_capabilities",
+    "",
+    "tests/test_workspace_chat_capability_authority.py:62: AssertionError",
+    "=========================== short test summary info ============================",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context - AssertionError: 'VALID PRIOR ANSWER' not found in '<CURRENT_USER_REQUEST>\\ncái thứ hai\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese - AssertionError: 'Bước một kiểm tra địa chỉ IP' not found in '<CURRENT_USER_REQUEST>\\ntiếp theo ?\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21 - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint - AssertionError: assert <class 'three_agent.chat_gateway_v22.ContinuitySecurityAwareProjectChatService'> is IntelligenceAwareProjectChatService",
+    " +  where <class 'three_agent.chat_gateway_v22.ContinuitySecurityAwareProjectChatService'> = chat_gateway_v17.ContractAwareProjectChatService",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content - AssertionError: False is not true : {'case_id': 'unit_vi_follow_up', 'passed': False, 'turns': [{'turn_index': 1, 'passed': True, 'failures': [], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'standalone', 'actual_context_mode': 'standalone', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:cbe337f9907f0b1c0a83cd73d9d2e22b80acb64c44cabd2506042304e0cc0751', 'response_chars': 61, 'prompt_evidence': {'sha256': 'sha256:ec4cb758aa25dea65b0c8ab88ca2ee64d641edd91c88f3593711c42abfbb01bc', 'chars': 340, 'current_request_boundary': True, 'follow_up_policy': False, 'standalone_policy': True, 'recent_context': False, 'unavailable_context': False}}, {'turn_index': 2, 'passed': False, 'failures': ['context_messages:0_lt_2', 'prompt:context_unexpectedly_unavailable'], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'follow_up', 'actual_context_mode': 'follow_up', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:0a610aadc4d90644754f6ac16424784fd6826a791306e36d04064ac549202e37', 'response_chars': 71, 'prompt_evidence': {'sha256': 'sha256:2f53fd62a63f916d013cb73d0a9bd225dc9b9c629fdd92d243f143b563b065f1', 'chars': 1262, 'current_request_boundary': True, 'follow_up_policy': True, 'standalone_policy': False, 'recent_context': False, 'unavailable_context': True}}]}",
+    "FAILED tests/test_dfir_case_evidence.py::TestDFIRCaseEvidence::test_custody_chain_is_hash_chained_append_only_and_deterministic - AssertionError: \"previous hash mismatch\" does not match \"custody event hash mismatch\"",
+    "FAILED tests/test_enterprise_lean_skills.py::EnterpriseLeanSkillTests::test_repository_registry_full_audit_is_valid - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay - AssertionError: 2 != 1",
+    "FAILED tests/test_github_rtx5090_runner_script.py::test_runner_download_is_official_and_digest_verified - assert 'https://github.com/actions/runner/releases/download/' in '#!/usr/bin/env bash\\nset -Eeuo pipefail\\nset +x\\numask 077\\n\\n# WorkSpace GitHub RTX5090 Runner bootstrap\\n# Target: ... \"After this, DO NOT run ./run.sh manually.\"\\n  say \"The systemd service reconnects automatically after reboot.\"\\nfi\\n'",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline - AssertionError: \"rollback_ref\" does not match \"repository replay report must pass before evidence creation\"",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization - AssertionError: False is not true",
+    "FAILED tests/test_security_filesystem_artifact_analysis_v024.py::FilesystemArtifactAnalysisTests::test_raw_filesystem_paths_are_rejected - AssertionError: \"filesystem path\" does not match \"file_ref must be a compact identifier\"",
+    "FAILED tests/test_security_flow_analysis_v09.py::SecurityFlowAnalysisV09Tests::test_flow_invocation_rejects_wrong_request_type_and_tampered_plan - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_hardening.py::SkillAdmissionScannerTests::test_repository_skill_registry_passes_full_admission - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_security_incident_timeline_v010.py::SecurityIncidentTimelineV010Tests::test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_memory_forensics_contract_v025.py::MemoryForensicsContractTests::test_raw_memory_payload_and_raw_paths_are_rejected - AssertionError: \"raw content\" does not match \"subject_ref must be a compact identifier\"",
+    "FAILED tests/test_security_monitoring_pcap_integration.py::PcapIntegrationBoundaryTests::test_package_entrypoints_keep_current_v21_and_separate_security_tools - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_plan_fingerprint_fails_before_handler - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_step_id_fails_integrity_check - AssertionError: \"INVOCATION_PLAN_STEP_ID_TAMPERED\" does not match \"operation plan step_id does not match deterministic content\"",
+    "FAILED tests/test_security_persistence_hunt_v022.py::PersistenceHuntTests::test_rejects_raw_paths_and_non_boolean_flags - AssertionError: \"filesystem path\" does not match \"target_ref must be a compact identifier\"",
+    "FAILED tests/test_skill_archive_zip_understanding.py::ArchiveZipUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'a52d5f503e0963d110e9835598075b8cb848c562b8d49decb32ec1f0f15b8e80' != '760be52466ac00fd1d2de399e29ad25e2d2e468ab923e2ebb7a9832c5e1effd3'",
+    "- a52d5f503e0963d110e9835598075b8cb848c562b8d49decb32ec1f0f15b8e80",
+    "+ 760be52466ac00fd1d2de399e29ad25e2d2e468ab923e2ebb7a9832c5e1effd3",
+    "FAILED tests/test_skill_document_visual_understanding.py::DocumentVisualUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '98ad0ce971a0745003e9b0db3fa66b0e6ee5b01ab70d0275a36ab2b2b36e91ce' != 'e4cf2d4c241387baa3042ed015e61190956866568225e5f31dfd2711e69853a2'",
+    "- 98ad0ce971a0745003e9b0db3fa66b0e6ee5b01ab70d0275a36ab2b2b36e91ce",
+    "+ e4cf2d4c241387baa3042ed015e61190956866568225e5f31dfd2711e69853a2",
+    "FAILED tests/test_skill_docx_understanding.py::DocxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '2b8c599330cd46e091696584765e56dcc6cf95d05a8eea69bea13f8b019ebfff' != '00d93ecbf991283cee6c7b03223227db2c655509a7a8fbf89b2c0bc36b78fa81'",
+    "- 2b8c599330cd46e091696584765e56dcc6cf95d05a8eea69bea13f8b019ebfff",
+    "+ 00d93ecbf991283cee6c7b03223227db2c655509a7a8fbf89b2c0bc36b78fa81",
+    "FAILED tests/test_skill_pdf_understanding.py::PdfUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '3f6a8477afa539eef43577cd38c5acb52057a484a7fc81afe2f485f7342b7eb8' != '599a745891477d19accb42fc2b3c8667746175692cd897e0f03a7d897a54abde'",
+    "- 3f6a8477afa539eef43577cd38c5acb52057a484a7fc81afe2f485f7342b7eb8",
+    "+ 599a745891477d19accb42fc2b3c8667746175692cd897e0f03a7d897a54abde",
+    "FAILED tests/test_skill_pptx_understanding.py::PptxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'a889dce4ad2ddc477a82dc6940d371cd20d46679f7b81a65138aa9f18423231f' != 'b3a92d98d997446b3958b05d84fe6d1c31deed9f9e7739aa6e942580ec90329b'",
+    "- a889dce4ad2ddc477a82dc6940d371cd20d46679f7b81a65138aa9f18423231f",
+    "+ b3a92d98d997446b3958b05d84fe6d1c31deed9f9e7739aa6e942580ec90329b",
+    "FAILED tests/test_skill_provenance_audit.py::SkillProvenanceAuditTest::test_candidate_integrity_size_and_quarantine - AssertionError: '9792b5d6c528894211e572aefe098ccde4655680959cba6333388ed006256578' != 'fac2c14e7fee39f01f445354a0d9afecc7ed6ad8840964af537770adbbd63747'",
+    "- 9792b5d6c528894211e572aefe098ccde4655680959cba6333388ed006256578",
+    "+ fac2c14e7fee39f01f445354a0d9afecc7ed6ad8840964af537770adbbd63747",
+    "FAILED tests/test_skill_registry_admission.py::SkillRegistryAdmissionTest::test_candidate_integrity_size_and_quarantine - AssertionError: '1cb979a61b67c8131e4386ff7faeef15ea33956e2865493017437aa0745033e8' != '14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3'",
+    "- 1cb979a61b67c8131e4386ff7faeef15ea33956e2865493017437aa0745033e8",
+    "+ 14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3",
+    "FAILED tests/test_skill_web_document_understanding.py::WebDocumentUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '7e91e24948aa1c7def27bcd3f547c009497901b74e971b86801f10c50bdae21e' != '9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55'",
+    "- 7e91e24948aa1c7def27bcd3f547c009497901b74e971b86801f10c50bdae21e",
+    "+ 9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55",
+    "FAILED tests/test_skill_xlsx_understanding.py::XlsxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'c4944f8b44cbdba5f15298640855d53c630b4eab77c03f9b8d3fc81d1628a2d5' != 'bc7cc9aebd5fed01209828e153245b1314c3da6a7de9f5a53ea62b971e55375e'",
+    "- c4944f8b44cbdba5f15298640855d53c630b4eab77c03f9b8d3fc81d1628a2d5",
+    "+ bc7cc9aebd5fed01209828e153245b1314c3da6a7de9f5a53ea62b971e55375e",
+    "FAILED tests/test_skills.py::ApprovedSkillLoaderTests::test_repository_registry_hashes_and_reviews_are_valid - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_versioning_v4.py::WorkSpaceV4VersioningTests::test_pyproject_matches_package_version_and_preserves_both_acceptance_clis - AssertionError: 'three_agent.chat_gateway_v22:main' != 'three_agent.chat_gateway_v21:main'",
+    "- three_agent.chat_gateway_v22:main",
+    "?                            ^",
+    "+ three_agent.chat_gateway_v21:main",
+    "?                            ^",
+    "FAILED tests/test_workspace_chat_capability_authority.py::test_production_entrypoint_binds_authoritative_capability_filter - assert <function workspace_ui_capabilities at 0x7fc3b0070e00> is workspace_ui_capabilities",
+    " +  where <function workspace_ui_capabilities at 0x7fc3b0070e00> = chat_gateway_v17.workspace_ui_capabilities",
+    "42 failed, 2274 passed, 4 skipped, 446 subtests passed in 34.16s"
+  ]
+}
