@@ -114,6 +114,28 @@ class SecurityOperationPlan:
             step.validate()
             if step.sequence != expected:
                 raise SecurityOperationPlanError("operation plan steps must be contiguous and ordered")
+            expected_step_id = SecurityOperationPlanCompiler._step_id(
+                self.request_sha256,
+                step.sequence,
+                step.capability_id,
+                step.operation_id,
+            )
+            if step.step_id != expected_step_id:
+                raise SecurityOperationPlanError(
+                    "operation plan step_id does not match deterministic content"
+                )
+        expected_fingerprint = SecurityOperationPlanCompiler._plan_fingerprint(
+            request_sha256=self.request_sha256,
+            route_status=self.route_status,
+            status=self.status,
+            steps=self.steps,
+            registry_fingerprint=self.registry_fingerprint,
+            reason_codes=self.reason_codes,
+        )
+        if self.plan_fingerprint != expected_fingerprint:
+            raise SecurityOperationPlanError(
+                "plan_fingerprint does not match canonical plan content"
+            )
         return self
 
     def public_dict(self) -> dict[str, object]:
