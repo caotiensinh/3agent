@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,11 +106,19 @@ class InternetGatewaySsrfTests(unittest.TestCase):
 
     def test_public_to_metadata_redirect_is_revalidated_before_second_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            gateway = InternetGateway(secure_config(Path(tmp) / "audit.jsonl"), False)
+            audit_path = Path(tmp) / "audit.jsonl"
+            gateway = InternetGateway(secure_config(audit_path), False)
             opener = _RedirectToMetadataOpener()
             gateway._opener = opener
+            validated: list[str] = []
 
-            with patch("three_agent.gateways.socket.getaddrinfo", return_value=PUBLIC_ADDRINFO):
+            def validate(url: str, https_only: bool = True) -> None:
+                del https_only
+                validated.append(url)
+                if "169.254.169.254" in url:
+                    raise OutboundSecurityError("metadata target denied")
+
+            with patch("three_agent.gateways._validate_public_url", side_effect=validate):
                 with self.assertRaises(OutboundSecurityError):
                     gateway._read_https(
                         "research",
@@ -119,10 +128,37 @@ class InternetGatewaySsrfTests(unittest.TestCase):
                         action="public_result_fetch",
                     )
 
-            self.assertEqual(opener.calls, 1, "redirect target must be denied before a second network request")
-            audit = (Path(tmp) / "audit.jsonl").read_text(encoding="utf-8")
-            self.assertIn("169.254.169.254", audit)
-            self.assertIn("allowed\": false", audit)
+            self.assertEqual(
+                opener.calls,
+                1,
+                "redirect target must be denied before a second network request",
+            )
+            self.assertEqual(
+                validated,
+                [
+                    "https://example.com/start",
+                    "https://169.254.169.254/latest/meta-data/",
+                ],
+            )
+
+            events = [
+                json.loads(line)
+                for line in audit_path.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertTrue(
+                any(
+                    event.get("allowed") is False
+                    and str(event.get("reason", "")).startswith("redirect_target_rejected:")
+                    for event in events
+                ),
+                "rejected redirect must produce metadata-only audit evidence",
+            )
+            self.assertNotIn(
+                "169.254.169.254",
+                audit_path.read_text(encoding="utf-8"),
+                "audit must not retain the raw private metadata target",
+            )
 
 
 if __name__ == "__main__":
