@@ -1,0 +1,201 @@
+name: reconcile-all-branches-v3
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v3-salvage-20260903
+    paths:
+      - .github/workflows/reconcile-all-branches-v3.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  salvage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reconcile/all-branches-v3-salvage-20260903
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Fetch all branch refs
+        run: |
+          git config user.name "workspace-reconcile-bot"
+          git config user.email "workspace-reconcile-bot@users.noreply.github.com"
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Install current reconciled dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Absorb every original branch tip with canonical conflict resolution
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+          mkdir -p artifacts/reconciliation
+          WORK="$(mktemp -d)"
+          EVENTS="artifacts/reconciliation/branch_reconciliation_v2_20260903.json"
+          OUT="artifacts/reconciliation/branch_reconciliation_v3_20260903.json"
+          BASETEST="$WORK/baseline.txt"
+          FINALTEST="$WORK/final.txt"
+          MERGES="$WORK/merges.ndjson"
+
+          # Baseline of the already-reconciled 90-branch integration tree.
+          set +e
+          python -m pytest tests/ -q >"$BASETEST" 2>&1
+          BASE_RC=$?
+          set -e
+
+          python - "$BASETEST" "$WORK/base_failures.json" <<'PY'
+          import json,sys
+          keys=[]
+          for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
+              s=line.strip()
+              if s.startswith(('FAILED ','ERROR ')):
+                  keys.append(s.split(' - ',1)[0])
+          json.dump(sorted(set(keys)),open(sys.argv[2],'w'),indent=2)
+          PY
+
+          mapfile -t BRANCHES < <(python - "$EVENTS" <<'PY'
+          import json,sys
+          p=json.load(open(sys.argv[1]))
+          for e in p['events']:
+              print(e['branch'])
+          PY
+          )
+          if [[ "${#BRANCHES[@]}" -ne 344 ]]; then
+            echo "Expected exactly 344 original non-main branches, got ${#BRANCHES[@]}" >&2
+            exit 51
+          fi
+
+          for branch in "${BRANCHES[@]}"; do
+            ref="origin/$branch"
+            tip="$(git rev-parse "$ref")"
+            if git merge-base --is-ancestor "$ref" HEAD; then
+              B="$branch" T="$tip" python - <<'PY' >> "$MERGES"
+          import json,os
+          print(json.dumps({'branch':os.environ['B'],'tip':os.environ['T'],'status':'already_ancestor'}))
+          PY
+              continue
+            fi
+
+            before="$(git rev-parse HEAD)"
+            set +e
+            git merge --no-ff --no-edit -X ours "$ref" >"$WORK/merge.log" 2>&1
+            rc=$?
+            set -e
+            resolved=0
+            conflict_files=""
+            if [[ "$rc" -ne 0 ]]; then
+              conflict_files="$(git diff --name-only --diff-filter=U | paste -sd ',' -)"
+              # Resolve any add/delete or residual conflict explicitly in favor of the
+              # canonical reconciled tree (ours). Non-conflicting files from the branch
+              # remain included. This prevents stale branches from reverting newer code.
+              while IFS= read -r path; do
+                [[ -n "$path" ]] || continue
+                if git cat-file -e "HEAD:$path" 2>/dev/null; then
+                  git checkout HEAD -- "$path"
+                  git add "$path"
+                else
+                  git rm -f --ignore-unmatch "$path" >/dev/null 2>&1 || true
+                fi
+              done < <(git diff --name-only --diff-filter=U)
+              git add -A
+              git commit --no-edit >/dev/null
+              resolved=1
+            fi
+
+            if ! git merge-base --is-ancestor "$ref" HEAD; then
+              echo "Failed to absorb branch ancestry: $branch" >&2
+              exit 52
+            fi
+            B="$branch" T="$tip" C="$conflict_files" R="$resolved" BEFORE="$before" python - <<'PY' >> "$MERGES"
+          import json,os
+          print(json.dumps({
+              'branch':os.environ['B'], 'tip':os.environ['T'],
+              'status':'merged_conflict_ours' if os.environ['R']=='1' else 'merged_clean',
+              'conflicts':[x for x in os.environ.get('C','').split(',') if x],
+              'before':os.environ['BEFORE']
+          }))
+          PY
+          done
+
+          # Hard acceptance: every one of the original 344 non-main branch tips must
+          # now be an ancestor of this integration branch.
+          missing=0
+          for branch in "${BRANCHES[@]}"; do
+            if ! git merge-base --is-ancestor "origin/$branch" HEAD; then
+              echo "NOT_ANCESTOR $branch" >&2
+              missing=$((missing+1))
+            fi
+          done
+          [[ "$missing" -eq 0 ]] || exit 53
+
+          # Reinstall because a reconciled branch can add dependencies.
+          python -m pip install -e .
+          set +e
+          python -m pytest tests/ -q >"$FINALTEST" 2>&1
+          FINAL_RC=$?
+          set -e
+
+          python - "$FINALTEST" "$WORK/final_failures.json" <<'PY'
+          import json,sys
+          keys=[]
+          for line in open(sys.argv[1],encoding='utf-8',errors='replace'):
+              s=line.strip()
+              if s.startswith(('FAILED ','ERROR ')):
+                  keys.append(s.split(' - ',1)[0])
+          json.dump(sorted(set(keys)),open(sys.argv[2],'w'),indent=2)
+          PY
+
+          BASE_RC="$BASE_RC" FINAL_RC="$FINAL_RC" python - "$MERGES" "$WORK/base_failures.json" "$WORK/final_failures.json" "$BASETEST" "$FINALTEST" "$OUT" <<'PY'
+          import collections,json,os,subprocess,sys
+          merges,bf,ff,bt,ft,out=sys.argv[1:]
+          events=[json.loads(x) for x in open(merges,encoding='utf-8') if x.strip()]
+          b=set(json.load(open(bf))); f=set(json.load(open(ff)))
+          counts=collections.Counter(e['status'] for e in events)
+          conflicts=collections.Counter(x for e in events for x in e.get('conflicts',[]))
+          def tail(p): return open(p,encoding='utf-8',errors='replace').read().splitlines()[-80:]
+          payload={
+            'schema':'workspace-branch-reconciliation/v3',
+            'head_sha':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'original_branch_count':345,
+            'original_non_main_branch_count':344,
+            'all_original_non_main_tips_are_ancestors':True,
+            'merge_status_counts':dict(counts),
+            'conflict_file_counts':dict(conflicts.most_common()),
+            'baseline_pytest_rc':int(os.environ['BASE_RC']),
+            'final_pytest_rc':int(os.environ['FINAL_RC']),
+            'baseline_failures':sorted(b),
+            'final_failures':sorted(f),
+            'new_failures':sorted(f-b),
+            'removed_failures':sorted(b-f),
+            'baseline_tail':tail(bt),
+            'final_tail':tail(ft),
+            'events':events,
+          }
+          json.dump(payload,open(out,'w',encoding='utf-8'),indent=2,ensure_ascii=False)
+          print(json.dumps({k:payload[k] for k in ('head_sha','original_non_main_branch_count','all_original_non_main_tips_are_ancestors','merge_status_counts','baseline_pytest_rc','final_pytest_rc','new_failures','removed_failures')},indent=2))
+          PY
+          cp "$FINALTEST" artifacts/reconciliation/all_branches_v3_pytest_20260903.txt
+
+          git add -A
+          git commit -m "chore(reconcile): absorb all 344 retained branch tips" || true
+          git push origin HEAD:reconcile/all-branches-v3-salvage-20260903
+
+      - name: Upload v3 reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-reconciliation-v3-20260903
+          path: artifacts/reconciliation/
