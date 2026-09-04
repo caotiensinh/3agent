@@ -202,9 +202,6 @@ def build_conversation_context(
 _classify_legacy_context = classify_context_request
 _build_legacy_context = build_conversation_context
 
-import re
-from typing import Any, Sequence
-
 
 # v2 extends the conservative reference gate only for explicit transform requests
 # that name prior/above content. It does not unlock history for generic translate,
@@ -302,6 +299,9 @@ def build_conversation_context(
     )
 
 
+# Stable semantic alias for consumers that require explicit-reference gating.
+build_reference_gated_context = build_conversation_context
+
 CONTEXT_MODE_CONTINUITY = "continuity"
 CONVERSATION_CONTEXT_POLICY_VERSION = "bounded-conversation-continuity/v3"
 DEFAULT_CONTEXT_MAX_CHARS = 18_000
@@ -340,7 +340,7 @@ def _compact(text: str, limit: int) -> str:
     return body[:front].rstrip() + marker + body[-tail:].lstrip()
 
 
-def build_conversation_context(
+def build_continuity_context(
     messages: Sequence[dict[str, Any]],
     current_request: str,
     *,
@@ -405,6 +405,11 @@ def build_conversation_context(
     )
 
 
+# Keep the historical canonical API reference-gated. Continuity-aware consumers
+# opt in explicitly through build_continuity_context.
+build_conversation_context = build_reference_gated_context
+
+
 __all__ = [
     "CONTEXT_MODE_CONTINUITY",
     "CONTEXT_MODE_FOLLOW_UP",
@@ -414,7 +419,9 @@ __all__ = [
     "DEFAULT_CONTEXT_MAX_MESSAGES",
     "DEFAULT_CONTEXT_PER_MESSAGE_CHARS",
     "ConversationContextPlan",
+    "build_continuity_context",
     "build_conversation_context",
+    "build_reference_gated_context",
     "classify_context_request",
     "infer_recent_user_language",
 ]
