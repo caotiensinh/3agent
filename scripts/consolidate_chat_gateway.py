@@ -15,10 +15,14 @@ PYPROJECT = ROOT / "pyproject.toml"
 CHAIN_RE = re.compile(r"chat_gateway(?:_v\d+)?$")
 VARIANT_RE = re.compile(r"chat_gateway_v(\d+)\.py$")
 MODULE_REF_RE = re.compile(r"(?:three_agent\.)?chat_gateway_v\d+")
+FRONTEND_SECURITY_REF_RE = re.compile(r"(?:three_agent\.)?workspace_frontend_security_v\d+")
 IDENTITY_REWRITES = (
     (re.compile(r"three_agent\.chat_gateway_v\d+"), "three_agent.chat_gateway"),
     (re.compile(r"chat_gateway_v\d+\.py"), "chat_gateway.py"),
     (re.compile(r"chat_gateway_v\d+"), "chat_gateway"),
+    (re.compile(r"three_agent\.workspace_frontend_security_v\d+"), "three_agent.workspace_frontend_security"),
+    (re.compile(r"workspace_frontend_security_v\d+\.py"), "workspace_frontend_security.py"),
+    (re.compile(r"workspace_frontend_security_v\d+"), "workspace_frontend_security"),
 )
 
 
@@ -276,6 +280,8 @@ def _canonical_module_source(paths: list[Path]) -> str:
         raise RuntimeError("generated canonical source still imports a versioned chat gateway module")
     if MODULE_REF_RE.search(source):
         raise RuntimeError("generated canonical source still contains a versioned chat gateway identity")
+    if FRONTEND_SECURITY_REF_RE.search(source):
+        raise RuntimeError("generated canonical source still contains a versioned frontend security identity")
     return source
 
 
@@ -403,6 +409,15 @@ class ChatGatewayCanonicalizationTests(unittest.TestCase):
     def test_no_physical_chat_gateway_generations_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
         self.assertEqual(list(package.glob("chat_gateway_v*.py")), [])
+
+    def test_canonical_chat_has_no_versioned_frontend_security_reference(self) -> None:
+        self.assertIsNone(
+            re.search(r"(?:three_agent\\.)?workspace_frontend_security_v\\d+", self.source)
+        )
+        self.assertIn(
+            "from .workspace_frontend_security import WORKSPACE_HTML_SECURITY_V3",
+            self.source,
+        )
 
     def test_production_source_and_entrypoints_have_no_versioned_chat_gateway_reference(self) -> None:
         pattern = re.compile(r"(?:three_agent\\.)?chat_gateway_v\\d+")
