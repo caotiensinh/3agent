@@ -56,7 +56,7 @@ def normalize_symbol(name: str) -> str:
 
 
 class _ShapeNormalizer(ast.NodeTransformer):
-    """Normalize implementation details for high-confidence clone comparison."""
+    """Normalize identifiers while preserving behavior-bearing literal values."""
 
     def visit_FunctionDef(self, node: ast.FunctionDef):  # noqa: N802
         node = self.generic_visit(node)
@@ -88,15 +88,6 @@ class _ShapeNormalizer(ast.NodeTransformer):
     def visit_Attribute(self, node: ast.Attribute):  # noqa: N802
         node = self.generic_visit(node)
         node.attr = "_"
-        return node
-
-    def visit_Constant(self, node: ast.Constant):  # noqa: N802
-        if isinstance(node.value, str):
-            node.value = "<str>"
-        elif isinstance(node.value, bytes):
-            node.value = b"<bytes>"
-        elif isinstance(node.value, (int, float, complex)) and not isinstance(node.value, bool):
-            node.value = 0
         return node
 
 
@@ -255,12 +246,8 @@ def scan(root: Path, production_roots: tuple[str, ...] = ("src",)) -> dict:
     for module in modules:
         if module.parse_error:
             findings.append(Finding(
-                severity="error",
-                kind="parse_error",
-                path=module.path,
-                canonical_target=None,
-                confidence=1.0,
-                reason=module.parse_error,
+                severity="error", kind="parse_error", path=module.path,
+                canonical_target=None, confidence=1.0, reason=module.parse_error,
                 action="fix_parse_error",
             ))
             continue
@@ -279,8 +266,7 @@ def scan(root: Path, production_roots: tuple[str, ...] = ("src",)) -> dict:
                 shared = tuple(sorted(shared_set))
                 missing = tuple(sorted(missing_set))
                 exact_behavior_shape = bool(
-                    module.structural_hash
-                    and module.structural_hash == canonical.structural_hash
+                    module.structural_hash and module.structural_hash == canonical.structural_hash
                 )
                 if missing_set:
                     action = "semantic_merge_required"
@@ -340,7 +326,7 @@ def scan(root: Path, production_roots: tuple[str, ...] = ("src",)) -> dict:
             ))
 
     findings.sort(key=lambda item: (item.kind, item.path, item.canonical_target or ""))
-    report = {
+    return {
         "schema": SCHEMA,
         "status": "FAIL" if findings else "PASS",
         "production_file_count": len(modules),
@@ -354,7 +340,6 @@ def scan(root: Path, production_roots: tuple[str, ...] = ("src",)) -> dict:
         ],
         "findings": [asdict(item) for item in findings],
     }
-    return report
 
 
 def fix_safe(root: Path, report: dict) -> dict:
