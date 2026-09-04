@@ -278,7 +278,16 @@ def scan(root: Path, production_roots: tuple[str, ...] = ("src",)) -> dict:
                 missing_set = set(module.normalized_symbols) - set(canonical.normalized_symbols)
                 shared = tuple(sorted(shared_set))
                 missing = tuple(sorted(missing_set))
-                action = "semantic_merge_required" if missing_set else "rewrite_references_and_delete_variant"
+                exact_behavior_shape = bool(
+                    module.structural_hash
+                    and module.structural_hash == canonical.structural_hash
+                )
+                if missing_set:
+                    action = "semantic_merge_required"
+                elif exact_behavior_shape:
+                    action = "equivalent_variant_rewrite_references_and_delete"
+                else:
+                    action = "compare_behavior_then_merge_or_delete"
                 conflicts = tuple(sorted(
                     normalize_symbol(name)
                     for name in set(module.public_symbols) & set(canonical.public_symbols)
