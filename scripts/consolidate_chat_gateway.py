@@ -15,6 +15,18 @@ PYPROJECT = ROOT / "pyproject.toml"
 CHAIN_RE = re.compile(r"chat_gateway(?:_v\d+)?$")
 VARIANT_RE = re.compile(r"chat_gateway_v(\d+)\.py$")
 MODULE_REF_RE = re.compile(r"(?:three_agent\.)?chat_gateway_v\d+")
+IDENTITY_REWRITES = (
+    (re.compile(r"three_agent\.chat_gateway_v\d+"), "three_agent.chat_gateway"),
+    (re.compile(r"chat_gateway_v\d+\.py"), "chat_gateway.py"),
+    (re.compile(r"chat_gateway_v\d+"), "chat_gateway"),
+)
+
+
+def _canonicalize_identity(value: str) -> str:
+    updated = value
+    for pattern, replacement in IDENTITY_REWRITES:
+        updated = pattern.sub(replacement, updated)
+    return updated
 
 
 def _variants() -> list[Path]:
@@ -92,6 +104,13 @@ class _ChainReferenceTransformer(ast.NodeTransformer):
         replacement = self.symbol_aliases.get(node.id)
         if replacement:
             return ast.copy_location(ast.Name(id=replacement, ctx=node.ctx), node)
+        return node
+
+    def visit_Constant(self, node: ast.Constant):
+        if isinstance(node.value, str):
+            updated = _canonicalize_identity(node.value)
+            if updated != node.value:
+                return ast.copy_location(ast.Constant(value=updated), node)
         return node
 
 
@@ -218,6 +237,13 @@ class _FinalMainBindingTransformer(ast.NodeTransformer):
             return ast.copy_location(ast.Name(id=replacement, ctx=node.ctx), node)
         return node
 
+    def visit_Constant(self, node: ast.Constant):
+        if isinstance(node.value, str):
+            updated = _canonicalize_identity(node.value)
+            if updated != node.value:
+                return ast.copy_location(ast.Constant(value=updated), node)
+        return node
+
 
 def _final_main() -> ast.FunctionDef:
     path = PKG / "chat_gateway_v17.py"
@@ -231,7 +257,6 @@ def _final_main() -> ast.FunctionDef:
     assert isinstance(main_node, ast.FunctionDef)
     main_node = _FinalMainBindingTransformer().visit(main_node)
     assert isinstance(main_node, ast.FunctionDef)
-    # V22 requires the document-aware knowledge gateway before Orchestrator is initialized.
     patch = ast.parse("_orchestrator.KnowledgeGateway = KnowledgeGatewayV2").body[0]
     main_node.body.insert(0, patch)
     return main_node
@@ -241,14 +266,16 @@ def _canonical_module_source(paths: list[Path]) -> str:
     body: list[ast.stmt] = []
     for path in paths:
         body.extend(_transform_module(path))
-    # Explicit final composition replaces the historical module monkeypatch chain.
     body.append(ast.parse("HTML_V17 = WORKSPACE_HTML").body[0])
     body.append(_final_main())
     module = ast.Module(body=body, type_ignores=[])
     ast.fix_missing_locations(module)
     source = ast.unparse(module) + "\n"
+    source = _canonicalize_identity(source)
     if re.search(r"(?:from|import)\s+[^\n]*chat_gateway_v\d+", source):
         raise RuntimeError("generated canonical source still imports a versioned chat gateway module")
+    if MODULE_REF_RE.search(source):
+        raise RuntimeError("generated canonical source still contains a versioned chat gateway identity")
     return source
 
 
@@ -262,6 +289,7 @@ def _rewrite_external_references(paths: list[Path]) -> list[Path]:
         (re.compile(r"from\s+\.\s+import\s+chat_gateway_v\d+"), "from . import chat_gateway"),
         (re.compile(r"three_agent\.chat_gateway_v\d+"), "three_agent.chat_gateway"),
         (re.compile(r"chat_gateway_v\d+\.py"), "chat_gateway.py"),
+        (re.compile(r"chat_gateway_v\d+"), "chat_gateway"),
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -303,8 +331,7 @@ def class_graph(tree: ast.Module) -> dict[str, list[str]]:
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue
-        bases = [ast.unparse(base) for base in node.bases]
-        graph[node.name] = bases
+        graph[node.name] = [ast.unparse(base) for base in node.bases]
     return graph
 
 
