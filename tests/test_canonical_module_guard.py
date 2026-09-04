@@ -42,6 +42,28 @@ class CanonicalModuleGuardTests(unittest.TestCase):
             self.assertEqual(finding["canonical_target"], "src/pkg/cache.py")
             self.assertEqual(finding["action"], "semantic_merge_required")
 
+    def test_same_api_different_behavior_requires_comparison(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._write(
+                root,
+                "src/pkg/cache.py",
+                "class Cache:\n    def get(self): return 'canonical'\n",
+            )
+            self._write(
+                root,
+                "src/pkg/cache_v2.py",
+                "class Cache:\n    def get(self):\n        value = 'variant'\n        return value\n",
+            )
+            report = GUARD.scan(root)
+            finding = next(
+                item
+                for item in report["findings"]
+                if item["kind"] == "implementation_generation_file"
+            )
+            self.assertEqual(finding["missing_from_canonical"], ())
+            self.assertEqual(finding["action"], "compare_behavior_then_merge_or_delete")
+
     def test_safe_reexport_is_removed_and_references_are_rewritten(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
