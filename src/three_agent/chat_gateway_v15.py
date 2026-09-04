@@ -20,7 +20,7 @@ from .privacy import redact_sensitive_text
 from .prompt_compiler import PROMPT_COMPILER_VERSION
 from .public_query_compiler import PUBLIC_QUERY_COMPILER_VERSION
 from .chat_fidelity import resolve_response_language
-from .workflow_design_v3 import WorkflowDesignCompilerV3
+from .workflow_design import WorkflowDesignCompilerV3
 from .workflow_state_machine import (
     EXECUTION_PROFILE,
     WORKFLOW_V3_MAX_WALL_TIME_MS,
