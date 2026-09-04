@@ -19,7 +19,7 @@ from .chat_context import (
 )
 from .chat_fidelity import parse_chat_request
 from .chat_gateway_v5 import _history_owner_key
-from .chat_service_fidelity_v2 import ContractAwareProjectChatService
+from .chat_service_fidelity import ContractAwareProjectChatService
 from .security_monitoring.config_center import SecurityConfigurationStore
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.incident_capture import (

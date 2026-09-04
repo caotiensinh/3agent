@@ -13,7 +13,7 @@ from three_agent.chat_gateway_v17 import (
     WorkflowV4ContextApplication,
     WorkflowV4ContextHTTPHandler,
 )
-from three_agent.chat_service_fidelity_v2 import ContractAwareProjectChatService
+from three_agent.chat_service_fidelity import ContractAwareProjectChatService
 from three_agent.version import DISPLAY_VERSION
 
 

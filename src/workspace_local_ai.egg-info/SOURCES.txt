@@ -168,8 +168,6 @@ src/three_agent/workflow_design.py
 src/three_agent/workflow_dispatch.py
 src/three_agent/workflow_drafts.py
 src/three_agent/workflow_state_machine.py
-src/three_agent/workflow_state_machine_v4.py
-src/three_agent/workflow_state_machine_v4_budgeted.py
 src/three_agent/workspace_auth.py
 src/three_agent/workspace_chat_capabilities.py
 src/three_agent/workspace_external_identity.py

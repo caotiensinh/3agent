@@ -11,7 +11,7 @@ from typing import Any, Sequence
 # ContractAwareProjectChatService and adds metadata-only runtime evidence.
 from . import chat_multiturn_acceptance as acceptance
 from .chat_multiturn_acceptance import PromptEvidence
-from .chat_service_fidelity_v2 import ContractAwareProjectChatService
+from .chat_service_fidelity import ContractAwareProjectChatService
 from .llm import LocalLLMError
 from .resource_budget import ResourceAdmissionError, ResourceBusyError
 

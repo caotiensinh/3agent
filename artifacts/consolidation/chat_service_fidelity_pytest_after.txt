@@ -1,0 +1,25 @@
+
+==================================== ERRORS ====================================
+_______________ ERROR collecting tests/test_chat_gateway_v17.py ________________
+tests/test_chat_gateway_v17.py:11: in <module>
+    from three_agent.chat_gateway_v17 import (
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_________ ERROR collecting tests/test_chat_gateway_v20_intelligence.py _________
+tests/test_chat_gateway_v20_intelligence.py:1: in <module>
+    from three_agent import chat_gateway_v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+=========================== short test summary info ============================
+ERROR tests/test_chat_gateway_v17.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_gateway_v20_intelligence.py - NameError: name 'connector_rows' is not defined
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 0.84s

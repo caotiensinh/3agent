@@ -17,7 +17,7 @@ from .chat_gateway_v16 import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     ContextAwareWorkflowV3HTTPHandler,
 )
-from .chat_service_fidelity_v2 import (
+from .chat_service_fidelity import (
     OUTPUT_CONTRACT_POLICY_VERSION,
     ContractAwareProjectChatService,
 )
