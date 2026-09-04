@@ -14,6 +14,8 @@ from three_agent.chat_context import CONTEXT_MODE_FOLLOW_UP, ConversationContext
 from three_agent.chat_gateway import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     MAX_UPLOAD_REQUEST_BYTES,
+    ApprovedAssetApplication,
+    ApprovedAssetHTTPHandler,
     ChatService,
     ContextAwareProjectChatService,
     ContinuitySecurityAwareProjectChatService,
@@ -309,7 +311,9 @@ class ChatGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported WorkSpace effort"):
             _validate_request_options("chat", "unbounded", secure)
 
-        public = workspace_config(public_search=True, mode="public-research")
+        public = workspace_ui_capabilities(
+            workspace_config(public_search=True, mode="public-research")
+        )
         self.assertEqual(
             _validate_request_options("web_search", "standard", public),
             ("web_search", "standard"),
@@ -350,7 +354,7 @@ class ChatGatewayTests(unittest.TestCase):
     def test_final_health_surface_exposes_current_context_and_security_contracts(self):
         source = "\n".join(
             inspect.getsource(base.__dict__["do_GET"])
-            for base in SecurityE2EHTTPHandler.__mro__
+            for base in ApprovedAssetHTTPHandler.__mro__
             if "do_GET" in base.__dict__
         )
         self.assertIn("conversation_context_policy", source)
@@ -361,10 +365,14 @@ class ChatGatewayTests(unittest.TestCase):
     def test_canonical_main_uses_final_service_and_application(self):
         source = inspect.getsource(chat_gateway.main)
         self.assertIn("ContinuitySecurityAwareProjectChatService", source)
-        self.assertIn("SecurityE2EApplication", source)
+        self.assertIn("ApprovedAssetApplication", source)
+        self.assertIn("ApprovedAssetHTTPHandler", source)
         self.assertNotIn("chat_gateway_v", source)
         self.assertTrue(callable(ContinuitySecurityAwareProjectChatService))
-        self.assertTrue(callable(SecurityE2EApplication))
+        self.assertTrue(callable(ApprovedAssetApplication))
+        self.assertTrue(callable(ApprovedAssetHTTPHandler))
+        self.assertTrue(issubclass(ApprovedAssetApplication, SecurityE2EApplication))
+        self.assertTrue(issubclass(ApprovedAssetHTTPHandler, SecurityE2EHTTPHandler))
 
     def test_console_entrypoints_reference_only_canonical_chat_modules(self):
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
