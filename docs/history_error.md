@@ -2,6 +2,20 @@
 
 This file records only observed consolidation failures, their verified root causes, and the corrective action taken during PR #311 convergence.
 
+## 2026-09-04 — Multiturn acceptance self-binding initially omitted the canonical module handle import
+
+**Observed failure / blocker**
+
+The first baseline-delta attempt to flatten `chat_multiturn_acceptance_v2.py` into canonical `chat_multiturn_acceptance.py` stopped before final targeted tests. The V2 diagnostics referenced the base acceptance module namespace, and the transformation correctly avoided a recursive self-import but generated `acceptance = sys.modules[__name__]` without importing `sys`.
+
+**Root cause**
+
+The physical V2 module had a valid cross-module reference to the base canonical module. After flattening both layers into one physical module, that dependency becomes a self-module binding rather than an import. The first transformation changed the binding model but omitted the standard-library dependency required to resolve the module object.
+
+**Fix**
+
+Commit `c7f61b61c55cfa04f11f39cd6d5ac36969c3cfdf` changed the transformation to inject `import sys` before binding `acceptance = sys.modules[__name__]`. Workflow run `33829305539` then passed the consolidation gate and commit `9bb302b9fc47b900fc35c1bced42a65d1b75404c` merged metadata-only runtime diagnostics into canonical `chat_multiturn_acceptance.py`, rewrote the acceptance entrypoint to canonical, deleted physical `chat_multiturn_acceptance_v2.py`, and produced zero new targeted-test failure keys.
+
 ## 2026-09-04 — Workflow state-machine rewrite initially touched test-helper module names
 
 **Observed failure / blocker**
