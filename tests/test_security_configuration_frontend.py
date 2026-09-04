@@ -10,15 +10,15 @@ from three_agent.workspace_frontend import WORKSPACE_HTML, config_markup
 
 class SecurityConfigurationFrontendTests(unittest.TestCase):
     def test_configuration_center_is_exposed_in_admin_surface(self) -> None:
-        for text in (
-            "Security Configuration Center",
-            "Configure Security Monitoring",
-            "Approved Assets",
-            "Monitoring Policy",
-            "Configuration Audit",
+        for marker in (
+            'id="securityConfigTab"',
+            'id="securityConfigView"',
+            "Monitoring &amp; safety policy",
+            "Approved asset inventory",
+            "Configuration audit",
             "ENABLE_APPROVED_REAL_NETWORK_MONITORING",
         ):
-            self.assertIn(text, WORKSPACE_HTML)
+            self.assertIn(marker, WORKSPACE_HTML)
 
     def test_configuration_center_contains_no_raw_secret_input(self) -> None:
         input_markup = "\n".join(
