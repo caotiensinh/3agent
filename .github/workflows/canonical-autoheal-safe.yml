@@ -81,7 +81,30 @@ jobs:
             echo "No focused regression tests discovered." >&2
             exit 2
           fi
-          PYTHONPATH="$PWD:$PWD/src" python -m pytest "${focused[@]}" -q --disable-warnings --maxfail=1
+
+          echo "Focused regression test files (${#focused[@]}):"
+          printf ' - %s\n' "${focused[@]}"
+          focused_log="$RUNNER_TEMP/focused-regression.log"
+
+          set +e
+          PYTHONPATH="$PWD:$PWD/src" python -m pytest "${focused[@]}" \
+            -vv --tb=long -rA --disable-warnings --maxfail=1 2>&1 | tee "$focused_log"
+          pytest_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$pytest_status" -ne 0 ]; then
+            echo "::group::Focused regression failure diagnostics"
+            echo "pytest_exit_code=$pytest_status"
+            echo "git_head=$(git rev-parse HEAD)"
+            echo "python_version=$(python --version 2>&1)"
+            echo "Selected test files:"
+            printf ' - %s\n' "${focused[@]}"
+            echo "Last 500 log lines:"
+            tail -n 500 "$focused_log" || true
+            echo "::endgroup::"
+          fi
+
+          exit "$pytest_status"
       - name: Apply mechanically provable canonical repairs
         run: |
           python scripts/canonical_module_guard.py \
