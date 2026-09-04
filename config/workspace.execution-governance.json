@@ -58,7 +58,7 @@
     "transient_lane_artifacts_must_be_removed_before_main": true,
     "production_entrypoints_must_reference_canonical_files": true,
     "stale_references_for_touched_functional_family_must_be_zero": true,
-    "legacy_baseline_commit": "04ffa999a2e29c83282f06d06cb4676f1563359e",
+    "legacy_baseline_commit": "18f268997e446e0f01db397ef4aeabb087c34c4f",
     "protected_roots": ["src", "scripts", "config", ".github/workflows"],
     "forbidden_new_file_name_patterns": ["_v[0-9]+", "_part[0-9]+", "_(new|final|old|backup|bak|copy)([0-9]+)?"],
     "explicit_compatibility_exceptions": []
