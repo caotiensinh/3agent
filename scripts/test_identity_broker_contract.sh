@@ -6,8 +6,8 @@ bash -n scripts/install_workspace_identity_broker.sh
 python3 -m py_compile \
   src/three_agent/workspace_identity_broker.py \
   src/three_agent/workspace_external_identity.py \
-  src/three_agent/chat_gateway_v10.py \
-  src/three_agent/workspace_frontend_v7.py
+  src/three_agent/chat_gateway.py \
+  src/three_agent/workspace_frontend.py
 
 grep -Fq 'User=workspace-auth' scripts/install_workspace_identity_broker.sh
 grep -Fq 'ProtectHome=true' scripts/install_workspace_identity_broker.sh
@@ -40,6 +40,6 @@ done
 
 grep -Fq 'WORKSPACE_EXTERNAL_AUTH_REDEEM_URL' src/three_agent/workspace_external_identity.py
 grep -Fq 'redeem.hostname not in {"127.0.0.1", "localhost", "::1"}' src/three_agent/workspace_external_identity.py
-grep -Fq 'external_authority": "identity_only"' src/three_agent/chat_gateway_v10.py
+grep -Fq 'external_authority": "identity_only"' src/three_agent/chat_gateway.py
 
 echo "identity broker contract PASS"
