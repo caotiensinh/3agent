@@ -20,6 +20,7 @@ VERSION_MODULE_RE = re.compile(r"(?:three_agent\.)?workspace_frontend_v\d+(?:_pa
 VERSION_REF_RE = re.compile(r"workspace_frontend_v\d+(?:_part\d+)?")
 VERSION_FILE_RE = re.compile(r"workspace_frontend_v\d+(?:_part\d+)?\.py")
 VERSION_HTML_RE = re.compile(r"WORKSPACE_HTML_V\d+")
+PRESERVED_SYMBOLS = {"_replace_once", "_insert_after_workflow_description", "config_js", "config_markup", "html"}
 
 
 def _variant_files() -> list[Path]:
@@ -40,7 +41,6 @@ def _external_python_files(variants: set[Path]) -> list[Path]:
 
 
 def _validate_import_contract(paths: list[Path]) -> None:
-    allowed = {"_replace_once", "html"}
     violations: list[str] = []
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -56,7 +56,7 @@ def _validate_import_contract(paths: list[Path]) -> None:
                 if VERSION_MODULE_RE.search(module):
                     for alias in node.names:
                         name = alias.name
-                        if name in allowed or VERSION_HTML_RE.fullmatch(name):
+                        if name in PRESERVED_SYMBOLS or VERSION_HTML_RE.fullmatch(name):
                             continue
                         violations.append(f"{path}: unsupported import {module}.{name}")
             elif isinstance(node, ast.Import):
@@ -69,19 +69,23 @@ def _validate_import_contract(paths: list[Path]) -> None:
         raise RuntimeError("unsafe workspace frontend imports:\n" + "\n".join(violations))
 
 
-def _load_final_html() -> str:
+def _load_authority() -> tuple[str, str, str]:
     sys.path.insert(0, str(SRC))
     try:
-        module = importlib.import_module(FINAL_MODULE)
-        html = getattr(module, FINAL_SYMBOL)
+        final_module = importlib.import_module(FINAL_MODULE)
+        v15 = importlib.import_module("three_agent.workspace_frontend_v15")
+        html = getattr(final_module, FINAL_SYMBOL)
+        config_markup = getattr(v15, "config_markup")
+        config_js = getattr(v15, "config_js")
     finally:
         try:
             sys.path.remove(str(SRC))
         except ValueError:
             pass
-    if not isinstance(html, str) or not html.strip():
-        raise RuntimeError("final workspace frontend did not resolve to a non-empty HTML string")
-    return html
+    for label, value in (("final HTML", html), ("config markup", config_markup), ("config JS", config_js)):
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(f"workspace frontend {label} did not resolve to a non-empty string")
+    return html, config_markup, config_js
 
 
 def _literal(value: str) -> str:
@@ -91,7 +95,7 @@ def _literal(value: str) -> str:
     return "(\n" + "\n".join(f"    {line!r}" for line in lines) + "\n)"
 
 
-def _canonical_source(html: str) -> str:
+def _canonical_source(html: str, config_markup: str, config_js: str) -> str:
     return (
         "from __future__ import annotations\n\n"
         "\n"
@@ -102,6 +106,30 @@ def _canonical_source(html: str) -> str:
         "            f\"WorkSpace frontend canonical patch '{label}' expected exactly one match, got {count}\"\n"
         "        )\n"
         "    return source.replace(old, new, 1)\n\n\n"
+        "def _insert_after_workflow_description(document: str, markup: str) -> str:\n"
+        "    \"\"\"Insert workflow-draft markup after the stable workflowDescription textarea.\"\"\"\n"
+        "    token = 'id=\"workflowDescription\"'\n"
+        "    count = document.count(token)\n"
+        "    if count != 1:\n"
+        "        raise RuntimeError(\n"
+        "            \"workflow-draft-library-markup: expected exactly one workflowDescription id, \"\n"
+        "            f\"found {count}\"\n"
+        "        )\n"
+        "    token_at = document.index(token)\n"
+        "    open_at = document.rfind(\"<textarea\", 0, token_at + 1)\n"
+        "    close_at = document.find(\"</textarea>\", token_at)\n"
+        "    if open_at < 0 or close_at < 0 or open_at > token_at:\n"
+        "        raise RuntimeError(\n"
+        "            \"workflow-draft-library-markup: workflowDescription must remain a textarea\"\n"
+        "        )\n"
+        "    insert_at = close_at + len(\"</textarea>\")\n"
+        "    return document[:insert_at] + \"\\n\" + markup + document[insert_at:]\n\n\n"
+        "config_markup = "
+        + _literal(config_markup)
+        + "\n\n"
+        "config_js = "
+        + _literal(config_js)
+        + "\n\n"
         "WORKSPACE_HTML = "
         + _literal(html)
         + "\n\n"
@@ -131,7 +159,7 @@ import re
 import unittest
 from pathlib import Path
 
-from three_agent.workspace_frontend import WORKSPACE_HTML
+from three_agent.workspace_frontend import WORKSPACE_HTML, _insert_after_workflow_description, config_js, config_markup
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_SHA256 = "{expected_sha256}"
@@ -141,6 +169,13 @@ class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
     def test_rendered_frontend_is_byte_equivalent_to_preconsolidation_v18(self) -> None:
         actual = hashlib.sha256(WORKSPACE_HTML.encode("utf-8")).hexdigest()
         self.assertEqual(actual, EXPECTED_SHA256)
+
+    def test_preserved_composition_contract_symbols_are_available(self) -> None:
+        self.assertIn("securityConfigView", config_markup)
+        self.assertIn("secCfgStatus", config_js)
+        sample = '<textarea id="workflowDescription"></textarea><div>tail</div>'
+        rendered = _insert_after_workflow_description(sample, '<div id="draft">draft</div>')
+        self.assertIn('</textarea>\\n<div id="draft">draft</div><div>tail</div>', rendered)
 
     def test_no_physical_frontend_generation_modules_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
@@ -177,10 +212,10 @@ def apply() -> dict[str, object]:
     external = _external_python_files(variant_set)
     _validate_import_contract(external)
 
-    final_html = _load_final_html()
+    final_html, config_markup, config_js = _load_authority()
     digest = hashlib.sha256(final_html.encode("utf-8")).hexdigest()
 
-    CANONICAL.write_text(_canonical_source(final_html), encoding="utf-8")
+    CANONICAL.write_text(_canonical_source(final_html, config_markup, config_js), encoding="utf-8")
     changed_refs = _rewrite_references(external)
     TEST_FILE.write_text(_test_source(digest), encoding="utf-8")
 
