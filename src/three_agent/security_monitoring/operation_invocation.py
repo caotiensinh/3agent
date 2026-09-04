@@ -351,8 +351,8 @@ class SecurityOperationInvoker:
         step_id: str,
         request: SecurityTypedInvocationRequest,
     ) -> SecurityInvocationResult:
-        plan.validate()
         self._require_plan_integrity(plan)
+        plan.validate()
         if plan.status != "planned":
             raise SecurityOperationInvocationDenied("INVOCATION_REQUIRES_PLANNED_OPERATION")
         if plan.registry_fingerprint != self.registry.fingerprint:
