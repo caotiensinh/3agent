@@ -40,6 +40,29 @@ jobs:
         run: python scripts/consolidate_chat_gateway.py --apply
       - name: Validate chat gateway canonicalization
         run: PYTHONPATH=src python -m unittest tests.test_chat_gateway_canonicalization -v
+      - name: Commit validated canonical consolidation
+        shell: bash
+        run: |
+          if git diff --quiet --exit-code; then
+            echo "No canonical consolidation found."
+            exit 0
+          fi
+          git diff --check
+          python -m compileall -q src
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --name-only | grep -Eq '^src/three_agent/chat_gateway\.py$|^src/three_agent/chat_gateway_v|test_chat_gateway_canonicalization'; then
+            message="refactor(chat): consolidate canonical chat gateway"
+          elif git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
+            message="refactor(frontend): consolidate canonical workspace frontend"
+          elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
+            message="refactor(security): consolidate canonical frontend security"
+          else
+            message="chore(governance): consolidate validated canonical modules"
+          fi
+          git commit -m "$message"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Install project runtime dependencies
         run: python -m pip install -e .
       - name: Install canonical validation test runner
@@ -69,28 +92,6 @@ jobs:
       - name: Validate repaired source
         if: ${{ hashFiles('src/**/*.py') != '' }}
         run: python -m compileall -q src
-      - name: Commit canonical repairs when present
-        shell: bash
-        run: |
-          if git diff --quiet --exit-code; then
-            echo "No canonical repair found."
-            exit 0
-          fi
-          git diff --check
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --name-only | grep -Eq '^src/three_agent/chat_gateway\.py$|^src/three_agent/chat_gateway_v|test_chat_gateway_canonicalization'; then
-            message="refactor(chat): consolidate canonical chat gateway"
-          elif git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
-            message="refactor(frontend): consolidate canonical workspace frontend"
-          elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
-            message="refactor(security): consolidate canonical frontend security"
-          else
-            message="chore(governance): auto-heal safe canonical reexports"
-          fi
-          git commit -m "$message"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Publish auto-heal summary
         if: always()
         run: |
