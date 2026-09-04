@@ -360,7 +360,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         self.assertFalse(hasattr(evidence, "answer"))
 
     def test_production_service_wires_bounded_budget_and_structured_decoding(self):
-        text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
+        text = (ROOT / "src/three_agent/chat_service_fidelity.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(
