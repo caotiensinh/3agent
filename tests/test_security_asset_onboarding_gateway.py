@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import inspect
 import unittest
+from http import HTTPStatus
+from unittest.mock import patch
 
 from three_agent.chat_gateway import SecurityE2EApplication, SecurityE2EHTTPHandler
 
@@ -21,20 +23,43 @@ class SecurityAssetOnboardingGatewayTests(unittest.TestCase):
         self.assertIn("self.app.security_onboarding.prepare", prepare)
 
     def test_routes_are_explicit_and_do_not_save_configuration_implicitly(self) -> None:
-        get_source = inspect.getsource(SecurityE2EHTTPHandler.do_GET)
-        post_source = inspect.getsource(SecurityE2EHTTPHandler.do_POST)
+        handler = object.__new__(SecurityE2EHTTPHandler)
+
+        handler.path = "/api/security/onboarding/candidates"
+        with patch.object(
+            SecurityE2EHTTPHandler,
+            "_security_onboarding_candidates",
+        ) as candidates:
+            handler.do_GET()
+        candidates.assert_called_once_with()
+
+        handler.path = "/api/security/onboarding/prepare"
+        with patch.object(
+            SecurityE2EHTTPHandler,
+            "_security_onboarding_prepare",
+        ) as prepare_route:
+            handler.do_POST()
+        prepare_route.assert_called_once_with()
+
         prepare = inspect.getsource(SecurityE2EHTTPHandler._security_onboarding_prepare)
-        self.assertIn('"/api/security/onboarding/candidates"', get_source)
-        self.assertIn('"/api/security/onboarding/prepare"', post_source)
         self.assertNotIn("security_config.save", prepare)
         self.assertNotIn("refresh_security_monitoring", prepare)
         self.assertNotIn("execute", prepare)
 
     def test_runtime_contract_explicitly_denies_discovery_self_enrollment(self) -> None:
-        source = inspect.getsource(SecurityE2EHTTPHandler._security_runtime)
-        self.assertIn('"discovery_self_enrollment": False', source)
-        self.assertIn('"asset_onboarding_authority": "configuration_center_only"', source)
-        self.assertIn('"autonomous_remediation": False', source)
+        handler = object.__new__(SecurityE2EHTTPHandler)
+        with (
+            patch.object(SecurityE2EHTTPHandler, "_require_admin", return_value=object()),
+            patch.object(SecurityE2EHTTPHandler, "_json") as emit,
+        ):
+            handler._security_runtime()
+
+        emit.assert_called_once()
+        status, payload = emit.call_args.args
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertIs(payload["discovery_self_enrollment"], False)
+        self.assertEqual(payload["asset_onboarding_authority"], "configuration_center_only")
+        self.assertIs(payload["autonomous_remediation"], False)
 
     def test_onboarding_http_surface_has_no_network_process_or_capture_execution(self) -> None:
         source = "\n".join(
