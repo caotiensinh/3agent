@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .workspace_frontend_v3 import _replace_once
-from .workspace_frontend_security_v1 import WORKSPACE_HTML_V13 as WORKSPACE_HTML_SECURITY_V1
+from .workspace_frontend_security import WORKSPACE_HTML_V13 as WORKSPACE_HTML_SECURITY_V1
 
 
 html = WORKSPACE_HTML_SECURITY_V1

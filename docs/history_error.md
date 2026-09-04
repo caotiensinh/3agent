@@ -85,3 +85,10 @@ Installer shell-contract validation failed after branch reconciliation.
 **Fix**
 
 Commit `acb56a851d21f978d10898c4d6cb6842528dc14d` restored `public_search_enabled=true` without enabling direct egress or weakening the strict sanitized egress policy. Subsequent shell-contract validation passed.
+
+### 2026-09-04 — workspace_frontend_security circular-version chain
+
+- Observed failure mode: `workspace_frontend_v14.py` consumed `workspace_frontend_security_v1.py`, while the canonical security module consumed `workspace_frontend_v15.py`. Repointing V14 directly to the old canonical implementation would therefore create a V14 → canonical-security → V15 → V14 circular import.
+- Root cause: security UI generations carried both frontend-version dependency and implementation authority instead of exposing version-independent canonical overlay builders.
+- Fix: move the V1 Security Analyst overlay into `workspace_frontend_security.py`, expose V2/V3 SOC and boundary behavior as canonical builder functions, lazily materialize compatibility HTML only after V15 is available, rewrite consumers to the canonical module, and remove the physical V1 module.
+- Regression protection: `tests/test_workspace_frontend_security_canonicalization.py` verifies the physical V1 module is absent, the V13→V15 chain imports without a cycle, and Security Analyst/configuration/SOC/boundary markers are preserved.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent import workspace_frontend_security_v1, workspace_frontend_v14
+from three_agent import workspace_frontend_security, workspace_frontend_v14
 from three_agent.workspace_frontend_v14 import WORKSPACE_HTML_V14
 
 
@@ -46,7 +46,7 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
             self.assertNotIn(forbidden, WORKSPACE_HTML_V14)
 
     def test_badge_is_aggregate_only_and_polling_is_visibility_aware(self):
-        source = inspect.getsource(workspace_frontend_security_v1)
+        source = inspect.getsource(workspace_frontend_security)
         self.assertIn("document.visibilityState==='visible'", source)
         self.assertIn("setInterval", source)
         self.assertIn("30000", source)
@@ -63,7 +63,7 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_security_surface_exposes_no_network_mutation_action(self):
-        source = inspect.getsource(workspace_frontend_security_v1)
+        source = inspect.getsource(workspace_frontend_security)
         for forbidden in (
             "remediate",
             "packet-capture",

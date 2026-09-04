@@ -172,7 +172,6 @@ src/three_agent/workspace_auth.py
 src/three_agent/workspace_chat_capabilities.py
 src/three_agent/workspace_external_identity.py
 src/three_agent/workspace_frontend.py
-src/three_agent/workspace_frontend_security_v1.py
 src/three_agent/workspace_frontend_security_v2.py
 src/three_agent/workspace_frontend_security_v3.py
 src/three_agent/workspace_frontend_v10.py
