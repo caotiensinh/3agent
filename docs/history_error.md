@@ -2,6 +2,20 @@
 
 This file records only observed consolidation failures, their verified root causes, and the corrective action taken during PR #311 convergence.
 
+## 2026-09-04 — Workflow state-machine rewrite initially touched test-helper module names
+
+**Observed failure / blocker**
+
+The first baseline-delta attempt to flatten `workflow_state_machine_v4.py` and `workflow_state_machine_v4_budgeted.py` produced one new collection failure in `tests/test_workflow_state_machine_v4_budgeted.py`: its helper import `test_workflow_state_machine_v4` had been rewritten to `test_workflow_state_machine`, which does not exist.
+
+**Root cause**
+
+The first consolidation rewrite used unrestricted string replacement for `workflow_state_machine_v4`. That pattern correctly targeted production module paths but also matched the unrelated pytest helper-module filename. Production topology and test-module filenames are different namespaces and must not be rewritten with the same unqualified rule.
+
+**Fix**
+
+Commit `1feb71e849ffac1ea0e7539e834478a33098f7d8` narrowed rewrites to explicit production import paths such as `three_agent.workflow_state_machine_v4` and `from .workflow_state_machine_v4`. Workflow run `33828935186` then passed the baseline-delta gate. Commit `72e9a5a0ce381796261948b6aed6ed0d49194071` preserved V4 bounded-parallel and aggregate-parent-budget behavior in canonical `workflow_state_machine.py`, rewrote production/test imports of the production modules, and removed both physical V4 implementation files with zero new targeted-test failures.
+
 ## 2026-09-04 — Knowledge gateway V3 depended on missing canonical visual extraction capability
 
 **Observed failure / blocker**
