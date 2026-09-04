@@ -1,0 +1,21 @@
+{
+  "schema": "workspace-source-consolidation/workflow-state-machine-v1",
+  "family": [
+    "src/three_agent/workflow_state_machine.py"
+  ],
+  "removed": [
+    "src/three_agent/workflow_state_machine_v4.py",
+    "src/three_agent/workflow_state_machine_v4_budgeted.py"
+  ],
+  "baseline_returncode": 2,
+  "final_returncode": 2,
+  "baseline_failures": [
+    "ERROR tests/test_chat_gateway_v17.py"
+  ],
+  "final_failures": [
+    "ERROR tests/test_chat_gateway_v17.py"
+  ],
+  "new_failures": [],
+  "removed_failures": [],
+  "remaining_variant_files": []
+}

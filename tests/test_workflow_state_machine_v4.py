@@ -16,7 +16,7 @@ from three_agent.task_contract import TaskContractCompiler
 from three_agent.validator_ledger import ValidatorLedger
 from three_agent.version import DISPLAY_VERSION
 from three_agent.workflow_state_machine import WorkflowStateError
-from three_agent.workflow_state_machine_v4 import (
+from three_agent.workflow_state_machine import (
     WORKFLOW_V4_MAX_PARALLEL_BRANCHES,
     WORKFLOW_V4_MAX_PARALLEL_WORKERS,
     WorkflowStateMachineV4Controller,
