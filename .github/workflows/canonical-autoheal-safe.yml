@@ -15,7 +15,7 @@ jobs:
   autoheal-safe-reexports:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +26,10 @@ jobs:
           python-version: '3.12'
       - name: Guard regression tests
         run: python -m unittest tests.test_canonical_module_guard -v
+      - name: Consolidate known semantic canonical boundary
+        run: python scripts/consolidate_workspace_frontend_security.py --apply
+      - name: Validate frontend security canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
       - name: Apply mechanically provable canonical repairs
         run: |
           python scripts/canonical_module_guard.py \
@@ -36,18 +40,23 @@ jobs:
       - name: Validate repaired source
         if: ${{ hashFiles('src/**/*.py') != '' }}
         run: python -m compileall -q src
-      - name: Commit safe repairs when present
+      - name: Commit canonical repairs when present
         shell: bash
         run: |
           if git diff --quiet --exit-code; then
-            echo "No mechanically provable safe canonical repair found."
+            echo "No canonical repair found."
             exit 0
           fi
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore(governance): auto-heal safe canonical reexports"
+          if git diff --cached --name-only | grep -Eq 'workspace_frontend_security|workspace_frontend_v14|test_workspace_frontend_security_canonicalization'; then
+            message="refactor(security): consolidate canonical frontend security"
+          else
+            message="chore(governance): auto-heal safe canonical reexports"
+          fi
+          git commit -m "$message"
           git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Publish auto-heal summary
         if: always()
