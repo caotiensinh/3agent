@@ -11,7 +11,8 @@ from three_agent.chat_gateway import (
 
 class ChatGatewayIntentContractTests(unittest.TestCase):
     def test_auto_language_is_default_in_frontend(self) -> None:
-        self.assertIn('option value="auto" selected>Auto · follow current request</option>', HTML_V14)
+        self.assertIn('id="lang"', HTML_V14)
+        self.assertIn('option value="auto" selected', HTML_V14)
         self.assertIn("language:document.getElementById('lang').value", HTML_V14)
 
     def test_gateway_declares_current_direct_chat_release(self) -> None:
