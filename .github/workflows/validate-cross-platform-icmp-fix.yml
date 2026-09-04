@@ -1,0 +1,79 @@
+name: validate-cross-platform-icmp-fix
+
+on:
+  push:
+    branches:
+      - test/read-only-lan-probe-20260901
+    paths:
+      - '.github/workflows/validate-cross-platform-icmp-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-exact-head:
+    name: Ubuntu exact-head ICMP validation
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact fix head
+        uses: actions/checkout@v4
+        with:
+          ref: bada09f8a6a4577410e889a96ba06a153a9981e3
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run exact specialized unittest file
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          set -Eeuo pipefail
+          echo "EXACT_HEAD=$(git rev-parse HEAD)"
+          python3 tests/test_security_monitoring_collectors.py -v
+
+      - name: Run authorized Ubuntu live ICMP collector
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          set -Eeuo pipefail
+          python3 <<'PY'
+          from three_agent.security_monitoring.collectors import IcmpCollector
+          from three_agent.security_monitoring.contracts import AssetInventoryRecord
+          from three_agent.security_monitoring.policy import MonitoringPolicy, MonitoringPolicyEngine
+
+          policy = MonitoringPolicy(
+              profile_id="ubuntu-live-icmp-exact-head",
+              read_only=True,
+              allow_active_liveness=True,
+              timeout_seconds=2.0,
+              max_retries=0,
+              max_catch_up_runs=0,
+              allowed_capabilities=("icmp_echo",),
+          ).validate()
+          engine = MonitoringPolicyEngine(policy)
+          collector = IcmpCollector(engine)
+
+          for asset_id, role, host in (
+              ("cisco-live-test", "switch", "192.168.11.116"),
+              ("router-live-test", "router", "192.168.11.1"),
+          ):
+              asset = AssetInventoryRecord(
+                  asset_id=asset_id,
+                  role=role,
+                  management_host=host,
+                  collector_capabilities=("icmp_echo",),
+                  data_class="internal",
+                  enabled=True,
+              ).validate()
+              result = collector.collect(asset=asset, run_id="run:ubuntu-live-icmp-exact-head")
+              print(host, result.failure_code, [(o.metric, o.status, o.value, o.unit) for o in result.observations])
+              assert result.failure_code is None
+              assert result.observations[0].metric == "icmp_reachable"
+              assert result.observations[0].value is True
+              assert any(o.metric == "icmp_rtt_ms" for o in result.observations)
+
+          print("UBUNTU_EXACT_HEAD_LIVE_ICMP=PASS")
+          PY

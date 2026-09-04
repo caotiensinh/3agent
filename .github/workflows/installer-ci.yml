@@ -43,6 +43,9 @@ jobs:
           bash scripts/test_installer_contract.sh
           bash scripts/test_ai_stack_contract.sh
           bash scripts/test_model_pool_contract.sh
+          bash scripts/test_gpu_worker_pool_contract.sh
+          bash scripts/test_ram_baseline_contract.sh
+          bash scripts/test_runner_pool_contract.sh
           bash scripts/test_e2e_acceptance_contract.sh
           bash scripts/test_chat_gateway_contract.sh
           bash scripts/test_lan_ai_server_contract.sh
@@ -57,6 +60,12 @@ jobs:
             scripts/install_ubuntu_2404_rtx5090.sh \
             scripts/setup_ai_stack_ubuntu2404.sh \
             scripts/enable_model_pool.sh \
+            scripts/enable_gpu_worker_pool.sh \
+            scripts/test_gpu_worker_pool_contract.sh \
+            scripts/measure_ram_baseline.sh \
+            scripts/test_ram_baseline_contract.sh \
+            scripts/setup_runner_pool.sh \
+            scripts/test_runner_pool_contract.sh \
             scripts/setup_lan_ai_server.sh \
             scripts/verify_deployment.sh \
             scripts/run_e2e_acceptance.sh \

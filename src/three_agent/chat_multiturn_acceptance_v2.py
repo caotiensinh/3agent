@@ -182,6 +182,27 @@ class DiagnosticContractAwareProjectChatService(ContractAwareProjectChatService)
         return super()._stage(job_id, name, status, detail)
 
 
+class DiagnosticContractAwareProjectChatService(ContractAwareProjectChatService):
+    """Production chat service with metadata-only terminal validator observation."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.p2_validation_outcomes: list[str] = []
+
+    def _stage(
+        self,
+        job_id: str,
+        name: str,
+        status: str,
+        detail: str = "",
+    ) -> None:
+        if name == "answer" and status in {"completed", "failed"}:
+            self.p2_validation_outcomes.append(
+                "" if status == "completed" else safe_response_validation_reason(detail)
+            )
+        return super()._stage(job_id, name, status, detail)
+
+
 _BASE_RUN_CASE = acceptance.run_case
 _BASE_RUN_LIVE_SUITE = acceptance.run_live_suite
 

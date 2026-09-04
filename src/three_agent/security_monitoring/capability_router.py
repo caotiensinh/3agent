@@ -17,6 +17,7 @@ SECURITY_ROUTING_SCHEMA = "workspace-security-routing-decision/v1"
 SECURITY_ROUTE_SELECTION_SCHEMA = "workspace-security-route-selection/v1"
 MAX_SECURITY_REQUEST_CHARS = 4096
 MAX_ROUTE_SELECTIONS = 6
+MAX_ROUTE_PROPOSALS = 32
 
 ROUTING_STATUSES = frozenset({"routed", "no_route", "denied"})
 _ACTIVE_OR_OFFENSIVE_MARKERS = (
@@ -370,8 +371,8 @@ class SecurityCapabilityRouter:
     ) -> SecurityRoutingDecision:
         """Validate externally/model-proposed routes against the closed registry.
 
-        This method intentionally does not call a model. Invalid or non-v0.2
-        proposals are rejected rather than partially trusted.
+        This method intentionally does not call a model. Invalid, oversized or
+        non-v0.2 proposals are rejected rather than partially trusted.
         """
 
         raw = str(request or "").strip()
@@ -392,7 +393,9 @@ class SecurityCapabilityRouter:
             )
 
         accepted: list[tuple[str, str, str]] = []
-        for proposal in proposals:
+        for index, proposal in enumerate(proposals, 1):
+            if index > MAX_ROUTE_PROPOSALS:
+                raise SecurityCapabilityError("ROUTE_PROPOSAL_INPUT_BOUND_EXCEEDED")
             taxonomy_id = validate_security_taxonomy_id(proposal.taxonomy_id)
             cap, operation = self.registry.resolve(
                 proposal.capability_id,
