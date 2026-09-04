@@ -29,7 +29,7 @@ from .public_query_compiler import PUBLIC_QUERY_COMPILER_VERSION
 from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
 from .version import DISPLAY_VERSION, RELEASE_GENERATION, VERSION_SCHEME
-from .workflow_design_v4 import WorkflowDesignCompilerV4
+from .workflow_design import WorkflowDesignCompilerV4
 from .workflow_state_machine import WorkflowStateError
 from .workflow_state_machine_v4 import (
     EXECUTION_PROFILE_V4,
