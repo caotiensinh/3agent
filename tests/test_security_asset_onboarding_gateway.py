@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 from http import HTTPStatus
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 from three_agent.chat_gateway import (
     ApprovedAssetHTTPHandler,
@@ -133,13 +133,18 @@ class SecurityAssetOnboardingGatewayTests(unittest.TestCase):
                 handler = object.__new__(ApprovedAssetHTTPHandler)
                 app = Mock()
                 app.security_assets.upsert.side_effect = error
-                handler.app = app
                 payload = {
                     "asset": {"asset_id": "router-1"},
                     "expected_config_fingerprint": "fingerprint",
                     "confirmation": "",
                 }
                 with (
+                    patch.object(
+                        ApprovedAssetHTTPHandler,
+                        "app",
+                        new_callable=PropertyMock,
+                        return_value=app,
+                    ),
                     patch.object(
                         ApprovedAssetHTTPHandler,
                         "_require_admin",
