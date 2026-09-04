@@ -159,7 +159,11 @@ class ChatGatewayTests(unittest.TestCase):
         self.assertEqual(language, "vi")
 
     def test_final_health_surface_exposes_current_context_and_security_contracts(self):
-        source = inspect.getsource(SecurityE2EHTTPHandler.do_GET)
+        source = "\n".join(
+            inspect.getsource(base.__dict__["do_GET"])
+            for base in SecurityE2EHTTPHandler.__mro__
+            if "do_GET" in base.__dict__
+        )
         self.assertIn("conversation_context_policy", source)
         self.assertIn("CONVERSATION_CONTEXT_POLICY_VERSION", source)
         self.assertIn("public_query_final_dlp", source)
