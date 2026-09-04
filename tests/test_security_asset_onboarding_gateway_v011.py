@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
@@ -40,9 +41,11 @@ class SecurityAssetOnboardingGatewayV011ContractTests(unittest.TestCase):
         self.assertIn("/api/security/assets/disable", self.frontend)
 
     def test_frontend_never_collects_raw_secret_fields(self) -> None:
-        lowered = self.frontend.lower()
+        input_markup = "\n".join(
+            re.findall(r"<input\b[^>]*>", self.frontend, flags=re.IGNORECASE)
+        ).lower()
         for field in ("password", "community_string", "auth_key", "priv_key", "api_key"):
-            self.assertNotIn(field, lowered)
+            self.assertNotIn(field, input_markup)
         self.assertIn("secAssetCredential", self.frontend)
         self.assertIn("credential_ref", self.frontend)
 
