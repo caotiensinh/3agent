@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 import unittest
 
 from three_agent.chat_gateway import WorkflowV3HTTPHandler
@@ -10,6 +12,7 @@ from three_agent.chat_gateway import (
 )
 from three_agent.chat_gateway import (
     HTML_V17,
+    ContinuitySecurityAwareProjectChatService,
     WorkflowV4ContextApplication,
     WorkflowV4ContextHTTPHandler,
 )
@@ -61,51 +64,105 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
         self.assertTrue(issubclass(WorkflowV4ContextHTTPHandler, WorkflowV3HTTPHandler))
 
     def test_health_preserves_multiturn_context_and_adds_budgeted_v4(self):
-        source = inspect.getsource(WorkflowV4ContextHTTPHandler.do_GET)
-        for token in (
-            '"version": DISPLAY_VERSION',
-            '"workflow_execution_version": "v4"',
-            '"workflow_execution_risk": "low_only"',
-            '"workflow_execution_trigger": "manual_only"',
-            '"workflow_schedule_execution": False',
-            '"workflow_event_execution": False',
-            '"workflow_branch_joins": True',
-            '"workflow_bounded_parallel_dag": True',
-            '"workflow_parallel_regions": 1',
-            '"workflow_parallel_max_branches": WORKFLOW_V4_MAX_PARALLEL_BRANCHES',
-            '"workflow_parallel_max_workers": WORKFLOW_V4_MAX_PARALLEL_WORKERS',
-            '"workflow_parallel_budget_scope": "atomic_parent_and_child"',
-            '"workflow_parallel_budget_multiplication": False',
-            '"workflow_parallel_nested": False',
-            '"workflow_parallel_active_replay": False',
-            '"public_query_final_dlp": True',
-            '"direct_chat": True',
-            '"response_language_current_request_precedence": True',
-            '"response_output_contract": OUTPUT_CONTRACT_POLICY_VERSION',
-            '"response_output_contract_current_request_only": True',
-            '"response_generation_bounded": True',
-            '"conversation_context_policy": CONVERSATION_CONTEXT_POLICY_VERSION',
-            '"conversation_context_reference_gated": True',
-            '"conversation_context_completed_only": True',
-            '"standalone_request_history_injected": False',
-            '"follow_up_language_continuity": True',
-            '"follow_up_reference_anchoring": True',
-        ):
-            self.assertIn(token, source)
+        source = textwrap.dedent(inspect.getsource(WorkflowV4ContextHTTPHandler.do_GET))
+        tree = ast.parse(source)
+        health_contract = None
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if {
+                "workflow_execution_version",
+                "conversation_context_policy",
+            }.issubset(keys):
+                health_contract = {
+                    key.value: value
+                    for key, value in zip(node.keys, node.values)
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                }
+                break
+
+        self.assertIsNotNone(health_contract)
+        assert health_contract is not None
+
+        def signature(node: ast.AST) -> tuple[str, object]:
+            if isinstance(node, ast.Constant):
+                return ("constant", node.value)
+            if isinstance(node, ast.Name):
+                return ("name", node.id)
+            return ("ast", ast.dump(node, include_attributes=False))
+
+        expected = {
+            "version": ("name", "DISPLAY_VERSION"),
+            "workflow_execution_version": ("constant", "v4"),
+            "workflow_execution_risk": ("constant", "low_only"),
+            "workflow_execution_trigger": ("constant", "manual_only"),
+            "workflow_schedule_execution": ("constant", False),
+            "workflow_event_execution": ("constant", False),
+            "workflow_branch_joins": ("constant", True),
+            "workflow_bounded_parallel_dag": ("constant", True),
+            "workflow_parallel_regions": ("constant", 1),
+            "workflow_parallel_max_branches": (
+                "name",
+                "WORKFLOW_V4_MAX_PARALLEL_BRANCHES",
+            ),
+            "workflow_parallel_max_workers": (
+                "name",
+                "WORKFLOW_V4_MAX_PARALLEL_WORKERS",
+            ),
+            "workflow_parallel_budget_scope": (
+                "constant",
+                "atomic_parent_and_child",
+            ),
+            "workflow_parallel_budget_multiplication": ("constant", False),
+            "workflow_parallel_nested": ("constant", False),
+            "workflow_parallel_active_replay": ("constant", False),
+            "public_query_final_dlp": ("constant", True),
+            "direct_chat": ("constant", True),
+            "response_language_current_request_precedence": ("constant", True),
+            "response_output_contract": (
+                "name",
+                "OUTPUT_CONTRACT_POLICY_VERSION",
+            ),
+            "response_output_contract_current_request_only": ("constant", True),
+            "response_generation_bounded": ("constant", True),
+            "conversation_context_policy": (
+                "name",
+                "CONVERSATION_CONTEXT_POLICY_VERSION",
+            ),
+            "conversation_context_reference_gated": ("constant", True),
+            "conversation_context_completed_only": ("constant", True),
+            "standalone_request_history_injected": ("constant", False),
+            "follow_up_language_continuity": ("constant", True),
+            "follow_up_reference_anchoring": ("constant", True),
+        }
+        self.assertEqual(
+            {key: signature(health_contract[key]) for key in expected},
+            expected,
+        )
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
             "deterministic-reference-gated/v2",
         )
 
-    def test_main_uses_contract_aware_service(self):
+    def test_canonical_main_preserves_v17_contract_and_uses_latest_service(self):
         from three_agent import chat_gateway
 
         source = inspect.getsource(chat_gateway.main)
-        self.assertIn("ContractAwareProjectChatService", source)
-        self.assertNotIn("ContextAwareProjectChatService(orchestrator", source)
-        self.assertIn("WorkflowV4ContextApplication", source)
-        self.assertIn("WorkflowV4ContextHTTPHandler", source)
-        self.assertTrue(issubclass(ContractAwareProjectChatService, object))
+        self.assertIn("ContinuitySecurityAwareProjectChatService", source)
+        self.assertIn("SecurityE2EApplication", source)
+        self.assertNotIn("ContractAwareProjectChatService(orchestrator", source)
+        self.assertNotIn("WorkflowV4ContextApplication(service", source)
+        self.assertTrue(
+            issubclass(
+                ContinuitySecurityAwareProjectChatService,
+                ContractAwareProjectChatService,
+            )
+        )
 
 
 if __name__ == "__main__":
