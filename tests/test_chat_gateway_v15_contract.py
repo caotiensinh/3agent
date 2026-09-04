@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -25,21 +27,58 @@ class ChatGatewayV15ContractTests(unittest.TestCase):
             self.assertTrue(callable(getattr(WorkflowV3HTTPHandler, method_name)))
 
     def test_workflow_v3_contract_is_bounded_and_admin_gated(self) -> None:
-        health_source = inspect.getsource(WorkflowV3HTTPHandler.do_GET)
-        for token in (
-            '"workflow_execution_version": "v3"',
-            '"workflow_execution_risk": "low_only"',
-            '"workflow_execution_trigger": "manual_only"',
-            '"workflow_execution_admin_approval": True',
-            '"workflow_pause_resume": True',
-            '"workflow_persistent_checkpoint": True',
-            '"workflow_branching": "deterministic_only"',
-            '"workflow_failure_rejection_terminal": True',
-            '"workflow_branch_joins": False',
-            '"direct_chat": True',
-            '"response_language_current_request_precedence": True',
-        ):
-            self.assertIn(token, health_source)
+        source = textwrap.dedent(inspect.getsource(WorkflowV3HTTPHandler.do_GET))
+        tree = ast.parse(source)
+        health_contract = None
+        required_keys = {
+            "workflow_execution_version",
+            "workflow_execution_risk",
+            "workflow_execution_trigger",
+            "workflow_execution_admin_approval",
+            "workflow_pause_resume",
+            "workflow_persistent_checkpoint",
+            "workflow_branching",
+            "workflow_failure_rejection_terminal",
+            "workflow_branch_joins",
+            "direct_chat",
+            "response_language_current_request_precedence",
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if required_keys.issubset(keys):
+                health_contract = {
+                    key.value: value
+                    for key, value in zip(node.keys, node.values)
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                }
+                break
+
+        self.assertIsNotNone(health_contract)
+        assert health_contract is not None
+
+        expected = {
+            "workflow_execution_version": "v3",
+            "workflow_execution_risk": "low_only",
+            "workflow_execution_trigger": "manual_only",
+            "workflow_execution_admin_approval": True,
+            "workflow_pause_resume": True,
+            "workflow_persistent_checkpoint": True,
+            "workflow_branching": "deterministic_only",
+            "workflow_failure_rejection_terminal": True,
+            "workflow_branch_joins": False,
+            "direct_chat": True,
+            "response_language_current_request_precedence": True,
+        }
+        for key, value in expected.items():
+            node = health_contract[key]
+            self.assertIsInstance(node, ast.Constant)
+            self.assertEqual(node.value, value)
 
         for method in (
             WorkflowV3HTTPHandler._prepare_dispatch,
