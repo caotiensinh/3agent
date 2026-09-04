@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import re
 import unittest
 
 from three_agent import chat_gateway
-from three_agent.workspace_frontend import WORKSPACE_HTML
+from three_agent.workspace_frontend import WORKSPACE_HTML, config_markup
 
 
 class SecurityConfigurationFrontendTests(unittest.TestCase):
@@ -20,9 +21,21 @@ class SecurityConfigurationFrontendTests(unittest.TestCase):
             self.assertIn(text, WORKSPACE_HTML)
 
     def test_configuration_center_contains_no_raw_secret_input(self) -> None:
-        self.assertNotIn('type="password" id="securityCfg', WORKSPACE_HTML)
+        input_markup = "\n".join(
+            re.findall(r"<input\b[^>]*>", config_markup, flags=re.IGNORECASE)
+        ).lower()
+        for forbidden in (
+            "password",
+            "community_string",
+            "auth_key",
+            "priv_key",
+            "api_key",
+            "secret_value",
+        ):
+            self.assertNotIn(forbidden, input_markup)
+        self.assertIn("only opaque secret references are stored", config_markup.lower())
+        self.assertIn("rejected by the backend contract", config_markup.lower())
         self.assertIn("credential reference", WORKSPACE_HTML.lower())
-        self.assertIn("raw credentials", WORKSPACE_HTML.lower())
 
     def test_gateway_config_routes_are_admin_bounded(self) -> None:
         source = inspect.getsource(chat_gateway.SecurityMonitoringHTTPHandler)
