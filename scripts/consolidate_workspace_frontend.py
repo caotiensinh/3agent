@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import re
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,14 +71,33 @@ def _validate_import_contract(paths: list[Path]) -> None:
 
 
 def _load_authority() -> tuple[str, str, str]:
+    """Resolve current V18 exactly without restoring deleted security generation files.
+
+    V16 historically imports workspace_frontend_security_v3. That physical module was
+    already consolidated. Build its exact expected HTML from the canonical security
+    builder and expose it only as an in-memory module while evaluating the historical
+    frontend chain. Nothing versioned is written back to production source.
+    """
+
+    shim_name = "three_agent.workspace_frontend_security_v3"
     sys.path.insert(0, str(SRC))
+    previous_shim = sys.modules.get(shim_name)
     try:
-        final_module = importlib.import_module(FINAL_MODULE)
         v15 = importlib.import_module("three_agent.workspace_frontend_v15")
+        security = importlib.import_module("three_agent.workspace_frontend_security")
+        shim = types.ModuleType(shim_name)
+        shim.WORKSPACE_HTML_SECURITY_V3 = security.build_security_v3(v15.WORKSPACE_HTML_V15)
+        sys.modules[shim_name] = shim
+
+        final_module = importlib.import_module(FINAL_MODULE)
         html = getattr(final_module, FINAL_SYMBOL)
         config_markup = getattr(v15, "config_markup")
         config_js = getattr(v15, "config_js")
     finally:
+        if previous_shim is None:
+            sys.modules.pop(shim_name, None)
+        else:
+            sys.modules[shim_name] = previous_shim
         try:
             sys.path.remove(str(SRC))
         except ValueError:
