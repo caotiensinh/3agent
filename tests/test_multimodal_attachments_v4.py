@@ -23,7 +23,7 @@ from three_agent.document_extractors import (
     extract_native_visual,
     extract_visual_assets,
 )
-from three_agent.knowledge_gateway_v3 import KnowledgeGatewayV3
+from three_agent.knowledge_gateway import KnowledgeGatewayV3
 from three_agent.vision import OllamaVisionClient, VisionAnalysis, VisionAnalysisError
 
 

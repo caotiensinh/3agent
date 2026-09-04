@@ -94,7 +94,6 @@ src/three_agent/human_report.py
 src/three_agent/inference_scope.py
 src/three_agent/knowledge_cli.py
 src/three_agent/knowledge_gateway.py
-src/three_agent/knowledge_gateway_v2.py
 src/three_agent/knowledge_gateway_v3.py
 src/three_agent/knowledge_plane.py
 src/three_agent/linked_execution_budget.py
@@ -167,8 +166,6 @@ src/three_agent/web_research.py
 src/three_agent/worker_pool.py
 src/three_agent/workflow.py
 src/three_agent/workflow_design.py
-src/three_agent/workflow_design_v3.py
-src/three_agent/workflow_design_v4.py
 src/three_agent/workflow_dispatch.py
 src/three_agent/workflow_drafts.py
 src/three_agent/workflow_state_machine.py
@@ -322,7 +319,6 @@ src/three_agent/security_monitoring/syslog_enrichment.py
 src/three_agent/security_monitoring/temporal_behavior.py
 src/three_agent/security_monitoring/temporal_scenarios.py
 src/three_agent/security_monitoring/ui_config.py
-src/three_agent/security_monitoring/ui_config_v2.py
 src/three_agent/security_monitoring/ui_read_model.py
 src/three_agent/security_monitoring/windows_evtx_adapter.py
 src/three_agent/security_monitoring/work_clustering.py
@@ -365,6 +361,7 @@ tests/test_benchmark_isolation.py
 tests/test_benchmark_readiness.py
 tests/test_benchmark_snapshot.py
 tests/test_benchmark_suite.py
+tests/test_canonical_module_guard.py
 tests/test_capability_authority.py
 tests/test_capability_revocation.py
 tests/test_chat_acceptance.py

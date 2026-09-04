@@ -12,7 +12,7 @@ from scripts import validate_workspace_runtime as validator
 class WorkspaceRuntimeValidatorTests(unittest.TestCase):
     def test_required_runtime_modules_include_security_and_multimodal_surface(self) -> None:
         self.assertIn("three_agent.chat_gateway_v20", validator.REQUIRED_MODULES)
-        self.assertIn("three_agent.knowledge_gateway_v3", validator.REQUIRED_MODULES)
+        self.assertIn("three_agent.knowledge_gateway", validator.REQUIRED_MODULES)
         self.assertIn("three_agent.vision", validator.REQUIRED_MODULES)
         self.assertIn("three_agent.security_monitoring_cli", validator.REQUIRED_MODULES)
         self.assertIn("three_agent.security_reporting_cli", validator.REQUIRED_MODULES)

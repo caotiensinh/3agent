@@ -22,54 +22,8 @@ src/three_agent/workspace_frontend_v13.py:40: in <module>
     connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
     ^^^^^^^^^^^^^^
 E   NameError: name 'connector_rows' is not defined
-___________ ERROR collecting tests/test_multimodal_attachments_v4.py ___________
-ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_multimodal_attachments_v4.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/test_multimodal_attachments_v4.py:20: in <module>
-    from three_agent.document_extractors import (
-E   ImportError: cannot import name 'NATIVE_IMAGE_EXTENSIONS' from 'three_agent.document_extractors' (/home/runner/work/3agent/3agent/src/three_agent/document_extractors.py)
-_______ ERROR collecting tests/test_security_asset_onboarding_gateway.py _______
-tests/test_security_asset_onboarding_gateway.py:6: in <module>
-    from three_agent.chat_gateway_v21 import SecurityE2EApplication, SecurityE2EHTTPHandler
-src/three_agent/chat_gateway_v21.py:11: in <module>
-    from . import chat_gateway_v17 as _v17
-src/three_agent/chat_gateway_v17.py:46: in <module>
-    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
-src/three_agent/workspace_frontend_v13.py:40: in <module>
-    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
-    ^^^^^^^^^^^^^^
-E   NameError: name 'connector_rows' is not defined
-________ ERROR collecting tests/test_security_asset_onboarding_v011.py _________
-ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_security_asset_onboarding_v011.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-tests/test_security_asset_onboarding_v011.py:7: in <module>
-    from three_agent.security_monitoring.asset_onboarding import (
-E   ImportError: cannot import name 'SecurityAssetOnboardingConflict' from 'three_agent.security_monitoring.asset_onboarding' (/home/runner/work/3agent/3agent/src/three_agent/security_monitoring/asset_onboarding.py)
-_________ ERROR collecting tests/test_security_monitoring_ui_config.py _________
-tests/test_security_monitoring_ui_config.py:10: in <module>
-    from three_agent import chat_gateway_v19
-src/three_agent/chat_gateway_v19.py:8: in <module>
-    from . import chat_gateway_v17 as _v17
-src/three_agent/chat_gateway_v17.py:46: in <module>
-    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
-src/three_agent/workspace_frontend_v13.py:40: in <module>
-    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
-    ^^^^^^^^^^^^^^
-E   NameError: name 'connector_rows' is not defined
 =========================== short test summary info ============================
 ERROR tests/test_chat_memory_attachments_v22.py - NameError: name 'connector_rows' is not defined
 ERROR tests/test_chat_memory_attachments_v3.py - NameError: name 'connector_rows' is not defined
-ERROR tests/test_multimodal_attachments_v4.py
-ERROR tests/test_security_asset_onboarding_gateway.py - NameError: name 'connector_rows' is not defined
-ERROR tests/test_security_asset_onboarding_v011.py
-ERROR tests/test_security_monitoring_ui_config.py - NameError: name 'connector_rows' is not defined
-!!!!!!!!!!!!!!!!!!! Interrupted: 6 errors during collection !!!!!!!!!!!!!!!!!!!!
-6 errors in 2.39s
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 1.61s

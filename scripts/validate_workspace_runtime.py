@@ -8,7 +8,7 @@ from pathlib import Path
 REQUIRED_MODULES = (
     "three_agent",
     "three_agent.chat_gateway_v20",
-    "three_agent.knowledge_gateway_v3",
+    "three_agent.knowledge_gateway",
     "three_agent.vision",
     "three_agent.security_monitoring_cli",
     "three_agent.security_reporting_cli",
