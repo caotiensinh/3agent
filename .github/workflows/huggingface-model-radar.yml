@@ -1,0 +1,45 @@
+name: Hugging Face Model Radar
+
+on:
+  schedule:
+    - cron: "17 0 * * *"
+    - cron: "17 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: huggingface-model-radar
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Update radar
+        run: python huggingface-model-radar/update_radar.py
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          if git diff --quiet -- huggingface-model-radar/TOP_MODELS.md huggingface-model-radar/PROJECT_MATCH.md; then
+            echo "No radar changes."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add huggingface-model-radar/TOP_MODELS.md huggingface-model-radar/PROJECT_MATCH.md
+          git commit -m "chore(hf-radar): daily model update"
+          git push
