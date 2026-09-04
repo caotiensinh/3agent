@@ -84,9 +84,15 @@ def consolidate() -> None:
 
 
 def rewrite_references() -> None:
+    # Rewrite only production-module import paths. Test-helper module names such as
+    # `test_workflow_state_machine_v4` are not production topology and must remain.
     replacements = (
-        ("workflow_state_machine_v4_budgeted", "workflow_state_machine"),
-        ("workflow_state_machine_v4", "workflow_state_machine"),
+        ("three_agent.workflow_state_machine_v4_budgeted", "three_agent.workflow_state_machine"),
+        ("three_agent.workflow_state_machine_v4", "three_agent.workflow_state_machine"),
+        ("from .workflow_state_machine_v4_budgeted", "from .workflow_state_machine"),
+        ("from .workflow_state_machine_v4", "from .workflow_state_machine"),
+        ("import .workflow_state_machine_v4_budgeted", "import .workflow_state_machine"),
+        ("import .workflow_state_machine_v4", "import .workflow_state_machine"),
     )
     excluded = {
         (SRC / "workflow_state_machine_v4.py").resolve(),
@@ -146,8 +152,9 @@ def main() -> int:
     (SRC / "workflow_state_machine_v4_budgeted.py").unlink()
 
     stale = run([
-        "git", "grep", "-nE", "workflow_state_machine_v4(_budgeted)?", "--",
-        "src/three_agent", "tests", "pyproject.toml",
+        "git", "grep", "-nE",
+        "three_agent\\.workflow_state_machine_v4(_budgeted)?|from \\.workflow_state_machine_v4(_budgeted)?|import \\.workflow_state_machine_v4(_budgeted)?",
+        "--", "src/three_agent", "tests", "pyproject.toml",
     ])
     if stale.returncode == 0 and stale.stdout.strip():
         print(stale.stdout)
