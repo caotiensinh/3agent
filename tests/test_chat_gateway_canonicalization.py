@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CANONICAL = ROOT / "src" / "three_agent" / "chat_gateway.py"
 PYPROJECT = ROOT / "pyproject.toml"
-EXPECTED_PUBLIC = ['AccountKnowledgeHTTPHandler', 'ChatApplication', 'ChatHTTPHandler', 'ChatJob', 'ChatService', 'ContextAwareProjectChatService', 'ContextAwareWorkflowV3HTTPHandler', 'ContinuitySecurityAwareProjectChatService', 'ConversationKnowledgeChatService', 'ConversationKnowledgeHTTPHandler', 'CurrentRequestProjectChatService', 'ExternalAuthApplication', 'FourWayLoginHTTPHandler', 'HumanReportChatService', 'HumanReportHTTPHandler', 'IntelligenceAwareProjectChatService', 'IntentAwareProjectChatService', 'IntentAwareWorkflowDispatchHTTPHandler', 'KnowledgeChatService', 'KnowledgeHTTPHandler', 'ProgressApplication', 'ProgressChatService', 'ProgressHTTPHandler', 'ProgressJob', 'ProjectKnowledgeChatService', 'ProjectKnowledgeHTTPHandler', 'ProjectUIHTTPHandler', 'PromptAwareWorkflowStudioHTTPHandler', 'SecurityAwareProjectChatService', 'SecurityE2EApplication', 'SecurityE2EHTTPHandler', 'SecurityMonitoringApplication', 'SecurityMonitoringConfigApplication', 'SecurityMonitoringConfigHTTPHandler', 'SecurityMonitoringHTTPHandler', 'SessionStore', 'SidebarKnowledgeChatService', 'SidebarKnowledgeHTTPHandler', 'TelegramBridge', 'WorkflowDispatchApplication', 'WorkflowDispatchHTTPHandler', 'WorkflowDraftApplication', 'WorkflowDraftHTTPHandler', 'WorkflowStudioApplication', 'WorkflowStudioHTTPHandler', 'WorkflowV3Application', 'WorkflowV3HTTPHandler', 'WorkflowV4ContextApplication', 'WorkflowV4ContextHTTPHandler', 'workspace_ui_capabilities']
+EXPECTED_PUBLIC = ['AccountKnowledgeHTTPHandler', 'ApprovedAssetApplication', 'ApprovedAssetHTTPHandler', 'ChatApplication', 'ChatHTTPHandler', 'ChatJob', 'ChatService', 'ContextAwareProjectChatService', 'ContextAwareWorkflowV3HTTPHandler', 'ContinuitySecurityAwareProjectChatService', 'ConversationKnowledgeChatService', 'ConversationKnowledgeHTTPHandler', 'CurrentRequestProjectChatService', 'ExternalAuthApplication', 'FourWayLoginHTTPHandler', 'HumanReportChatService', 'HumanReportHTTPHandler', 'IntelligenceAwareProjectChatService', 'IntentAwareProjectChatService', 'IntentAwareWorkflowDispatchHTTPHandler', 'KnowledgeChatService', 'KnowledgeHTTPHandler', 'ProgressApplication', 'ProgressChatService', 'ProgressHTTPHandler', 'ProgressJob', 'ProjectKnowledgeChatService', 'ProjectKnowledgeHTTPHandler', 'ProjectUIHTTPHandler', 'PromptAwareWorkflowStudioHTTPHandler', 'SecurityAwareProjectChatService', 'SecurityE2EApplication', 'SecurityE2EHTTPHandler', 'SecurityMonitoringApplication', 'SecurityMonitoringConfigApplication', 'SecurityMonitoringConfigHTTPHandler', 'SecurityMonitoringHTTPHandler', 'SessionStore', 'SidebarKnowledgeChatService', 'SidebarKnowledgeHTTPHandler', 'TelegramBridge', 'WorkflowDispatchApplication', 'WorkflowDispatchHTTPHandler', 'WorkflowDraftApplication', 'WorkflowDraftHTTPHandler', 'WorkflowStudioApplication', 'WorkflowStudioHTTPHandler', 'WorkflowV3Application', 'WorkflowV3HTTPHandler', 'WorkflowV4ContextApplication', 'WorkflowV4ContextHTTPHandler', 'workspace_ui_capabilities']
 EXPECTED_CHAIN = ['ContinuitySecurityAwareProjectChatService', 'SecurityAwareProjectChatService', 'IntelligenceAwareProjectChatService', 'CurrentRequestProjectChatService', 'ContractAwareProjectChatService']
 
 
@@ -61,15 +61,12 @@ class ChatGatewayCanonicalizationTests(unittest.TestCase):
         self.assertEqual(actual, EXPECTED_CHAIN)
 
     def test_final_main_binds_current_service_and_security_surface(self) -> None:
-        main_node = next(
-            node for node in self.tree.body
-            if isinstance(node, ast.FunctionDef) and node.name == "main"
-        )
+        main_node = next(node for node in self.tree.body if isinstance(node, ast.FunctionDef) and node.name == "main")
         names = {node.id for node in ast.walk(main_node) if isinstance(node, ast.Name)}
         for required in (
             "ContinuitySecurityAwareProjectChatService",
-            "SecurityE2EApplication",
-            "SecurityE2EHTTPHandler",
+            "ApprovedAssetApplication",
+            "ApprovedAssetHTTPHandler",
             "KnowledgeGatewayV2",
         ):
             self.assertIn(required, names)
@@ -86,18 +83,27 @@ class ChatGatewayCanonicalizationTests(unittest.TestCase):
         ]
         self.assertEqual(len(assignments), 1)
 
+    def test_final_exact_asset_security_surface_is_preserved(self) -> None:
+        graph = class_graph(self.tree)
+        self.assertEqual(graph.get("ApprovedAssetApplication"), ["SecurityE2EApplication"])
+        self.assertEqual(graph.get("ApprovedAssetHTTPHandler"), ["SecurityE2EHTTPHandler"])
+        for marker in (
+            "SecurityMonitoringAssetOnboarding",
+            "/api/security/assets/config",
+            "/api/security/assets/upsert",
+            "/api/security/assets/disable",
+            "SECURITY_ASSET_CONFIG_STALE",
+            "REAL_NETWORK_CONFIRMATION_REQUIRED",
+        ):
+            self.assertIn(marker, self.source)
+
     def test_no_physical_chat_gateway_generations_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
         self.assertEqual(list(package.glob("chat_gateway_v*.py")), [])
 
     def test_canonical_chat_has_no_versioned_frontend_security_reference(self) -> None:
-        self.assertIsNone(
-            re.search(r"(?:three_agent\.)?workspace_frontend_security_v\d+", self.source)
-        )
-        self.assertIn(
-            "from .workspace_frontend_security import WORKSPACE_HTML_SECURITY_V3",
-            self.source,
-        )
+        self.assertIsNone(re.search(r"(?:three_agent\.)?workspace_frontend_security_v\d+", self.source))
+        self.assertIn("from .workspace_frontend_security import WORKSPACE_HTML_SECURITY_V3", self.source)
 
     def test_production_source_and_entrypoints_have_no_versioned_chat_gateway_reference(self) -> None:
         pattern = re.compile(r"(?:three_agent\.)?chat_gateway_v\d+")

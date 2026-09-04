@@ -3527,6 +3527,66 @@ def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
     return payload
 _orchestrator.KnowledgeGateway = KnowledgeGatewayV2
 HTML_V17 = WORKSPACE_HTML
+from .security_monitoring.asset_onboarding import SecurityAssetOnboardingConflict, SecurityMonitoringAssetOnboarding
+
+class ApprovedAssetApplication(SecurityE2EApplication):
+    """Current security runtime plus typed exact approved-asset mutations."""
+
+    def __init__(self, service: Any, auth: Any, artifact_root: Any, external_store: Any, external_settings: Any) -> None:
+        super().__init__(service, auth, artifact_root, external_store, external_settings)
+        self.security_assets = SecurityMonitoringAssetOnboarding(self.security_config)
+
+class ApprovedAssetHTTPHandler(SecurityE2EHTTPHandler):
+    """Admin-only exact asset mutations; configuration changes never execute network actions."""
+    server_version = 'WorkSpaceChat/ver.0.0.2-security-assets-v1'
+
+    def _security_asset_snapshot(self) -> None:
+        if self._require_admin() is None:
+            return
+        try:
+            self._json(HTTPStatus.OK, self.app.security_assets.snapshot())
+        except (MonitoringContractError, OSError, ValueError, json.JSONDecodeError) as exc:
+            self._json(HTTPStatus.BAD_REQUEST, {'error': str(exc)[:240] or 'Approved asset inventory unavailable', 'code': 'SECURITY_ASSET_INVENTORY_INVALID'})
+
+    def _security_asset_post(self, action: str) -> None:
+        admin = self._require_admin()
+        if admin is None:
+            return
+        try:
+            payload = self._read_json_large(64 * 1024)
+            expected = str(payload.get('expected_config_fingerprint') or '')
+            confirmation = str(payload.get('confirmation') or '')
+            if action == 'upsert':
+                result = self.app.security_assets.upsert(payload.get('asset'), actor_id=str(admin['user_id']), expected_config_fingerprint=expected, confirmation=confirmation)
+            elif action == 'disable':
+                result = self.app.security_assets.disable(str(payload.get('asset_id') or ''), actor_id=str(admin['user_id']), expected_config_fingerprint=expected, confirmation=confirmation)
+            else:
+                self._json(HTTPStatus.NOT_FOUND, {'error': 'Unknown approved asset action'})
+                return
+            self.app.refresh_security_monitoring()
+            self._json(HTTPStatus.OK, result.public_dict())
+        except SecurityAssetOnboardingConflict:
+            self._json(HTTPStatus.CONFLICT, {'error': 'Approved asset configuration changed; reload before retrying', 'code': 'SECURITY_ASSET_CONFIG_STALE'})
+        except PermissionError:
+            self._json(HTTPStatus.FORBIDDEN, {'error': 'Strong confirmation is required for this monitoring authority change', 'code': 'REAL_NETWORK_CONFIRMATION_REQUIRED'})
+        except (MonitoringContractError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._json(HTTPStatus.BAD_REQUEST, {'error': str(exc)[:240] or 'Approved asset mutation rejected', 'code': 'SECURITY_ASSET_REJECTED'})
+
+    def do_GET(self) -> None:
+        if urlparse(self.path).path == '/api/security/assets/config':
+            self._security_asset_snapshot()
+            return
+        super().do_GET()
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if path == '/api/security/assets/upsert':
+            self._security_asset_post('upsert')
+            return
+        if path == '/api/security/assets/disable':
+            self._security_asset_post('disable')
+            return
+        super().do_POST()
 
 def main() -> int:
     _orchestrator.KnowledgeGateway = KnowledgeGatewayV2
@@ -3548,7 +3608,7 @@ def main() -> int:
     external_settings = ExternalAuthSettings.from_env()
     service = ContinuitySecurityAwareProjectChatService(orchestrator, default_language=language)
     service.start()
-    app = SecurityE2EApplication(service, auth, config.artifact_root, external_store, external_settings)
+    app = ApprovedAssetApplication(service, auth, config.artifact_root, external_store, external_settings)
     telegram_token = os.getenv('THREE_AGENT_TELEGRAM_BOT_TOKEN', '').strip()
     allowed_ids = _parse_allowed_ids(os.getenv('THREE_AGENT_TELEGRAM_ALLOWED_USER_IDS', ''))
     if telegram_token:
@@ -3557,7 +3617,7 @@ def main() -> int:
         print(f'[WorkSpace {DISPLAY_VERSION}] Telegram enabled; authorized users={len(allowed_ids)}.', flush=True)
     else:
         print(f'[WorkSpace {DISPLAY_VERSION}] Telegram disabled (no bot token configured).', flush=True)
-    httpd = ThreadingHTTPServer((host, port), SecurityE2EHTTPHandler)
+    httpd = ThreadingHTTPServer((host, port), ApprovedAssetHTTPHandler)
     httpd.app = app
     print(f'[WorkSpace {DISPLAY_VERSION}] LAN UI: {_lan_hint(host, port)}', flush=True)
     print(f"[WorkSpace {DISPLAY_VERSION}] Local break-glass login enabled; bootstrap administrator={admin['username']}.", flush=True)
