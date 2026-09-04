@@ -12,9 +12,9 @@ from .chat_gateway_v8 import ProjectKnowledgeChatService, ProjectKnowledgeHTTPHa
 from .config import load_config
 from .orchestrator import Orchestrator
 from .workspace_auth import WorkspaceAuthStore
-from .workspace_frontend_v6 import WORKSPACE_HTML_V6
+from .workspace_frontend import WORKSPACE_HTML
 
-HTML_V9 = WORKSPACE_HTML_V6
+HTML_V9 = WORKSPACE_HTML
 
 
 class ProjectUIHTTPHandler(ProjectKnowledgeHTTPHandler):

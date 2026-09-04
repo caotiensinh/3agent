@@ -1,12 +1,12 @@
 import unittest
 
 from three_agent.chat_gateway_v11 import HTML_V11, WorkflowStudioHTTPHandler
-from three_agent.workspace_frontend_v8 import WORKSPACE_HTML_V8
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class WorkflowStudioGatewayTests(unittest.TestCase):
     def test_frontend_contains_workflow_studio_without_external_diagram_dependency(self):
-        self.assertEqual(HTML_V11, WORKSPACE_HTML_V8)
+        self.assertEqual(HTML_V11, WORKSPACE_HTML)
         self.assertIn('id="workflowStudioBtn"', HTML_V11)
         self.assertIn('id="workflowDescription"', HTML_V11)
         self.assertIn("/api/workflows/compile", HTML_V11)

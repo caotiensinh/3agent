@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from .workspace_frontend_v3 import _replace_once
-from .workspace_frontend_v12 import WORKSPACE_HTML_V12
+from .workspace_frontend import _replace_once
+from .workspace_frontend import WORKSPACE_HTML
 
 
 # Canonical Security Analyst base overlay (formerly the physical V1 module).
-html = WORKSPACE_HTML_V12
+html = WORKSPACE_HTML
 
 security_css = r"""
 .specialized-section{padding:8px 9px 5px;flex:0 0 auto;border-top:1px solid #151619}.specialized-heading{padding:3px 10px 6px;color:#666a72;font-size:10px;font-weight:750;letter-spacing:.08em}.security-specialized-btn{position:relative}.security-specialized-badge{margin-left:auto;max-width:86px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #343840;border-radius:999px;padding:2px 6px;color:#aeb3bd;font-size:9px}.sidebar.collapsed .specialized-heading{display:none}.sidebar.collapsed .specialized-section{padding:4px 9px}.sidebar.collapsed .security-specialized-btn{width:52px;justify-content:center;padding:0;margin:auto}.sidebar.collapsed .security-specialized-btn .security-label,.sidebar.collapsed .security-specialized-badge{display:none}
@@ -141,7 +141,7 @@ html = _replace_once(
     "security-analyst-js",
 )
 
-WORKSPACE_HTML_V13 = html
+WORKSPACE_HTML = html
 
 
 # Later security overlays are version-independent builders.  They intentionally
@@ -259,10 +259,10 @@ def build_security_v3(base_html: str) -> str:
 def _ensure_compatibility_html() -> None:
     if "WORKSPACE_HTML_SECURITY_V2" in globals() and "WORKSPACE_HTML_SECURITY_V3" in globals():
         return
-    from .workspace_frontend_v15 import WORKSPACE_HTML_V15
+    from .workspace_frontend import WORKSPACE_HTML
 
-    globals()["WORKSPACE_HTML_SECURITY_V2"] = build_security_v2(WORKSPACE_HTML_V15)
-    globals()["WORKSPACE_HTML_SECURITY_V3"] = build_security_v3(WORKSPACE_HTML_V15)
+    globals()["WORKSPACE_HTML_SECURITY_V2"] = build_security_v2(WORKSPACE_HTML)
+    globals()["WORKSPACE_HTML_SECURITY_V3"] = build_security_v3(WORKSPACE_HTML)
 
 
 def __getattr__(name: str):

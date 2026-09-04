@@ -20,9 +20,9 @@ from .workspace_external_identity import (
     ExternalSessionAuthStore,
     IdentityBrokerClient,
 )
-from .workspace_frontend_v7 import WORKSPACE_HTML_V7
+from .workspace_frontend import WORKSPACE_HTML
 
-HTML_V10 = WORKSPACE_HTML_V7
+HTML_V10 = WORKSPACE_HTML
 
 
 class ExternalAuthApplication(ProgressApplication):

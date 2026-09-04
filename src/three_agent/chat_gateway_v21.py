@@ -18,7 +18,7 @@ from .security_monitoring.contracts import MonitoringContractError
 from .security_monitoring.ui_config import ENV_CONFIG
 from .security_monitoring.ui_config import SecurityMonitoringUIConfigManagerV2
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
-from .workspace_frontend_v17 import WORKSPACE_HTML_V17
+from .workspace_frontend import WORKSPACE_HTML
 
 
 SECURITY_CAPABILITY_CONTEXT_VERSION = "workspace-security-chat-context/v1"
@@ -324,7 +324,7 @@ class SecurityE2EHTTPHandler(WorkflowDraftHTTPHandler):
 
 # V20 remains an intact rollback boundary. V21 only replaces the final composed
 # classes/document consumed by v17.main().
-_v17.HTML_V17 = WORKSPACE_HTML_V17
+_v17.HTML_V17 = WORKSPACE_HTML
 _v17.ContractAwareProjectChatService = SecurityAwareProjectChatService
 _v17.WorkflowV4ContextApplication = SecurityE2EApplication
 _v17.WorkflowV4ContextHTTPHandler = SecurityE2EHTTPHandler

@@ -30,8 +30,8 @@ def _assignment_source(source: str, name: str) -> str:
 
 
 def _v1_body(source: str) -> str:
-    start_marker = "html = WORKSPACE_HTML_V12"
-    end_marker = "WORKSPACE_HTML_V13 = html"
+    start_marker = "html = WORKSPACE_HTML"
+    end_marker = "WORKSPACE_HTML = html"
     start = source.find(start_marker)
     end = source.find(end_marker)
     if start < 0 or end < 0 or end < start:
@@ -53,8 +53,8 @@ def _build_canonical(current: str, variant: str) -> str:
     parts = [
         "from __future__ import annotations",
         "",
-        "from .workspace_frontend_v3 import _replace_once",
-        "from .workspace_frontend_v12 import WORKSPACE_HTML_V12",
+        "from .workspace_frontend import _replace_once",
+        "from .workspace_frontend import WORKSPACE_HTML",
         "",
         "",
         "# Canonical Security Analyst base overlay (formerly the physical V1 module).",
@@ -114,10 +114,10 @@ def _build_canonical(current: str, variant: str) -> str:
         "def _ensure_compatibility_html() -> None:",
         "    if \"WORKSPACE_HTML_SECURITY_V2\" in globals() and \"WORKSPACE_HTML_SECURITY_V3\" in globals():",
         "        return",
-        "    from .workspace_frontend_v15 import WORKSPACE_HTML_V15",
+        "    from .workspace_frontend import WORKSPACE_HTML",
         "",
-        "    globals()[\"WORKSPACE_HTML_SECURITY_V2\"] = build_security_v2(WORKSPACE_HTML_V15)",
-        "    globals()[\"WORKSPACE_HTML_SECURITY_V3\"] = build_security_v3(WORKSPACE_HTML_V15)",
+        "    globals()[\"WORKSPACE_HTML_SECURITY_V2\"] = build_security_v2(WORKSPACE_HTML)",
+        "    globals()[\"WORKSPACE_HTML_SECURITY_V3\"] = build_security_v3(WORKSPACE_HTML)",
         "",
         "",
         "def __getattr__(name: str):",
@@ -159,7 +159,7 @@ def _rewrite_references() -> list[str]:
 
 def _write_regression_test() -> None:
     TEST.write_text(
-        '''from __future__ import annotations\n\nimport unittest\nfrom pathlib import Path\n\n\nclass CanonicalFrontendSecurityTest(unittest.TestCase):\n    def test_versioned_security_module_is_removed(self):\n        root = Path(__file__).resolve().parents[1]\n        self.assertFalse((root / "src/three_agent/workspace_frontend_security_v1.py").exists())\n\n    def test_frontend_security_chain_is_acyclic_and_preserves_overlays(self):\n        from three_agent.workspace_frontend_security import WORKSPACE_HTML_V13\n        from three_agent.workspace_frontend_v14 import WORKSPACE_HTML_V14\n        from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15\n        from three_agent.workspace_frontend_security import (\n            WORKSPACE_HTML_SECURITY_V2,\n            WORKSPACE_HTML_SECURITY_V3,\n        )\n\n        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML_V13)\n        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML_V14)\n        self.assertIn('id="securityConfigView"', WORKSPACE_HTML_V15)\n        self.assertIn('id="securitySocView"', WORKSPACE_HTML_SECURITY_V2)\n        self.assertIn('id="securityConfigView"', WORKSPACE_HTML_SECURITY_V2)\n        self.assertIn('id="securityBoundaryView"', WORKSPACE_HTML_SECURITY_V3)\n        self.assertIn('id="securitySocView"', WORKSPACE_HTML_SECURITY_V3)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''',
+        '''from __future__ import annotations\n\nimport unittest\nfrom pathlib import Path\n\n\nclass CanonicalFrontendSecurityTest(unittest.TestCase):\n    def test_versioned_security_module_is_removed(self):\n        root = Path(__file__).resolve().parents[1]\n        self.assertFalse((root / "src/three_agent/workspace_frontend_security_v1.py").exists())\n\n    def test_frontend_security_chain_is_acyclic_and_preserves_overlays(self):\n        from three_agent.workspace_frontend_security import WORKSPACE_HTML\n        from three_agent.workspace_frontend import WORKSPACE_HTML\n        from three_agent.workspace_frontend import WORKSPACE_HTML\n        from three_agent.workspace_frontend_security import (\n            WORKSPACE_HTML_SECURITY_V2,\n            WORKSPACE_HTML_SECURITY_V3,\n        )\n\n        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML)\n        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML)\n        self.assertIn('id="securityConfigView"', WORKSPACE_HTML)\n        self.assertIn('id="securitySocView"', WORKSPACE_HTML_SECURITY_V2)\n        self.assertIn('id="securityConfigView"', WORKSPACE_HTML_SECURITY_V2)\n        self.assertIn('id="securityBoundaryView"', WORKSPACE_HTML_SECURITY_V3)\n        self.assertIn('id="securitySocView"', WORKSPACE_HTML_SECURITY_V3)\n\n\nif __name__ == "__main__":\n    unittest.main()\n''',
         encoding="utf-8",
     )
 
@@ -170,7 +170,7 @@ def _record_history() -> None:
     text = HISTORY.read_text(encoding="utf-8")
     if HISTORY_MARKER in text:
         return
-    entry = f'''\n\n### 2026-09-04 — {HISTORY_MARKER}\n\n- Observed failure mode: `workspace_frontend_v14.py` consumed `workspace_frontend_security_v1.py`, while the canonical security module consumed `workspace_frontend_v15.py`. Repointing V14 directly to the old canonical implementation would therefore create a V14 → canonical-security → V15 → V14 circular import.\n- Root cause: security UI generations carried both frontend-version dependency and implementation authority instead of exposing version-independent canonical overlay builders.\n- Fix: move the V1 Security Analyst overlay into `workspace_frontend_security.py`, expose V2/V3 SOC and boundary behavior as canonical builder functions, lazily materialize compatibility HTML only after V15 is available, rewrite consumers to the canonical module, and remove the physical V1 module.\n- Regression protection: `tests/test_workspace_frontend_security_canonicalization.py` verifies the physical V1 module is absent, the V13→V15 chain imports without a cycle, and Security Analyst/configuration/SOC/boundary markers are preserved.\n'''
+    entry = f'''\n\n### 2026-09-04 — {HISTORY_MARKER}\n\n- Observed failure mode: `workspace_frontend.py` consumed `workspace_frontend_security_v1.py`, while the canonical security module consumed `workspace_frontend.py`. Repointing V14 directly to the old canonical implementation would therefore create a V14 → canonical-security → V15 → V14 circular import.\n- Root cause: security UI generations carried both frontend-version dependency and implementation authority instead of exposing version-independent canonical overlay builders.\n- Fix: move the V1 Security Analyst overlay into `workspace_frontend_security.py`, expose V2/V3 SOC and boundary behavior as canonical builder functions, lazily materialize compatibility HTML only after V15 is available, rewrite consumers to the canonical module, and remove the physical V1 module.\n- Regression protection: `tests/test_workspace_frontend_security_canonicalization.py` verifies the physical V1 module is absent, the V13→V15 chain imports without a cycle, and Security Analyst/configuration/SOC/boundary markers are preserved.\n'''
     HISTORY.write_text(text.rstrip() + entry, encoding="utf-8")
 
 

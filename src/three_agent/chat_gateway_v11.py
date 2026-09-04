@@ -19,10 +19,10 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v8 import WORKSPACE_HTML_V8
+from .workspace_frontend import WORKSPACE_HTML
 
 
-HTML_V11 = WORKSPACE_HTML_V8
+HTML_V11 = WORKSPACE_HTML
 
 
 class WorkflowStudioApplication(ExternalAuthApplication):

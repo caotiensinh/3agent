@@ -30,9 +30,9 @@ from .config import load_config
 from .knowledge_gateway import MAX_UPLOADS_PER_TASK, UploadSecurityError
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text
-from .workspace_frontend_v2 import WORKSPACE_HTML_V2
+from .workspace_frontend import WORKSPACE_HTML
 
-HTML_V5 = WORKSPACE_HTML_V2
+HTML_V5 = WORKSPACE_HTML
 
 
 def _history_owner_key(channel: str, sender: str) -> str:

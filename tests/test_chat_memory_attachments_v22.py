@@ -21,7 +21,7 @@ from three_agent.chat_context import (
 from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
 from three_agent.document_extractors import extract_document
 from three_agent.knowledge_gateway import KnowledgeGatewayV2
-from three_agent.workspace_frontend_v18 import WORKSPACE_HTML_V18
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class ConversationContinuityTests(unittest.TestCase):
@@ -190,9 +190,9 @@ class BusinessDocumentExtractionTests(unittest.TestCase):
             self.assertLessEqual(len(context), 24_000)
 
     def test_v22_ui_exposes_business_documents_without_rewriting_rollback_layers(self):
-        self.assertIn(".pdf,.docx,.pptx,.xlsx,.csv", WORKSPACE_HTML_V18)
-        self.assertIn("Uploading and processing files locally", WORKSPACE_HTML_V18)
-        self.assertIn("Attachments processed locally", WORKSPACE_HTML_V18)
+        self.assertIn(".pdf,.docx,.pptx,.xlsx,.csv", WORKSPACE_HTML)
+        self.assertIn("Uploading and processing files locally", WORKSPACE_HTML)
+        self.assertIn("Attachments processed locally", WORKSPACE_HTML)
 
 
 if __name__ == "__main__":

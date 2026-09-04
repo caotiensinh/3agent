@@ -7,7 +7,7 @@ from three_agent.workspace_chat_capabilities import (
     WEB_CHAT_EXECUTABLE_CAPABILITIES,
     enforce_web_chat_capability_authority,
 )
-from three_agent.workspace_frontend_v16 import WORKSPACE_HTML_V16
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 def _config():
@@ -64,7 +64,7 @@ def test_production_entrypoint_binds_authoritative_capability_filter():
 
 def test_discovery_controls_remain_visible_but_non_executable_until_authorized():
     for feature in ("figma", "canva", "gmail", "github", "image_generation"):
-        assert f'data-action="{feature}"' in WORKSPACE_HTML_V16
+        assert f'data-action="{feature}"' in WORKSPACE_HTML
 
     payload = workspace_ui_capabilities(_config())
     for feature in ("figma", "canva", "gmail", "github", "image_generation"):

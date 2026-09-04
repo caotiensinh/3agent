@@ -4,7 +4,7 @@ import inspect
 import unittest
 
 from three_agent import chat_gateway_v18
-from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class SecurityConfigurationFrontendTests(unittest.TestCase):
@@ -17,12 +17,12 @@ class SecurityConfigurationFrontendTests(unittest.TestCase):
             "Configuration Audit",
             "ENABLE_APPROVED_REAL_NETWORK_MONITORING",
         ):
-            self.assertIn(text, WORKSPACE_HTML_V15)
+            self.assertIn(text, WORKSPACE_HTML)
 
     def test_configuration_center_contains_no_raw_secret_input(self) -> None:
-        self.assertNotIn('type="password" id="securityCfg', WORKSPACE_HTML_V15)
-        self.assertIn("credential reference", WORKSPACE_HTML_V15.lower())
-        self.assertIn("raw credentials", WORKSPACE_HTML_V15.lower())
+        self.assertNotIn('type="password" id="securityCfg', WORKSPACE_HTML)
+        self.assertIn("credential reference", WORKSPACE_HTML.lower())
+        self.assertIn("raw credentials", WORKSPACE_HTML.lower())
 
     def test_gateway_config_routes_are_admin_bounded(self) -> None:
         source = inspect.getsource(chat_gateway_v18.SecurityMonitoringHTTPHandler)

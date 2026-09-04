@@ -9,7 +9,7 @@ class SecurityAssetOnboardingGatewayV011ContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         root = Path(__file__).resolve().parents[1]
         cls.gateway = (root / "src/three_agent/chat_gateway_v22.py").read_text(encoding="utf-8")
-        cls.frontend = (root / "src/three_agent/workspace_frontend_v18.py").read_text(encoding="utf-8")
+        cls.frontend = (root / "src/three_agent/workspace_frontend.py").read_text(encoding="utf-8")
 
     def test_gateway_routes_are_admin_only_and_exact_asset_scoped(self) -> None:
         self.assertIn('"/api/security/assets/config"', self.gateway)

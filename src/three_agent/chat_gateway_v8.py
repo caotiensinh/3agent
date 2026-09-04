@@ -18,9 +18,9 @@ from .config import load_config
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text
 from .workspace_auth import WorkspaceAuthStore
-from .workspace_frontend_v5 import WORKSPACE_HTML_V5
+from .workspace_frontend import WORKSPACE_HTML
 
-HTML_V8 = WORKSPACE_HTML_V5
+HTML_V8 = WORKSPACE_HTML
 
 
 class ProjectKnowledgeChatService(ConversationKnowledgeChatService):

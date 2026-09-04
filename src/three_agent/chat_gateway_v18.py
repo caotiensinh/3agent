@@ -28,7 +28,7 @@ from .security_monitoring.incident_capture import (
     persist_capture_approval,
 )
 from .security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
-from .workspace_frontend_v15 import WORKSPACE_HTML_V15
+from .workspace_frontend import WORKSPACE_HTML
 
 
 _BASE_WORKSPACE_UI_CAPABILITIES = _v4.workspace_ui_capabilities
@@ -275,7 +275,7 @@ class SecurityMonitoringHTTPHandler(_BASE_WORKFLOW_V4_HANDLER):
 _v4.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = CurrentRequestProjectChatService
-_v17.HTML_V17 = WORKSPACE_HTML_V15
+_v17.HTML_V17 = WORKSPACE_HTML
 _v17.WorkflowV4ContextApplication = SecurityMonitoringApplication
 _v17.WorkflowV4ContextHTTPHandler = SecurityMonitoringHTTPHandler
 

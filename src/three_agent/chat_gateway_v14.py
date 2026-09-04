@@ -36,10 +36,10 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v10 import WORKSPACE_HTML_V10
+from .workspace_frontend import WORKSPACE_HTML
 
 
-HTML_V14 = WORKSPACE_HTML_V10
+HTML_V14 = WORKSPACE_HTML
 
 
 class IntentAwareProjectChatService(ProjectKnowledgeChatService):

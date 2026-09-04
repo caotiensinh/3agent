@@ -10,7 +10,7 @@ from pathlib import Path
 from three_agent import chat_gateway_v19
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
-from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15, config_js, config_markup
+from three_agent.workspace_frontend import WORKSPACE_HTML, config_js, config_markup
 
 
 class SecurityMonitoringUIConfigTests(unittest.TestCase):
@@ -202,7 +202,7 @@ class SecurityMonitoringUIConfigTests(unittest.TestCase):
             "approved_inventory_only",
             "passive_only",
         ):
-            self.assertIn(marker, WORKSPACE_HTML_V15)
+            self.assertIn(marker, WORKSPACE_HTML)
         monitoring_ui = config_markup + config_js
         self.assertNotIn('type="password"', monitoring_ui)
         self.assertNotIn('name="password"', monitoring_ui)

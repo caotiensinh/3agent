@@ -29,7 +29,7 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v12 import WORKSPACE_HTML_V12
+from .workspace_frontend import WORKSPACE_HTML
 
 SCHEMA_VERSION = "workspace-simple-chat-e2e/v2"
 FORBIDDEN_WORKFLOW_STAGES = frozenset({"research", "presentation", "daily_report"})
@@ -61,7 +61,7 @@ CASES: tuple[SimpleChatCase, ...] = (
 )
 
 
-def frontend_contract_errors(html: str = WORKSPACE_HTML_V12) -> tuple[str, ...]:
+def frontend_contract_errors(html: str = WORKSPACE_HTML) -> tuple[str, ...]:
     """Verify the shipped browser request and ordinary-chat rendering contract."""
 
     checks = (

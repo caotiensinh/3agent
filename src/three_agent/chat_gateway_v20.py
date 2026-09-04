@@ -20,7 +20,7 @@ from .workflow_drafts import (
     WorkflowDraftStore,
 )
 from .workspace_chat_capabilities import enforce_web_chat_capability_authority
-from .workspace_frontend_v16 import WORKSPACE_HTML_V16
+from .workspace_frontend import WORKSPACE_HTML
 
 
 _BASE_PRODUCTION_UI_CAPABILITIES = _v17.workspace_ui_capabilities
@@ -210,7 +210,7 @@ class WorkflowDraftHTTPHandler(SecurityMonitoringConfigHTTPHandler):
 
 _v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = IntelligenceAwareProjectChatService
-_v17.HTML_V17 = WORKSPACE_HTML_V16
+_v17.HTML_V17 = WORKSPACE_HTML
 _v17.WorkflowV4ContextApplication = WorkflowDraftApplication
 _v17.WorkflowV4ContextHTTPHandler = WorkflowDraftHTTPHandler
 

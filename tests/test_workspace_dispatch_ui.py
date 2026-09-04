@@ -1,11 +1,11 @@
 import unittest
 
-from three_agent.workspace_frontend_v8 import WORKSPACE_HTML_V8
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class WorkspaceDispatchUITests(unittest.TestCase):
     def test_dispatch_ui_preserves_external_login_and_stays_local(self):
-        html = WORKSPACE_HTML_V8
+        html = WORKSPACE_HTML
         self.assertIn('id="externalLoginList"', html)
         self.assertIn("Google", html)
         self.assertIn("GitHub", html)
@@ -23,7 +23,7 @@ class WorkspaceDispatchUITests(unittest.TestCase):
         self.assertNotIn("unpkg.com", html)
 
     def test_dispatch_ui_exposes_preview_only_and_svg_safety_state(self):
-        html = WORKSPACE_HTML_V8
+        html = WORKSPACE_HTML
         self.assertIn("Preview only", html)
         self.assertIn("execution_ready", html)
         self.assertIn("≤12 nodes", html)

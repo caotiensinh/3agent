@@ -24,7 +24,7 @@ class WorkflowStudioProvenanceTests(unittest.TestCase):
             self.assertFalse(source["trademark_reused"])
 
     def test_workflow_studio_production_frontend_does_not_reuse_reference_branding(self) -> None:
-        source = (ROOT / "src" / "three_agent" / "workspace_frontend_v16.py").read_text(encoding="utf-8").lower()
+        source = (ROOT / "src" / "three_agent" / "workspace_frontend.py").read_text(encoding="utf-8").lower()
         for mark in ("draw.io", "diagrams.net", "react flow", "logicflow", "rete.js"):
             self.assertNotIn(mark, source)
 

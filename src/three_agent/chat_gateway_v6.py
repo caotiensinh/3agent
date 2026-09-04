@@ -36,9 +36,9 @@ from .knowledge_gateway import (
 from .orchestrator import Orchestrator
 from .privacy import redact_sensitive_text
 from .workspace_auth import WorkspaceAuthStore
-from .workspace_frontend_v3 import WORKSPACE_HTML_V3
+from .workspace_frontend import WORKSPACE_HTML
 
-HTML_V6 = WORKSPACE_HTML_V3
+HTML_V6 = WORKSPACE_HTML
 
 
 def _job_is_owned(job: Any, identity: str) -> bool:

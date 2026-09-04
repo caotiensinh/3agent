@@ -32,10 +32,10 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v11 import WORKSPACE_HTML_V11
+from .workspace_frontend import WORKSPACE_HTML
 
 
-HTML_V15 = WORKSPACE_HTML_V11
+HTML_V15 = WORKSPACE_HTML
 
 
 class WorkflowV3Application(WorkflowDispatchApplication):

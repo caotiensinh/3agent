@@ -22,7 +22,7 @@ from .chat_context import (
 from .chat_fidelity import parse_chat_request
 from .chat_gateway_v5 import _history_owner_key
 from .knowledge_gateway import EXTENDED_UPLOAD_EXTENSIONS, KnowledgeGatewayV2
-from .workspace_frontend_v18 import WORKSPACE_HTML_V18
+from .workspace_frontend import WORKSPACE_HTML
 
 _BASE_UI_CAPABILITIES = _v18.workspace_ui_capabilities
 _ATTACHMENT_REFERENCE_RE = re.compile(
@@ -294,7 +294,7 @@ _v17.workspace_ui_capabilities = workspace_ui_capabilities
 _v18.workspace_ui_capabilities = workspace_ui_capabilities
 _v17.ContractAwareProjectChatService = ContinuitySecurityAwareProjectChatService
 _v17.CONVERSATION_CONTEXT_POLICY_VERSION = CONVERSATION_CONTEXT_POLICY_VERSION
-_v17.HTML_V17 = WORKSPACE_HTML_V18
+_v17.HTML_V17 = WORKSPACE_HTML
 
 
 def main() -> int:

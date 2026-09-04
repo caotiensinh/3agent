@@ -10,17 +10,17 @@ class CanonicalFrontendSecurityTest(unittest.TestCase):
         self.assertFalse((root / "src/three_agent/workspace_frontend_security_v1.py").exists())
 
     def test_frontend_security_chain_is_acyclic_and_preserves_overlays(self):
-        from three_agent.workspace_frontend_security import WORKSPACE_HTML_V13
-        from three_agent.workspace_frontend_v14 import WORKSPACE_HTML_V14
-        from three_agent.workspace_frontend_v15 import WORKSPACE_HTML_V15
+        from three_agent.workspace_frontend_security import WORKSPACE_HTML
+        from three_agent.workspace_frontend import WORKSPACE_HTML
+        from three_agent.workspace_frontend import WORKSPACE_HTML
         from three_agent.workspace_frontend_security import (
             WORKSPACE_HTML_SECURITY_V2,
             WORKSPACE_HTML_SECURITY_V3,
         )
 
-        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML_V13)
-        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML_V14)
-        self.assertIn('id="securityConfigView"', WORKSPACE_HTML_V15)
+        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML)
+        self.assertIn('id="securityAnalystSurface"', WORKSPACE_HTML)
+        self.assertIn('id="securityConfigView"', WORKSPACE_HTML)
         self.assertIn('id="securitySocView"', WORKSPACE_HTML_SECURITY_V2)
         self.assertIn('id="securityConfigView"', WORKSPACE_HTML_SECURITY_V2)
         self.assertIn('id="securityBoundaryView"', WORKSPACE_HTML_SECURITY_V3)

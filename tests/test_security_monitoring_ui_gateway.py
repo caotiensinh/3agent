@@ -8,7 +8,7 @@ from three_agent.chat_gateway_v18 import (
     SecurityMonitoringHTTPHandler,
 )
 from three_agent.security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
-from three_agent.workspace_frontend_v14 import WORKSPACE_HTML_V14
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class SecurityMonitoringUIGatewayTests(unittest.TestCase):
@@ -24,7 +24,7 @@ class SecurityMonitoringUIGatewayTests(unittest.TestCase):
             "Canva",
             "Gmail",
         ):
-            self.assertIn(token, WORKSPACE_HTML_V14)
+            self.assertIn(token, WORKSPACE_HTML)
 
     def test_application_initializes_query_only_read_model(self):
         source = inspect.getsource(SecurityMonitoringApplication.__init__)
