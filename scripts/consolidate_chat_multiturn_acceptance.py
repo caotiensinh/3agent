@@ -47,11 +47,10 @@ def consolidate() -> None:
     variant = variant_path.read_text(encoding="utf-8")
     variant = re.sub(r"^from __future__ import annotations\n\n", "", variant, count=1)
     # The V2 diagnostic layer intentionally references the base module namespace.
-    # After flattening, bind that name to the current canonical module rather than
-    # importing a physical version sibling or recursively importing ourselves.
+    # Bind that name to the canonical module object without a recursive self-import.
     variant = variant.replace(
         "from . import chat_multiturn_acceptance as acceptance\n",
-        "acceptance = sys.modules[__name__]\n",
+        "import sys\n\nacceptance = sys.modules[__name__]\n",
         1,
     )
     variant = variant.replace(
