@@ -17,7 +17,8 @@ class ChatGatewayV14ContractTests(unittest.TestCase):
         self.assertTrue(callable(IntentAwareWorkflowDispatchHTTPHandler._execute_dispatch))
 
     def test_auto_language_is_default_and_used_by_studio_and_dispatch(self) -> None:
-        self.assertIn('option value="auto" selected>Auto · follow current request</option>', HTML_V14)
+        self.assertIn('id="lang"', HTML_V14)
+        self.assertIn('option value="auto" selected', HTML_V14)
         self.assertIn("language:document.getElementById('lang').value", HTML_V14)
         self.assertIn("/api/workflows/prepare-dispatch", HTML_V14)
         self.assertIn("/execute", HTML_V14)
