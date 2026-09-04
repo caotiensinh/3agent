@@ -197,7 +197,7 @@ class ConversationContextPackingTests(unittest.TestCase):
         self.assertLessEqual(len(plan.text), 220)
         self.assertIn("START-", plan.text)
         self.assertIn("-END", plan.text)
-        self.assertIn("older turn compacted", plan.text)
+        self.assertIn("deterministically compacted", plan.text)
 
     def test_newest_message_is_kept_when_older_rows_exceed_budget(self) -> None:
         messages = [
