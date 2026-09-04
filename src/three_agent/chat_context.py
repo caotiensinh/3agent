@@ -369,7 +369,7 @@ def build_conversation_context(
             language_hint=language_hint,
         )
 
-    total_budget = max(512, int(max_chars))
+    total_budget = max(80, int(max_chars))
     message_limit = max(1, min(24, int(max_messages)))
     per_message_limit = max(80, min(total_budget, int(per_message_chars)))
     selected = eligible[-message_limit:]
