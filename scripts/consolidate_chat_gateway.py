@@ -3,10 +3,7 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib
-import inspect
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +11,7 @@ SRC = ROOT / "src"
 PKG = SRC / "three_agent"
 CANONICAL = PKG / "chat_gateway.py"
 TEST_FILE = ROOT / "tests" / "test_chat_gateway_canonicalization.py"
+PYPROJECT = ROOT / "pyproject.toml"
 CHAIN_RE = re.compile(r"chat_gateway(?:_v\d+)?$")
 VARIANT_RE = re.compile(r"chat_gateway_v(\d+)\.py$")
 MODULE_REF_RE = re.compile(r"(?:three_agent\.)?chat_gateway_v\d+")
@@ -156,17 +154,55 @@ def _public_definitions(paths: list[Path]) -> list[str]:
     return sorted(names)
 
 
-def _preconsolidation_mro() -> list[str]:
-    sys.path.insert(0, str(SRC))
-    try:
-        module = importlib.import_module("three_agent.chat_gateway_v22")
-        cls = getattr(module, "ContinuitySecurityAwareProjectChatService")
-        return [item.__name__ for item in inspect.getmro(cls)]
-    finally:
-        try:
-            sys.path.remove(str(SRC))
-        except ValueError:
-            pass
+def _base_name(expr: ast.expr, module_aliases: set[str], symbol_aliases: dict[str, str]) -> str | None:
+    transformer = _ChainReferenceTransformer(module_aliases, symbol_aliases)
+    transformed = transformer.visit(ast.fix_missing_locations(ast.parse(ast.unparse(expr), mode="eval").body))
+    if isinstance(transformed, ast.Name):
+        return transformed.id
+    if isinstance(transformed, ast.Attribute):
+        return ast.unparse(transformed)
+    return None
+
+
+def _class_graph(paths: list[Path]) -> dict[str, list[str]]:
+    graph: dict[str, list[str]] = {}
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        module_aliases, symbol_aliases = _collect_chain_imports(tree)
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            bases: list[str] = []
+            for base in node.bases:
+                name = _base_name(base, module_aliases, symbol_aliases)
+                if name:
+                    bases.append(name)
+            graph[node.name] = bases
+    return graph
+
+
+def _inheritance_chain(paths: list[Path], root: str) -> list[str]:
+    graph = _class_graph(paths)
+    if root not in graph:
+        raise RuntimeError(f"missing final chat service class: {root}")
+    chain = [root]
+    seen = {root}
+    current = root
+    while current in graph and graph[current]:
+        bases = graph[current]
+        if len(bases) != 1:
+            raise RuntimeError(
+                f"{current}: expected one semantic base for deterministic flatten, got {bases}"
+            )
+        parent = bases[0]
+        chain.append(parent)
+        if parent in seen:
+            raise RuntimeError(f"inheritance cycle detected at {parent}")
+        seen.add(parent)
+        if parent not in graph:
+            break
+        current = parent
+    return chain
 
 
 class _FinalMainBindingTransformer(ast.NodeTransformer):
@@ -238,43 +274,110 @@ def _rewrite_external_references(paths: list[Path]) -> list[Path]:
     return changed
 
 
-def _test_source(public_defs: list[str], expected_mro: list[str]) -> str:
+def _rewrite_pyproject() -> bool:
+    text = PYPROJECT.read_text(encoding="utf-8")
+    updated = re.sub(r"three_agent\.chat_gateway_v\d+:main", "three_agent.chat_gateway:main", text)
+    if updated == text:
+        return False
+    PYPROJECT.write_text(updated, encoding="utf-8")
+    return True
+
+
+def _test_source(public_defs: list[str], expected_chain: list[str]) -> str:
     return f'''from __future__ import annotations
 
-import inspect
+import ast
 import re
 import unittest
 from pathlib import Path
 
-from three_agent import chat_gateway
-
 ROOT = Path(__file__).resolve().parents[1]
+CANONICAL = ROOT / "src" / "three_agent" / "chat_gateway.py"
+PYPROJECT = ROOT / "pyproject.toml"
 EXPECTED_PUBLIC = {public_defs!r}
-EXPECTED_MRO = {expected_mro!r}
+EXPECTED_CHAIN = {expected_chain!r}
+
+
+def class_graph(tree: ast.Module) -> dict[str, list[str]]:
+    graph: dict[str, list[str]] = {{}}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        bases = [ast.unparse(base) for base in node.bases]
+        graph[node.name] = bases
+    return graph
+
+
+def inheritance_chain(graph: dict[str, list[str]], root: str) -> list[str]:
+    chain = [root]
+    current = root
+    seen = {{root}}
+    while current in graph and graph[current]:
+        bases = graph[current]
+        if len(bases) != 1:
+            raise AssertionError(f"{{current}} has non-deterministic bases: {{bases}}")
+        parent = bases[0]
+        chain.append(parent)
+        if parent in seen:
+            raise AssertionError(f"inheritance cycle at {{parent}}")
+        seen.add(parent)
+        if parent not in graph:
+            break
+        current = parent
+    return chain
 
 
 class ChatGatewayCanonicalizationTests(unittest.TestCase):
-    def test_all_semantic_public_definitions_are_preserved(self) -> None:
-        missing = [name for name in EXPECTED_PUBLIC if not hasattr(chat_gateway, name)]
-        self.assertEqual(missing, [])
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = CANONICAL.read_text(encoding="utf-8")
+        cls.tree = ast.parse(cls.source, filename=str(CANONICAL))
 
-    def test_final_chat_service_mro_is_preserved(self) -> None:
-        cls = chat_gateway.ContinuitySecurityAwareProjectChatService
-        actual = [item.__name__ for item in inspect.getmro(cls)]
-        self.assertEqual(actual, EXPECTED_MRO)
+    def test_all_semantic_public_definitions_are_preserved(self) -> None:
+        actual = {{
+            node.name
+            for node in self.tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name != "main"
+            and not node.name.startswith("_")
+        }}
+        self.assertEqual(sorted(set(EXPECTED_PUBLIC) - actual), [])
+
+    def test_final_chat_service_inheritance_chain_is_preserved(self) -> None:
+        actual = inheritance_chain(class_graph(self.tree), "ContinuitySecurityAwareProjectChatService")
+        self.assertEqual(actual, EXPECTED_CHAIN)
 
     def test_final_main_binds_current_service_and_security_surface(self) -> None:
-        source = inspect.getsource(chat_gateway.main)
-        self.assertIn("ContinuitySecurityAwareProjectChatService", source)
-        self.assertIn("SecurityE2EApplication", source)
-        self.assertIn("SecurityE2EHTTPHandler", source)
-        self.assertIn("KnowledgeGatewayV2", source)
+        main_node = next(
+            node for node in self.tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        names = {{node.id for node in ast.walk(main_node) if isinstance(node, ast.Name)}}
+        for required in (
+            "ContinuitySecurityAwareProjectChatService",
+            "SecurityE2EApplication",
+            "SecurityE2EHTTPHandler",
+            "KnowledgeGatewayV2",
+        ):
+            self.assertIn(required, names)
+        assignments = [
+            node for node in ast.walk(main_node)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Attribute)
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "_orchestrator"
+                and target.attr == "KnowledgeGateway"
+                for target in node.targets
+            )
+        ]
+        self.assertEqual(len(assignments), 1)
 
     def test_no_physical_chat_gateway_generations_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
         self.assertEqual(list(package.glob("chat_gateway_v*.py")), [])
 
-    def test_production_source_has_no_versioned_chat_gateway_import(self) -> None:
+    def test_production_source_and_entrypoints_have_no_versioned_chat_gateway_reference(self) -> None:
         pattern = re.compile(r"(?:three_agent\\.)?chat_gateway_v\\d+")
         stale = []
         migration = (ROOT / "scripts" / "consolidate_chat_gateway.py").resolve()
@@ -284,6 +387,8 @@ class ChatGatewayCanonicalizationTests(unittest.TestCase):
                     continue
                 if pattern.search(path.read_text(encoding="utf-8")):
                     stale.append(str(path.relative_to(ROOT)))
+        if pattern.search(PYPROJECT.read_text(encoding="utf-8")):
+            stale.append("pyproject.toml")
         self.assertEqual(stale, [])
 
 
@@ -301,9 +406,10 @@ def apply() -> dict[str, object]:
     if actual != expected:
         raise RuntimeError(f"chat gateway chain is incomplete: expected {expected}, got {actual}")
 
-    public_defs = _public_definitions([CANONICAL, *variants])
-    expected_mro = _preconsolidation_mro()
-    source = _canonical_module_source([CANONICAL, *variants])
+    sources = [CANONICAL, *variants]
+    public_defs = _public_definitions(sources)
+    expected_chain = _inheritance_chain(sources, "ContinuitySecurityAwareProjectChatService")
+    source = _canonical_module_source(sources)
 
     variant_set = {path.resolve() for path in variants}
     external: list[Path] = []
@@ -315,11 +421,11 @@ def apply() -> dict[str, object]:
 
     CANONICAL.write_text(source, encoding="utf-8")
     changed = _rewrite_external_references(sorted(external))
-    TEST_FILE.write_text(_test_source(public_defs, expected_mro), encoding="utf-8")
+    pyproject_changed = _rewrite_pyproject()
+    TEST_FILE.write_text(_test_source(public_defs, expected_chain), encoding="utf-8")
     for path in variants:
         path.unlink()
 
-    # Fail closed if any production/script runtime reference still targets a removed module.
     stale: list[str] = []
     for base in (SRC, ROOT / "scripts"):
         for path in base.rglob("*.py"):
@@ -327,6 +433,8 @@ def apply() -> dict[str, object]:
                 continue
             if MODULE_REF_RE.search(path.read_text(encoding="utf-8")):
                 stale.append(str(path.relative_to(ROOT)))
+    if MODULE_REF_RE.search(PYPROJECT.read_text(encoding="utf-8")):
+        stale.append("pyproject.toml")
     if stale:
         raise RuntimeError("stale versioned chat gateway references remain: " + ", ".join(sorted(stale)))
 
@@ -334,7 +442,8 @@ def apply() -> dict[str, object]:
         "status": "applied",
         "removed_variants": len(variants),
         "public_definitions": len(public_defs),
-        "expected_mro": expected_mro,
+        "expected_inheritance_chain": expected_chain,
+        "pyproject_rewritten": pyproject_changed,
         "rewritten_files": [str(path.relative_to(ROOT)) for path in changed],
     }
 
