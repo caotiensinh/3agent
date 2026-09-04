@@ -15,13 +15,18 @@ SRC = ROOT / "src"
 PKG = SRC / "three_agent"
 CANONICAL = PKG / "workspace_frontend.py"
 TEST_FILE = ROOT / "tests" / "test_workspace_frontend_canonicalization.py"
-FINAL_MODULE = "three_agent.workspace_frontend_v18"
-FINAL_SYMBOL = "WORKSPACE_HTML_V18"
+V18_SOURCE = PKG / "workspace_frontend_v18.py"
 VERSION_MODULE_RE = re.compile(r"(?:three_agent\.)?workspace_frontend_v\d+(?:_part\d+)?$")
 VERSION_REF_RE = re.compile(r"workspace_frontend_v\d+(?:_part\d+)?")
 VERSION_FILE_RE = re.compile(r"workspace_frontend_v\d+(?:_part\d+)?\.py")
 VERSION_HTML_RE = re.compile(r"WORKSPACE_HTML_V\d+")
-PRESERVED_SYMBOLS = {"_replace_once", "_insert_after_workflow_description", "config_js", "config_markup", "html"}
+PRESERVED_SYMBOLS = {
+    "_replace_once",
+    "_insert_after_workflow_description",
+    "config_js",
+    "config_markup",
+    "html",
+}
 
 
 def _variant_files() -> list[Path]:
@@ -70,14 +75,75 @@ def _validate_import_contract(paths: list[Path]) -> None:
         raise RuntimeError("unsafe workspace frontend imports:\n" + "\n".join(violations))
 
 
-def _load_authority() -> tuple[str, str, str]:
-    """Resolve current V18 exactly without restoring deleted security generation files.
+def _eval_string_expr(node: ast.AST, env: dict[str, str]) -> str:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in env:
+        return env[node.id]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _eval_string_expr(node.left, env) + _eval_string_expr(node.right, env)
+    raise RuntimeError(f"unsupported V18 string expression: {ast.dump(node, include_attributes=False)}")
 
-    V16 historically imports workspace_frontend_security_v3. That physical module was
-    already consolidated. Build its exact expected HTML from the canonical security
-    builder and expose it only as an in-memory module while evaluating the historical
-    frontend chain. Nothing versioned is written back to production source.
+
+def _replace_or_already(source: str, old: str, new: str, label: str) -> str:
+    old_count = source.count(old)
+    if old_count == 1:
+        return source.replace(old, new, 1)
+    new_count = source.count(new)
+    if old_count == 0 and new_count == 1:
+        return source
+    raise RuntimeError(
+        f"effective V18 patch '{label}' is ambiguous: old_count={old_count}, new_count={new_count}"
+    )
+
+
+def _replay_v18_effective(predecessor_html: str) -> str:
+    """Replay V18 source with idempotent semantics over reconciled V17.
+
+    Branch reconciliation can make a V18 replacement already present in V17. In that
+    case the effective behavior is already integrated and must not be applied twice.
+    Every patch must therefore prove either exactly one old marker or exactly one new
+    marker; anything else fails closed.
     """
+
+    tree = ast.parse(V18_SOURCE.read_text(encoding="utf-8"), filename=str(V18_SOURCE))
+    env: dict[str, str] = {
+        "WORKSPACE_HTML_V17": predecessor_html,
+        "html": predecessor_html,
+    }
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        target = node.targets[0].id
+        value = node.value
+        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == "_replace_once":
+            if len(value.args) != 4 or not isinstance(value.args[0], ast.Name) or value.args[0].id != "html":
+                raise RuntimeError("unsupported V18 _replace_once call shape")
+            old = _eval_string_expr(value.args[1], env)
+            new = _eval_string_expr(value.args[2], env)
+            label = _eval_string_expr(value.args[3], env)
+            env[target] = _replace_or_already(env["html"], old, new, label)
+            if target == "html":
+                env["html"] = env[target]
+            continue
+        if isinstance(value, ast.Name) and value.id == "WORKSPACE_HTML_V17":
+            env[target] = predecessor_html
+            continue
+        try:
+            env[target] = _eval_string_expr(value, env)
+        except RuntimeError:
+            if target == "WORKSPACE_HTML_V18" and isinstance(value, ast.Name) and value.id == "html":
+                env[target] = env["html"]
+            else:
+                raise
+    final = env.get("WORKSPACE_HTML_V18", env["html"])
+    if not final.strip():
+        raise RuntimeError("effective V18 replay produced empty HTML")
+    return final
+
+
+def _load_authority() -> tuple[str, str, str]:
+    """Resolve effective final UI without restoring deleted security generation files."""
 
     shim_name = "three_agent.workspace_frontend_security_v3"
     sys.path.insert(0, str(SRC))
@@ -88,9 +154,9 @@ def _load_authority() -> tuple[str, str, str]:
         shim = types.ModuleType(shim_name)
         shim.WORKSPACE_HTML_SECURITY_V3 = security.build_security_v3(v15.WORKSPACE_HTML_V15)
         sys.modules[shim_name] = shim
-
-        final_module = importlib.import_module(FINAL_MODULE)
-        html = getattr(final_module, FINAL_SYMBOL)
+        v17 = importlib.import_module("three_agent.workspace_frontend_v17")
+        predecessor_html = getattr(v17, "WORKSPACE_HTML_V17")
+        html = _replay_v18_effective(predecessor_html)
         config_markup = getattr(v15, "config_markup")
         config_js = getattr(v15, "config_js")
     finally:
@@ -144,16 +210,9 @@ def _canonical_source(html: str, config_markup: str, config_js: str) -> str:
         "        )\n"
         "    insert_at = close_at + len(\"</textarea>\")\n"
         "    return document[:insert_at] + \"\\n\" + markup + document[insert_at:]\n\n\n"
-        "config_markup = "
-        + _literal(config_markup)
-        + "\n\n"
-        "config_js = "
-        + _literal(config_js)
-        + "\n\n"
-        "WORKSPACE_HTML = "
-        + _literal(html)
-        + "\n\n"
-        "# Compatibility for code that treats the rendered document as a working value.\n"
+        "config_markup = " + _literal(config_markup) + "\n\n"
+        "config_js = " + _literal(config_js) + "\n\n"
+        "WORKSPACE_HTML = " + _literal(html) + "\n\n"
         "html = WORKSPACE_HTML\n"
     )
 
@@ -186,7 +245,7 @@ EXPECTED_SHA256 = "{expected_sha256}"
 
 
 class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
-    def test_rendered_frontend_is_byte_equivalent_to_preconsolidation_v18(self) -> None:
+    def test_rendered_frontend_matches_effective_preconsolidation_authority(self) -> None:
         actual = hashlib.sha256(WORKSPACE_HTML.encode("utf-8")).hexdigest()
         self.assertEqual(actual, EXPECTED_SHA256)
 
@@ -196,6 +255,12 @@ class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
         sample = '<textarea id="workflowDescription"></textarea><div>tail</div>'
         rendered = _insert_after_workflow_description(sample, '<div id="draft">draft</div>')
         self.assertIn('</textarea>\\n<div id="draft">draft</div><div>tail</div>', rendered)
+
+    def test_final_frontend_contains_business_document_and_security_contracts(self) -> None:
+        self.assertIn('application/pdf', WORKSPACE_HTML)
+        self.assertIn('uploadProcessingLabel', WORKSPACE_HTML)
+        self.assertIn('id="securityBoundaryView"', WORKSPACE_HTML)
+        self.assertIn('id="securityConfigView"', WORKSPACE_HTML)
 
     def test_no_physical_frontend_generation_modules_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
@@ -224,9 +289,8 @@ def apply() -> dict[str, object]:
     variants = _variant_files()
     if not variants:
         return {"status": "noop", "reason": "no workspace frontend variants remain"}
-    final_variant = PKG / "workspace_frontend_v18.py"
-    if final_variant not in variants:
-        raise RuntimeError("workspace_frontend_v18.py is required as the current final behavior authority")
+    if V18_SOURCE not in variants:
+        raise RuntimeError("workspace_frontend_v18.py is required as the final patch authority")
 
     variant_set = {path.resolve() for path in variants}
     external = _external_python_files(variant_set)
