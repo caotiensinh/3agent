@@ -118,7 +118,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
         self.assertEqual(CONTEXT_MODE_FOLLOW_UP, "follow_up")
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
-            "deterministic-reference-gated/v2",
+            "bounded-conversation-continuity/v3",
         )
 
     def test_missing_follow_up_context_is_rendered_as_unavailable_not_invented(self) -> None:
