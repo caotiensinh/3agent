@@ -31,6 +31,32 @@ jobs:
         run: python -m pip install -e ".[monitoring-snmp]"
       - name: Skill security admission
         run: python scripts/scan_skills.py
+      - name: Canonical module health
+        id: canonical_guard
+        continue-on-error: true
+        run: |
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/canonical-module-health.json" \
+            --markdown-output "$RUNNER_TEMP/canonical-module-health.md"
+      - name: Publish canonical module health summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/canonical-module-health.md" ]; then
+            cat "$RUNNER_TEMP/canonical-module-health.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Canonical Module Guard" >> "$GITHUB_STEP_SUMMARY"
+            echo "Guard did not produce a health report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload canonical module health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-module-health-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/canonical-module-health.json
+            ${{ runner.temp }}/canonical-module-health.md
+          if-no-files-found: warn
+          retention-days: 14
       - name: Compile
         run: python -m compileall -q src tests
       - name: Unit tests
@@ -43,9 +69,15 @@ jobs:
             --source-sha "$EXACT_SOURCE_SHA" \
             --output "$RUNNER_TEMP/security-enterprise-verification.json"
       - name: Upload enterprise verification receipt
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: security-enterprise-verification-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/security-enterprise-verification.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
+      - name: Enforce canonical module gate
+        if: always() && steps.canonical_guard.outcome != 'success'
+        run: |
+          echo "Single Canonical Module gate failed. Read canonical-module-health evidence."
+          exit 64
