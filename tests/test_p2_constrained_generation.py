@@ -11,7 +11,7 @@ from three_agent.chat_gateway_v16 import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     FOLLOW_UP_REFERENCE_ANCHOR_POLICY,
 )
-from three_agent.chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
+from three_agent.chat_multiturn_acceptance import DiagnosticRecordingLLM
 from three_agent.chat_output_contract import (
     ChatOutputContract,
     render_strict_structured_answer,

@@ -107,7 +107,7 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('version = "1!0.0.2"', text)
         self.assertIn(
-            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
+            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
         self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', text)

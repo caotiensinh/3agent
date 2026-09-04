@@ -20,7 +20,7 @@ from .chat_acceptance import assert_local_model_endpoints
 from .chat_fidelity import response_language_matches
 from .chat_gateway_v17 import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler
 from .chat_multiturn_acceptance import _sha256, _wait, isolated_config
-from .chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
+from .chat_multiturn_acceptance import DiagnosticRecordingLLM
 from .chat_service_fidelity import ContractAwareProjectChatService
 from .config import AppConfig, load_config
 from .orchestrator import Orchestrator

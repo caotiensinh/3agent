@@ -125,7 +125,7 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             pyproject,
         )
         self.assertIn(
-            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
+            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             pyproject,
         )
         root = Path(__file__).resolve().parents[1]

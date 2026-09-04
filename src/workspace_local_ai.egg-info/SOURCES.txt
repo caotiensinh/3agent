@@ -60,7 +60,7 @@ src/three_agent/chat_intelligence_context.py
 src/three_agent/chat_multiturn_acceptance.py
 src/three_agent/chat_multiturn_acceptance_v2.py
 src/three_agent/chat_output_contract.py
-src/three_agent/chat_service_fidelity_v2.py
+src/three_agent/chat_service_fidelity.py
 src/three_agent/chat_simple_e2e_acceptance.py
 src/three_agent/cli.py
 src/three_agent/config.py
