@@ -4,7 +4,7 @@ import inspect
 import unittest
 
 from three_agent import chat_gateway_v19
-from three_agent.workspace_frontend_security_v3 import (
+from three_agent.workspace_frontend_security import (
     SECURITY_BOUNDARY_MARKUP,
     WORKSPACE_HTML_SECURITY_V3,
 )
