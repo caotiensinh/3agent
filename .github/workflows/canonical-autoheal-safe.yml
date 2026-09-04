@@ -30,6 +30,12 @@ jobs:
         run: python scripts/consolidate_workspace_frontend_security.py --apply
       - name: Validate frontend security canonicalization
         run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
+      - name: Consolidate workspace frontend generation chain
+        run: python scripts/consolidate_workspace_frontend.py --apply
+      - name: Validate workspace frontend canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_canonicalization -v
+      - name: Revalidate frontend security against canonical frontend
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
       - name: Apply mechanically provable canonical repairs
         run: |
           python scripts/canonical_module_guard.py \
@@ -51,7 +57,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --name-only | grep -Eq 'workspace_frontend_security|workspace_frontend_v14|test_workspace_frontend_security_canonicalization'; then
+          if git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
+            message="refactor(frontend): consolidate canonical workspace frontend"
+          elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
             message="refactor(security): consolidate canonical frontend security"
           else
             message="chore(governance): auto-heal safe canonical reexports"
