@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import inspect
+import textwrap
 import threading
 import unittest
 from pathlib import Path
@@ -48,30 +50,69 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             )
 
     def test_health_preserves_workflow_v3_contract_and_adds_context_contract(self) -> None:
-        source = inspect.getsource(ContextAwareWorkflowV3HTTPHandler.do_GET)
-        for token in (
-            '"workflow_execution_version": "v3"',
-            '"workflow_execution_profile": EXECUTION_PROFILE',
-            '"workflow_execution_risk": "low_only"',
-            '"workflow_execution_trigger": "manual_only"',
-            '"workflow_pause_resume": True',
-            '"workflow_persistent_checkpoint": True',
-            '"workflow_branching": "deterministic_only"',
-            '"workflow_failure_rejection_terminal": True',
-            '"workflow_branch_joins": False',
-            '"prompt_compiler": PROMPT_COMPILER_VERSION',
-            '"public_query_compiler": PUBLIC_QUERY_COMPILER_VERSION',
-            '"direct_chat": True',
-            '"direct_chat_public_web": False',
-            '"response_language_current_request_precedence": True',
-            '"conversation_context_policy": CONVERSATION_CONTEXT_POLICY_VERSION',
-            '"conversation_context_reference_gated": True',
-            '"conversation_context_completed_only": True',
-            '"standalone_request_history_injected": False',
-            '"follow_up_language_continuity": True',
-            '"follow_up_reference_anchoring": True',
-        ):
-            self.assertIn(token, source)
+        source = textwrap.dedent(
+            inspect.getsource(ContextAwareWorkflowV3HTTPHandler.do_GET)
+        )
+        tree = ast.parse(source)
+        health_contract = None
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = {
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if {
+                "workflow_execution_version",
+                "conversation_context_policy",
+            }.issubset(keys):
+                health_contract = {
+                    key.value: value
+                    for key, value in zip(node.keys, node.values)
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                }
+                break
+
+        self.assertIsNotNone(health_contract)
+        assert health_contract is not None
+
+        def signature(node: ast.AST) -> tuple[str, object]:
+            if isinstance(node, ast.Constant):
+                return ("constant", node.value)
+            if isinstance(node, ast.Name):
+                return ("name", node.id)
+            return ("ast", ast.dump(node, include_attributes=False))
+
+        expected = {
+            "workflow_execution_version": ("constant", "v3"),
+            "workflow_execution_profile": ("name", "EXECUTION_PROFILE"),
+            "workflow_execution_risk": ("constant", "low_only"),
+            "workflow_execution_trigger": ("constant", "manual_only"),
+            "workflow_pause_resume": ("constant", True),
+            "workflow_persistent_checkpoint": ("constant", True),
+            "workflow_branching": ("constant", "deterministic_only"),
+            "workflow_failure_rejection_terminal": ("constant", True),
+            "workflow_branch_joins": ("constant", False),
+            "prompt_compiler": ("name", "PROMPT_COMPILER_VERSION"),
+            "public_query_compiler": ("name", "PUBLIC_QUERY_COMPILER_VERSION"),
+            "direct_chat": ("constant", True),
+            "direct_chat_public_web": ("constant", False),
+            "response_language_current_request_precedence": ("constant", True),
+            "conversation_context_policy": (
+                "name",
+                "CONVERSATION_CONTEXT_POLICY_VERSION",
+            ),
+            "conversation_context_reference_gated": ("constant", True),
+            "conversation_context_completed_only": ("constant", True),
+            "standalone_request_history_injected": ("constant", False),
+            "follow_up_language_continuity": ("constant", True),
+            "follow_up_reference_anchoring": ("constant", True),
+        }
+        self.assertEqual(
+            {key: signature(health_contract[key]) for key in expected},
+            expected,
+        )
 
     def test_context_policy_is_versioned(self) -> None:
         self.assertEqual(CONTEXT_MODE_FOLLOW_UP, "follow_up")
