@@ -57,6 +57,20 @@ class BusinessDocumentExtractionTests(unittest.TestCase):
         self.assertEqual(kind, "pdf")
         self.assertIn("PDF evidence 999", text)
 
+    def test_gateway_turns_business_document_into_local_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gateway = KnowledgeGatewayV2(Path(tmp), object())
+            record = gateway.ingest_upload(
+                "notes.csv",
+                b"topic,result\nnetwork,pass\n",
+                sender="workspace-user:test",
+            )
+            sources, diagnostics = gateway.load_upload_sources([record.upload_id])
+            self.assertFalse(diagnostics)
+            self.assertEqual(len(sources), 1)
+            self.assertIn("network", sources[0].extracted_text)
+            self.assertTrue(sources[0].url.startswith("upload://"))
+
     def test_long_attachment_retrieval_finds_relevant_text_beyond_old_12k_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
             gateway = KnowledgeGatewayV2(Path(tmp), object())
