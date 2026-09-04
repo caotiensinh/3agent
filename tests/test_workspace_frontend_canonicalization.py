@@ -8,11 +8,11 @@ from pathlib import Path
 from three_agent.workspace_frontend import WORKSPACE_HTML, _insert_after_workflow_description, config_js, config_markup
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SHA256 = "22ea3db4beb2bb7d5a5d719356198287781535ebd3ad0999a9150fa738244918"
+EXPECTED_SHA256 = "ddbc80d2c9a7e1351bc3ad58d12d4511fba6f1d6d2403d49400b15512595331b"
 
 
 class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
-    def test_rendered_frontend_matches_effective_preconsolidation_authority(self) -> None:
+    def test_rendered_frontend_matches_effective_canonical_authority(self) -> None:
         actual = hashlib.sha256(WORKSPACE_HTML.encode("utf-8")).hexdigest()
         self.assertEqual(actual, EXPECTED_SHA256)
 
@@ -24,10 +24,23 @@ class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
         self.assertIn('</textarea>\n<div id="draft">draft</div><div>tail</div>', rendered)
 
     def test_final_frontend_contains_business_document_and_security_contracts(self) -> None:
-        self.assertIn('application/pdf', WORKSPACE_HTML)
-        self.assertIn('uploadProcessingLabel', WORKSPACE_HTML)
-        self.assertIn('id="securityBoundaryView"', WORKSPACE_HTML)
-        self.assertIn('id="securityConfigView"', WORKSPACE_HTML)
+        for marker in (
+            'application/pdf',
+            'uploadProcessingLabel',
+            'id="securityBoundaryView"',
+            'id="securityConfigView"',
+            'Save asset',
+            'Disable asset',
+            'Remove draft row',
+            'expected_config_fingerprint',
+            'SECURITY_ASSET_CONFIG_STALE',
+            'network execution=false',
+            '/api/security/assets/upsert',
+            '/api/security/assets/disable',
+            'secAssetCredential',
+            'credential_ref',
+        ):
+            self.assertIn(marker, WORKSPACE_HTML)
 
     def test_no_physical_frontend_generation_modules_remain(self) -> None:
         package = ROOT / "src" / "three_agent"
