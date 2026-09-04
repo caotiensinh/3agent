@@ -1,4 +1,4 @@
-name: consolidate-chat-service-fidelity
+name: consolidate-chat-multiturn-acceptance
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - reconcile/all-branches-v4-final-20260903
     paths:
       - .github/workflows/consolidate-gateway-config-families.yml
-      - scripts/consolidate_chat_service_fidelity.py
+      - scripts/consolidate_chat_multiturn_acceptance.py
   workflow_dispatch:
 
 permissions:
@@ -29,20 +29,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
           python -m pip install pytest
-      - name: Consolidate chat service fidelity with baseline-delta gate
+      - name: Consolidate multiturn acceptance with baseline-delta gate
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-          python scripts/consolidate_chat_service_fidelity.py
+          python scripts/consolidate_chat_multiturn_acceptance.py
           git config user.name 'workspace-consolidation-bot'
           git config user.email 'workspace-consolidation-bot@users.noreply.github.com'
           git add -A
-          git commit -m 'refactor(chat): consolidate service fidelity module'
+          git commit -m 'refactor(chat): consolidate multiturn acceptance module'
           git push origin HEAD:reconcile/all-branches-v4-final-20260903
       - name: Upload consolidation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: chat-service-fidelity-consolidation
+          name: chat-multiturn-acceptance-consolidation
           path: artifacts/consolidation/
           if-no-files-found: warn
