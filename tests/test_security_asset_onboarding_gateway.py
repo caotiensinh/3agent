@@ -31,7 +31,9 @@ class SecurityAssetOnboardingGatewayTests(unittest.TestCase):
             "_security_onboarding_candidates",
         ) as candidates:
             handler.do_GET()
-        candidates.assert_called_once_with()
+        candidates.assert_called_once()
+        parsed = candidates.call_args.args[0]
+        self.assertEqual(parsed.path, "/api/security/onboarding/candidates")
 
         handler.path = "/api/security/onboarding/prepare"
         with patch.object(
@@ -39,7 +41,7 @@ class SecurityAssetOnboardingGatewayTests(unittest.TestCase):
             "_security_onboarding_prepare",
         ) as prepare_route:
             handler.do_POST()
-        prepare_route.assert_called_once_with()
+        prepare_route.assert_called_once()
 
         prepare = inspect.getsource(SecurityE2EHTTPHandler._security_onboarding_prepare)
         self.assertNotIn("security_config.save", prepare)
