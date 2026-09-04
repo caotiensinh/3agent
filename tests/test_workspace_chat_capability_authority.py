@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from three_agent import chat_gateway_v17
-from three_agent.chat_gateway_v20 import workspace_ui_capabilities
+from three_agent import chat_gateway
+from three_agent.chat_gateway import workspace_ui_capabilities
 from three_agent.workspace_chat_capabilities import (
     WEB_CHAT_DISCOVERY_ONLY_CAPABILITIES,
     WEB_CHAT_EXECUTABLE_CAPABILITIES,
@@ -59,7 +59,7 @@ def test_rogue_enabled_capability_fails_closed_without_handler_contract():
 
 
 def test_production_entrypoint_binds_authoritative_capability_filter():
-    assert chat_gateway_v17.workspace_ui_capabilities is workspace_ui_capabilities
+    assert chat_gateway.workspace_ui_capabilities is workspace_ui_capabilities
 
 
 def test_discovery_controls_remain_visible_but_non_executable_until_authorized():

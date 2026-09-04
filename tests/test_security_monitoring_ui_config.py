@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent import chat_gateway_v19
+from three_agent import chat_gateway
 from three_agent.security_monitoring.contracts import MonitoringContractError
 from three_agent.security_monitoring.ui_config import SecurityMonitoringUIConfigManager, safe_default_payload
 from three_agent.workspace_frontend import WORKSPACE_HTML, config_js, config_markup

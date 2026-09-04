@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent import chat_gateway_v18
+from three_agent import chat_gateway
 from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
@@ -25,14 +25,14 @@ class SecurityConfigurationFrontendTests(unittest.TestCase):
         self.assertIn("raw credentials", WORKSPACE_HTML.lower())
 
     def test_gateway_config_routes_are_admin_bounded(self) -> None:
-        source = inspect.getsource(chat_gateway_v18.SecurityMonitoringHTTPHandler)
+        source = inspect.getsource(chat_gateway.SecurityMonitoringHTTPHandler)
         self.assertIn('"/api/security/config"', source)
         self.assertIn('"/api/security/config/audit"', source)
         self.assertIn("self._require_admin()", source)
-        self.assertIn("SecurityConfigurationStore", inspect.getsource(chat_gateway_v18.SecurityMonitoringApplication))
+        self.assertIn("SecurityConfigurationStore", inspect.getsource(chat_gateway.SecurityMonitoringApplication))
 
     def test_save_does_not_add_network_execution_route(self) -> None:
-        source = inspect.getsource(chat_gateway_v18.SecurityMonitoringHTTPHandler._security_config_save)
+        source = inspect.getsource(chat_gateway.SecurityMonitoringHTTPHandler._security_config_save)
         self.assertNotIn("subprocess", source)
         self.assertNotIn("socket", source)
         self.assertNotIn("capture", source.lower())

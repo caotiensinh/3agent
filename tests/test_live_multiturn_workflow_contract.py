@@ -110,18 +110,18 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v21:main"', text)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', text)
         self.assertTrue((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").is_file())
-        v19 = (ROOT / "src/three_agent/chat_gateway_v19.py").read_text(encoding="utf-8")
+        v19 = (ROOT / "src/three_agent/chat_gateway.py").read_text(encoding="utf-8")
         self.assertIn("ContinuityProjectChatService", v19)
         self.assertIn("chat_context", v19)
         self.assertIn("return _v18.main()", v19)
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v18.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v17.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v19.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v20.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v21.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
 
 
 if __name__ == "__main__":

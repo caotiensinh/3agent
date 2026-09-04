@@ -1,6 +1,6 @@
-from three_agent import chat_gateway_v17
-from three_agent.chat_gateway_v18 import CurrentRequestProjectChatService
-from three_agent.chat_gateway_v20 import IntelligenceAwareProjectChatService
+from three_agent import chat_gateway
+from three_agent.chat_gateway import CurrentRequestProjectChatService
+from three_agent.chat_gateway import IntelligenceAwareProjectChatService
 
 
 def test_v20_binds_intelligence_aware_service_to_production_entrypoint():
@@ -8,7 +8,7 @@ def test_v20_binds_intelligence_aware_service_to_production_entrypoint():
         IntelligenceAwareProjectChatService,
         CurrentRequestProjectChatService,
     )
-    assert chat_gateway_v17.ContractAwareProjectChatService is IntelligenceAwareProjectChatService
+    assert chat_gateway.ContractAwareProjectChatService is IntelligenceAwareProjectChatService
 
 
 def test_intelligence_service_keeps_readonly_reference_wrapper_contract():

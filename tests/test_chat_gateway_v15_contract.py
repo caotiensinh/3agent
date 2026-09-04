@@ -4,8 +4,8 @@ import inspect
 import unittest
 from pathlib import Path
 
-from three_agent.chat_gateway_v14 import IntentAwareWorkflowDispatchHTTPHandler
-from three_agent.chat_gateway_v15 import WorkflowV3Application, WorkflowV3HTTPHandler
+from three_agent.chat_gateway import IntentAwareWorkflowDispatchHTTPHandler
+from three_agent.chat_gateway import WorkflowV3Application, WorkflowV3HTTPHandler
 from three_agent.version import PACKAGE_VERSION
 
 
@@ -54,8 +54,8 @@ class ChatGatewayV15ContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(f'version = "{PACKAGE_VERSION}"', pyproject)
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v22:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v22:main"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', pyproject)
         self.assertIn('workspace-chat-acceptance = "three_agent.chat_acceptance:main"', pyproject)
         self.assertIn(
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',

@@ -3,12 +3,12 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent.chat_gateway_v15 import WorkflowV3HTTPHandler
-from three_agent.chat_gateway_v16 import (
+from three_agent.chat_gateway import WorkflowV3HTTPHandler
+from three_agent.chat_gateway import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     ContextAwareWorkflowV3HTTPHandler,
 )
-from three_agent.chat_gateway_v17 import (
+from three_agent.chat_gateway import (
     HTML_V17,
     WorkflowV4ContextApplication,
     WorkflowV4ContextHTTPHandler,
@@ -98,9 +98,9 @@ class WorkflowV4ContextGatewayTests(unittest.TestCase):
         )
 
     def test_main_uses_contract_aware_service(self):
-        from three_agent import chat_gateway_v17
+        from three_agent import chat_gateway
 
-        source = inspect.getsource(chat_gateway_v17.main)
+        source = inspect.getsource(chat_gateway.main)
         self.assertIn("ContractAwareProjectChatService", source)
         self.assertNotIn("ContextAwareProjectChatService(orchestrator", source)
         self.assertIn("WorkflowV4ContextApplication", source)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent import chat_gateway_v19
+from three_agent import chat_gateway
 from three_agent.workspace_frontend_security import (
     SECURITY_BOUNDARY_MARKUP,
     WORKSPACE_HTML_SECURITY_V3,
@@ -52,7 +52,7 @@ class SecurityMonitoringSOCBoundaryUITests(unittest.TestCase):
             self.assertIn(token, WORKSPACE_HTML_SECURITY_V3)
 
     def test_gateway_only_advances_ui_composition_layer(self):
-        source = inspect.getsource(chat_gateway_v19)
+        source = inspect.getsource(chat_gateway)
         self.assertIn("WORKSPACE_HTML_SECURITY_V3", source)
         self.assertIn("_v17.HTML_V17 = WORKSPACE_HTML_SECURITY_V3", source)
         self.assertNotIn("workspace_frontend_security_v2 import WORKSPACE_HTML_SECURITY_V2", source)

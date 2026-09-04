@@ -4,7 +4,7 @@ import inspect
 import unittest
 from pathlib import Path
 
-import three_agent.chat_gateway_v18 as gateway
+import three_agent.chat_gateway as gateway
 import three_agent.security_pcap_runner as runner
 from three_agent.security_monitoring.incident_capture import CAPTURE_CONFIRMATION
 
@@ -54,15 +54,15 @@ class PcapIntegrationBoundaryTests(unittest.TestCase):
 
     def test_package_entrypoints_keep_current_v21_and_separate_security_tools(self):
         project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', project)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v21:main"', project)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', project)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', project)
         self.assertIn('workspace-security-pcap = "three_agent.security_pcap_runner:main"', project)
         self.assertIn('workspace-security-monitor = "three_agent.security_monitoring_cli:main"', project)
         self.assertIn('workspace-security-report = "three_agent.security_reporting_cli:main"', project)
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v18.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v19.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v20.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v21.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
 
 
 if __name__ == "__main__":

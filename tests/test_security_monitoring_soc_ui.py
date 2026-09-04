@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent import chat_gateway_v19
+from three_agent import chat_gateway
 from three_agent.workspace_frontend_security import (
     SOC_SECURITY_JS,
     WORKSPACE_HTML_SECURITY_V2,
@@ -55,8 +55,8 @@ class SecurityMonitoringSOCUITests(unittest.TestCase):
         self.assertNotIn("insertAdjacentHTML", SOC_SECURITY_JS)
 
     def test_current_gateway_serves_composed_soc_ui_without_new_handler(self):
-        source = inspect.getsource(chat_gateway_v19)
-        self.assertIn('data-security-tab="soc"', chat_gateway_v19._v17.HTML_V17)
+        source = inspect.getsource(chat_gateway)
+        self.assertIn('data-security-tab="soc"', chat_gateway._v17.HTML_V17)
         self.assertIn("_BASE_HANDLER = _v18.SecurityMonitoringHTTPHandler", source)
         self.assertIn("_v17.HTML_V17 =", source)
         self.assertNotIn('"/api/security/soc"', source)

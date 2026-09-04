@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.chat_gateway_v18 import SecurityMonitoringHTTPHandler
+from three_agent.chat_gateway import SecurityMonitoringHTTPHandler
 from three_agent.security_monitoring.soc_read_model import SOC_READ_MODEL_SCHEMA_VERSION
 from three_agent.security_monitoring.storage import MonitoringStore
 from three_agent.security_monitoring.ui_read_model import (

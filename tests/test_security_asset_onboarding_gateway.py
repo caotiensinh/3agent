@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent.chat_gateway_v21 import SecurityE2EApplication, SecurityE2EHTTPHandler
+from three_agent.chat_gateway import SecurityE2EApplication, SecurityE2EHTTPHandler
 
 
 class SecurityAssetOnboardingGatewayTests(unittest.TestCase):

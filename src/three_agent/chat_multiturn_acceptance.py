@@ -14,8 +14,8 @@ from typing import Any, Iterable, Sequence
 
 from .chat_acceptance import AcceptanceCase, assert_local_model_endpoints, evaluate_answer
 from .chat_context import CONTEXT_MODE_FOLLOW_UP, CONTEXT_MODE_STANDALONE
-from .chat_gateway_v5 import _history_owner_key
-from .chat_gateway_v16 import ContextAwareProjectChatService
+from .chat_gateway import _history_owner_key
+from .chat_gateway import ContextAwareProjectChatService
 from .config import AppConfig, load_config
 from .orchestrator import Orchestrator
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from three_agent.chat_gateway_v18 import workspace_ui_capabilities
+from three_agent.chat_gateway import workspace_ui_capabilities
 from three_agent.workspace_frontend import WORKSPACE_HTML
 
 

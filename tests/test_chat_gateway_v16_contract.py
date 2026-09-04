@@ -10,9 +10,9 @@ from three_agent.chat_context import (
     CONTEXT_MODE_FOLLOW_UP,
     ConversationContextPlan,
 )
-from three_agent.chat_gateway_v14 import IntentAwareProjectChatService
-from three_agent.chat_gateway_v15 import WorkflowV3Application, WorkflowV3HTTPHandler
-from three_agent.chat_gateway_v16 import (
+from three_agent.chat_gateway import IntentAwareProjectChatService
+from three_agent.chat_gateway import WorkflowV3Application, WorkflowV3HTTPHandler
+from three_agent.chat_gateway import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     ContextAwareProjectChatService,
     ContextAwareWorkflowV3HTTPHandler,
@@ -118,8 +118,8 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(f'version = "{PACKAGE_VERSION}"', pyproject)
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v21:main"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', pyproject)
         self.assertIn(
             'workspace-chat-acceptance = "three_agent.chat_acceptance:main"',
             pyproject,
@@ -129,11 +129,11 @@ class ChatGatewayV16ContractTests(unittest.TestCase):
             pyproject,
         )
         root = Path(__file__).resolve().parents[1]
-        self.assertTrue((root / "src/three_agent/chat_gateway_v17.py").is_file())
-        self.assertTrue((root / "src/three_agent/chat_gateway_v18.py").is_file())
-        self.assertTrue((root / "src/three_agent/chat_gateway_v19.py").is_file())
-        self.assertTrue((root / "src/three_agent/chat_gateway_v20.py").is_file())
-        self.assertTrue((root / "src/three_agent/chat_gateway_v21.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway.py").is_file())
+        self.assertTrue((root / "src/three_agent/chat_gateway.py").is_file())
 
     def test_v15_remains_workflow_v3_rollback_boundary(self) -> None:
         self.assertEqual(WorkflowV3HTTPHandler.server_version, "WorkSpaceChat/0.16")

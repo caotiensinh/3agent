@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.chat_gateway_v13 import WorkflowDispatchHTTPHandler
-from three_agent.chat_gateway_v14 import (
+from three_agent.chat_gateway import WorkflowDispatchHTTPHandler
+from three_agent.chat_gateway import (
     HTML_V14,
     IntentAwareProjectChatService,
     IntentAwareWorkflowDispatchHTTPHandler,

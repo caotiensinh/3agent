@@ -3,8 +3,8 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent.chat_gateway_v14 import IntentAwareWorkflowDispatchHTTPHandler
-from three_agent.chat_gateway_v15 import HTML_V15, WorkflowV3HTTPHandler
+from three_agent.chat_gateway import IntentAwareWorkflowDispatchHTTPHandler
+from three_agent.chat_gateway import HTML_V15, WorkflowV3HTTPHandler
 
 
 class WorkflowV3GatewayTests(unittest.TestCase):

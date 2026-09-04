@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from three_agent.chat_fidelity import direct_chat_answer_valid
-from three_agent.chat_gateway_v16 import (
+from three_agent.chat_gateway import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     FOLLOW_UP_REFERENCE_ANCHOR_POLICY,
 )
@@ -381,7 +381,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         self.assertIn("Technical commands and identifiers may remain unchanged", text)
 
     def test_reference_policy_is_wired_only_into_follow_up_context(self):
-        text = (ROOT / "src/three_agent/chat_gateway_v16.py").read_text(
+        text = (ROOT / "src/three_agent/chat_gateway.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("*FOLLOW_UP_REFERENCE_ANCHOR_POLICY", text)

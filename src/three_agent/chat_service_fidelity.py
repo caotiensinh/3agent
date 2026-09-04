@@ -4,7 +4,7 @@ from typing import Any
 
 from .chat_context import CONTEXT_MODE_FOLLOW_UP
 from .chat_fidelity import direct_chat_answer_valid, direct_chat_system_prompt
-from .chat_gateway_v16 import ContextAwareProjectChatService
+from .chat_gateway import ContextAwareProjectChatService
 from .chat_output_contract import (
     compile_chat_output_contract,
     render_output_contract,

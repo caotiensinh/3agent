@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.chat_gateway_v2 import ProgressJob, _daily_report_text
+from three_agent.chat_gateway import ProgressJob, _daily_report_text
 
 
 class ChatGatewayV2Tests(unittest.TestCase):

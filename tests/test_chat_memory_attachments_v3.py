@@ -18,7 +18,7 @@ from three_agent.chat_context import (
     CONTEXT_MODE_FOLLOW_UP,
     build_conversation_context,
 )
-from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
+from three_agent.chat_gateway import ContinuitySecurityAwareProjectChatService
 from three_agent.document_extractors import extract_document
 from three_agent.knowledge_gateway import KnowledgeGatewayV2
 
@@ -98,7 +98,7 @@ class ConversationAttachmentMemoryTests(unittest.TestCase):
         service.orchestrator = SimpleNamespace(knowledge_gateway=object())
 
         with patch(
-            "three_agent.chat_gateway_v22._v4._validate_owned_uploads",
+            "three_agent.chat_gateway._v4._validate_owned_uploads",
             return_value=["a" * 16],
         ) as validator:
             resolved = service._resolve_submit_uploads(

@@ -93,7 +93,7 @@ class LinuxUpdateContractTests(unittest.TestCase):
     def test_update_validates_current_chat_and_security_runtime_without_forcing_optional_snmp(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn("validate_workspace_runtime.py", text)
-        self.assertIn("three_agent.chat_gateway_v18", text)
+        self.assertIn("three_agent.chat_gateway", text)
         self.assertIn("three_agent.security_monitoring_cli", text)
         self.assertIn("three_agent.security_reporting_cli", text)
         self.assertIn("three_agent.security_pcap_runner", text)

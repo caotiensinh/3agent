@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from three_agent.chat_gateway_v4 import (
+from three_agent.chat_gateway import (
     HTML_V4,
     MAX_UPLOAD_REQUEST_BYTES,
     _recent_uploads,

@@ -1,6 +1,6 @@
 import unittest
 
-from three_agent.chat_gateway_v11 import HTML_V11, WorkflowStudioHTTPHandler
+from three_agent.chat_gateway import HTML_V11, WorkflowStudioHTTPHandler
 from three_agent.workspace_frontend import WORKSPACE_HTML
 
 

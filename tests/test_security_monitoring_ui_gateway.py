@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent.chat_gateway_v18 import (
+from three_agent.chat_gateway import (
     SecurityMonitoringApplication,
     SecurityMonitoringHTTPHandler,
 )
