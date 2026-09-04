@@ -29,10 +29,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install project dependencies including monitoring SNMP extra
         run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Execution governance canonical gate
+        run: python scripts/validate_execution_governance.py
       - name: Skill security admission
         run: python scripts/scan_skills.py
       - name: Compile
-        run: python -m compileall -q src tests
+        run: python -m compileall -q src tests scripts/validate_execution_governance.py
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
