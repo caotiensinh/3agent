@@ -15,7 +15,7 @@ jobs:
   autoheal-safe-reexports:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +36,25 @@ jobs:
         run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_canonicalization -v
       - name: Revalidate frontend security against canonical frontend
         run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
+      - name: Consolidate chat gateway generation chain
+        run: python scripts/consolidate_chat_gateway.py --apply
+      - name: Validate chat gateway canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_chat_gateway_canonicalization -v
+      - name: Run focused chat security workflow regression suite
+        shell: bash
+        run: |
+          mapfile -t focused < <(find tests -maxdepth 1 -type f \( \
+            -name 'test_chat*.py' -o \
+            -name 'test_*chat*.py' -o \
+            -name 'test_workspace*.py' -o \
+            -name 'test_security*.py' -o \
+            -name 'test_workflow*.py' \
+          \) | sort -u)
+          if [ "${#focused[@]}" -eq 0 ]; then
+            echo "No focused regression tests discovered." >&2
+            exit 2
+          fi
+          PYTHONPATH="$PWD:$PWD/src" python -m pytest "${focused[@]}" -q --disable-warnings --maxfail=1
       - name: Apply mechanically provable canonical repairs
         run: |
           python scripts/canonical_module_guard.py \
@@ -57,7 +76,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
+          if git diff --cached --name-only | grep -Eq '^src/three_agent/chat_gateway\.py$|^src/three_agent/chat_gateway_v|test_chat_gateway_canonicalization'; then
+            message="refactor(chat): consolidate canonical chat gateway"
+          elif git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
             message="refactor(frontend): consolidate canonical workspace frontend"
           elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
             message="refactor(security): consolidate canonical frontend security"
