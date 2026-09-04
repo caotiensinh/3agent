@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "three_agent"
-SECURITY = SRC / "security_monitoring"
 ARTIFACTS = ROOT / "artifacts" / "consolidation"
 
 
@@ -39,7 +38,7 @@ def targeted_tests() -> list[str]:
             "git",
             "grep",
             "-lE",
-            "knowledge_gateway|KnowledgeGatewayV2|ui_config_v2|SecurityMonitoringUIConfigManager",
+            "knowledge_gateway(_v3)?|KnowledgeGatewayV3|MULTIMODAL_UPLOAD_EXTENSIONS|build_attachment_context",
             "--",
             "tests/*.py",
         ]
@@ -47,41 +46,37 @@ def targeted_tests() -> list[str]:
     return sorted({line.strip() for line in result.stdout.splitlines() if line.strip()})
 
 
-def consolidate_knowledge_gateway() -> None:
+def consolidate_knowledge_gateway_v3() -> None:
     canonical_path = SRC / "knowledge_gateway.py"
-    variant_path = SRC / "knowledge_gateway_v2.py"
+    variant_path = SRC / "knowledge_gateway_v3.py"
     canonical = canonical_path.read_text(encoding="utf-8").rstrip()
     variant = variant_path.read_text(encoding="utf-8")
-    marker = "EXTENDED_UPLOAD_EXTENSIONS ="
+
+    variant = re.sub(r"^from __future__ import annotations\n\n", "", variant)
+    variant = re.sub(
+        r"^from \.knowledge_gateway import \(\n.*?^\)\n",
+        "",
+        variant,
+        flags=re.M | re.S,
+    )
+
+    marker = "MAX_MULTIMODAL_UPLOAD_BYTES ="
     if marker not in variant:
-        raise RuntimeError("knowledge_gateway_v2 body marker missing")
+        raise RuntimeError("knowledge_gateway_v3 multimodal body marker missing")
     body = marker + variant.split(marker, 1)[1]
     addition = (
-        "\n\n\n# Extended business-document ingestion and bounded attachment retrieval.\n"
+        "\n\n\n# Canonical multimodal attachment ingestion and bounded local visual semantics.\n"
         "from .document_extractors import (\n"
         "    DOCUMENT_EXTENSIONS,\n"
+        "    NATIVE_IMAGE_EXTENSIONS,\n"
         "    DocumentExtractionError,\n"
+        "    VisualAsset,\n"
         "    extract_document,\n"
-        ")\n\n"
-        + body.strip()
-        + "\n"
-    )
-    canonical_path.write_text(canonical + addition, encoding="utf-8")
-
-
-def consolidate_ui_config() -> None:
-    canonical_path = SECURITY / "ui_config.py"
-    variant_path = SECURITY / "ui_config_v2.py"
-    canonical = canonical_path.read_text(encoding="utf-8").rstrip()
-    variant = variant_path.read_text(encoding="utf-8")
-    marker = "REAL_NETWORK_CONFIRMATION ="
-    if marker not in variant:
-        raise RuntimeError("ui_config_v2 body marker missing")
-    body = marker + variant.split(marker, 1)[1]
-    addition = (
-        "\n\n\n# Hardened confirmation, audit, and rollback layer for the canonical UI config boundary.\n"
-        "import hashlib\n"
-        "from datetime import datetime, timezone\n\n"
+        "    extract_native_visual,\n"
+        "    extract_visual_assets,\n"
+        ")\n"
+        "from .vision import OllamaVisionClient, VisionAnalysisError\n"
+        "from .web_research import ResearchSource\n\n"
         + body.strip()
         + "\n"
     )
@@ -89,13 +84,10 @@ def consolidate_ui_config() -> None:
 
 
 def rewrite_references() -> None:
-    replacements = {
-        "knowledge_gateway_v2": "knowledge_gateway",
-        "ui_config_v2": "ui_config",
-    }
+    old = "knowledge_gateway_v3"
+    canonical = "knowledge_gateway"
     excluded = {
-        (SRC / "knowledge_gateway_v2.py").resolve(),
-        (SECURITY / "ui_config_v2.py").resolve(),
+        (SRC / "knowledge_gateway_v3.py").resolve(),
         Path(__file__).resolve(),
     }
     allowed = {".py", ".toml", ".sh", ".ps1", ".yml", ".yaml"}
@@ -112,54 +104,29 @@ def rewrite_references() -> None:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, FileNotFoundError):
             continue
-        new = text
-        for old, canonical in replacements.items():
-            new = new.replace(old, canonical)
+        new = text.replace(old, canonical)
         if new != text:
             path.write_text(new, encoding="utf-8")
 
 
-def remove_variants() -> None:
-    (SRC / "knowledge_gateway_v2.py").unlink()
-    (SECURITY / "ui_config_v2.py").unlink()
-
-
 def smoke_test() -> None:
     sys.path.insert(0, str(ROOT / "src"))
-    from three_agent.document_extractors import DOCUMENT_EXTENSIONS  # noqa: PLC0415
     from three_agent.knowledge_gateway import (  # noqa: PLC0415
-        EXTENDED_UPLOAD_EXTENSIONS,
+        MULTIMODAL_UPLOAD_EXTENSIONS,
         KnowledgeGateway,
         KnowledgeGatewayV2,
-    )
-    from three_agent.security_monitoring.ui_config import (  # noqa: PLC0415
-        REAL_NETWORK_CONFIRMATION,
-        SecurityMonitoringUIConfigManager,
-        SecurityMonitoringUIConfigManagerV2,
-        safe_default_payload,
+        KnowledgeGatewayV3,
     )
 
     assert issubclass(KnowledgeGatewayV2, KnowledgeGateway)
-    assert DOCUMENT_EXTENSIONS <= EXTENDED_UPLOAD_EXTENSIONS
-    assert issubclass(SecurityMonitoringUIConfigManagerV2, SecurityMonitoringUIConfigManager)
-    assert REAL_NETWORK_CONFIRMATION == "ENABLE_APPROVED_REAL_NETWORK_MONITORING"
+    assert issubclass(KnowledgeGatewayV3, KnowledgeGateway)
+    assert ".txt" in MULTIMODAL_UPLOAD_EXTENSIONS
 
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        gateway = KnowledgeGatewayV2(root, object())
-        upload = gateway.ingest_upload("note.txt", b"bounded local document")
+        gateway = KnowledgeGatewayV3(Path(td), object())
+        upload = gateway.ingest_upload("note.txt", b"bounded canonical multimodal document")
         assert upload.document_count == 1
-
-        config_path = (root / "monitoring.json").resolve()
-        manager = SecurityMonitoringUIConfigManagerV2(config_path, path_source="test")
-        before = manager.get()
-        assert before["authority"]["strong_confirmation_required"] is True
-        result = manager.save(
-            safe_default_payload(config_path),
-            actor_id="consolidation-smoke-test",
-        )
-        assert result["audit_recorded"] is True
-        assert result["save_executes_network"] is False
+        assert upload.image_count == 0
 
 
 def main() -> int:
@@ -174,17 +141,16 @@ def main() -> int:
     (ARTIFACTS / "gateway_config_pytest_before.txt").write_text(before, encoding="utf-8")
     baseline_failures = failure_keys(before)
 
-    consolidate_knowledge_gateway()
-    consolidate_ui_config()
+    consolidate_knowledge_gateway_v3()
     rewrite_references()
-    remove_variants()
+    (SRC / "knowledge_gateway_v3.py").unlink()
 
     stale = run(
         [
             "git",
             "grep",
             "-nE",
-            "knowledge_gateway_v2|ui_config_v2",
+            "knowledge_gateway_v3",
             "--",
             "src/three_agent",
             "tests",
@@ -206,15 +172,11 @@ def main() -> int:
     removed_failures = sorted(baseline_failures - final_failures)
 
     payload = {
-        "schema": "workspace-source-consolidation/v2",
+        "schema": "workspace-source-consolidation/v3",
         "families": {
             "knowledge_gateway": ["src/three_agent/knowledge_gateway.py"],
-            "security_monitoring/ui_config": ["src/three_agent/security_monitoring/ui_config.py"],
         },
-        "removed": [
-            "src/three_agent/knowledge_gateway_v2.py",
-            "src/three_agent/security_monitoring/ui_config_v2.py",
-        ],
+        "removed": ["src/three_agent/knowledge_gateway_v3.py"],
         "baseline_returncode": baseline.returncode if baseline else 0,
         "final_returncode": final.returncode if final else 0,
         "baseline_failures": sorted(baseline_failures),
@@ -223,8 +185,7 @@ def main() -> int:
         "removed_failures": removed_failures,
         "remaining_variant_files": [
             str(path.relative_to(ROOT))
-            for path in (SRC / "knowledge_gateway_v2.py", SECURITY / "ui_config_v2.py")
-            if path.exists()
+            for path in SRC.glob("knowledge_gateway_v*.py")
         ],
     }
     (ARTIFACTS / "gateway_config_families.json").write_text(
