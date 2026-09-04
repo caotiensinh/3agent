@@ -311,9 +311,7 @@ class ChatGatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported WorkSpace effort"):
             _validate_request_options("chat", "unbounded", secure)
 
-        public = workspace_ui_capabilities(
-            workspace_config(public_search=True, mode="public-research")
-        )
+        public = workspace_config(public_search=True, mode="public-research")
         self.assertEqual(
             _validate_request_options("web_search", "standard", public),
             ("web_search", "standard"),
