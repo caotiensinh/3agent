@@ -1,4 +1,4 @@
-name: consolidate-gateway-config-families
+name: consolidate-workflow-state-machine
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - reconcile/all-branches-v4-final-20260903
     paths:
       - .github/workflows/consolidate-gateway-config-families.yml
-      - scripts/consolidate_gateway_config_families.py
+      - scripts/consolidate_workflow_state_machine.py
   workflow_dispatch:
 
 permissions:
@@ -29,20 +29,20 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
           python -m pip install pytest
-      - name: Consolidate with baseline-delta gate
+      - name: Consolidate workflow state machine with baseline-delta gate
         run: |
           set -euo pipefail
           export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
-          python scripts/consolidate_gateway_config_families.py
+          python scripts/consolidate_workflow_state_machine.py
           git config user.name 'workspace-consolidation-bot'
           git config user.email 'workspace-consolidation-bot@users.noreply.github.com'
           git add -A
-          git commit -m 'refactor(core): consolidate gateway and monitoring config modules'
+          git commit -m 'refactor(workflow): consolidate workflow state machine'
           git push origin HEAD:reconcile/all-branches-v4-final-20260903
       - name: Upload consolidation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gateway-config-family-consolidation
+          name: workflow-state-machine-consolidation
           path: artifacts/consolidation/
           if-no-files-found: warn
