@@ -154,17 +154,21 @@ jobs:
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}\three-agent-bin
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
+          BOOTSTRAP_LOG: ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
         run: |
-          $pythonCommand = Get-Command python -ErrorAction Stop
-          Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
-          Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
-          & python --version
-          if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
-          & python -m pip --version
-          if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
-          $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
+          $transcriptStarted = $false
           try {
+            Start-Transcript -Path $env:BOOTSTRAP_LOG -Force | Out-Null
+            $transcriptStarted = $true
+            $pythonCommand = Get-Command python -ErrorAction Stop
+            Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
+            Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
+            & python --version
+            if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
+            & python -m pip --version
+            if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
+            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+            Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
             $scriptText = Invoke-RestMethod -Uri $url
             & ([ScriptBlock]::Create($scriptText))
             $bootstrapSucceeded = $?
@@ -173,10 +177,23 @@ jobs:
             if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
           }
           catch {
-            Write-Error "Bootstrap diagnostic failure: $($_.Exception.Message)"
+            Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
             throw
           }
+          finally {
+            if ($transcriptStarted) {
+              try { Stop-Transcript | Out-Null } catch { Write-Warning "Unable to stop bootstrap transcript: $($_.Exception.Message)" }
+            }
+          }
           $global:LASTEXITCODE = 0
+      - name: Upload Windows bootstrap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bootstrap-${{ matrix.python }}
+          path: ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify installed command and exact GitHub lineage
         shell: powershell
         env:
