@@ -9,13 +9,13 @@ class WorkSpaceZoneConfigTests(unittest.TestCase):
     def load(self, name: str) -> dict:
         return json.loads((ROOT / "config" / name).read_text(encoding="utf-8"))
 
-    def test_confidential_core_uses_brokered_public_search_without_direct_egress(self):
+    def test_confidential_core_keeps_public_search_fail_closed_without_direct_egress(self):
         config = self.load("workspace.secure.json")
         self.assertEqual(config["product_name"], "WorkSpace")
         self.assertEqual(config["confidentiality_mode"], "confidential")
         self.assertFalse(config["test_mode_full_access"])
         gateway = config["internet_gateway"]
-        self.assertTrue(gateway["public_search_enabled"])
+        self.assertFalse(gateway["public_search_enabled"])
         self.assertEqual(gateway["mode"], "strict")
         self.assertEqual(gateway["egress_policy"], "workspace.internet-egress/v1")
         self.assertEqual(gateway["egress_mode"], "sanitized")
