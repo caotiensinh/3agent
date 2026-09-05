@@ -70,8 +70,6 @@ jobs:
           den = int(os.environ["SECURITY_DEN"])
           stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
-          print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
@@ -90,8 +88,6 @@ jobs:
           den = int(os.environ["SECURITY_DEN"])
           stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
-          print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
@@ -110,8 +106,6 @@ jobs:
           den = int(os.environ["SECURITY_DEN"])
           stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
-          print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
@@ -130,8 +124,6 @@ jobs:
           den = int(os.environ["SECURITY_DEN"])
           stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
-          print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
@@ -150,8 +142,6 @@ jobs:
           den = int(os.environ["SECURITY_DEN"])
           stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
-          print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
@@ -180,3 +170,70 @@ jobs:
           path: ${{ runner.temp }}/security-enterprise-verification.json
           if-no-files-found: error
           retention-days: 14
+
+  security-boundary-prepare:
+    name: Security boundary candidate manifest
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.candidates.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - id: candidates
+        name: Compute 10/16 to 11/16 candidate modules
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
+          count = len(files)
+          lo = (10 * count + 15) // 16
+          hi = (11 * count + 15) // 16
+          candidates = [f"tests.{path.stem}" for path in files[lo:hi]]
+          if not candidates:
+              raise SystemExit("no boundary candidates")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write("modules=" + json.dumps(candidates, separators=(",", ":")) + "\n")
+          PY
+
+  security-boundary:
+    name: Boundary ${{ matrix.module }}
+    needs: security-boundary-prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.security-boundary-prepare.outputs.modules) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project dependencies including monitoring SNMP extra
+        run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Run cumulative suite through candidate
+        env:
+          CANDIDATE_MODULE: ${{ matrix.module }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import unittest
+
+          modules = [f"tests.{path.stem}" for path in sorted(pathlib.Path("tests").glob("test_security_*.py"))]
+          candidate = os.environ["CANDIDATE_MODULE"]
+          stop = modules.index(candidate) + 1
+          result = unittest.TextTestRunner(verbosity=2).run(
+              unittest.defaultTestLoader.loadTestsFromNames(modules[:stop])
+          )
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
