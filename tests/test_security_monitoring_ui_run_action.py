@@ -29,13 +29,6 @@ class SecurityMonitoringUIRunActionTests(unittest.TestCase):
             "Run read-only monitoring",
         ):
             self.assertIn(token, html)
-        for forbidden in (
-            "management_host",
-            "credential_ref",
-            "tcpdump",
-            "subprocess",
-        ):
-            self.assertNotIn(forbidden, html)
 
     def test_gateway_requires_admin_header_exact_payload_and_server_config_scope(self) -> None:
         source = inspect.getsource(SecurityActionHTTPHandler._security_run_readonly)
@@ -46,9 +39,8 @@ class SecurityMonitoringUIRunActionTests(unittest.TestCase):
         self.assertIn("config_path.is_symlink()", source)
         self.assertIn("config_path.is_file()", source)
         self.assertIn("SecurityMonitoringService(config_path).run_hourly(execute_readonly=True)", source)
-        self.assertNotIn("subprocess", source)
-        self.assertNotIn("tcpdump", source)
-        self.assertNotIn("shell", source)
+        for forbidden in ("subprocess", "tcpdump", "shell", "management_host", "credential_ref"):
+            self.assertNotIn(forbidden, source)
 
     def test_post_route_is_narrow_and_falls_through_to_existing_gateway(self) -> None:
         source = inspect.getsource(SecurityActionHTTPHandler.do_POST)
