@@ -8,6 +8,7 @@ ADVERSARIAL = Path("evaluation/adversarial_security_v1.json")
 TEST = Path("tests/test_evaluation_lab.py")
 GOLDEN_CASE_ID = "reject-confidential-public-web"
 ADVERSARIAL_CASE_ID = "reject-restricted-public-web"
+CURRENT_MAIN_GOLDEN_CASE_ID = "confidential-analysis-brokered-public-web"
 
 GOLDEN_EXPECTED = {
     "accepted": True,
@@ -95,6 +96,45 @@ NEW_ADVERSARIAL_TEST = '''    def test_repository_adversarial_corpus_tracks_sani
 '''
 
 
+def _load_cases(path: Path) -> list[dict[str, object]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    cases = payload.get("cases")
+    if not isinstance(cases, list):
+        raise SystemExit(f"{path} cases must be a list")
+    return [row for row in cases if isinstance(row, dict)]
+
+
+def _current_main_policy_is_valid() -> bool:
+    golden_cases = {str(row.get("case_id")): row for row in _load_cases(GOLDEN)}
+    adversarial_cases = {str(row.get("case_id")): row for row in _load_cases(ADVERSARIAL)}
+
+    if CURRENT_MAIN_GOLDEN_CASE_ID not in golden_cases:
+        return False
+    if GOLDEN_CASE_ID in golden_cases or ADVERSARIAL_CASE_ID in adversarial_cases:
+        raise SystemExit("mixed legacy/current evaluation policy corpus detected")
+
+    brokered = golden_cases[CURRENT_MAIN_GOLDEN_CASE_ID].get("expected")
+    if not isinstance(brokered, dict):
+        raise SystemExit("current-main brokered public research expectation is invalid")
+    if brokered.get("accepted") is not True:
+        raise SystemExit("current-main confidential brokered research must remain accepted")
+    if brokered.get("network_scope") != "allowlisted_egress":
+        raise SystemExit("current-main confidential brokered research must remain allowlisted")
+    if "web_gateway" not in brokered.get("allowed_tools", []):
+        raise SystemExit("current-main confidential brokered research must retain web_gateway")
+
+    for case_id in ("reject-secret-public-web", "reject-no-llm-extra-tool"):
+        expected = golden_cases.get(case_id, {}).get("expected")
+        if expected != {"accepted": False}:
+            raise SystemExit(f"current-main fail-closed golden case drifted: {case_id}")
+
+    if not adversarial_cases:
+        raise SystemExit("current-main adversarial corpus must not be empty")
+    if not all(row.get("expected") == {"accepted": False} for row in adversarial_cases.values()):
+        raise SystemExit("current-main adversarial corpus must remain fail-closed")
+    return True
+
+
 def repair_case(path: Path, case_id: str, expected: dict[str, object]) -> bool:
     payload = json.loads(path.read_text(encoding="utf-8"))
     cases = payload.get("cases")
@@ -143,6 +183,20 @@ def repair_test() -> bool:
 
 
 def main() -> int:
+    if _current_main_policy_is_valid():
+        print(
+            json.dumps(
+                {
+                    "status": "noop",
+                    "policy": "current_main_brokered_public_research",
+                    "golden_case_id": CURRENT_MAIN_GOLDEN_CASE_ID,
+                    "adversarial_mode": "fail_closed",
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+
     golden_changed = repair_case(GOLDEN, GOLDEN_CASE_ID, GOLDEN_EXPECTED)
     adversarial_changed = repair_case(
         ADVERSARIAL,
