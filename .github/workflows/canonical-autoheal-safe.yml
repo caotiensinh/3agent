@@ -144,13 +144,10 @@ jobs:
                   parse_errors.append({"path": str(path), "error": f"{type(exc).__name__}: {exc}"})
                   continue
               for node in ast.walk(tree):
-                  modules = []
                   if isinstance(node, ast.Import):
-                      modules.extend(alias.name for alias in node.names)
+                      modules = [alias.name for alias in node.names]
                   elif isinstance(node, ast.ImportFrom):
-                      if node.module:
-                          modules.append(node.module)
-                      modules.extend(alias.name for alias in node.names if alias.name != "*")
+                      modules = [node.module] if node.module else []
                   else:
                       continue
                   for module in modules:
