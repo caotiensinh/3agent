@@ -62,6 +62,10 @@ jobs:
         run: python scripts/repair_dfir_custody_validation_order.py
       - name: Validate DFIR custody chain contract
         run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_dfir_case_evidence -v
+      - name: Migrate golden sanitized-egress expectations
+        run: python scripts/repair_evaluation_golden_egress.py
+      - name: Validate evaluation golden policy outcomes
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_evaluation_lab -v
       - name: Commit validated canonical consolidation
         shell: bash
         run: |
@@ -84,6 +88,8 @@ jobs:
             message="test(chat): validate canonical stage suppression semantics"
           elif git diff --cached --name-only | grep -Eq 'dfir_case_evidence'; then
             message="fix(dfir): preserve custody chain diagnostics"
+          elif git diff --cached --name-only | grep -Eq 'evaluation/golden_control_plane_v1\.json|tests/test_evaluation_lab\.py'; then
+            message="test(eval): align golden egress policy outcomes"
           else
             message="chore(governance): consolidate validated canonical modules"
           fi
