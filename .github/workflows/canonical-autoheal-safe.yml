@@ -38,6 +38,10 @@ jobs:
         run: python scripts/repair_canonical_dispatch_ui.py
       - name: Validate canonical Dispatch UI boundary
         run: PYTHONPATH=src python -m unittest tests.test_workspace_dispatch_ui -v
+      - name: Preserve canonical integration menu order
+        run: python scripts/repair_canonical_frontend_menu_order.py
+      - name: Validate canonical V13 frontend contract
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_v13 -v
       - name: Validate workspace frontend canonicalization
         run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_canonicalization -v
       - name: Revalidate frontend security against canonical frontend
