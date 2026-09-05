@@ -3526,7 +3526,7 @@ def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
     payload['conversation_context'] = {'policy': CONVERSATION_CONTEXT_POLICY_VERSION, 'recent_completed_turns': True, 'max_messages': DEFAULT_CONTEXT_MAX_MESSAGES, 'max_chars': DEFAULT_CONTEXT_MAX_CHARS, 'current_request_precedence': True}
     return payload
 _orchestrator.KnowledgeGateway = KnowledgeGatewayV2
-HTML_V17 = WORKSPACE_HTML
+HTML_V17 = WORKSPACE_HTML_SECURITY_V3
 from .security_monitoring.asset_onboarding import SecurityAssetOnboardingConflict, SecurityMonitoringAssetOnboarding
 
 class ApprovedAssetApplication(SecurityE2EApplication):
