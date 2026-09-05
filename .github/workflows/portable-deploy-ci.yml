@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/bootstrap.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
+      - 'scripts/ci_diagnostics.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
@@ -43,6 +44,7 @@ on:
     paths:
       - 'scripts/bootstrap.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
+      - 'scripts/ci_diagnostics.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
@@ -90,21 +92,50 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y shellcheck
+      - name: Portable contract diagnostic snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "portable-contract"
       - name: Deployment entrypoint contracts
+        shell: bash
         run: |
-          bash scripts/test_deploy_ubuntu_pc_contract.sh
-          bash scripts/test_update_code_safe_contract.sh
-          bash scripts/test_update_workspace_ubuntu_contract.sh
+          source scripts/ci_diagnostics.sh
+          failures=0
+          for script in \
+            scripts/test_deploy_ubuntu_pc_contract.sh \
+            scripts/test_update_code_safe_contract.sh \
+            scripts/test_update_workspace_ubuntu_contract.sh
+          do
+            if ! ci_run_logged "portable-$(basename "$script" .sh)" bash "$script"; then
+              failures=$((failures + 1))
+            fi
+          done
+          if [[ "$failures" -ne 0 ]]; then
+            ci_failure_snapshot "portable-contract-${failures}-failed"
+            exit 1
+          fi
       - name: ShellCheck
+        shell: bash
         run: |
-          shellcheck \
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "portable-shellcheck" shellcheck \
             scripts/bootstrap.sh \
             scripts/deploy_ubuntu_pc.sh \
+            scripts/ci_diagnostics.sh \
             scripts/test_deploy_ubuntu_pc_contract.sh \
             scripts/update_code_safe.sh \
             scripts/test_update_code_safe_contract.sh \
             scripts/update_workspace_ubuntu.sh \
             scripts/test_update_workspace_ubuntu_contract.sh
+      - name: Upload portable contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-contract-diagnostics
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
 
   clean-install:
     strategy:
@@ -133,6 +164,11 @@ jobs:
             printf 'ref=%s\n' "$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           fi
           printf 'expected_head=%s\n' "$EXPECTED_HEAD" >> "$GITHUB_OUTPUT"
+      - name: Portable clean-install diagnostic snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "portable-clean-install-${{ matrix.os }}-py${{ matrix.python }}"
       - name: One-command Ubuntu PC deployment from GitHub
         shell: bash
         env:
@@ -145,23 +181,36 @@ jobs:
           THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
           THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
-        run: curl -fsSL "$DEPLOY_ENTRYPOINT_URL" | bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          deploy_script="$RUNNER_TEMP/deploy_ubuntu_pc.sh"
+          curl -fsSL --retry 3 --connect-timeout 15 "$DEPLOY_ENTRYPOINT_URL" -o "$deploy_script"
+          printf 'deploy_script_sha256=%s\n' "$(sha256sum "$deploy_script" | awk '{print $1}')"
+          bash -n "$deploy_script"
+          if ! ci_run_logged "portable-first-deploy" bash "$deploy_script"; then
+            ci_failure_snapshot "portable-first-deploy"
+            exit 1
+          fi
       - name: Verify installed command and source lineage
         shell: bash
         run: |
-          "${{ runner.temp }}/three-agent-bin/3agent" smoke
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "portable-installed-smoke" "${{ runner.temp }}/three-agent-bin/3agent" smoke
           test -x "${{ runner.temp }}/three-agent-bin/3agent-update"
           test -f "${{ runner.temp }}/three-agent-install/config/local.json"
           test "$(git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD)" = "${{ steps.deploy_ref.outputs.expected_head }}" || {
             echo "Installed commit does not match expected source head" >&2
+            ci_failure_snapshot "portable-source-lineage"
             exit 1
           }
           grep -Fq "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.ref }}/scripts/update_code_safe.sh" "${{ runner.temp }}/three-agent-bin/3agent-update" || {
             echo "Generated updater is not bound to the non-destructive updater on the configured repository ref" >&2
+            ci_failure_snapshot "portable-updater-binding"
             exit 1
           }
           if grep -Fq '/scripts/bootstrap.sh' "${{ runner.temp }}/three-agent-bin/3agent-update"; then
             echo "Generated updater must not re-run bootstrap.sh" >&2
+            ci_failure_snapshot "portable-updater-bootstrap-regression"
             exit 1
           fi
       - name: One-command real Ubuntu updater from exact GitHub source
@@ -175,12 +224,20 @@ jobs:
           THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
           THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
         run: |
+          source scripts/ci_diagnostics.sh
           before="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
-          curl -fsSL "$UPDATE_ENTRYPOINT_URL" | bash
+          update_script="$RUNNER_TEMP/update_workspace_ubuntu.sh"
+          curl -fsSL --retry 3 --connect-timeout 15 "$UPDATE_ENTRYPOINT_URL" -o "$update_script"
+          printf 'update_script_sha256=%s\n' "$(sha256sum "$update_script" | awk '{print $1}')"
+          bash -n "$update_script"
+          if ! ci_run_logged "portable-real-updater" bash "$update_script"; then
+            ci_failure_snapshot "portable-real-updater"
+            exit 1
+          fi
           after="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
           test "$before" = "$after"
           test "$(tail -n 1 "${{ runner.temp }}/three-agent-state/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
-          "${{ runner.temp }}/three-agent-bin/3agent" smoke
+          ci_run_logged "portable-post-update-smoke" "${{ runner.temp }}/three-agent-bin/3agent" smoke
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
@@ -194,6 +251,7 @@ jobs:
           THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: |
+          source scripts/ci_diagnostics.sh
           install_dir="${{ runner.temp }}/three-agent-install"
           config_path="$install_dir/config/local.json"
           runner_state="$install_dir/actions-runner/.credentials"
@@ -214,7 +272,13 @@ jobs:
           before_before="$(sha256sum "$before_path" | awk '{print $1}')"
           operator_before="$(sha256sum "$operator_state" | awk '{print $1}')"
 
-          curl -fsSL "$DEPLOY_ENTRYPOINT_URL" | bash
+          deploy_script="$RUNNER_TEMP/deploy_ubuntu_pc-rerun.sh"
+          curl -fsSL --retry 3 --connect-timeout 15 "$DEPLOY_ENTRYPOINT_URL" -o "$deploy_script"
+          bash -n "$deploy_script"
+          if ! ci_run_logged "portable-idempotent-redeploy" bash "$deploy_script"; then
+            ci_failure_snapshot "portable-idempotent-redeploy"
+            exit 1
+          fi
 
           after="$(sha256sum "$config_path" | awk '{print $1}')"
           test "$before" = "$after"
@@ -222,3 +286,11 @@ jobs:
           test "$backup_before" = "$(sha256sum "$backup_path" | awk '{print $1}')"
           test "$before_before" = "$(sha256sum "$before_path" | awk '{print $1}')"
           test "$operator_before" = "$(sha256sum "$operator_state" | awk '{print $1}')"
+      - name: Upload portable clean-install diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-clean-install-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
