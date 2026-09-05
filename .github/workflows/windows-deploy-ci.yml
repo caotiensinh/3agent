@@ -186,12 +186,40 @@ jobs:
             }
           }
           $global:LASTEXITCODE = 0
+      - name: Capture failed Windows unit suite
+        if: failure()
+        shell: powershell
+        env:
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
+          UNITTEST_LOG: ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+        run: |
+          $venvPython = Join-Path $env:THREE_AGENT_INSTALL_DIR '.venv\Scripts\python.exe'
+          if (-not (Test-Path $venvPython)) {
+            Write-Host "Diagnostic: venv Python missing at $venvPython"
+            exit 0
+          }
+          Push-Location $env:THREE_AGENT_INSTALL_DIR
+          try {
+            & $venvPython -m unittest discover -s tests -v *> $env:UNITTEST_LOG
+            $testExit = $LASTEXITCODE
+            Write-Host "Diagnostic: reproduced Windows unittest exit=$testExit"
+          }
+          catch {
+            "Diagnostic capture exception: $($_.Exception.Message)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic capture exception: $($_.Exception.Message)"
+          }
+          finally {
+            Pop-Location
+          }
+          $global:LASTEXITCODE = 0
       - name: Upload Windows bootstrap diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-bootstrap-${{ matrix.python }}
-          path: ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
+          path: |
+            ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
           if-no-files-found: warn
           retention-days: 7
       - name: Verify installed command and exact GitHub lineage
