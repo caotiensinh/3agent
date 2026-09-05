@@ -13,6 +13,7 @@ from three_agent.orchestrator import Orchestrator
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROFILE = ROOT / "config" / "local.public-research.example.json"
+SECURE_PROFILE = ROOT / "config" / "workspace.secure.json"
 MIGRATOR_PATH = ROOT / "scripts" / "migrate_default_web_search_config.py"
 
 
@@ -52,6 +53,19 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
         self.assertEqual(orchestrator.config.environment, "public-research-zone")
         self.assertEqual(orchestrator.config.confidentiality_mode, "public-research")
         self.assertTrue(orchestrator.runtime_validator_bridge.public_web)
+
+    def test_canonical_secure_profile_keeps_public_web_fail_closed(self):
+        config = load_config(str(SECURE_PROFILE))
+
+        self.assertEqual(config.environment, "secure-local")
+        self.assertEqual(config.confidentiality_mode, "confidential")
+        self.assertFalse(config.test_mode_full_access)
+        self.assertFalse(config.internet_gateway.public_search_enabled)
+        self.assertFalse(config.internet_gateway.direct_egress)
+
+        mode, public_web = Orchestrator._runtime_validator_policy(config)
+        self.assertEqual(mode, "confidential")
+        self.assertFalse(public_web)
 
     def test_legacy_generated_default_migrates_without_changing_model_or_paths(self):
         migrator = load_migrator()
