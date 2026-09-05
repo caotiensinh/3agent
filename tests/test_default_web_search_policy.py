@@ -8,6 +8,7 @@ from pathlib import Path
 
 from three_agent.chat_gateway import workspace_ui_capabilities
 from three_agent.config import load_config
+from three_agent.orchestrator import Orchestrator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
 
         self.assertTrue(capability["enabled"])
         self.assertEqual(capability["state_label"], "Ready")
+        self.assertEqual(config.environment, "public-research-zone")
         self.assertEqual(config.confidentiality_mode, "public-research")
         self.assertFalse(config.test_mode_full_access)
         self.assertEqual(config.internet_gateway.mode, "strict")
@@ -42,6 +44,14 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
             config.internet_gateway.allowed_search_hosts,
             ("html.duckduckgo.com", "lite.duckduckgo.com", "www.bing.com"),
         )
+
+    def test_new_local_profile_is_accepted_by_runtime_isolation_guard(self):
+        config = load_config(str(DEFAULT_PROFILE))
+        orchestrator = Orchestrator(config)
+
+        self.assertEqual(orchestrator.config.environment, "public-research-zone")
+        self.assertEqual(orchestrator.config.confidentiality_mode, "public-research")
+        self.assertTrue(orchestrator.runtime_validator_bridge.public_web)
 
     def test_legacy_generated_default_migrates_without_changing_model_or_paths(self):
         migrator = load_migrator()
@@ -59,7 +69,7 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
             self.assertTrue(backup.is_file())
 
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(migrated["environment"], "local")
+            self.assertEqual(migrated["environment"], "public-research-zone")
             self.assertEqual(migrated["confidentiality_mode"], "public-research")
             self.assertFalse(migrated["test_mode_full_access"])
             self.assertEqual(migrated["internet_gateway"]["mode"], "strict")
@@ -73,6 +83,8 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
 
             config = load_config(str(config_path))
             self.assertTrue(workspace_ui_capabilities(config)["features"]["web_search"]["enabled"])
+            orchestrator = Orchestrator(config)
+            self.assertTrue(orchestrator.runtime_validator_bridge.public_web)
 
     def test_migration_is_idempotent(self):
         migrator = load_migrator()
