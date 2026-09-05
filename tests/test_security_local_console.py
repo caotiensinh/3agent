@@ -256,12 +256,12 @@ class SecurityLocalConsoleTests(unittest.TestCase):
 
         serialized = json.dumps(payload, sort_keys=True)
         for sensitive_value in (
-            "asset_id",
-            "source_id",
-            "finding_id",
-            "evidence_ref",
-            "bundle_ref",
-            "secret",
+            "asset-secret-01",
+            "source-secret-01",
+            "finding-secret-01",
+            "evidence://secret",
+            "bundle://secret",
+            "raw-token-secret",
         ):
             self.assertNotIn(sensitive_value, serialized)
         authority = payload["authority"]
@@ -269,6 +269,11 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertTrue(authority["aggregate_only"])
         self.assertTrue(authority["database_read_only"])
         self.assertFalse(authority["raw_evidence_exposed"])
+        self.assertFalse(authority["asset_ids_exposed"])
+        self.assertFalse(authority["source_ids_exposed"])
+        self.assertFalse(authority["finding_ids_exposed"])
+        self.assertFalse(authority["evidence_refs_exposed"])
+        self.assertFalse(authority["bundle_refs_exposed"])
         self.assertFalse(authority["database_write"])
         self.assertFalse(authority["network_execution"])
         self.assertFalse(authority["collector_execution"])
