@@ -366,6 +366,7 @@ tests/test_evidence_hard_pack.py
 tests/test_evidence_metrics.py
 tests/test_evidence_packing.py
 tests/test_execution_budget.py
+tests/test_execution_governance.py
 tests/test_execution_governance_contract.py
 tests/test_failure_taxonomy.py
 tests/test_full_e2e_rtx5090_workflow_contract.py
