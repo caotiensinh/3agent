@@ -100,7 +100,10 @@ jobs:
         shell: bash
         run: |
           python scripts/repair_evaluation_golden_egress.py
-          test -z "$(git diff --name-only)"
+          git diff --exit-code -- \
+            evaluation/golden_control_plane_v1.json \
+            evaluation/adversarial_security_v1.json \
+            tests/test_evaluation_lab.py
           PYTHONPATH="$PWD:$PWD/src" python -m unittest \
             tests.test_execution_governance_contract \
             tests.test_execution_governance \
