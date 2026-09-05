@@ -194,22 +194,36 @@ jobs:
           UNITTEST_LOG: ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
         run: |
           $venvPython = Join-Path $env:THREE_AGENT_INSTALL_DIR '.venv\Scripts\python.exe'
+          $stdoutLog = "$env:UNITTEST_LOG.stdout"
+          $stderrLog = "$env:UNITTEST_LOG.stderr"
           if (-not (Test-Path $venvPython)) {
             Write-Host "Diagnostic: venv Python missing at $venvPython"
             exit 0
           }
-          Push-Location $env:THREE_AGENT_INSTALL_DIR
           try {
-            & $venvPython -m unittest discover -s tests -v *> $env:UNITTEST_LOG
-            $testExit = $LASTEXITCODE
-            Write-Host "Diagnostic: reproduced Windows unittest exit=$testExit"
+            $process = Start-Process `
+              -FilePath $venvPython `
+              -ArgumentList @('-m', 'unittest', 'discover', '-s', 'tests', '-v') `
+              -WorkingDirectory $env:THREE_AGENT_INSTALL_DIR `
+              -NoNewWindow `
+              -Wait `
+              -PassThru `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog
+            '=== stdout ===' | Out-File -FilePath $env:UNITTEST_LOG -Encoding utf8
+            if (Test-Path $stdoutLog) {
+              Get-Content -LiteralPath $stdoutLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            '=== stderr ===' | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            if (Test-Path $stderrLog) {
+              Get-Content -LiteralPath $stderrLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            "unittest exit code: $($process.ExitCode)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic: reproduced Windows unittest exit=$($process.ExitCode)"
           }
           catch {
             "Diagnostic capture exception: $($_.Exception.Message)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
             Write-Host "Diagnostic capture exception: $($_.Exception.Message)"
-          }
-          finally {
-            Pop-Location
           }
           $global:LASTEXITCODE = 0
       - name: Upload Windows bootstrap diagnostics
@@ -220,6 +234,8 @@ jobs:
           path: |
             ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
             ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stdout
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stderr
           if-no-files-found: warn
           retention-days: 7
       - name: Verify installed command and exact GitHub lineage
