@@ -47,6 +47,16 @@ _FORBIDDEN_SECRET_FIELDS = frozenset(
 )
 
 
+class _ClosingReadonlySQLiteConnection(sqlite3.Connection):
+    """Preserve sqlite context semantics and always release the read-only file handle."""
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 def _asset_from_payload(value: Any) -> AssetInventoryRecord:
     if not isinstance(value, dict):
         raise MonitoringContractError("onboarding asset must be an object")
@@ -108,7 +118,12 @@ class SecurityAssetOnboardingService:
 
     def _connect_readonly(self) -> sqlite3.Connection:
         path = self._database_path()
-        conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+        conn = sqlite3.connect(
+            path.as_uri() + "?mode=ro",
+            uri=True,
+            timeout=5,
+            factory=_ClosingReadonlySQLiteConnection,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA query_only=ON")
         return conn
