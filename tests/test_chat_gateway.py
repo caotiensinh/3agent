@@ -376,8 +376,8 @@ class ChatGatewayTests(unittest.TestCase):
         pyproject = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(
             encoding="utf-8"
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.secure_chat_gateway:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.secure_chat_gateway:main"', pyproject)
         self.assertIn(
             'workspace-chat-acceptance = "three_agent.chat_acceptance:main"',
             pyproject,
