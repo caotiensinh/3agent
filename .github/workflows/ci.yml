@@ -57,51 +57,100 @@ jobs:
       - name: Diagnostic local console direct
         if: always()
         run: python -m unittest -v tests.test_security_local_console
-      - name: Diagnostic security first quartile
+      - name: Diagnostic security 8 of 16
         if: always()
         run: |
-          python - <<'PY'
+          SECURITY_NUM=8 SECURITY_DEN=16 python - <<'PY'
+          import os
           import pathlib
           import unittest
 
           files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
-          stop = max(1, (len(files) + 3) // 4)
+          num = int(os.environ["SECURITY_NUM"])
+          den = int(os.environ["SECURITY_DEN"])
+          stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} selected=0:{stop}")
+          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
           print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
           raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
-      - name: Diagnostic security first half
+      - name: Diagnostic security 9 of 16
         if: always()
         run: |
-          python - <<'PY'
+          SECURITY_NUM=9 SECURITY_DEN=16 python - <<'PY'
+          import os
           import pathlib
           import unittest
 
           files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
-          stop = max(1, (len(files) + 1) // 2)
+          num = int(os.environ["SECURITY_NUM"])
+          den = int(os.environ["SECURITY_DEN"])
+          stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} selected=0:{stop}")
+          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
           print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
           )
           raise SystemExit(0 if result.wasSuccessful() else 1)
           PY
-      - name: Diagnostic security first three quartiles
+      - name: Diagnostic security 10 of 16
         if: always()
         run: |
-          python - <<'PY'
+          SECURITY_NUM=10 SECURITY_DEN=16 python - <<'PY'
+          import os
           import pathlib
           import unittest
 
           files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
-          stop = max(1, (3 * len(files) + 3) // 4)
+          num = int(os.environ["SECURITY_NUM"])
+          den = int(os.environ["SECURITY_DEN"])
+          stop = max(1, (num * len(files) + den - 1) // den)
           modules = [f"tests.{path.stem}" for path in files[:stop]]
-          print(f"security-files={len(files)} selected=0:{stop}")
+          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
+          print("\n".join(modules))
+          result = unittest.TextTestRunner(verbosity=2).run(
+              unittest.defaultTestLoader.loadTestsFromNames(modules)
+          )
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Diagnostic security 11 of 16
+        if: always()
+        run: |
+          SECURITY_NUM=11 SECURITY_DEN=16 python - <<'PY'
+          import os
+          import pathlib
+          import unittest
+
+          files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
+          num = int(os.environ["SECURITY_NUM"])
+          den = int(os.environ["SECURITY_DEN"])
+          stop = max(1, (num * len(files) + den - 1) // den)
+          modules = [f"tests.{path.stem}" for path in files[:stop]]
+          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
+          print("\n".join(modules))
+          result = unittest.TextTestRunner(verbosity=2).run(
+              unittest.defaultTestLoader.loadTestsFromNames(modules)
+          )
+          raise SystemExit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: Diagnostic security 12 of 16
+        if: always()
+        run: |
+          SECURITY_NUM=12 SECURITY_DEN=16 python - <<'PY'
+          import os
+          import pathlib
+          import unittest
+
+          files = sorted(pathlib.Path("tests").glob("test_security_*.py"))
+          num = int(os.environ["SECURITY_NUM"])
+          den = int(os.environ["SECURITY_DEN"])
+          stop = max(1, (num * len(files) + den - 1) // den)
+          modules = [f"tests.{path.stem}" for path in files[:stop]]
+          print(f"security-files={len(files)} fraction={num}/{den} selected=0:{stop}")
           print("\n".join(modules))
           result = unittest.TextTestRunner(verbosity=2).run(
               unittest.defaultTestLoader.loadTestsFromNames(modules)
