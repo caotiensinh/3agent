@@ -46,6 +46,11 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
     def __init__(self, orchestrator: Any, default_language: str = "ja") -> None:
         super().__init__(orchestrator, default_language=default_language)
         self._job_context_plans: dict[str, ConversationContextPlan] = {}
+        # ProgressJob.sender is intentionally redacted before it can become public
+        # job state. Keep only the already-pseudonymous history owner key for
+        # owner-scoped context lookup so later reads never re-hash redacted sender
+        # text and accidentally lose the conversation boundary.
+        self._conversation_context_owners: dict[str, str] = {}
 
     def _language_for_follow_up(
         self,
@@ -93,6 +98,19 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
         effort: str = "high",
         conversation_id: str | None = None,
     ):
+        owner_key = _history_owner_key(channel, sender)
+        if conversation_id:
+            # Validate ownership before publishing an internal lookup capability.
+            # super().submit() performs the same authoritative check; this early
+            # read only prevents a worker race after the job is queued.
+            try:
+                self.history.get_conversation(owner_key, conversation_id)
+            except (KeyError, ValueError):
+                pass
+            else:
+                with self._lock:
+                    self._conversation_context_owners[str(conversation_id)] = owner_key
+
         effective_language = self._language_for_follow_up(
             message,
             channel=channel,
@@ -100,7 +118,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
             language=language,
             conversation_id=conversation_id,
         )
-        return super().submit(
+        job = super().submit(
             message,
             channel=channel,
             sender=sender,
@@ -110,6 +128,22 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
             effort=effort,
             conversation_id=conversation_id,
         )
+        # For a newly-created conversation the first turn has no prior context.
+        # Persist its validated pseudonymous owner key for subsequent follow-ups.
+        with self._lock:
+            resolved_conversation = self._job_conversations.get(job.job_id)
+            if resolved_conversation:
+                self._conversation_context_owners[resolved_conversation] = owner_key
+        return job
+
+    def _owner_key_for_conversation(self, job, conversation_id: str) -> str:
+        with self._lock:
+            owner_key = self._conversation_context_owners.get(conversation_id)
+        if owner_key:
+            return owner_key
+        # Compatibility fallback for callers whose sender is not transformed by
+        # redaction. Owner-scoped history access still fails closed on mismatch.
+        return _history_owner_key(job.channel, job.sender)
 
     def _context_plan(self, job) -> ConversationContextPlan:
         with self._lock:
@@ -117,7 +151,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
         if not conversation_id:
             return build_conversation_context([], job.message, current_job_id=job.job_id)
         try:
-            owner_key = _history_owner_key(job.channel, job.sender)
+            owner_key = self._owner_key_for_conversation(job, conversation_id)
             payload = self.history.get_conversation(owner_key, conversation_id)
         except (KeyError, ValueError):
             return build_conversation_context([], job.message, current_job_id=job.job_id)
@@ -140,7 +174,7 @@ class ContextAwareProjectChatService(IntentAwareProjectChatService):
                 conversation_id = self._job_conversations.get(job.job_id)
             if conversation_id:
                 try:
-                    owner_key = _history_owner_key(job.channel, job.sender)
+                    owner_key = self._owner_key_for_conversation(job, conversation_id)
                     payload = self.history.get_conversation(owner_key, conversation_id)
                     plan = build_conversation_context(
                         payload.get("messages", []),

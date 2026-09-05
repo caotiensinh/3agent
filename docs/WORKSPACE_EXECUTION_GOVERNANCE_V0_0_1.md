@@ -57,7 +57,7 @@ None of these states may be reported as completion. Difficulty, elapsed time, co
 
 ## 4. Parallel lane model
 
-For substantial work, use the lane window and limits from the canonical JSON. The current policy is designed for **10–20 independent or dependency-isolated lanes**. Do not create useless lanes just to reach a number.
+For substantial work, **use the lane window and limits from the canonical JSON**. This guide intentionally does not duplicate the current numerical minimum, target, or maximum. Do not create useless lanes merely to satisfy a number.
 
 Every lane carries the same contract shape:
 
@@ -67,6 +67,7 @@ lane_id
  required
  dependencies
  write_set
+ functional_authority
  acceptance_criteria
  verification_checks
  evidence
@@ -80,24 +81,9 @@ Parallel safety rules:
 - one shared/canonical write set has one writer owner at a time;
 - other lanes may inspect/test the same target but must not race to mutate it;
 - a blocked lane must not idle unrelated lanes;
-- if fewer safe independent units exist, record the dependency limit with evidence.
+- if fewer safe independent units exist than the canonical target, record the dependency limit with evidence.
 
-A typical 10-lane cybersecurity/network/monitoring session can be:
-
-| Lane | Responsibility |
-|---|---|
-| L01 | exact-head/current-state evidence |
-| L02 | contract/schema/acceptance |
-| L03 | core network implementation |
-| L04 | security integration |
-| L05 | monitoring/telemetry integration |
-| L06 | unit tests |
-| L07 | regression/compatibility |
-| L08 | negative/security/failure-path tests |
-| L09 | docs/operator/evidence contract |
-| L10 | release/exact-head/convergence gate |
-
-For larger independent scopes, split up to the canonical maximum rather than making one lane oversized.
+Illustrative responsibility families for a cybersecurity/network/monitoring session include exact-head evidence, contract/schema acceptance, network implementation, security integration, telemetry, unit tests, regression/compatibility, negative-security paths, documentation/evidence, and release/convergence. Decompose or combine these only as allowed by the canonical policy and the actual dependency graph.
 
 ## 5. Acceptance contract
 
@@ -119,10 +105,10 @@ A lane cannot be `VERIFIED_PASS` when a required criterion has no verifier, no e
 
 After repeated materially equivalent failure, repeating the same strategy is forbidden. Move to a different safe strategy family: decomposition, dependency isolation, deterministic verification, alternate implementation, rollback/rebuild of an atomic unit, new instrumentation/evidence, or another method allowed by the canonical policy.
 
-The solver loop is mandatory while the failure is actionable:
+The solver loop is mandatory while the failure is actionable. Failed verification must read the failed logs before an edit or rerun:
 
 ```text
-execute -> verify -> diagnose -> decompose/replan -> execute
+execute -> verify -> read_failed_logs -> diagnose -> decompose/replan -> execute
 ```
 
 ## 7. Session effectiveness
