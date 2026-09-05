@@ -110,18 +110,19 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', text)
+        self.assertIn('workspace-chat = "three_agent.secure_chat_gateway:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.secure_chat_gateway:main"', text)
 
         canonical_acceptance = ROOT / "src/three_agent/chat_multiturn_acceptance.py"
         self.assertTrue(canonical_acceptance.is_file())
         self.assertFalse((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").exists())
 
-        canonical_gateway = ROOT / "src/three_agent/chat_gateway.py"
-        self.assertTrue(canonical_gateway.is_file())
-        gateway_text = canonical_gateway.read_text(encoding="utf-8")
-        self.assertIn("ContinuitySecurityAwareProjectChatService", gateway_text)
-        self.assertIn("from .chat_context import", gateway_text)
+        secure_gateway = ROOT / "src/three_agent/secure_chat_gateway.py"
+        self.assertTrue(secure_gateway.is_file())
+        gateway_text = secure_gateway.read_text(encoding="utf-8")
+        self.assertIn("SecureContinuitySecurityAwareProjectChatService", gateway_text)
+        self.assertIn("from . import chat_gateway as legacy", gateway_text)
+        self.assertTrue((ROOT / "src/three_agent/chat_gateway.py").is_file())
 
 
 if __name__ == "__main__":
