@@ -309,7 +309,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         policy = " ".join(FOLLOW_UP_REFERENCE_ANCHOR_POLICY)
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
-            "deterministic-reference-gated/v2",
+            "bounded-conversation-continuity/v3",
         )
         self.assertIn("semantic subject or concept", policy)
         self.assertIn("preserve the semantic label", policy)
