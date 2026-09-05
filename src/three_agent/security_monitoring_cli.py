@@ -12,8 +12,10 @@ from .security_monitoring.service import (
     safe_config_summary,
     sync_inventory,
 )
+from .security_monitoring.storage import MonitoringStore
 
-# Compatibility aliases for callers/tests that imported the former CLI helpers.
+# Compatibility aliases for callers/tests that imported or patched the former CLI
+# helpers. MonitoringStore is intentionally re-exported above for the same reason.
 _sync_inventory = sync_inventory
 _safe_config_summary = safe_config_summary
 _snmp_backend = build_snmp_backend
