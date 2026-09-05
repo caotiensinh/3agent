@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from three_agent.security_monitoring.config_governance import SecurityMonitoringConfigGovernance
@@ -164,8 +165,9 @@ class SecurityMonitoringConfigGovernanceTests(unittest.TestCase):
             manager, governance = self.setup_governance(root)
             payload = safe_default_payload(manager.path)
             governance.apply_change(payload, actor="admin", reason="Approved baseline", expected_revision=0)
-            with sqlite3.connect(governance.database_path) as conn:
-                conn.execute("UPDATE audit_events SET reason='tampered' WHERE event_id=1")
+            with closing(sqlite3.connect(governance.database_path)) as conn:
+                with conn:
+                    conn.execute("UPDATE audit_events SET reason='tampered' WHERE event_id=1")
             self.assertFalse(governance.verify_audit_chain())
             changed = safe_default_payload(manager.path)
             changed["policy"]["max_workers"] = 3
