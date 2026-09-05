@@ -57,7 +57,7 @@ def migrate_payload(data: dict[str, Any]) -> tuple[dict[str, Any], bool, str]:
         return data, False, "custom-or-already-migrated"
 
     migrated = json.loads(json.dumps(data))
-    migrated["environment"] = "local"
+    migrated["environment"] = "public-research-zone"
     migrated["confidentiality_mode"] = "public-research"
     migrated["test_mode_full_access"] = False
 
@@ -129,7 +129,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Migrate only the legacy bootstrap-generated WorkSpace development-test "
-            "config to the secure local public-research policy. Custom configs are untouched."
+            "config to the isolated secure public-research policy. Custom configs are untouched."
         )
     )
     parser.add_argument("--config", required=True, help="Path to the active WorkSpace JSON config")
@@ -140,7 +140,7 @@ def main() -> int:
     if changed:
         print(f"CONFIG_MIGRATION=changed reason={reason}")
         print(f"CONFIG_BACKUP={backup}")
-        print("WEB_SEARCH_POLICY=public-research strict direct-egress")
+        print("WEB_SEARCH_POLICY=public-research-zone strict direct-egress")
     else:
         print(f"CONFIG_MIGRATION=unchanged reason={reason}")
     return 0
