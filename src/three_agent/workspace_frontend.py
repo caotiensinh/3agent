@@ -259,6 +259,24 @@ WORKSPACE_HTML = (
     '.security-asset-exact-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto}.security-asset-exact-state{font-size:9px;color:#8d929c;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.security-asset-exact-state.ok{color:#9ecfb3}.security-asset-exact-state.warn{color:#e3c895}.security-asset-exact-state.error{color:#e0a4a4}\n'
     '\n'
     '.security-change-control{margin-top:10px;border:1px solid #3a414b;background:#0e1115;border-radius:10px;padding:10px}.security-change-control h4{margin:0 0 8px;font-size:11px}.security-change-control textarea{width:100%;min-height:64px;resize:vertical;box-sizing:border-box;border:1px solid #363a42;background:#0b0d10;color:#e7e9ed;border-radius:8px;padding:8px 9px;font-size:11px}.security-governance-state{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:8px 0}.security-governance-state .security-kv{padding:8px}.security-history{margin-top:9px;max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:6px}.security-history-row{border:1px solid #30343b;border-radius:8px;padding:8px;background:#0d0f12;font-size:10px;line-height:1.45}.security-history-row b{display:block;color:#d8dbe1}.security-rollback-row{display:flex;gap:7px;align-items:flex-end;margin-top:8px}.security-rollback-row .security-config-field{flex:1}@media(max-width:640px){.security-governance-state{grid-template-columns:1fr}.security-rollback-row{align-items:stretch;flex-direction:column}}\n'
+    '\n'
+    '.dispatch-card{width:min(980px,96vw);max-height:90vh;display:flex;flex-direction:column}\n'
+    '.dispatch-body{display:grid;grid-template-columns:minmax(260px,.78fr) minmax(0,1.5fr);gap:14px;padding:14px;overflow:auto}\n'
+    '.dispatch-input-panel,.dispatch-preview{min-width:0}\n'
+    '.dispatch-input-panel textarea{width:100%;min-height:190px;resize:vertical;background:#17181c;color:#eff0f2;border:1px solid #3b3d44;border-radius:12px;padding:12px;line-height:1.5;outline:0}\n'
+    '.dispatch-hint{font-size:11px;line-height:1.45;color:#8e929b;margin:8px 2px 12px}\n'
+    '.dispatch-actions{display:flex;gap:8px;flex-wrap:wrap}.dispatch-actions .soft-btn{min-width:110px}\n'
+    '.dispatch-statusbar{display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:8px}\n'
+    '.dispatch-badge{display:inline-flex;align-items:center;border:1px solid #3b3d44;border-radius:999px;padding:4px 9px;font-size:10px;color:#c6c9d0;background:#1a1b1f}\n'
+    '.dispatch-badge.ready{color:#a8e6c8;border-color:#285b46;background:#14271f}.dispatch-badge.preview{color:#e9c996;border-color:#5b4828;background:#2a2115}\n'
+    '.dispatch-title{font-size:15px;font-weight:680;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}\n'
+    '.dispatch-summary{font-size:12px;line-height:1.5;color:#a9adb5;margin:0 0 10px}\n'
+    '.dispatch-diagram{min-height:260px;border:1px solid #30323a;border-radius:14px;background:#111216;overflow:auto;padding:8px}\n'
+    '.dispatch-diagram svg{display:block;width:100%;min-width:520px;height:auto}\n'
+    '.dispatch-code{margin-top:10px}.dispatch-code summary{cursor:pointer;color:#bfc2c8;font-size:12px;padding:6px 2px}\n'
+    '.dispatch-code pre{margin:5px 0 0;max-height:220px;overflow:auto;background:#101115;border:1px solid #30323a;border-radius:10px;padding:10px;color:#bfc4cc;font-size:11px;line-height:1.45;white-space:pre}\n'
+    '.dispatch-progress{font-size:11px;color:#9ca0a9;margin-top:10px;min-height:18px}.dispatch-run-note{font-size:10px;color:#7e828a;margin-top:8px}\n'
+    '@media(max-width:760px){.dispatch-body{grid-template-columns:1fr}.dispatch-card{max-height:94vh}.dispatch-input-panel textarea{min-height:120px}.dispatch-diagram{min-height:210px}}\n'
     '</style>\n'
     '</head>\n'
     '<body>\n'
@@ -615,6 +633,11 @@ WORKSPACE_HTML = (
     '        <span class="menu-icon white">M</span>\n'
     '        <span><div class="menu-title">Gmail</div><div class="menu-sub">Read and manage Gmail</div></span><span class="menu-state">Connect</span>\n'
     '      </button>\n'
+    '\n'
+    '      <button class="menu-row" type="button" data-action="dispatch">\n'
+    '        <span class="menu-icon purple"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><path d="M8 6h8M7 8l4 8M17 8l-4 8"/></svg></span>\n'
+    '        <span><span class="menu-title">Dispatch workflow</span><span class="menu-sub">Describe → plan → diagram → approve</span></span><span class="menu-state">Local</span>\n'
+    '      </button>\n'
     '      <div class="menu-divider"></div>\n'
     '      <div class="menu-options">\n'
     '        <select id="lang" hidden aria-hidden="true"><option value="auto" selected>Auto</option></select>\n'
@@ -727,6 +750,32 @@ WORKSPACE_HTML = (
     '  <div class="library-card conversation-dialog">\n'
     '    <div class="library-head"><h2>Move chat to project</h2><button class="soft-btn" id="closeMoveProject" type="button">Close</button></div>\n'
     '    <div class="move-project-list" id="moveProjectList"></div>\n'
+    '  </div>\n'
+    '</div>\n'
+    '\n'
+    '<div class="library-modal" id="dispatchModal">\n'
+    '  <div class="library-card dispatch-card">\n'
+    '    <div class="library-head">\n'
+    '      <div><h2>WorkSpace Dispatch</h2><div class="dispatch-hint">Describe the result you want. WorkSpace proposes a bounded DAG; deterministic policy decides whether it is valid and executable.</div></div>\n'
+    '      <button class="soft-btn" id="closeDispatch" type="button">Close</button>\n'
+    '    </div>\n'
+    '    <div class="dispatch-body">\n'
+    '      <div class="dispatch-input-panel">\n'
+    '        <textarea id="dispatchDescription" maxlength="12000" placeholder="Describe the outcome, steps, constraints, approvals, and deliverable you want…"></textarea>\n'
+    '        <div class="dispatch-hint">Enterprise-Lean v1: ≤12 nodes · ≤2 conceptual parallel nodes · no loops · one compiler model call · no automatic execution.</div>\n'
+    '        <div class="dispatch-actions"><button class="soft-btn primary" id="compileDispatch" type="button">Create workflow</button><button class="soft-btn" id="clearDispatch" type="button">Clear</button></div>\n'
+    '        <div class="dispatch-progress" id="dispatchProgress"></div>\n'
+    '      </div>\n'
+    '      <div class="dispatch-preview">\n'
+    '        <div class="dispatch-statusbar"><span class="dispatch-badge preview" id="dispatchBadge">No plan</span><div class="dispatch-title" id="dispatchTitle">Describe a workflow to begin</div></div>\n'
+    '        <p class="dispatch-summary" id="dispatchSummary">Validated workflow JSON, Mermaid code and a local SVG diagram will appear here.</p>\n'
+    '        <div class="dispatch-diagram" id="dispatchDiagram"></div>\n'
+    '        <details class="dispatch-code"><summary>Flowchart code · Mermaid</summary><pre id="dispatchMermaid"></pre></details>\n'
+    '        <details class="dispatch-code"><summary>Workflow code · JSON</summary><pre id="dispatchJson"></pre></details>\n'
+    '        <div class="dispatch-actions" style="margin-top:12px"><button class="soft-btn primary" id="runDispatch" type="button" disabled>Approve &amp; Dispatch</button><button class="soft-btn" id="copyMermaid" type="button" disabled>Copy Mermaid</button></div>\n'
+    '        <div class="dispatch-run-note" id="dispatchRunNote">Custom DAGs remain preview-only until an audited execution adapter exists.</div>\n'
+    '      </div>\n'
+    '    </div>\n'
     '  </div>\n'
     '</div>\n'
     '<div class="library-modal" id="libraryModal">\n'
@@ -907,6 +956,19 @@ WORKSPACE_HTML = (
     "async function completeExternalLoginFromFragment(){const raw=window.location.hash||'';const prefix='#workspace_external_ticket=';if(!raw.startsWith(prefix))return false;const ticket=decodeURIComponent(raw.slice(prefix.length));history.replaceState(null,'',window.location.pathname+window.location.search);try{const d=await api('/api/external/login',{method:'POST',body:JSON.stringify({ticket})});if(d.status==='pending'){document.getElementById('loginErr').textContent='Identity verified. An administrator must approve this account before first login.';return true}document.getElementById('login').classList.add('hidden');document.getElementById('loginErr').textContent='';await initializeWorkspace();return true}catch(e){document.getElementById('loginErr').textContent=e.message;return true}}\n"
     "function externalIdentityRow(item){const row=document.createElement('div');row.className='external-identity-row';const provider=document.createElement('div');provider.className='external-provider';provider.textContent=providerLabel(item.provider);const info=document.createElement('div');const name=document.createElement('div');name.textContent=item.display_name||'Verified identity';const status=document.createElement('div');status.className='external-status';status.textContent=item.status;info.append(name,status);const select=document.createElement('select');const blank=document.createElement('option');blank.value='';blank.textContent='Select local user';select.appendChild(blank);for(const user of state.adminUsers||[]){if(!user.enabled)continue;const o=document.createElement('option');o.value=user.user_id;o.textContent=(user.display_name||user.username)+' (@'+user.username+')';if(item.user_id===user.user_id)o.selected=true;select.appendChild(o)}const actions=document.createElement('div');actions.className='external-actions';const approve=document.createElement('button');approve.type='button';approve.className='soft-btn';approve.textContent=item.status==='approved'?'Rebind':'Approve';approve.onclick=async()=>{if(!select.value){showToast('Select a local WorkSpace user first');return}try{await api('/api/external-identities/'+encodeURIComponent(item.identity_id)+'/approve',{method:'POST',body:JSON.stringify({user_id:select.value})});showToast('External identity approved');await loadExternalIdentities()}catch(e){showToast(e.message)}};const reject=document.createElement('button');reject.type='button';reject.className='soft-btn';reject.textContent='Reject';reject.onclick=async()=>{try{await api('/api/external-identities/'+encodeURIComponent(item.identity_id)+'/reject',{method:'POST',body:JSON.stringify({})});showToast('External identity rejected');await loadExternalIdentities()}catch(e){showToast(e.message)}};actions.append(approve,reject);row.append(provider,info,select,actions);return row}\n"
     "async function loadExternalIdentities(){const wrap=document.getElementById('externalIdentityList');if(!wrap)return;try{const d=await api('/api/external-identities');wrap.innerHTML='';for(const item of d.identities||[])wrap.appendChild(externalIdentityRow(item));if(!(d.identities||[]).length){const empty=document.createElement('div');empty.className='library-empty';empty.textContent='No external identities have attempted login yet.';wrap.appendChild(empty)}}catch(e){wrap.innerHTML='';const empty=document.createElement('div');empty.className='library-empty';empty.textContent=e.message;wrap.appendChild(empty)}}\n"
+    '\n'
+    '\n'
+    'state.dispatchDraft=null;state.dispatchPoll=null;\n'
+    "function closeDispatch(){document.getElementById('dispatchModal').classList.remove('open');if(state.dispatchPoll){clearTimeout(state.dispatchPoll);state.dispatchPoll=null}}\n"
+    "function resetDispatchPreview(){state.dispatchDraft=null;const b=document.getElementById('dispatchBadge');b.className='dispatch-badge preview';b.textContent='No plan';document.getElementById('dispatchTitle').textContent='Describe a workflow to begin';document.getElementById('dispatchSummary').textContent='Validated workflow JSON, Mermaid code and a local SVG diagram will appear here.';document.getElementById('dispatchDiagram').replaceChildren();document.getElementById('dispatchMermaid').textContent='';document.getElementById('dispatchJson').textContent='';document.getElementById('runDispatch').disabled=true;document.getElementById('copyMermaid').disabled=true;document.getElementById('dispatchRunNote').textContent='Custom DAGs remain preview-only until an audited execution adapter exists.';document.getElementById('dispatchProgress').textContent=''}\n"
+    "function openDispatch(){document.getElementById('plusMenu').classList.remove('open');const m=document.getElementById('dispatchModal'),a=document.getElementById('dispatchDescription');if(!a.value.trim()&&input.value.trim())a.value=input.value.trim();m.classList.add('open');setTimeout(()=>a.focus(),30)}\n"
+    "function renderDispatchSvg(svg){const host=document.getElementById('dispatchDiagram');host.replaceChildren();if(!svg)return;const parsed=new DOMParser().parseFromString(svg,'image/svg+xml'),root=parsed.documentElement;if(root.tagName.toLowerCase()!=='svg'||parsed.querySelector('parsererror,script,foreignObject,iframe,image,use'))throw new Error('Diagram safety validation failed');for(const el of root.querySelectorAll('*'))for(const attr of [...el.attributes]){const n=attr.name.toLowerCase(),v=attr.value.toLowerCase();if(n.startsWith('on')||n==='href'||n==='xlink:href'||v.includes('javascript:')||v.includes('url(http'))throw new Error('Diagram contains a forbidden external reference')}host.appendChild(document.importNode(root,true))}\n"
+    "function renderDispatchDraft(d){state.dispatchDraft=d;const p=d.plan||{},ready=!!p.execution_ready,b=document.getElementById('dispatchBadge');b.className='dispatch-badge '+(ready?'ready':'preview');b.textContent=ready?'Ready to dispatch':'Preview only';document.getElementById('dispatchTitle').textContent=p.title||'Workflow';document.getElementById('dispatchSummary').textContent=p.summary||'';renderDispatchSvg(p.diagram_svg||'');document.getElementById('dispatchMermaid').textContent=p.mermaid||'';document.getElementById('dispatchJson').textContent=JSON.stringify({schema_version:p.schema_version,title:p.title,summary:p.summary,nodes:p.nodes,waves:p.waves,dispatch_batches:p.dispatch_batches,spec_sha256:p.spec_sha256},null,2);document.getElementById('runDispatch').disabled=!ready;document.getElementById('copyMermaid').disabled=!p.mermaid;document.getElementById('dispatchRunNote').textContent=p.execution_reason||'Explicit approval is required before dispatch.';document.getElementById('dispatchProgress').textContent='Plan validated · '+String((p.nodes||[]).length)+' nodes · max 2 conceptual parallel nodes'}\n"
+    "async function compileDispatch(){const description=document.getElementById('dispatchDescription').value.trim();if(!description){showToast('Describe the workflow first');return}const button=document.getElementById('compileDispatch');button.disabled=true;document.getElementById('dispatchProgress').textContent='Compiling and validating workflow…';try{renderDispatchDraft(await api('/api/dispatch/compile',{method:'POST',body:JSON.stringify({description})}))}catch(err){document.getElementById('dispatchProgress').textContent='Workflow blocked: '+err.message;showToast(err.message)}finally{button.disabled=false}}\n"
+    "async function pollDispatch(){if(!state.dispatchDraft)return;try{const d=await api('/api/dispatch/'+encodeURIComponent(state.dispatchDraft.workflow_id));state.dispatchDraft=d;const s=String(d.status||'unknown');document.getElementById('dispatchProgress').textContent='Dispatch status: '+s;if(s==='completed'){const b=document.getElementById('dispatchBadge');b.textContent='Completed';b.className='dispatch-badge ready';document.getElementById('runDispatch').disabled=true;showToast('Workflow completed');return}if(s==='failed'){const b=document.getElementById('dispatchBadge');b.textContent='Failed';b.className='dispatch-badge preview';document.getElementById('dispatchRunNote').textContent=d.error||'Workflow failed';document.getElementById('runDispatch').disabled=false;return}state.dispatchPoll=setTimeout(pollDispatch,1500)}catch(err){document.getElementById('dispatchProgress').textContent='Status error: '+err.message}}\n"
+    "async function runDispatch(){const d=state.dispatchDraft;if(!d||!d.plan?.execution_ready)return;const button=document.getElementById('runDispatch');button.disabled=true;document.getElementById('dispatchProgress').textContent='Approval recorded · dispatching…';try{state.dispatchDraft=await api('/api/dispatch/'+encodeURIComponent(d.workflow_id)+'/run',{method:'POST',body:JSON.stringify({approved:true,language:document.getElementById('lang').value,output_format:document.getElementById('fmt').value})});state.dispatchPoll=setTimeout(pollDispatch,500)}catch(err){button.disabled=false;document.getElementById('dispatchProgress').textContent='Dispatch blocked: '+err.message;showToast(err.message)}}\n"
+    "async function copyDispatchMermaid(){const text=state.dispatchDraft?.plan?.mermaid||'';if(!text)return;try{await navigator.clipboard.writeText(text);showToast('Mermaid copied')}catch(e){showToast('Clipboard unavailable')}}\n"
+    'document.querySelector(\'.menu-row[data-action="dispatch"]\').onclick=openDispatch;document.getElementById(\'closeDispatch\').onclick=closeDispatch;document.getElementById(\'compileDispatch\').onclick=()=>compileDispatch().catch(e=>showToast(e.message));document.getElementById(\'clearDispatch\').onclick=()=>{document.getElementById(\'dispatchDescription\').value=\'\';resetDispatchPreview()};document.getElementById(\'runDispatch\').onclick=()=>runDispatch().catch(e=>showToast(e.message));document.getElementById(\'copyMermaid\').onclick=()=>copyDispatchMermaid().catch(e=>showToast(e.message));\n'
     '\n'
     "document.getElementById('sidebarToggle').onclick=toggleSidebar;\n"
     "document.getElementById('mobileMenuBtn').onclick=()=>setSidebarCollapsed(false);\n"

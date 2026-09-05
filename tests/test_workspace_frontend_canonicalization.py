@@ -8,7 +8,7 @@ from pathlib import Path
 from three_agent.workspace_frontend import WORKSPACE_HTML, _insert_after_workflow_description, config_js, config_markup
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SHA256 = "38960166e270e464e2795ae204653d153993ebae0b3309ff2eac9b54c0ac027d"
+EXPECTED_SHA256 = "a7760cb113bb51f2a921c34a601facc1f5b9ce09ba116cfb998973a914738d6a"
 
 
 class WorkspaceFrontendCanonicalizationTests(unittest.TestCase):
