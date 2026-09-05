@@ -30,7 +30,7 @@ A lower layer can never grant itself authority held by a higher layer.
 - `workspace-egress`: local DNS + public HTTPS only; no WorkSpace data-store permission.
 - `workspace-auth`: separate identity-only broker; fixed Google/GitHub/LINE OAuth/OIDC endpoints only; no WorkSpace data-store permission; exposes only short-lived one-time identity assertions to Core over a loopback redemption boundary.
 - External provider login never grants Gmail, Drive, repository, workflow, LINE Messaging, file, project, chat or AI-tool authority. Local WorkSpace RBAC remains authoritative.
-- Confidential mode: public search disabled.
+- Confidential mode: Core has no direct public egress. Public research is allowed only through the separate `workspace-public`/`workspace-egress` path when trusted deployment policy authorizes it and deterministic query sanitization, strict DLP, host allowlisting, exact result grants, and bounded GET-only retrieval all pass.
 - Public research: DLP + search-host allowlist + exact search-result grants + bounded GET-only responses.
 - Arbitrary POST/upload/webhook/telemetry is denied outside narrowly defined higher-trust brokers such as the fixed identity-token exchange contract above.
 - GitHub push is an operator/deployment activity, never autonomous runtime authority.
