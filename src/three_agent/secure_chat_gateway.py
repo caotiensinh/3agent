@@ -16,6 +16,7 @@ from .internet_egress_consent import (
 )
 
 _SECURE_CONSENT_UI_VERSION = "workspace.internet-egress-consent-ui/v1"
+_FRONTEND_BACKEND_BRIDGE_VERSION = "workspace.frontend-backend-bridge/v1"
 _BASE_CAPABILITIES = legacy.workspace_ui_capabilities
 
 
@@ -190,59 +191,95 @@ def workspace_ui_capabilities(config: Any) -> dict[str, Any]:
         "uploads_lan_only": True,
         "explicit_consent_for_sanitized_sensitive_query": True,
     }
+    payload["frontend_backend_bridge"] = {
+        "schema_version": _FRONTEND_BACKEND_BRIDGE_VERSION,
+        "capabilities_endpoint": "/api/capabilities",
+        "chat_endpoint": "/api/chat",
+        "job_endpoint_template": "/api/jobs/{job_id}",
+        "request_mode_field": "mode",
+        "consent_token_field": "egress_consent_token",
+        "consent_required_status": int(HTTPStatus.CONFLICT),
+        "blocked_status": int(HTTPStatus.UNPROCESSABLE_ENTITY),
+        "poll_jobs": True,
+        "raw_prompt_public_egress": False,
+        "uploads_public_egress": False,
+    }
     return payload
 
 
-_CONSENT_SCRIPT = r"""
-<script id="workspaceInternetEgressConsent">
-(function(){
-  if(window.__workspaceEgressConsentInstalled)return;
-  window.__workspaceEgressConsentInstalled=true;
-  const nativeFetch=window.fetch.bind(window);
-  const CHAT_PATH='/api/chat';
-  function chatUrl(input){
-    try{return new URL(typeof input==='string'?input:input.url,window.location.href).pathname===CHAT_PATH}catch(e){return false}
-  }
-  function approvalText(d){
-    const reasons=(d.reasons||[]).join(', ')||'sensitive/internal data';
-    const preview=String(d.sanitized_preview||'');
-    return [
-      'WorkSpace Internet Egress Safety',
-      '',
-      'Sensitive/internal information was detected.',
-      'Nothing has been sent to the Internet.',
-      'Uploaded files remain inside the LAN and are not sent as search content.',
-      '',
-      'Detected: '+reasons,
-      'Removed fields: '+String(d.removed_sensitive_fields||0),
-      '',
-      'Only this sanitized public query will be sent:',
-      preview,
-      '',
-      'Continue with the sanitized query?'
-    ].join('\n');
-  }
-  window.fetch=async function(input,init){
-    const first=await nativeFetch(input,init);
-    if(!chatUrl(input)||first.status!==409)return first;
-    let d={};
-    try{d=await first.clone().json()}catch(e){return first}
-    if(d.code!=='INTERNET_EGRESS_CONSENT_REQUIRED'||!d.consent_token)return first;
-    if(!window.confirm(approvalText(d)))return first;
+_FRONTEND_API_ORIGINAL = (
+    "async function api(url,opt={}){const r=await fetch(url,{credentials:'same-origin',"
+    "headers:{'Content-Type':'application/json',...(opt.headers||{})},...opt});let data={};"
+    "try{data=await r.json()}catch(e){}if(r.status===401){document.getElementById('login')."
+    "classList.remove('hidden');throw new Error('Authentication required')}if(!r.ok)throw new "
+    "Error(data.error||r.statusText);return data}"
+)
+
+_FRONTEND_API_SECURE = r"""
+const workspaceInternetEgressConsent='workspaceInternetEgressConsent';
+const workspaceSecureBackendBridge='workspace-secure-backend-bridge/v1';
+function workspaceEgressApprovalText(d){
+  const reasons=(d.reasons||[]).join(', ')||'sensitive/internal data';
+  const preview=String(d.sanitized_preview||'');
+  return [
+    'WorkSpace Internet Egress Safety',
+    '',
+    'Sensitive/internal information was detected.',
+    'Nothing has been sent to the Internet.',
+    'Uploaded files remain inside the LAN and are not sent as search content.',
+    '',
+    'Detected: '+reasons,
+    'Removed fields: '+String(d.removed_sensitive_fields||0),
+    '',
+    'Only this sanitized public query will be sent:',
+    preview,
+    '',
+    'Continue with the sanitized query?'
+  ].join('\n');
+}
+async function api(url,opt={},egressRetry=false){
+  const bridge=(state&&state.capabilities&&state.capabilities.frontend_backend_bridge)||{};
+  const chatEndpoint=String(bridge.chat_endpoint||'/api/chat');
+  const consentStatus=Number(bridge.consent_required_status||409);
+  const tokenField=String(bridge.consent_token_field||'egress_consent_token');
+  const request={...opt,credentials:'same-origin',headers:{'Content-Type':'application/json',...(opt.headers||{})}};
+  const r=await fetch(url,request);
+  let data={};
+  try{data=await r.json()}catch(e){}
+  if(r.status===401){document.getElementById('login').classList.remove('hidden');throw new Error('Authentication required')}
+  if(url===chatEndpoint&&r.status===consentStatus&&data.code==='INTERNET_EGRESS_CONSENT_REQUIRED'&&data.consent_token){
+    if(egressRetry)throw new Error(data.error||'Internet egress consent retry failed');
+    if(!window.confirm(workspaceEgressApprovalText(data)))throw new Error('Internet search cancelled before public egress');
     let body={};
-    try{body=JSON.parse((init&&init.body)||'{}')}catch(e){return first}
-    body.egress_consent_token=d.consent_token;
-    const retry={...(init||{}),body:JSON.stringify(body)};
-    return nativeFetch(input,retry);
-  };
-})();
-</script>
+    try{body=JSON.parse(String(request.body||'{}'))}catch(e){throw new Error('Unable to prepare secure consent retry')}
+    body[tokenField]=data.consent_token;
+    return api(url,{...opt,body:JSON.stringify(body)},true);
+  }
+  if(!r.ok)throw new Error(data.error||data.code||r.statusText);
+  return data;
+}
 """.strip()
+
+# Backward-compatible exported constant used by existing contract tests and by the
+# fallback path for non-canonical HTML documents. Canonical WorkSpace HTML receives
+# the native api() bridge above instead of a global window.fetch monkey patch.
+_CONSENT_SCRIPT = (
+    '<script id="workspaceInternetEgressConsentFallback">\n'
+    + _FRONTEND_API_SECURE
+    + '\n</script>'
+)
 
 
 def _secure_html(document: str) -> str:
     if "workspaceInternetEgressConsent" in document:
         return document
+    matches = document.count(_FRONTEND_API_ORIGINAL)
+    if matches == 1:
+        return document.replace(_FRONTEND_API_ORIGINAL, _FRONTEND_API_SECURE, 1)
+    if matches > 1:
+        raise RuntimeError(
+            "WorkSpace frontend has multiple canonical api() functions; secure backend bridge is ambiguous"
+        )
     if "</body>" not in document:
         raise RuntimeError("WorkSpace frontend is missing </body>; consent UI cannot be installed safely")
     return document.replace("</body>", _CONSENT_SCRIPT + "\n</body>", 1)
