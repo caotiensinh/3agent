@@ -81,6 +81,18 @@ _PAGE = """<!doctype html>
   </section>
 
   <section class="card" style="margin-top:14px">
+    <strong>Incident Posture</strong>
+    <p class="muted">直近最大100件のFindingを固定バケットの集計値だけで表示します。Finding ID、Asset参照、Evidence参照、Rule ID、Category値は表示しません。</p>
+    <div class="grid">
+      <section class="card"><div class="label">Attention</div><div id="incident-attention" class="value">-</div></section>
+      <section class="card"><div class="label">Finding sample</div><div id="incident-sample" class="value">-</div></section>
+      <section class="card"><div class="label">Open sample</div><div id="incident-open" class="value">-</div></section>
+      <section class="card"><div class="label">Closed sample</div><div id="incident-closed" class="value">-</div></section>
+    </div>
+    <pre id="incident-posture">Incident posture を読み込んでいます...</pre>
+  </section>
+
+  <section class="card" style="margin-top:14px">
     <strong>Read-only monitoring</strong>
     <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
     <button id="run" disabled>読み取り専用監視を実行</button>
@@ -99,6 +111,7 @@ let summary = null;
 let readiness = null;
 let assetIntelligence = null;
 let evidenceSummary = null;
+let incidentPosture = null;
 
 function stateText(value) { return value ? "有効" : "無効"; }
 function setState(el, value) {
@@ -108,17 +121,19 @@ function setState(el, value) {
 
 async function refresh() {
   try {
-    const [summaryResp, readinessResp, assetResp, evidenceResp] = await Promise.all([
+    const [summaryResp, readinessResp, assetResp, evidenceResp, incidentResp] = await Promise.all([
       fetch("/api/v1/security/monitoring/summary", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/evidence-summary", {cache:"no-store"})
+      fetch("/api/v1/security/monitoring/evidence-summary", {cache:"no-store"}),
+      fetch("/api/v1/security/monitoring/incident-posture", {cache:"no-store"})
     ]);
     summary = await summaryResp.json();
     readiness = await readinessResp.json();
     assetIntelligence = await assetResp.json();
     evidenceSummary = await evidenceResp.json();
-    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok) throw new Error("backend status unavailable");
+    incidentPosture = await incidentResp.json();
+    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok || !incidentResp.ok) throw new Error("backend status unavailable");
 
     setState(byId("enabled"), summary.enabled === true);
     setState(byId("network"), summary.allow_real_network === true);
@@ -157,6 +172,18 @@ async function refresh() {
       authority: evidenceSummary.authority || {}
     }, null, 2);
 
+    byId("incident-attention").textContent = String(incidentPosture.attention_level ?? "unknown");
+    byId("incident-sample").textContent = String(incidentPosture.sample_count ?? 0);
+    byId("incident-open").textContent = String(incidentPosture.open_sample_count ?? 0);
+    byId("incident-closed").textContent = String(incidentPosture.closed_sample_count ?? 0);
+    byId("incident-posture").textContent = JSON.stringify({
+      count_scope: incidentPosture.count_scope,
+      max_findings: incidentPosture.max_findings,
+      severity_counts: incidentPosture.severity_counts || {},
+      status_counts: incidentPosture.status_counts || {},
+      authority: incidentPosture.authority || {}
+    }, null, 2);
+
     const list = byId("issues");
     list.replaceChildren();
     for (const item of [...(readiness.issues || []), ...(readiness.warnings || [])]) {
@@ -176,6 +203,7 @@ async function refresh() {
     byId("result").textContent = `接続エラー: ${error.message}`;
     byId("asset-intelligence").textContent = "Asset Intelligence を取得できません。";
     byId("evidence-summary").textContent = "Evidence summary を取得できません。";
+    byId("incident-posture").textContent = "Incident posture を取得できません。";
   }
 }
 
@@ -314,6 +342,9 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/security/monitoring/evidence-summary":
                 self._json(200, self.server.service.evidence_summary())
                 return
+            if path == "/api/v1/security/monitoring/incident-posture":
+                self._json(200, self.server.service.incident_posture())
+                return
         except Exception:
             self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
             return
@@ -418,7 +449,3 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         server.server_close()
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

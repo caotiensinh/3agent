@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from .contracts import APPROVED_DATA_CLASSES, COLLECTOR_CAPABILITIES
 from .dispatch import DefaultCollectorDispatcher
 from .hourly import HourlyMonitoringRunner
+from .incident_posture import safe_incident_posture_summary
 from .policy import MonitoringPolicyEngine
 from .readiness import evaluate_monitoring_readiness
 from .runtime_config import MonitoringRuntimeConfig, load_runtime_config
@@ -246,6 +247,9 @@ class SecurityMonitoringService:
 
     def evidence_summary(self) -> dict[str, object]:
         return safe_recent_evidence_summary(self.load_config())
+
+    def incident_posture(self) -> dict[str, object]:
+        return safe_incident_posture_summary(self.load_config())
 
     def readiness(self) -> dict[str, object]:
         config = self.load_config()
