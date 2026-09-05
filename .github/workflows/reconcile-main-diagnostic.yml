@@ -1,0 +1,43 @@
+name: reconcile-main-diagnostic
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v4-final-20260903
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-main-merge:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Fetch live main
+        run: git fetch origin main
+      - name: Diagnose merge without mutation
+        shell: bash
+        run: |
+          set +e
+          git merge --no-commit --no-ff origin/main
+          merge_status=$?
+          set -e
+          echo "branch_head=$(git rev-parse HEAD)"
+          echo "main_head=$(git rev-parse origin/main)"
+          echo "merge_status=$merge_status"
+          if [ "$merge_status" -ne 0 ]; then
+            echo "::group::Unmerged paths"
+            git diff --name-status --diff-filter=U
+            echo "::endgroup::"
+            git status --short
+            git merge --abort || true
+            exit "$merge_status"
+          fi
+          echo "Merge is clean."
+          git diff --cached --stat
+          git merge --abort || true
