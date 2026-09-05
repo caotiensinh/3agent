@@ -27,3 +27,4 @@ workspace-security-monitor = three_agent.security_monitoring_cli:main
 workspace-security-pcap = three_agent.security_pcap_runner:main
 workspace-security-report = three_agent.security_reporting_cli:main
 workspace-security-scheduler = three_agent.security_monitoring_scheduler:main
+workspace-security-ui = three_agent.security_local_console:main

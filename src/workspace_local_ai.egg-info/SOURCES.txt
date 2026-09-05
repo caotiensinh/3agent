@@ -124,6 +124,7 @@ src/three_agent/resource_metrics.py
 src/three_agent/route_planner.py
 src/three_agent/runtime_efficiency.py
 src/three_agent/runtime_validation.py
+src/three_agent/security_local_console.py
 src/three_agent/security_monitoring_cli.py
 src/three_agent/security_monitoring_scheduler.py
 src/three_agent/security_pcap_runner.py
@@ -257,6 +258,7 @@ src/three_agent/security_monitoring/rule_compiler.py
 src/three_agent/security_monitoring/rule_contracts.py
 src/three_agent/security_monitoring/runtime_config.py
 src/three_agent/security_monitoring/security_workflow.py
+src/three_agent/security_monitoring/service.py
 src/three_agent/security_monitoring/snmp_backend.py
 src/three_agent/security_monitoring/soc_read_model.py
 src/three_agent/security_monitoring/storage.py
@@ -486,6 +488,7 @@ tests/test_security_incident_scope_builder_v029.py
 tests/test_security_incident_timeline_evidence_v013.py
 tests/test_security_incident_timeline_v010.py
 tests/test_security_lateral_movement_trace_v023.py
+tests/test_security_local_console.py
 tests/test_security_memory_forensics_contract_v025.py
 tests/test_security_monitoring_behavior_intelligence.py
 tests/test_security_monitoring_behavior_risk.py
