@@ -17,6 +17,16 @@ MAX_ACTOR_LENGTH = 160
 MAX_REASON_LENGTH = 1200
 
 
+class _ClosingSQLiteConnection(sqlite3.Connection):
+    """Preserve sqlite transaction context semantics and always release the file handle."""
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            return super().__exit__(exc_type, exc, tb)
+        finally:
+            self.close()
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -77,7 +87,11 @@ class SecurityMonitoringConfigGovernance:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.database_path, timeout=10.0)
+        conn = sqlite3.connect(
+            self.database_path,
+            timeout=10.0,
+            factory=_ClosingSQLiteConnection,
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=10000")
