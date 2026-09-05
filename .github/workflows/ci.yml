@@ -40,39 +40,57 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "HEAD=$(git rev-parse HEAD)"
-          echo "PWD=$(pwd)"
-          echo "STATUS_BEGIN"
-          git status --short
-          echo "STATUS_END"
-          echo "TRACKED_GOVERNANCE_FILES_BEGIN"
-          git ls-files | grep -E '(^|/)(test_execution_governance|validate_execution_governance)' || true
-          echo "TRACKED_GOVERNANCE_FILES_END"
-          echo "FOUND_GOVERNANCE_FILES_BEGIN"
-          find scripts tests -maxdepth 2 -type f -name '*execution*governance*' -print -exec sha256sum {} \;
-          echo "FOUND_GOVERNANCE_FILES_END"
-          echo "GOVERNANCE_SYMBOL_SOURCES_BEGIN"
-          grep -RInE '\[governance-check\]|ExecutionGovernanceGuardTests|test_repo_state_passes|new parallel/version-style paths detected' scripts tests || true
-          echo "GOVERNANCE_SYMBOL_SOURCES_END"
-          if [[ -f scripts/test_execution_governance.py ]]; then
-            echo "RUNTIME_GOVERNANCE_SCRIPT_BEGIN"
-            echo "realpath=$(realpath scripts/test_execution_governance.py)"
-            if git ls-files --error-unmatch scripts/test_execution_governance.py >/dev/null 2>&1; then
-              echo "tracked=yes"
-            else
-              echo "tracked=no"
+          {
+            echo "HEAD=$(git rev-parse HEAD)"
+            echo "PWD=$(pwd)"
+            echo "STATUS_BEGIN"
+            git status --short
+            echo "STATUS_END"
+            echo "TRACKED_GOVERNANCE_FILES_BEGIN"
+            git ls-files | grep -E '(^|/)(test_execution_governance|validate_execution_governance)' || true
+            echo "TRACKED_GOVERNANCE_FILES_END"
+            echo "FOUND_GOVERNANCE_FILES_BEGIN"
+            find scripts tests -maxdepth 2 -type f -name '*execution*governance*' -print -exec sha256sum {} \;
+            echo "FOUND_GOVERNANCE_FILES_END"
+            echo "GOVERNANCE_SYMBOL_SOURCES_BEGIN"
+            grep -RInE '\[governance-check\]|ExecutionGovernanceGuardTests|test_repo_state_passes|new parallel/version-style paths detected' scripts tests || true
+            echo "GOVERNANCE_SYMBOL_SOURCES_END"
+            if [[ -f scripts/test_execution_governance.py ]]; then
+              echo "RUNTIME_GOVERNANCE_SCRIPT_BEGIN"
+              echo "realpath=$(realpath scripts/test_execution_governance.py)"
+              if git ls-files --error-unmatch scripts/test_execution_governance.py >/dev/null 2>&1; then
+                echo "tracked=yes"
+              else
+                echo "tracked=no"
+              fi
+              sha256sum scripts/test_execution_governance.py
+              sed -n '1,360p' scripts/test_execution_governance.py
+              echo "RUNTIME_GOVERNANCE_SCRIPT_END"
             fi
-            sha256sum scripts/test_execution_governance.py
-            sed -n '1,360p' scripts/test_execution_governance.py
-            echo "RUNTIME_GOVERNANCE_SCRIPT_END"
-          fi
-          python - <<'PY'
+            python - <<'PY'
           import sys
           print("PYTHON_EXECUTABLE=", sys.executable)
           print("PYTHON_SYS_PATH=", sys.path)
           PY
+          } 2>&1 | tee "$RUNNER_TEMP/governance-provenance.log"
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/unittest.log"
+          rc=${PIPESTATUS[0]}
+          set -e
+          exit "$rc"
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-diagnostics-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/governance-provenance.log
+            ${{ runner.temp }}/unittest.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Enterprise verification EV-01 through EV-10
         env:
           EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
