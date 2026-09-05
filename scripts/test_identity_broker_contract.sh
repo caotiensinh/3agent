@@ -40,6 +40,29 @@ done
 
 grep -Fq 'WORKSPACE_EXTERNAL_AUTH_REDEEM_URL' src/three_agent/workspace_external_identity.py
 grep -Fq 'redeem.hostname not in {"127.0.0.1", "localhost", "::1"}' src/three_agent/workspace_external_identity.py
-grep -Fq 'external_authority": "identity_only"' src/three_agent/chat_gateway.py
+python3 - <<'PY'
+import ast
+from pathlib import Path
+
+source = Path("src/three_agent/chat_gateway.py").read_text(encoding="utf-8")
+tree = ast.parse(source)
+found = False
+for node in ast.walk(tree):
+    if not isinstance(node, ast.Dict):
+        continue
+    for key, value in zip(node.keys, node.values):
+        if (
+            isinstance(key, ast.Constant)
+            and key.value == "external_authority"
+            and isinstance(value, ast.Constant)
+            and value.value == "identity_only"
+        ):
+            found = True
+            break
+    if found:
+        break
+if not found:
+    raise SystemExit("identity broker contract missing external_authority=identity_only")
+PY
 
 echo "identity broker contract PASS"
