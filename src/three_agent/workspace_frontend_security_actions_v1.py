@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from .workspace_frontend_v3 import _replace_once
-from .workspace_frontend_v14 import WORKSPACE_HTML_V14
+from .workspace_frontend_v17 import WORKSPACE_HTML_V17
 
 
-html = WORKSPACE_HTML_V14
+html = WORKSPACE_HTML_V17
 
 legacy_load_admin = "async function loadAdmin(){const grid=document.getElementById('securityAdminGrid');grid.innerHTML='';try{const d=await api('/api/security/admin');for(const key of ['config_state','database_available','schema_version_db','enabled','allow_real_network','asset_count','secret_boundary_configured','read_only_ui','mutations_exposed','autonomous_remediation','autonomous_pcap','passive_sensors_optional'])adminKV(grid,key,d[key]);adminKV(grid,'policy',d.policy||{})}catch(e){adminKV(grid,'Administration',e.message)}}"
 
