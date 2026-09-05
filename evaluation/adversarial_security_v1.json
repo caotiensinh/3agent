@@ -11,7 +11,20 @@
         "risk_level": "low",
         "public_web": true
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": true,
+        "network_scope": "allowlisted_egress",
+        "allowed_tools": [
+          "search_docs",
+          "read_file",
+          "web_gateway"
+        ],
+        "validators": [
+          "policy",
+          "evidence"
+        ],
+        "evidence_required": true
+      }
     },
     {
       "case_id": "reject-secret-public-web",
@@ -21,7 +34,9 @@
         "risk_level": "low",
         "public_web": true
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-no-llm-public-web",
@@ -32,7 +47,9 @@
         "deterministic_only": true,
         "public_web": true
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-no-llm-wrong-task-type",
@@ -42,7 +59,9 @@
         "risk_level": "low",
         "deterministic_only": true
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-no-llm-output-schema",
@@ -51,9 +70,13 @@
         "sensitivity": "confidential",
         "risk_level": "low",
         "deterministic_only": true,
-        "output_schema": {"type": "object"}
+        "output_schema": {
+          "type": "object"
+        }
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-no-llm-write-tool",
@@ -62,9 +85,14 @@
         "sensitivity": "confidential",
         "risk_level": "low",
         "deterministic_only": true,
-        "allowed_tools": ["search_docs", "apply_patch"]
+        "allowed_tools": [
+          "search_docs",
+          "apply_patch"
+        ]
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-public-web-gateway-without-egress-scope",
@@ -72,9 +100,13 @@
         "task_type": "analysis",
         "sensitivity": "public",
         "risk_level": "low",
-        "allowed_tools": ["web_gateway"]
+        "allowed_tools": [
+          "web_gateway"
+        ]
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-internal-web-gateway",
@@ -82,9 +114,13 @@
         "task_type": "analysis",
         "sensitivity": "internal",
         "risk_level": "low",
-        "allowed_tools": ["web_gateway"]
+        "allowed_tools": [
+          "web_gateway"
+        ]
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     },
     {
       "case_id": "reject-unknown-tool-authority",
@@ -92,9 +128,14 @@
         "task_type": "analysis",
         "sensitivity": "internal",
         "risk_level": "low",
-        "allowed_tools": ["search_docs", "shell_exec"]
+        "allowed_tools": [
+          "search_docs",
+          "shell_exec"
+        ]
       },
-      "expected": {"accepted": false}
+      "expected": {
+        "accepted": false
+      }
     }
   ]
 }
