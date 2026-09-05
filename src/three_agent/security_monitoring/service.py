@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .contracts import APPROVED_DATA_CLASSES, COLLECTOR_CAPABILITIES
 from .dispatch import DefaultCollectorDispatcher
 from .hourly import HourlyMonitoringRunner
 from .policy import MonitoringPolicyEngine
@@ -14,6 +15,7 @@ from .snmp_backend import FileSecretResolver, PySnmpV3Backend
 from .storage import MonitoringStore
 
 TOKYO = ZoneInfo("Asia/Tokyo")
+ASSET_INTELLIGENCE_SUMMARY_SCHEMA = "workspace-security-monitoring/asset-intelligence-summary-v1"
 
 
 def sync_inventory(config: MonitoringRuntimeConfig, store: MonitoringStore) -> None:
@@ -45,6 +47,67 @@ def safe_config_summary(config: MonitoringRuntimeConfig) -> dict[str, object]:
     }
 
 
+def safe_asset_intelligence_summary(config: MonitoringRuntimeConfig) -> dict[str, object]:
+    """Return privacy-safe inventory intelligence without exposing asset addressing.
+
+    The authoritative configuration is the only input. This function does not read the
+    monitoring database, resolve credentials, probe targets, execute collectors, capture
+    packets, or perform remediation. Only aggregate counts over constrained contract
+    enums are returned.
+    """
+
+    assets = tuple(config.assets)
+    enabled_assets = tuple(asset for asset in assets if asset.enabled)
+    capability_counts = {
+        capability: sum(
+            1
+            for asset in enabled_assets
+            if capability in asset.collector_capabilities
+        )
+        for capability in sorted(COLLECTOR_CAPABILITIES)
+    }
+    data_class_counts = {
+        data_class: sum(
+            1 for asset in enabled_assets if asset.data_class == data_class
+        )
+        for data_class in sorted(APPROVED_DATA_CLASSES)
+    }
+    return {
+        "schema_version": ASSET_INTELLIGENCE_SUMMARY_SCHEMA,
+        "count_scope": "enabled_assets",
+        "asset_count": len(assets),
+        "enabled_asset_count": len(enabled_assets),
+        "disabled_asset_count": len(assets) - len(enabled_assets),
+        "unique_role_count": len({asset.role for asset in enabled_assets}),
+        "capability_counts": {
+            key: value for key, value in capability_counts.items() if value > 0
+        },
+        "data_class_counts": {
+            key: value for key, value in data_class_counts.items() if value > 0
+        },
+        "credential_ref_asset_count": sum(
+            1 for asset in enabled_assets if asset.credential_ref is not None
+        ),
+        "explicit_tcp_port_binding_count": sum(
+            len(asset.allowed_tcp_ports) for asset in enabled_assets
+        ),
+        "contains_raw_credentials": False,
+        "authority": {
+            "aggregate_only": True,
+            "config_is_authoritative": True,
+            "asset_ids_exposed": False,
+            "management_hosts_exposed": False,
+            "credential_refs_exposed": False,
+            "allowed_tcp_ports_exposed": False,
+            "database_write": False,
+            "network_execution": False,
+            "collector_execution": False,
+            "packet_capture_execution": False,
+            "remediation_execution": False,
+        },
+    }
+
+
 def build_snmp_backend(config: MonitoringRuntimeConfig):
     has_snmp_assets = any(
         asset.enabled and "snmpv3_read" in asset.collector_capabilities
@@ -71,6 +134,9 @@ class SecurityMonitoringService:
 
     def summary(self) -> dict[str, object]:
         return safe_config_summary(self.load_config())
+
+    def asset_intelligence(self) -> dict[str, object]:
+        return safe_asset_intelligence_summary(self.load_config())
 
     def readiness(self) -> dict[str, object]:
         config = self.load_config()
