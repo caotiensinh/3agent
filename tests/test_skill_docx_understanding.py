@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "docx-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "docx-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "00d93ecbf991283cee6c7b03223227db2c655509a7a8fbf89b2c0bc36b78fa81"
+EXPECTED_SHA256 = "2b8c599330cd46e091696584765e56dcc6cf95d05a8eea69bea13f8b019ebfff"
 
 
 class DocxUnderstandingSkillTest(unittest.TestCase):

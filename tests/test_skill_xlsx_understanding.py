@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "xlsx-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "xlsx-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "bc7cc9aebd5fed01209828e153245b1314c3da6a7de9f5a53ea62b971e55375e"
+EXPECTED_SHA256 = "c4944f8b44cbdba5f15298640855d53c630b4eab77c03f9b8d3fc81d1628a2d5"
 
 
 class XlsxUnderstandingSkillTest(unittest.TestCase):

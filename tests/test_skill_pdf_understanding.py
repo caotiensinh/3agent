@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "pdf-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "pdf-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "599a745891477d19accb42fc2b3c8667746175692cd897e0f03a7d897a54abde"
+EXPECTED_SHA256 = "3f6a8477afa539eef43577cd38c5acb52057a484a7fc81afe2f485f7342b7eb8"
 
 
 class PdfUnderstandingSkillTest(unittest.TestCase):

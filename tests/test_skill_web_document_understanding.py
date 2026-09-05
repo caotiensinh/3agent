@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "web-document-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "web-document-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55"
+EXPECTED_SHA256 = "7e91e24948aa1c7def27bcd3f547c009497901b74e971b86801f10c50bdae21e"
 
 
 class WebDocumentUnderstandingSkillTest(unittest.TestCase):

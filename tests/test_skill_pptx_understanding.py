@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "pptx-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "pptx-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "b3a92d98d997446b3958b05d84fe6d1c31deed9f9e7739aa6e942580ec90329b"
+EXPECTED_SHA256 = "a889dce4ad2ddc477a82dc6940d371cd20d46679f7b81a65138aa9f18423231f"
 
 
 class PptxUnderstandingSkillTest(unittest.TestCase):

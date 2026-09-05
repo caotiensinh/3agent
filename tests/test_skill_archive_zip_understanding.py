@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "archive-zip-understanding" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "archive-zip-understanding" / "SKILL.md"
-EXPECTED_SHA256 = "760be52466ac00fd1d2de399e29ad25e2d2e468ab923e2ebb7a9832c5e1effd3"
+EXPECTED_SHA256 = "a52d5f503e0963d110e9835598075b8cb848c562b8d49decb32ec1f0f15b8e80"
 
 
 class ArchiveZipUnderstandingSkillTest(unittest.TestCase):

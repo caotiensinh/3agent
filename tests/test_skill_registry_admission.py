@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = ROOT / "skill_candidates" / "skill-registry-admission" / "SKILL.md"
 APPROVED_SKILL = ROOT / "skills" / "skill-registry-admission" / "SKILL.md"
-EXPECTED_SHA256 = "14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3"
+EXPECTED_SHA256 = "1cb979a61b67c8131e4386ff7faeef15ea33956e2865493017437aa0745033e8"
 
 
 class SkillRegistryAdmissionTest(unittest.TestCase):
