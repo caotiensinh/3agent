@@ -6,7 +6,7 @@ on:
       - reconcile/all-branches-v4-final-20260903
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   reconcile-current-main:
@@ -75,24 +75,21 @@ jobs:
           test -z "$(git diff --name-only --diff-filter=U)"
           test "$(git rev-parse MERGE_HEAD)" = "$(git rev-parse origin/main)"
 
+          # Keep current-main policy/security semantics that are newer than the
+          # convergence branch, while preserving the branch's canonical chat tree.
           git checkout origin/main -- \
             evaluation/adversarial_security_v1.json \
             tests/test_evaluation_lab.py \
             scripts/install_workspace_secure_boundary.sh
 
-          git rm -f scripts/repair_evaluation_golden_egress.py
-          python - <<'PY'
-          from pathlib import Path
-          path = Path('.github/workflows/canonical-autoheal-safe.yml')
-          source = path.read_text(encoding='utf-8')
-          block = '''      - name: Migrate golden sanitized-egress expectations\n        run: python scripts/repair_evaluation_golden_egress.py\n'''
-          count = source.count(block)
-          if count != 1:
-              raise SystemExit(f'expected one temporary evaluation migration step, found {count}')
-          path.write_text(source.replace(block, '', 1), encoding='utf-8')
-          PY
+          # GitHub Actions tokens cannot push commits that alter workflow files.
+          # Preserve the exact PR-parent workflow tree during this true Git merge;
+          # workflow reconciliation is handled separately through the GitHub connector.
+          git rm -r -f .github/workflows
+          git checkout "${GITHUB_SHA}" -- .github/workflows
 
           git add -A
+          test -z "$(git diff --cached --name-only "${GITHUB_SHA}" -- .github/workflows)"
           git diff --cached --check -- . \
             ':(exclude)docs/OPEN_SOURCE_DIAGNOSTIC_INFRA_AGENT_CATALOG_V0.1.md' \
             ':(exclude)docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md'
@@ -102,6 +99,8 @@ jobs:
       - name: Validate reconciled governance evaluation and canonical chat contracts
         shell: bash
         run: |
+          python scripts/repair_evaluation_golden_egress.py
+          test -z "$(git diff --name-only)"
           PYTHONPATH="$PWD:$PWD/src" python -m unittest \
             tests.test_execution_governance_contract \
             tests.test_execution_governance \
@@ -119,18 +118,20 @@ jobs:
             --json-output "$RUNNER_TEMP/reconcile-canonical-census.json" \
             --markdown-output "$RUNNER_TEMP/reconcile-canonical-census.md"
           python -m compileall -q src tests
-      - name: Publish validated merge tree evidence
+      - name: Recheck remote head then commit and push true merge
         shell: bash
         run: |
           git fetch origin "${GITHUB_REF_NAME}" main
           remote_head=$(git rev-parse "origin/${GITHUB_REF_NAME}")
           current_main=$(git rev-parse origin/main)
           merge_parent=$(git rev-parse MERGE_HEAD)
-          tree_sha=$(git write-tree)
-          echo "VALIDATED_BRANCH_PARENT=${GITHUB_SHA}"
-          echo "VALIDATED_REMOTE_BRANCH_HEAD=${remote_head}"
-          echo "VALIDATED_MAIN_PARENT=${current_main}"
-          echo "VALIDATED_MERGE_HEAD=${merge_parent}"
-          echo "VALIDATED_TREE_SHA=${tree_sha}"
+          echo "expected_branch_head=${GITHUB_SHA}"
+          echo "remote_branch_head=${remote_head}"
+          echo "merge_parent=${merge_parent}"
+          echo "current_main=${current_main}"
           test "$remote_head" = "${GITHUB_SHA}"
           test "$merge_parent" = "$current_main"
+          test -z "$(git diff --cached --name-only "${GITHUB_SHA}" -- .github/workflows)"
+          git commit -m "chore(reconcile): merge current main into PR 311"
+          git merge-base --is-ancestor "$current_main" HEAD
+          git push origin "HEAD:${GITHUB_REF_NAME}"
