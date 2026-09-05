@@ -34,6 +34,32 @@ jobs:
         run: python scripts/validate_execution_governance.py
       - name: Skill security admission
         run: python scripts/scan_skills.py
+      - name: Canonical module health
+        id: canonical_guard
+        continue-on-error: true
+        run: |
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/canonical-module-health.json" \
+            --markdown-output "$RUNNER_TEMP/canonical-module-health.md"
+      - name: Publish canonical module health summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/canonical-module-health.md" ]; then
+            cat "$RUNNER_TEMP/canonical-module-health.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Canonical Module Guard" >> "$GITHUB_STEP_SUMMARY"
+            echo "Guard did not produce a health report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload canonical module health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-module-health-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/canonical-module-health.json
+            ${{ runner.temp }}/canonical-module-health.md
+          if-no-files-found: warn
+          retention-days: 14
       - name: Compile
         run: python -m compileall -q src tests scripts/validate_execution_governance.py
       - name: Guardian flow binding regression
@@ -59,7 +85,32 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
       - name: Unit tests
         if: always()
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "unit_test_phase=start"
+          echo "head_sha=$(git rev-parse HEAD)"
+          python --version
+          set +e
+          PYTHONFAULTHANDLER=1 PYTHONUNBUFFERED=1 python -m unittest discover -s tests -v 2>&1 | tee unittest.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "unit_test_exit_code=${rc}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "::group::Full unittest failure log"
+            cat unittest.log
+            echo "::endgroup::"
+            echo "::error::Unit tests failed with exit code ${rc}"
+          fi
+          exit "${rc}"
+      - name: Upload unit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unittest-py${{ matrix.python-version }}
+          path: unittest.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Enterprise verification EV-01 through EV-10
         env:
           EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -68,9 +119,15 @@ jobs:
             --source-sha "$EXACT_SOURCE_SHA" \
             --output "$RUNNER_TEMP/security-enterprise-verification.json"
       - name: Upload enterprise verification receipt
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: security-enterprise-verification-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/security-enterprise-verification.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
+      - name: Enforce canonical module gate
+        if: always() && steps.canonical_guard.outcome != 'success'
+        run: |
+          echo "Single Canonical Module gate failed. Read canonical-module-health evidence."
+          exit 64

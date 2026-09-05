@@ -196,3 +196,232 @@ def build_conversation_context(
         source_chars=sum(source_chars for _, _, source_chars in packed),
         language_hint=language_hint,
     )
+
+
+# Internal snapshots preserve the former base/v2 call chain after physical flattening.
+_classify_legacy_context = classify_context_request
+_build_legacy_context = build_conversation_context
+
+
+# v2 extends the conservative reference gate only for explicit transform requests
+# that name prior/above content. It does not unlock history for generic translate,
+# rewrite, summarize, or report requests that can stand alone.
+_VI_REFERENCED_TRANSFORM_PATTERNS = (
+    r"\b(?:dịch|viết\s+lại|tóm\s+tắt|chuyển|định\s+dạng\s+lại|làm\s+lại)\b.{0,90}\b(?:báo\s+cáo|tài\s+liệu|câu\s+trả\s+lời|nội\s+dung|phần|đoạn)\s+(?:ở\s+)?(?:trên|bên\s+trên|vừa\s+(?:tạo|viết|nói|nêu))\b",
+    r"\b(?:báo\s+cáo|tài\s+liệu|câu\s+trả\s+lời|nội\s+dung|phần|đoạn)\s+(?:ở\s+)?(?:trên|bên\s+trên|vừa\s+(?:tạo|viết))\b.{0,90}\b(?:dịch|viết\s+lại|tóm\s+tắt|chuyển|định\s+dạng\s+lại|làm\s+lại)\b",
+)
+_EN_REFERENCED_TRANSFORM_PATTERNS = (
+    r"\b(?:translate|rewrite|summari[sz]e|reformat|convert)\b.{0,90}\b(?:the\s+)?(?:above|previous|prior|last)\s+(?:report|document|answer|content|section|passage|text)\b",
+    r"\b(?:the\s+)?(?:above|previous|prior|last)\s+(?:report|document|answer|content|section|passage|text)\b.{0,90}\b(?:translate|rewrite|summari[sz]e|reformat|convert)\b",
+)
+_JA_REFERENCED_TRANSFORM_PATTERNS = (
+    r"(?:上記|上の|前の|先ほど|さっき)(?:の)?(?:レポート|報告書|文書|回答|内容|文章|部分).{0,48}(?:翻訳|訳|書き直|要約|再構成|変換|整形)",
+    r"(?:翻訳|訳|書き直|要約|再構成|変換|整形).{0,48}(?:上記|上の|前の|先ほど|さっき)(?:の)?(?:レポート|報告書|文書|回答|内容|文章|部分)",
+)
+
+_TRANSFORM_PATTERNS = {
+    "vi": tuple(re.compile(pattern, re.IGNORECASE) for pattern in _VI_REFERENCED_TRANSFORM_PATTERNS),
+    "en": tuple(re.compile(pattern, re.IGNORECASE) for pattern in _EN_REFERENCED_TRANSFORM_PATTERNS),
+    "ja": tuple(re.compile(pattern) for pattern in _JA_REFERENCED_TRANSFORM_PATTERNS),
+}
+
+
+def _compact_request(value: str) -> str:
+    return " ".join(str(value or "").replace("\u3000", " ").split()).strip()
+
+
+def classify_context_request(request: str) -> tuple[str, str, str]:
+    """Classify explicit cross-turn references, including prior-artifact transforms."""
+
+    legacy = _classify_legacy_context(request)
+    if legacy[0] == CONTEXT_MODE_FOLLOW_UP:
+        return legacy
+
+    text = _compact_request(request)
+    if not text:
+        return legacy
+    for language in ("vi", "ja", "en"):
+        for index, pattern in enumerate(_TRANSFORM_PATTERNS[language], 1):
+            if pattern.search(text):
+                return (
+                    CONTEXT_MODE_FOLLOW_UP,
+                    f"{language}_referenced_transform_{index}",
+                    language,
+                )
+    return legacy
+
+
+def build_conversation_context(
+    messages: Sequence[dict[str, Any]],
+    current_request: str,
+    *,
+    current_job_id: str = "",
+    max_chars: int = DEFAULT_CONTEXT_MAX_CHARS,
+    max_messages: int = DEFAULT_CONTEXT_MAX_MESSAGES,
+    per_message_chars: int = DEFAULT_CONTEXT_PER_MESSAGE_CHARS,
+) -> ConversationContextPlan:
+    """Use the established bounded packer after the v2 reference decision.
+
+    For legacy-recognized requests we delegate unchanged. For the new explicit
+    transform references, a neutral synthetic follow-up cue unlocks the same
+    deterministic completed-message packer; only the classification metadata is
+    replaced. The current user request itself is never rewritten or inserted into
+    prior context.
+    """
+
+    mode, reason, language_hint = classify_context_request(current_request)
+    legacy_mode, _, _ = _classify_legacy_context(current_request)
+    if mode != CONTEXT_MODE_FOLLOW_UP or legacy_mode == CONTEXT_MODE_FOLLOW_UP:
+        return _build_legacy_context(
+            messages,
+            current_request,
+            current_job_id=current_job_id,
+            max_chars=max_chars,
+            max_messages=max_messages,
+            per_message_chars=per_message_chars,
+        )
+
+    packed = _build_legacy_context(
+        messages,
+        "continue",
+        current_job_id=current_job_id,
+        max_chars=max_chars,
+        max_messages=max_messages,
+        per_message_chars=per_message_chars,
+    )
+    return ConversationContextPlan(
+        mode=CONTEXT_MODE_FOLLOW_UP,
+        reason=reason,
+        text=packed.text,
+        message_count=packed.message_count,
+        source_chars=packed.source_chars,
+        language_hint=language_hint,
+    )
+
+
+# Stable semantic alias for consumers that require explicit-reference gating.
+build_reference_gated_context = build_conversation_context
+
+CONTEXT_MODE_CONTINUITY = "continuity"
+CONVERSATION_CONTEXT_POLICY_VERSION = "bounded-conversation-continuity/v3"
+DEFAULT_CONTEXT_MAX_CHARS = 18_000
+DEFAULT_CONTEXT_MAX_MESSAGES = 12
+DEFAULT_CONTEXT_PER_MESSAGE_CHARS = 2_400
+
+
+def _eligible_messages(
+    messages: Iterable[dict[str, Any]], *, current_job_id: str
+) -> list[dict[str, Any]]:
+    current = str(current_job_id or "")
+    rows: list[dict[str, Any]] = []
+    for raw in messages:
+        role = str(raw.get("role") or "")
+        if role not in {"user", "assistant"}:
+            continue
+        if current and str(raw.get("job_id") or "") == current:
+            continue
+        if str(raw.get("status") or "completed") != "completed":
+            continue
+        content = str(raw.get("content") or "").strip()
+        if content:
+            rows.append(raw)
+    return rows
+
+
+def _compact(text: str, limit: int) -> str:
+    body = str(text or "").strip()
+    maximum = max(80, int(limit))
+    if len(body) <= maximum:
+        return body
+    marker = "\n…[older turn compacted]…\n"
+    remaining = maximum - len(marker)
+    front = max(32, remaining // 2)
+    tail = max(32, remaining - front)
+    return body[:front].rstrip() + marker + body[-tail:].lstrip()
+
+
+def build_continuity_context(
+    messages: Sequence[dict[str, Any]],
+    current_request: str,
+    *,
+    current_job_id: str = "",
+    max_chars: int = DEFAULT_CONTEXT_MAX_CHARS,
+    max_messages: int = DEFAULT_CONTEXT_MAX_MESSAGES,
+    per_message_chars: int = DEFAULT_CONTEXT_PER_MESSAGE_CHARS,
+) -> ConversationContextPlan:
+    """Pack bounded recent context for every existing conversation.
+
+    The current request remains authoritative. Prior turns are conversation data,
+    never executable instructions. Explicit-reference requests keep the stronger
+    ``follow_up`` mode; ordinary later turns use ``continuity``. A brand-new chat
+    with no eligible prior completed turn remains ``standalone``.
+    """
+
+    explicit_mode, explicit_reason, language_hint = classify_context_request(current_request)
+    eligible = _eligible_messages(messages, current_job_id=current_job_id)
+    if not eligible:
+        return ConversationContextPlan(
+            mode=(CONTEXT_MODE_FOLLOW_UP if explicit_mode == CONTEXT_MODE_FOLLOW_UP else CONTEXT_MODE_STANDALONE),
+            reason=(explicit_reason if explicit_mode == CONTEXT_MODE_FOLLOW_UP else "no_prior_completed_turn"),
+            text="",
+            message_count=0,
+            source_chars=0,
+            language_hint=language_hint,
+        )
+
+    total_budget = max(80, int(max_chars))
+    message_limit = max(1, min(24, int(max_messages)))
+    per_message_limit = max(80, min(total_budget, int(per_message_chars)))
+    selected = eligible[-message_limit:]
+
+    packed_reversed: list[tuple[str, str, int]] = []
+    used = 0
+    for item in reversed(selected):
+        role = "PRIOR USER" if str(item.get("role")) == "user" else "PRIOR ASSISTANT"
+        raw = str(item.get("content") or "").strip()
+        header = f"[{role}]\n"
+        separator = 2 if packed_reversed else 0
+        available = total_budget - used - separator - len(header)
+        if available < 80:
+            continue
+        body = _compact(raw, min(per_message_limit, available))
+        cost = len(header) + len(body) + separator
+        if used + cost > total_budget:
+            continue
+        packed_reversed.append((role, body, len(raw)))
+        used += cost
+
+    packed = list(reversed(packed_reversed))
+    rendered = "\n\n".join(f"[{role}]\n{body}" for role, body, _ in packed)
+    mode = CONTEXT_MODE_FOLLOW_UP if explicit_mode == CONTEXT_MODE_FOLLOW_UP else CONTEXT_MODE_CONTINUITY
+    reason = explicit_reason if explicit_mode == CONTEXT_MODE_FOLLOW_UP else "same_conversation_recent_turns"
+    return ConversationContextPlan(
+        mode=mode,
+        reason=reason,
+        text=rendered,
+        message_count=len(packed),
+        source_chars=sum(source_chars for _, _, source_chars in packed),
+        language_hint=language_hint,
+    )
+
+
+# Keep the historical canonical API reference-gated. Continuity-aware consumers
+# opt in explicitly through build_continuity_context.
+build_conversation_context = build_reference_gated_context
+
+
+__all__ = [
+    "CONTEXT_MODE_CONTINUITY",
+    "CONTEXT_MODE_FOLLOW_UP",
+    "CONTEXT_MODE_STANDALONE",
+    "CONVERSATION_CONTEXT_POLICY_VERSION",
+    "DEFAULT_CONTEXT_MAX_CHARS",
+    "DEFAULT_CONTEXT_MAX_MESSAGES",
+    "DEFAULT_CONTEXT_PER_MESSAGE_CHARS",
+    "ConversationContextPlan",
+    "build_continuity_context",
+    "build_conversation_context",
+    "build_reference_gated_context",
+    "classify_context_request",
+    "infer_recent_user_language",
+]

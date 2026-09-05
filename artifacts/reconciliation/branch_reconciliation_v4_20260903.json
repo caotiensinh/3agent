@@ -1,0 +1,2336 @@
+{
+  "schema": "workspace-branch-reconciliation/v4",
+  "control_base_sha": "30ebbbe12d0ac0d876c88625759617675b003d0d",
+  "head_sha": "3a07ac6904dae2e37d1c33a739643d97d34b5379",
+  "original_branch_count": 345,
+  "original_non_main_branch_count": 344,
+  "all_original_non_main_tips_are_ancestors": true,
+  "merge_status_counts": {
+    "merged_clean": 134,
+    "already_ancestor": 204,
+    "merged_conflict_ours": 6
+  },
+  "conflict_file_counts": {
+    "scripts/test_bootstrap_contract.sh": 4,
+    "scripts/update_workspace_linux.sh": 1,
+    "scripts/deploy_ubuntu_pc.sh": 1,
+    "scripts/test_deploy_ubuntu_pc_contract.sh": 1
+  },
+  "baseline_pytest_rc": 1,
+  "final_pytest_rc": 2,
+  "baseline_failures": [
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese",
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content",
+    "FAILED tests/test_dfir_case_evidence.py::TestDFIRCaseEvidence::test_custody_chain_is_hash_chained_append_only_and_deterministic",
+    "FAILED tests/test_enterprise_lean_skills.py::EnterpriseLeanSkillTests::test_repository_registry_full_audit_is_valid",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay",
+    "FAILED tests/test_github_rtx5090_runner_script.py::test_runner_download_is_official_and_digest_verified",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization",
+    "FAILED tests/test_security_filesystem_artifact_analysis_v024.py::FilesystemArtifactAnalysisTests::test_raw_filesystem_paths_are_rejected",
+    "FAILED tests/test_security_flow_analysis_v09.py::SecurityFlowAnalysisV09Tests::test_flow_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_hardening.py::SkillAdmissionScannerTests::test_repository_skill_registry_passes_full_admission",
+    "FAILED tests/test_security_incident_timeline_v010.py::SecurityIncidentTimelineV010Tests::test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_memory_forensics_contract_v025.py::MemoryForensicsContractTests::test_raw_memory_payload_and_raw_paths_are_rejected",
+    "FAILED tests/test_security_monitoring_pcap_integration.py::PcapIntegrationBoundaryTests::test_package_entrypoints_keep_current_v21_and_separate_security_tools",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_plan_fingerprint_fails_before_handler",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_step_id_fails_integrity_check",
+    "FAILED tests/test_security_persistence_hunt_v022.py::PersistenceHuntTests::test_rejects_raw_paths_and_non_boolean_flags",
+    "FAILED tests/test_skill_archive_zip_understanding.py::ArchiveZipUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_document_visual_understanding.py::DocumentVisualUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_docx_understanding.py::DocxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pdf_understanding.py::PdfUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pptx_understanding.py::PptxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_provenance_audit.py::SkillProvenanceAuditTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_registry_admission.py::SkillRegistryAdmissionTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_web_document_understanding.py::WebDocumentUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_xlsx_understanding.py::XlsxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skills.py::ApprovedSkillLoaderTests::test_repository_registry_hashes_and_reviews_are_valid",
+    "FAILED tests/test_versioning_v4.py::WorkSpaceV4VersioningTests::test_pyproject_matches_package_version_and_preserves_both_acceptance_clis",
+    "FAILED tests/test_workspace_chat_capability_authority.py::test_production_entrypoint_binds_authoritative_capability_filter"
+  ],
+  "final_failures": [
+    "ERROR tests/test_chat_gateway_v13_contract.py",
+    "ERROR tests/test_chat_gateway_v15_contract.py",
+    "ERROR tests/test_chat_gateway_v17.py",
+    "ERROR tests/test_chat_gateway_v20_intelligence.py",
+    "ERROR tests/test_chat_gateway_v21_intelligence_chain.py",
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py",
+    "ERROR tests/test_multimodal_attachments_v4.py",
+    "ERROR tests/test_security_asset_onboarding_gateway.py",
+    "ERROR tests/test_security_asset_onboarding_v011.py",
+    "ERROR tests/test_security_configuration_frontend.py",
+    "ERROR tests/test_security_monitoring_pcap_approval_confirmation.py",
+    "ERROR tests/test_security_monitoring_pcap_integration.py",
+    "ERROR tests/test_security_monitoring_soc_boundaries_ui.py",
+    "ERROR tests/test_security_monitoring_soc_gateway.py",
+    "ERROR tests/test_security_monitoring_soc_ui.py",
+    "ERROR tests/test_security_monitoring_ui_config.py",
+    "ERROR tests/test_security_monitoring_ui_gateway.py",
+    "ERROR tests/test_simple_chat_e2e_acceptance.py",
+    "ERROR tests/test_workflow_draft_gateway_contract.py",
+    "ERROR tests/test_workspace_chat_capability_authority.py",
+    "ERROR tests/test_workspace_frontend_v13.py"
+  ],
+  "new_failures": [
+    "ERROR tests/test_chat_gateway_v13_contract.py",
+    "ERROR tests/test_chat_gateway_v15_contract.py",
+    "ERROR tests/test_chat_gateway_v17.py",
+    "ERROR tests/test_chat_gateway_v20_intelligence.py",
+    "ERROR tests/test_chat_gateway_v21_intelligence_chain.py",
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py",
+    "ERROR tests/test_multimodal_attachments_v4.py",
+    "ERROR tests/test_security_asset_onboarding_gateway.py",
+    "ERROR tests/test_security_asset_onboarding_v011.py",
+    "ERROR tests/test_security_configuration_frontend.py",
+    "ERROR tests/test_security_monitoring_pcap_approval_confirmation.py",
+    "ERROR tests/test_security_monitoring_pcap_integration.py",
+    "ERROR tests/test_security_monitoring_soc_boundaries_ui.py",
+    "ERROR tests/test_security_monitoring_soc_gateway.py",
+    "ERROR tests/test_security_monitoring_soc_ui.py",
+    "ERROR tests/test_security_monitoring_ui_config.py",
+    "ERROR tests/test_security_monitoring_ui_gateway.py",
+    "ERROR tests/test_simple_chat_e2e_acceptance.py",
+    "ERROR tests/test_workflow_draft_gateway_contract.py",
+    "ERROR tests/test_workspace_chat_capability_authority.py",
+    "ERROR tests/test_workspace_frontend_v13.py"
+  ],
+  "removed_failures": [
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese",
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content",
+    "FAILED tests/test_dfir_case_evidence.py::TestDFIRCaseEvidence::test_custody_chain_is_hash_chained_append_only_and_deterministic",
+    "FAILED tests/test_enterprise_lean_skills.py::EnterpriseLeanSkillTests::test_repository_registry_full_audit_is_valid",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay",
+    "FAILED tests/test_github_rtx5090_runner_script.py::test_runner_download_is_official_and_digest_verified",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization",
+    "FAILED tests/test_security_filesystem_artifact_analysis_v024.py::FilesystemArtifactAnalysisTests::test_raw_filesystem_paths_are_rejected",
+    "FAILED tests/test_security_flow_analysis_v09.py::SecurityFlowAnalysisV09Tests::test_flow_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_hardening.py::SkillAdmissionScannerTests::test_repository_skill_registry_passes_full_admission",
+    "FAILED tests/test_security_incident_timeline_v010.py::SecurityIncidentTimelineV010Tests::test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan",
+    "FAILED tests/test_security_memory_forensics_contract_v025.py::MemoryForensicsContractTests::test_raw_memory_payload_and_raw_paths_are_rejected",
+    "FAILED tests/test_security_monitoring_pcap_integration.py::PcapIntegrationBoundaryTests::test_package_entrypoints_keep_current_v21_and_separate_security_tools",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_plan_fingerprint_fails_before_handler",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_step_id_fails_integrity_check",
+    "FAILED tests/test_security_persistence_hunt_v022.py::PersistenceHuntTests::test_rejects_raw_paths_and_non_boolean_flags",
+    "FAILED tests/test_skill_archive_zip_understanding.py::ArchiveZipUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_document_visual_understanding.py::DocumentVisualUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_docx_understanding.py::DocxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pdf_understanding.py::PdfUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_pptx_understanding.py::PptxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_provenance_audit.py::SkillProvenanceAuditTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_registry_admission.py::SkillRegistryAdmissionTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_web_document_understanding.py::WebDocumentUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skill_xlsx_understanding.py::XlsxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine",
+    "FAILED tests/test_skills.py::ApprovedSkillLoaderTests::test_repository_registry_hashes_and_reviews_are_valid",
+    "FAILED tests/test_versioning_v4.py::WorkSpaceV4VersioningTests::test_pyproject_matches_package_version_and_preserves_both_acceptance_clis",
+    "FAILED tests/test_workspace_chat_capability_authority.py::test_production_entrypoint_binds_authoritative_capability_filter"
+  ],
+  "baseline_tail": [
+    "E       + three_agent.chat_gateway_v21:main",
+    "E       ?                            ^",
+    "",
+    "tests/test_versioning_v4.py:31: AssertionError",
+    "_______ test_production_entrypoint_binds_authoritative_capability_filter _______",
+    "",
+    "    def test_production_entrypoint_binds_authoritative_capability_filter():",
+    ">       assert chat_gateway_v17.workspace_ui_capabilities is workspace_ui_capabilities",
+    "E       assert <function workspace_ui_capabilities at 0x7fba49d58ea0> is workspace_ui_capabilities",
+    "E        +  where <function workspace_ui_capabilities at 0x7fba49d58ea0> = chat_gateway_v17.workspace_ui_capabilities",
+    "",
+    "tests/test_workspace_chat_capability_authority.py:62: AssertionError",
+    "=========================== short test summary info ============================",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context - AssertionError: 'VALID PRIOR ANSWER' not found in '<CURRENT_USER_REQUEST>\\ncái thứ hai\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese - AssertionError: 'Bước một kiểm tra địa chỉ IP' not found in '<CURRENT_USER_REQUEST>\\ntiếp theo ?\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21 - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint - AssertionError: assert <class 'three_agent.chat_gateway_v22.ContinuitySecurityAwareProjectChatService'> is IntelligenceAwareProjectChatService",
+    " +  where <class 'three_agent.chat_gateway_v22.ContinuitySecurityAwareProjectChatService'> = chat_gateway_v17.ContractAwareProjectChatService",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content - AssertionError: False is not true : {'case_id': 'unit_vi_follow_up', 'passed': False, 'turns': [{'turn_index': 1, 'passed': True, 'failures': [], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'standalone', 'actual_context_mode': 'standalone', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:cbe337f9907f0b1c0a83cd73d9d2e22b80acb64c44cabd2506042304e0cc0751', 'response_chars': 61, 'prompt_evidence': {'sha256': 'sha256:ec4cb758aa25dea65b0c8ab88ca2ee64d641edd91c88f3593711c42abfbb01bc', 'chars': 340, 'current_request_boundary': True, 'follow_up_policy': False, 'standalone_policy': True, 'recent_context': False, 'unavailable_context': False}}, {'turn_index': 2, 'passed': False, 'failures': ['context_messages:0_lt_2', 'prompt:context_unexpectedly_unavailable'], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'follow_up', 'actual_context_mode': 'follow_up', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:0a610aadc4d90644754f6ac16424784fd6826a791306e36d04064ac549202e37', 'response_chars': 71, 'prompt_evidence': {'sha256': 'sha256:2f53fd62a63f916d013cb73d0a9bd225dc9b9c629fdd92d243f143b563b065f1', 'chars': 1262, 'current_request_boundary': True, 'follow_up_policy': True, 'standalone_policy': False, 'recent_context': False, 'unavailable_context': True}}]}",
+    "FAILED tests/test_dfir_case_evidence.py::TestDFIRCaseEvidence::test_custody_chain_is_hash_chained_append_only_and_deterministic - AssertionError: \"previous hash mismatch\" does not match \"custody event hash mismatch\"",
+    "FAILED tests/test_enterprise_lean_skills.py::EnterpriseLeanSkillTests::test_repository_registry_full_audit_is_valid - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay - AssertionError: 2 != 1",
+    "FAILED tests/test_github_rtx5090_runner_script.py::test_runner_download_is_official_and_digest_verified - assert 'https://github.com/actions/runner/releases/download/' in '#!/usr/bin/env bash\\nset -Eeuo pipefail\\nset +x\\numask 077\\n\\n# WorkSpace GitHub RTX5090 Runner bootstrap\\n# Target: ... \"After this, DO NOT run ./run.sh manually.\"\\n  say \"The systemd service reconnects automatically after reboot.\"\\nfi\\n'",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline - AssertionError: \"rollback_ref\" does not match \"repository replay report must pass before evidence creation\"",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization - AssertionError: False is not true",
+    "FAILED tests/test_security_filesystem_artifact_analysis_v024.py::FilesystemArtifactAnalysisTests::test_raw_filesystem_paths_are_rejected - AssertionError: \"filesystem path\" does not match \"file_ref must be a compact identifier\"",
+    "FAILED tests/test_security_flow_analysis_v09.py::SecurityFlowAnalysisV09Tests::test_flow_invocation_rejects_wrong_request_type_and_tampered_plan - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_hardening.py::SkillAdmissionScannerTests::test_repository_skill_registry_passes_full_admission - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_security_incident_timeline_v010.py::SecurityIncidentTimelineV010Tests::test_timeline_invocation_rejects_wrong_request_type_and_tampered_plan - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_memory_forensics_contract_v025.py::MemoryForensicsContractTests::test_raw_memory_payload_and_raw_paths_are_rejected - AssertionError: \"raw content\" does not match \"subject_ref must be a compact identifier\"",
+    "FAILED tests/test_security_monitoring_pcap_integration.py::PcapIntegrationBoundaryTests::test_package_entrypoints_keep_current_v21_and_separate_security_tools - AssertionError: 'workspace-chat = \"three_agent.chat_gateway_v21:main\"' not found in '[build-system]\\nrequires = [\"setuptools>=68\"]\\nbuild-backend = \"setuptools.build_meta\"\\n\\n[project]\\nname = \"workspace-local-ai\"\\nversion = \"1!0.0.2\"\\ndescription = \"WorkSpace: local-first AI runtime for confidential internal business work\"\\nreadme = \"README.md\"\\nrequires-python = \">=3.11\"\\ndependencies = [\\n  \"defusedxml>=0.7.1,<1\",\\n  \"openpyxl>=3.1.5,<4\",\\n  \"Pillow>=10,<13\",\\n  \"pypdf>=6.16.2,<7\",\\n  \"python-docx>=1.1.2,<2\",\\n  \"python-pptx>=1.0.2,<2\",\\n  \"reportlab>=4.2,<5\",\\n  \"tzdata>=2024.1\",\\n]\\n\\n[project.optional-dependencies]\\nmonitoring-snmp = [\\n  \"pysnmp>=7.1.29,<7.2\",\\n]\\n\\n[project.scripts]\\nworkspace = \"three_agent.cli:main\"\\nworkspace-benchmark = \"three_agent.benchmark_suite:main\"\\nworkspace-benchmark-canonicalize = \"three_agent.benchmark_artifact_canonicalize:main\"\\nworkspace-benchmark-readiness = \"three_agent.benchmark_readiness:main\"\\nworkspace-benchmark-verify = \"three_agent.benchmark_evidence:main\"\\nworkspace-capability = \"three_agent.capability_revocation:main\"\\nworkspace-chat = \"three_agent.chat_gateway_v22:main\"\\nworkspace-chat-acceptance = \"three_agent.chat_acceptance:main\"\\nworkspace-chat-multiturn-acceptance = \"three_agent.chat_multiturn_acceptance_v2:main\"\\nworkspace-egressd = \"three_agent.egress_broker:main\"\\nworkspace-eval = \"three_agent.evaluation_lab:main\"\\nworkspace-eval-efficiency-handoff = \"three_agent.efficiency_evaluator_handoff:main\"\\nworkspace-eval-efficiency-observe = \"three_agent.efficiency_concurrency_observer:main\"\\nworkspace-eval-handoff = \"three_agent.external_evaluator_handoff:main\"\\nworkspace-eval-profile = \"three_agent.evaluation_profiles:main\"\\nworkspace-identity-broker = \"three_agent.workspace_identity_broker:main\"\\nworkspace-knowledge = \"three_agent.knowledge_cli:main\"\\nworkspace-learning-admin = \"three_agent.adaptive_learning_lifecycle:main\"\\nworkspace-network-data = \"three_agent.network_dataset_cli:main\"\\nworkspace-network-fetch = \"three_agent.network_public_corpus_acquisition:main\"\\nworkspace-promotion = \"three_agent.promotion_gate:main\"\\nworkspace-retrieval = \"three_agent.deterministic_retrieval_cli:main\"\\nworkspace-security-monitor = \"three_agent.security_monitoring_cli:main\"\\nworkspace-security-pcap = \"three_agent.security_pcap_runner:main\"\\nworkspace-security-report = \"three_agent.security_reporting_cli:main\"\\nthree-agent = \"three_agent.cli:main\"\\nthree-agent-chat = \"three_agent.chat_gateway_v22:main\"\\n\\n[tool.setuptools.packages.find]\\nwhere = [\"src\"]\\n'",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_plan_fingerprint_fails_before_handler - AssertionError: \"INVOCATION_PLAN_FINGERPRINT_TAMPERED\" does not match \"plan_fingerprint does not match canonical plan content\"",
+    "FAILED tests/test_security_operation_invocation.py::SecurityOperationInvocationTests::test_tampered_step_id_fails_integrity_check - AssertionError: \"INVOCATION_PLAN_STEP_ID_TAMPERED\" does not match \"operation plan step_id does not match deterministic content\"",
+    "FAILED tests/test_security_persistence_hunt_v022.py::PersistenceHuntTests::test_rejects_raw_paths_and_non_boolean_flags - AssertionError: \"filesystem path\" does not match \"target_ref must be a compact identifier\"",
+    "FAILED tests/test_skill_archive_zip_understanding.py::ArchiveZipUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'a52d5f503e0963d110e9835598075b8cb848c562b8d49decb32ec1f0f15b8e80' != '760be52466ac00fd1d2de399e29ad25e2d2e468ab923e2ebb7a9832c5e1effd3'",
+    "- a52d5f503e0963d110e9835598075b8cb848c562b8d49decb32ec1f0f15b8e80",
+    "+ 760be52466ac00fd1d2de399e29ad25e2d2e468ab923e2ebb7a9832c5e1effd3",
+    "FAILED tests/test_skill_document_visual_understanding.py::DocumentVisualUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '98ad0ce971a0745003e9b0db3fa66b0e6ee5b01ab70d0275a36ab2b2b36e91ce' != 'e4cf2d4c241387baa3042ed015e61190956866568225e5f31dfd2711e69853a2'",
+    "- 98ad0ce971a0745003e9b0db3fa66b0e6ee5b01ab70d0275a36ab2b2b36e91ce",
+    "+ e4cf2d4c241387baa3042ed015e61190956866568225e5f31dfd2711e69853a2",
+    "FAILED tests/test_skill_docx_understanding.py::DocxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '2b8c599330cd46e091696584765e56dcc6cf95d05a8eea69bea13f8b019ebfff' != '00d93ecbf991283cee6c7b03223227db2c655509a7a8fbf89b2c0bc36b78fa81'",
+    "- 2b8c599330cd46e091696584765e56dcc6cf95d05a8eea69bea13f8b019ebfff",
+    "+ 00d93ecbf991283cee6c7b03223227db2c655509a7a8fbf89b2c0bc36b78fa81",
+    "FAILED tests/test_skill_pdf_understanding.py::PdfUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '3f6a8477afa539eef43577cd38c5acb52057a484a7fc81afe2f485f7342b7eb8' != '599a745891477d19accb42fc2b3c8667746175692cd897e0f03a7d897a54abde'",
+    "- 3f6a8477afa539eef43577cd38c5acb52057a484a7fc81afe2f485f7342b7eb8",
+    "+ 599a745891477d19accb42fc2b3c8667746175692cd897e0f03a7d897a54abde",
+    "FAILED tests/test_skill_pptx_understanding.py::PptxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'a889dce4ad2ddc477a82dc6940d371cd20d46679f7b81a65138aa9f18423231f' != 'b3a92d98d997446b3958b05d84fe6d1c31deed9f9e7739aa6e942580ec90329b'",
+    "- a889dce4ad2ddc477a82dc6940d371cd20d46679f7b81a65138aa9f18423231f",
+    "+ b3a92d98d997446b3958b05d84fe6d1c31deed9f9e7739aa6e942580ec90329b",
+    "FAILED tests/test_skill_provenance_audit.py::SkillProvenanceAuditTest::test_candidate_integrity_size_and_quarantine - AssertionError: '9792b5d6c528894211e572aefe098ccde4655680959cba6333388ed006256578' != 'fac2c14e7fee39f01f445354a0d9afecc7ed6ad8840964af537770adbbd63747'",
+    "- 9792b5d6c528894211e572aefe098ccde4655680959cba6333388ed006256578",
+    "+ fac2c14e7fee39f01f445354a0d9afecc7ed6ad8840964af537770adbbd63747",
+    "FAILED tests/test_skill_registry_admission.py::SkillRegistryAdmissionTest::test_candidate_integrity_size_and_quarantine - AssertionError: '1cb979a61b67c8131e4386ff7faeef15ea33956e2865493017437aa0745033e8' != '14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3'",
+    "- 1cb979a61b67c8131e4386ff7faeef15ea33956e2865493017437aa0745033e8",
+    "+ 14b7e5f004e7947be85b48594aca18ab06c4f3625f336389c518699896aa10c3",
+    "FAILED tests/test_skill_web_document_understanding.py::WebDocumentUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: '7e91e24948aa1c7def27bcd3f547c009497901b74e971b86801f10c50bdae21e' != '9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55'",
+    "- 7e91e24948aa1c7def27bcd3f547c009497901b74e971b86801f10c50bdae21e",
+    "+ 9fe4210b468527615b543976530887bcc432aed48635646e4b087f8fe6677b55",
+    "FAILED tests/test_skill_xlsx_understanding.py::XlsxUnderstandingSkillTest::test_candidate_integrity_size_and_quarantine - AssertionError: 'c4944f8b44cbdba5f15298640855d53c630b4eab77c03f9b8d3fc81d1628a2d5' != 'bc7cc9aebd5fed01209828e153245b1314c3da6a7de9f5a53ea62b971e55375e'",
+    "- c4944f8b44cbdba5f15298640855d53c630b4eab77c03f9b8d3fc81d1628a2d5",
+    "+ bc7cc9aebd5fed01209828e153245b1314c3da6a7de9f5a53ea62b971e55375e",
+    "FAILED tests/test_skills.py::ApprovedSkillLoaderTests::test_repository_registry_hashes_and_reviews_are_valid - three_agent.skills.SkillSecurityError: Unsupported or invalid skill registry",
+    "FAILED tests/test_versioning_v4.py::WorkSpaceV4VersioningTests::test_pyproject_matches_package_version_and_preserves_both_acceptance_clis - AssertionError: 'three_agent.chat_gateway_v22:main' != 'three_agent.chat_gateway_v21:main'",
+    "- three_agent.chat_gateway_v22:main",
+    "?                            ^",
+    "+ three_agent.chat_gateway_v21:main",
+    "?                            ^",
+    "FAILED tests/test_workspace_chat_capability_authority.py::test_production_entrypoint_binds_authoritative_capability_filter - assert <function workspace_ui_capabilities at 0x7fba49d58ea0> is workspace_ui_capabilities",
+    " +  where <function workspace_ui_capabilities at 0x7fba49d58ea0> = chat_gateway_v17.workspace_ui_capabilities",
+    "42 failed, 2274 passed, 4 skipped, 446 subtests passed in 61.38s (0:01:01)"
+  ],
+  "final_tail": [
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "________ ERROR collecting tests/test_security_monitoring_ui_gateway.py _________",
+    "tests/test_security_monitoring_ui_gateway.py:6: in <module>",
+    "    from three_agent.chat_gateway_v18 import (",
+    "src/three_agent/chat_gateway_v18.py:10: in <module>",
+    "    from . import chat_gateway_v17 as _v17",
+    "src/three_agent/chat_gateway_v17.py:46: in <module>",
+    "    from .workspace_frontend_v13 import WORKSPACE_HTML_V13",
+    "src/three_agent/workspace_frontend_v13.py:40: in <module>",
+    "    connector_rows + '      <button class=\"menu-row\" type=\"button\" data-action=\"github\" role=\"menuitem\">',",
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "__________ ERROR collecting tests/test_simple_chat_e2e_acceptance.py ___________",
+    "tests/test_simple_chat_e2e_acceptance.py:6: in <module>",
+    "    from three_agent.chat_simple_e2e_acceptance import (",
+    "src/three_agent/chat_simple_e2e_acceptance.py:21: in <module>",
+    "    from .chat_gateway_v17 import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler",
+    "src/three_agent/chat_gateway_v17.py:46: in <module>",
+    "    from .workspace_frontend_v13 import WORKSPACE_HTML_V13",
+    "src/three_agent/workspace_frontend_v13.py:40: in <module>",
+    "    connector_rows + '      <button class=\"menu-row\" type=\"button\" data-action=\"github\" role=\"menuitem\">',",
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "________ ERROR collecting tests/test_workflow_draft_gateway_contract.py ________",
+    "tests/test_workflow_draft_gateway_contract.py:6: in <module>",
+    "    from three_agent import chat_gateway_v20",
+    "src/three_agent/chat_gateway_v20.py:8: in <module>",
+    "    from . import chat_gateway_v17 as _v17",
+    "src/three_agent/chat_gateway_v17.py:46: in <module>",
+    "    from .workspace_frontend_v13 import WORKSPACE_HTML_V13",
+    "src/three_agent/workspace_frontend_v13.py:40: in <module>",
+    "    connector_rows + '      <button class=\"menu-row\" type=\"button\" data-action=\"github\" role=\"menuitem\">',",
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "______ ERROR collecting tests/test_workspace_chat_capability_authority.py ______",
+    "tests/test_workspace_chat_capability_authority.py:3: in <module>",
+    "    from three_agent import chat_gateway_v17",
+    "src/three_agent/chat_gateway_v17.py:46: in <module>",
+    "    from .workspace_frontend_v13 import WORKSPACE_HTML_V13",
+    "src/three_agent/workspace_frontend_v13.py:40: in <module>",
+    "    connector_rows + '      <button class=\"menu-row\" type=\"button\" data-action=\"github\" role=\"menuitem\">',",
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "____________ ERROR collecting tests/test_workspace_frontend_v13.py _____________",
+    "tests/test_workspace_frontend_v13.py:6: in <module>",
+    "    from three_agent.chat_gateway_v18 import workspace_ui_capabilities",
+    "src/three_agent/chat_gateway_v18.py:10: in <module>",
+    "    from . import chat_gateway_v17 as _v17",
+    "src/three_agent/chat_gateway_v17.py:46: in <module>",
+    "    from .workspace_frontend_v13 import WORKSPACE_HTML_V13",
+    "src/three_agent/workspace_frontend_v13.py:40: in <module>",
+    "    connector_rows + '      <button class=\"menu-row\" type=\"button\" data-action=\"github\" role=\"menuitem\">',",
+    "    ^^^^^^^^^^^^^^",
+    "E   NameError: name 'connector_rows' is not defined",
+    "=========================== short test summary info ============================",
+    "ERROR tests/test_chat_gateway_v13_contract.py",
+    "ERROR tests/test_chat_gateway_v15_contract.py",
+    "ERROR tests/test_chat_gateway_v17.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_chat_gateway_v20_intelligence.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_chat_gateway_v21_intelligence_chain.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_chat_memory_attachments_v22.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_chat_memory_attachments_v3.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_multimodal_attachments_v4.py",
+    "ERROR tests/test_security_asset_onboarding_gateway.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_asset_onboarding_v011.py",
+    "ERROR tests/test_security_configuration_frontend.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_pcap_approval_confirmation.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_pcap_integration.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_soc_boundaries_ui.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_soc_gateway.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_soc_ui.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_ui_config.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_security_monitoring_ui_gateway.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_simple_chat_e2e_acceptance.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_workflow_draft_gateway_contract.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_workspace_chat_capability_authority.py - NameError: name 'connector_rows' is not defined",
+    "ERROR tests/test_workspace_frontend_v13.py - NameError: name 'connector_rows' is not defined",
+    "!!!!!!!!!!!!!!!!!!! Interrupted: 22 errors during collection !!!!!!!!!!!!!!!!!!!",
+    "22 errors in 1.99s"
+  ],
+  "events": [
+    {
+      "branch": "feature/agent2-presentation-v1",
+      "tip": "1d7b951879d0c1eb051d27f92ebdd06adf5beac4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "30ebbbe12d0ac0d876c88625759617675b003d0d"
+    },
+    {
+      "branch": "feature/agent2-presentation-v1-final-check",
+      "tip": "743e5afe6d08b000c8d9db4f3fa2c01860d9f1fa",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/agent2-presentation-v1-final",
+      "tip": "41ba2b25c383a2b533bf65e8c554738a2c7dd40f",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "11e614ac17ce880cef70005b1d5837baeccabdf6"
+    },
+    {
+      "branch": "feature/portable-one-command-deploy",
+      "tip": "db7e09ae48078921616ce678772a3d3612b46721",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "before": "97f388859f4e78bc47990efb93ab1fad4159a704"
+    },
+    {
+      "branch": "feature/portable-one-command-deploy-v2",
+      "tip": "6cea371984de76007e73d9ab75591044f4010bd6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/windows-one-command-deploy",
+      "tip": "30af4bc37a31b3916078b319402b7f2ea9c24556",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d1a8aa5f1bcf8526744a4315d03dde551e363748"
+    },
+    {
+      "branch": "feature/windows-one-command-deploy-v2",
+      "tip": "8f5c33d61e4819bfcef120991e76f0dee170059b",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/lan-ai-server-one-command",
+      "tip": "ad658d3266fc12aaaa062dd332cc17f80b6c5a7a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/secure-skill-registry-001",
+      "tip": "eee36df4e62570bffad7a67e529bcc5882be8b3c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e22e1e988a44bccb73ece710c01ce093597bae3e"
+    },
+    {
+      "branch": "feature/workspace-secure-local-001",
+      "tip": "11e44ebebafb422c40d1cc74343ffee980b0b1fe",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "81e1cf2e1e644b9f821a536b27619a42c7ed68fb"
+    },
+    {
+      "branch": "fix/workspace-egress-path-closure-001",
+      "tip": "4f1b4242b5893780a5a61adc2abf127279fb8267",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-airgap-public-zone-001",
+      "tip": "f20b813b048b0a233598a78e9d61abb2378340c4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "76c3e9595e0a00c72666a36bb8caeaf1eaa1c956"
+    },
+    {
+      "branch": "feature/workspace-knowledge-ingestion-doctrine-001",
+      "tip": "82c5ddcb0d1c8ceb37771f6e7afa1e503edeae55",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "aac70d431d7fd09614520108c02fc5782b44b8d9"
+    },
+    {
+      "branch": "feature/workspace-runtime-efficiency-v23-001",
+      "tip": "4d95d1946faf38c697949496c9d07197973c1051",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "44985abe855f86491b42f58692a691915dbc5b49"
+    },
+    {
+      "branch": "docs/workspace-doctrine-master-checklist",
+      "tip": "43a388f3c5522060d308fa3e1d1e4f9c031f42da",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b68d421a2ca856bfcaebe08283e1f5a16000d484"
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-01",
+      "tip": "e7d6ac9e6dd175a8676d8811434e4ad5386953a3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/pico-first-doctrine-checklist-001",
+      "tip": "e266a59e3bbd5516f4880ed57141bc31d1f19a46",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "f0e7213ad5ff9ffb026b9229297364512ce298c5"
+    },
+    {
+      "branch": "feature/pico-roadmap-d1-02-001",
+      "tip": "80a5ec0c95a02ee015a0fa60eea20ecc96ddc2fb",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-02",
+      "tip": "3f86e310633abd616fee2a589c7742865d93e6e4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-03",
+      "tip": "4af77eed6459553c93d4804a29facae402b1e85f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-04-d1-05",
+      "tip": "a8960e1c48ee2c531ba7881bb4300e6da3801613",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "ee7eff37d8f448683ddd2f574cffdfbd8d30c002"
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-01",
+      "tip": "d53067825e33ab47a0fda1d9158961cfb32e8221",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "a540fd07a7d83982eb1f7c4aa2ee5efd9cc1330f"
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-01-clean",
+      "tip": "71407fdcc4544b962d0fffda31c4a9b966e64d53",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "db915f4c5e0560223c2c63b7c834d57c98f2e1fd"
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-02-d2-03-stacked",
+      "tip": "b022cc799fba1890fb27af174106ca2b2f7f6c09",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b39e6701189e933203df39dde8ed4eb556ca86d5"
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-02-d2-03-clean",
+      "tip": "ac31bebc6a38ff00775228eeac3b84436ac1b7d8",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "9ed9b9216981709a8fde10de580e7e43b417e888"
+    },
+    {
+      "branch": "feature/workspace-schema-validation-d2-04-d2-05-stacked",
+      "tip": "36f6b3f58c89b70dbc2bfd58aac2646b9fc3b204",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "9beadcddc6c866d1bca07e9cfd10604887e273f1"
+    },
+    {
+      "branch": "feature/workspace-semantic-validation-d2-04",
+      "tip": "5e31f7d11bb1c53523aa56c40acce2a2f8d590ef",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-schema-telemetry-d2-05-stacked",
+      "tip": "a5281672c72e94c27e7df1e0b485f271becba64b",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-schema-telemetry-d2-05-clean",
+      "tip": "5f4fa776da4adc505cf5e5b81ca62afb1fc6fff5",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "45d0392a9c81e9faad671b63c4c774c71c8ce87d"
+    },
+    {
+      "branch": "feature/workspace-validator-ledger-d3-prereq",
+      "tip": "da4ae32e55373338c521f539dd47490608229543",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "edce563280665e77a53920bd86aac2cd1597201f"
+    },
+    {
+      "branch": "feature/workspace-verified-metrics-d3-01-d3-02-stacked",
+      "tip": "b2eb0408af2e29413503929c8c1af21c68f0e6ee",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "1cb5367ed91c68fd37508bca2a114f0f5ea3b4b5"
+    },
+    {
+      "branch": "feature/workspace-verified-metrics-d3-01-d3-02-clean",
+      "tip": "70c4210ab0ae4c32d4e54fcc2cce5e942265ff0e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-token-per-verified-d3-03",
+      "tip": "2eb2d4e3d040376efd942432c4432fbf4ee02c19",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "1dc9a83585f9421046a7059f46d70e4a2bacc46d"
+    },
+    {
+      "branch": "feature/workspace-resource-per-verified-d3-04",
+      "tip": "959c8d610de4c26dfdad411e0dcc393e4f0b1c3a",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "ec4a39475d518cac29fe7ee702897d4539f83eda"
+    },
+    {
+      "branch": "feature/workspace-evidence-coverage-d3-05-stacked",
+      "tip": "e4a5f06e51a66ac750ef19b9a52c1a89690e070b",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "90ec7f2938f0adc88437b66bfd974303a9171fef"
+    },
+    {
+      "branch": "feature/workspace-evidence-coverage-d3-05-clean",
+      "tip": "89122c75fa66c26ca83c8df9e61ddf7a6c511234",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-context-precision-proxy-d3-06",
+      "tip": "52b2efb8a805cdcd61d559004ea0db3f53aa9ca6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-context-recall-proxy-d3-07",
+      "tip": "c2d8a5f19e984a8b1287d624087be66a8bc8d5e5",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-unified-metrics-d3-08",
+      "tip": "db193965bddc78d52fd8481b7a7e652f035cd1a4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/workspace-d3-metrics-closure",
+      "tip": "74695ba6dd3fe5023281debd4dc12de68238dd9f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-optimization-acceptance-gate",
+      "tip": "e0d9476582443cfb0705b5ab5efea58bf6d59f21",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-benchmark-lineage-v1",
+      "tip": "207134ed18ad77e6920591e1356f823e05967162",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-evidence-packing-rank-v1",
+      "tip": "7551e06c2c490afa0f9192ef496ed9788273f87d",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-packing-receipt-v1",
+      "tip": "6d8e19b4b0a966504de97d0515c24e9a8d610e11",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-runtime-validator-bridge-v1",
+      "tip": "82d2e21d9757177a5901a4ace77eb0180c28247c",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-benchmark-isolation-v1",
+      "tip": "3a3ec4668dbeb962d46797a19bc17b3031bdb34c",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/runtime-validator-bridge-v1",
+      "tip": "770c6b98947b7bbf8c6ffdfa2fc71b84cbf433a7",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "571c1bcdb45d851953b8bf6c0446be9a9acc9b16"
+    },
+    {
+      "branch": "feature/fixed-task-benchmark-execution-v1",
+      "tip": "4f83fa40fb969778fac1c0a0d14c86299168e709",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e1ce11a0d7e5bd06cfb33c7e1d92e7c6806fe263"
+    },
+    {
+      "branch": "feature/d4-durable-prefix-reuse-v1",
+      "tip": "309975ae5e8879dc7d8795065e07cf521d925fbc",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "7de5a56ce951033d257eab8fdebc3da321d42f22"
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-final",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-final2",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-r2",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-r2-check",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1",
+      "tip": "b929c60aaf818cfc821894d20331deddc47b969d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "07fee436de8ca46e3904310f922de8aa5b927419"
+    },
+    {
+      "branch": "feature/d5-hard-pack-critical-spans-v2",
+      "tip": "4bf31f67b4dcb2c2bff86c6c8decfcca9122abb7",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fe271c233f9197e8d57c377b26b7c5acbd6f3b16"
+    },
+    {
+      "branch": "feature/d6-no-llm-retrieval-v1",
+      "tip": "fa1c01c343ae3909e3c3c9075b80199fdae4c0f7",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fcbde49e0ead6d73452724637e61b2312e4c79b1"
+    },
+    {
+      "branch": "feature/d6-persistent-execution-budget-v1",
+      "tip": "a6fe0f72367641cf197c298ca279cbf96fc6f97f",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "0ae88b03a897560b997d8a2e8e51b695dc1eb51a"
+    },
+    {
+      "branch": "feature/d6-model-authority-monotonicity-v1",
+      "tip": "3ac4b94175845da708509e8b06f3c394e8ac7651",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "38df08af3c818196bbfd8dc209f56d0606be0d15"
+    },
+    {
+      "branch": "feature/d7-evaluation-promotion-v1",
+      "tip": "5abea1ed1986db9b14f88651f144f9295092947c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "32bf11eeb4d5f03597c8794b0755c81ff7292f87"
+    },
+    {
+      "branch": "feature/d7-golden-replay-v1",
+      "tip": "a644ceb889d8f7bfb6c6235c030ce346d8240c91",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "a8fc5e4fcad6fe39ea646e7e58ba4def41560d82"
+    },
+    {
+      "branch": "feature/d7-metric-registry-v1",
+      "tip": "b1a487e4db991b762828e24e109585b0513bf638",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "9661b65636e8d2a6776d49e2f6eb28ad1022f92e"
+    },
+    {
+      "branch": "feature/d7-regression-adversarial-corpora-v1",
+      "tip": "fc81b7002895c366540f30f4a2823b9872665f17",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "01d3f66f9c12c5f9a34c6a8a6be37e181aca9d64"
+    },
+    {
+      "branch": "feature/d7-production-promotion-gate-v1",
+      "tip": "a5a4c7c545b4b3580c52b730f99b38a88d046836",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e26e24b95efdd7798eff67334e32bdabbb91e813"
+    },
+    {
+      "branch": "feature/d7-edge-efficiency-profiles-v1",
+      "tip": "e5f355ac6ed85f041740d6444eeb5b3193dce03c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2816e5105903ba448590d3cf4d58056ec5fdf307"
+    },
+    {
+      "branch": "docs/sync-master-checklist-d7-v1",
+      "tip": "886a6b372793ee084fe41e9824f1380a3d344b4d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "ec80b5acc93163e7416aac60f85e0dff5adb10f7"
+    },
+    {
+      "branch": "feature/d0-unified-capability-broker-v1",
+      "tip": "8c3b1c8a6b68e46ea85b268b9d86fb1b068b8df4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d0-complete-execution-budget-v1",
+      "tip": "4ef0fadf21e5b6ee2c074aa899629a8c9cd6ac5f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d0-failure-taxonomy-v1",
+      "tip": "22f3fddd19c5fef662ac5bf2a816b7f36c663c35",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d0-persistent-capability-revocation-v1",
+      "tip": "c5972d53a087bf6f54cd995c3ae7ad4a0f41ce3e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d7-regression-pin-complete-execution-budget",
+      "tip": "2a97a59f9a69f81a6319a057f21a98ef54b08682",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/sync-master-checklist-after-d0-closure",
+      "tip": "c053f4c8c2e6fa36e3d3cbb516b8e7a53eab8c3c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "f9976e69170d0b3042ddc7ea6dd558622df8b354"
+    },
+    {
+      "branch": "feature/benchmark-readiness-receipt-v1",
+      "tip": "60026b87ed840aa5b1034123572d71c09a39d0a7",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "9b57b4810a3c255e9e28e7e6ddcf730abdd31dc3"
+    },
+    {
+      "branch": "feature/benchmark-evidence-verifier-v1",
+      "tip": "c79967a9727e29ebfa976d0b74606f6accf1d61a",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "ec07ed092dde851122c163255b2b2b58352288cb"
+    },
+    {
+      "branch": "feature/d7-efficiency-concurrency-observer-v1",
+      "tip": "5e452bed0e7d7b86a007de2d270e57704cbc626c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "97c689d4a849fc8c1d88ef422e51dfd39365756b"
+    },
+    {
+      "branch": "feature/fix-hardware-workflow-validation",
+      "tip": "a4df7a07cdc8dec9c9cdaef9b7dc53d9c1c788ce",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "65fdae1affd701d5cb9ad8cef7e2141db5b5630a"
+    },
+    {
+      "branch": "feature/d7-edge-evidence-close",
+      "tip": "9cf2782732cd9826fd01d42d7cabcf6ce545a2cb",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/promote-quality-ranked-40k-v1",
+      "tip": "303749d5021c409ba099a4cdf46240e4254c1abe",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/benchmark-repo-relative-profiles",
+      "tip": "303749d5021c409ba099a4cdf46240e4254c1abe",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "evidence/d7-edge-holdout-20260830",
+      "tip": "fdea3fb4c345b62f1d1d4c387f4bfcdfabec49e3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "ops/rtx5090-runner-bootstrap-20260830",
+      "tip": "a6fc14d48aba1c614eb7df28d91227963f2c8d52",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-structured-schema-grammar",
+      "tip": "e7a3b6dc9445354774951f035b764b0646425d69",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e0afb47925e9f9c6ca2530d6022010ac9a898996"
+    },
+    {
+      "branch": "docs/final-closure-sync",
+      "tip": "5472ebbad650d8c466ae0353c3f99408680a770d",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "evidence/closure-rtx5090-20260830",
+      "tip": "ae126cc391f9e83c663b3bc4bab91b473479154a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/representative-hardware-closure-20260830",
+      "tip": "9b07f977df0ca26d44ff46c888c499a82e3b850b",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/master-checklist-evidence-sync-20260830",
+      "tip": "24dac7dca5c9d3389152021f75efad5dd4565f0d",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "evidence/d4-reuse-20260830",
+      "tip": "5dbd78da95e2cf04df91c3c730280cec51f834aa",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/d4-representative-insufficient-data-20260830",
+      "tip": "9cacbe929279eba4e96be8a028b3206deedb04e4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/d7-05-external-evaluator-handoff-20260830",
+      "tip": "e20d9d1d704c6138f12226b076b4957e28ac7dec",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/workspace-chat-frontend-20260830",
+      "tip": "17e3bf20801b5cf38d27383eaebddb6f3011f57d",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/workspace-sidebar-history-20260830",
+      "tip": "f03cb2a6464b97ebea36b1c947538f8435a78cfc",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/workspace-local-accounts-rbac-20260830",
+      "tip": "a82f306a4c341cefda7ba179bf45e81f94af5aed",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "480fc0ed1c166cbb61035d1f4784232cafbb4336"
+    },
+    {
+      "branch": "feat/workspace-conversation-management-20260830",
+      "tip": "804b958f14965142a1da907eb3ad1b04bc7a0dbb",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2881addb24daededbe66b7c397d7235d2aece66a"
+    },
+    {
+      "branch": "noop",
+      "tip": "07c7cca1d2bc1f0359f4cd34edad97f2d7302ee7",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/workspace-projects-20260830",
+      "tip": "c9e6645b055276cbb56efbe7d3a72bcb2fcdb8ab",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/update_workspace_linux.sh"
+      ],
+      "before": "8e8d1f35c61e8e3966ac0db05eaac292923251a9"
+    },
+    {
+      "branch": "feature/enterprise-lean-skills-v1",
+      "tip": "d919a8f04054f43588cf11e5b9bc4060023cb8d4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "aedb860b82bbd2238d8dc2610b93bbcbe171856a"
+    },
+    {
+      "branch": "feature/query-aware-context-packer-v1",
+      "tip": "a18f897158340bc720045451ca2ac47c647b7430",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d7-resource-benefit-measurement-v2",
+      "tip": "05944b0afbcab1bf0f2efc9c0e5880614b2319c2",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "a22f2edd17968f242af83bc45d1e675d9dca0739"
+    },
+    {
+      "branch": "feat/workspace-external-login-4way-20260830",
+      "tip": "2fbc576ed6b32f6b26f8099c0f7bcde76786d14d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "902a368afeb5821321494360cebad1d001fffabe"
+    },
+    {
+      "branch": "feature/d706-evaluator-handoff-v1",
+      "tip": "3adda8bb859d9bf0d2eec43de94e0829b7df5f06",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workflow-dispatch-studio-v1",
+      "tip": "4069ffae6e7d84ff4412c4c26127c1cfad58a6a8",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "0cba188de5ce80460ef274fda321a5b38eb4d35d"
+    },
+    {
+      "branch": "feature/workspace-dispatch-v1",
+      "tip": "602e3ed7401e9f761242afaf26d87b5afe3b360f",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "916259fca43995f4e7a864cd401447920327cd10"
+    },
+    {
+      "branch": "feat/prompt-compiler-dlp-20260830",
+      "tip": "7df2ab566f6a9b272a657053b8b2ae751c578373",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "0a5b284a233fcf0eebecc74de89bcac6075e9bfe"
+    },
+    {
+      "branch": "feat/prompt-compiler-dlp-v2-20260830",
+      "tip": "54d9ab43a2979cee883bf49364607f241fb632d5",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d0ec3daebb769ad6c741d3f4342eaa103a8d9cfb"
+    },
+    {
+      "branch": "feature/workflow-dispatch-execution-v2",
+      "tip": "209fa964b347d9631022fa83ecb0db74556ba3b8",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "29a08d68cbe72361c8183b0e4312c04eff50cb6b"
+    },
+    {
+      "branch": "feature/workflow-dispatch-execution-v2-r2",
+      "tip": "2500a55c7d56b2a86714c489dce09a9d3acb8911",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2076adc6c83a8865cb207facc9264bc5f4ad3966"
+    },
+    {
+      "branch": "fix/chat-language-intent-fidelity-20260830",
+      "tip": "f56b9638116e87c33534ca962b6717b8dea6ffef",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "3a7c0241464332dc13bde97c39e710baed9ef1e2"
+    },
+    {
+      "branch": "fix/chat-language-intent-fidelity-v2-20260830",
+      "tip": "5f546e555249831671220377825870bc145af3c7",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "1bfa98c9faeb863ab88225280c2957790bf975c8"
+    },
+    {
+      "branch": "feature/d502a-exact-body-dedupe-v1",
+      "tip": "909b29b26e11b4de57dfe3c509e391f578743524",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e9783daaadc78d22fb3ede6054246cf37691ad3d"
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching",
+      "tip": "450a8b095b387c46e8503ced9917117beb53ede6",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "39d4711f05dea9f953530c9fba2478b804f6306f"
+    },
+    {
+      "branch": "feat/chat-fidelity-acceptance-20260830",
+      "tip": "0463901a11bd611cac411aec8b0c12674f6fa5d4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "5c3840d414234be45ec550759b1b5dc5f73ea7d5"
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching-r2",
+      "tip": "cc9f1667d348c014a1a63c9628213d47473f0f31",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "4c982c9b09df62becb9480446e0120320a70b880"
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching-r3",
+      "tip": "2f2fbeb1ee067b475494e1a239111783573e176d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e947903a7c7346dec65ce98a533a74615c7cbcd7"
+    },
+    {
+      "branch": "feature/workflow-v4-bounded-parallel-dag",
+      "tip": "f9ed7f2c0e43999ba2b8cd58352d4ca7a2766047",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fd7f9f9609715b0aa555d3e4e5dc05f466313793"
+    },
+    {
+      "branch": "feat/chat-context-fidelity-20260830",
+      "tip": "0ef171f17624eb0b31235079bb3a0785b6320587",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "388a6f6aa6eb6ed64b0096952536f7ab1c870f60"
+    },
+    {
+      "branch": "feat/chat-context-fidelity-v16-20260830",
+      "tip": "ec62b87ae0db663985844a646897c10ccefb0520",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "747af88171b2b36776c3ad887fb5be6b263188c9"
+    },
+    {
+      "branch": "feat/multiturn-live-acceptance-20260830",
+      "tip": "3f53332346c42879a2ac45e4c6ab219d16ba8974",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "c3b818ef98f36f320f4767c4382958d5e57f9b19"
+    },
+    {
+      "branch": "fix/live-acceptance-runner-labels-20260830",
+      "tip": "8e6145bd61d3424fcacaf0423d320e47a307a311",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "da54fb6ea669e999a4f936a4216f3cc225bcca11"
+    },
+    {
+      "branch": "feature/rtx5090-runner-bootstrap-v1",
+      "tip": "818d770dcbf880ba8a7f0d7005ee52575c67db24",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workflow-v4-bounded-parallel-dag-r2",
+      "tip": "b10c0c61ba772a969db48d77cfa38ab52afe0da3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/d502a-oneclick-representative-benchmark",
+      "tip": "8228f526a4ce3e37317aa0215bc8ed6890c70079",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2307dabd988e395cfe7de7a66b41ac3af66b42a8"
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-20260830",
+      "tip": "06ec3c361edaa67357c25b205b56b45a0373fcef",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2b29f6b409fbdd715b2d0812b8bafaf01a6bd96d"
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-v2-20260830",
+      "tip": "b00d42655fa2d1a61a6c313766d79fe64aeed471",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "8165695a591ddc7fb2cb2be8d29f233475bd061b"
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-v3-20260830",
+      "tip": "0072149514bfe7311128baf530f0c7667a62b508",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2cc50c67c3adc46bfddb4c7458ba4071c8dd91ee"
+    },
+    {
+      "branch": "fix/workflow-v4-sqlite-budget-lock-20260830",
+      "tip": "57ea878a0d9a8c763d0b00bb83471fbf9fef6812",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/p2-output-contract-fidelity-20260830",
+      "tip": "3c738e8395497a161d21aee407847b4808c59841",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "0affb1fe120d2e41240e77a9891e80e57f62998f"
+    },
+    {
+      "branch": "fix/d502a-source-runner-pep668",
+      "tip": "97e5d2676ac0f318408a100e3820276ac95098b9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/p2-runtime-evidence-20260830",
+      "tip": "97b4e7dfd8bcd7e7c7834291aef8cc4e3acc163e",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "77a0dab200014b16961a79fe9e91c832509ed5b5"
+    },
+    {
+      "branch": "fix/p2-runtime-evidence-v2-20260830",
+      "tip": "c238d05bbbc13c63f8cb1f433b3465722576735c",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b58dbd8151cd829c1c065a6112fb573ef6dbb29a"
+    },
+    {
+      "branch": "fix/d502a-isolated-runtime-deps",
+      "tip": "0bc89720b1a92851d38921f006fb72c0651a7453",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "055f37e0bc8ffffe8838aecc4d07cd3366ac636a"
+    },
+    {
+      "branch": "fix/p2-isolate-runner-runtime-20260831",
+      "tip": "f919244d1d458b3b62a4badb44c7f9bb219ac4e2",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "c3d458ed6c69db3e6aea22a23231776f4e597872"
+    },
+    {
+      "branch": "fix/d502a-sanitized-failure-evidence-rebuild",
+      "tip": "af11e9820b9bf0967d4416366d1e2affe69a3a7c",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/d502a-sanitized-failure-evidence",
+      "tip": "16293a2c7d85ba0bed1e3c19bec811aafb6f61d8",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d66985d4b05fcf8935b96c06ed88c064b7241db4"
+    },
+    {
+      "branch": "fix/p2-validation-reason-evidence-20260831",
+      "tip": "aa44570595ff0267972d499345fd4a569b630309",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/ubuntu-dual-gpu-transactional-update",
+      "tip": "2735dd18119d4fd25d9d0dbbd8982e45dbc16523",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d6f2ce5f2cccd5fb8834b7b141bcc275145e931f"
+    },
+    {
+      "branch": "fix/p2-deterministic-constrained-generation-20260831",
+      "tip": "14e4c29a6783a39a2dd09e34ac17dd49a2149776",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b5b345993d9e7d411d17a248ca37075864f55efd"
+    },
+    {
+      "branch": "fix/linux-updater-dependency-contract-venv-relocation",
+      "tip": "cd63206a681b5c7c15eead8957a7490a0733675d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "883aa34f81c9b8c2d1fffa5759c7e3c6e027f440"
+    },
+    {
+      "branch": "claude/3agent-optimization-review-nye0xr",
+      "tip": "d603cbe050200ec6119069e29f128bee32ec96fa",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "evidence/lean-profile-validate-20260830",
+      "tip": "194ce7c9855712c0537f139e3d7d55962f133f71",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/p2-structured-output-20260831",
+      "tip": "c844bf9fef0797a1127f7e05df11f89ea1fdc805",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase3",
+      "tip": "6042c4f4874d3ee377c63ed85a481dad9a66393b",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d8ca73b86c4474d46c7541353786fadc55146e52"
+    },
+    {
+      "branch": "fix/vi-structured-language-recovery-20260831",
+      "tip": "987a0587af4bcae6796403f07eb139076969d979",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase3-1-checkpoint",
+      "tip": "3de925b8ce14cea214b0e85263b6165601f89038",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/p2-followup-structured-runtime-20260831",
+      "tip": "001b80f8d4458c1afb77bc6d7c699564fb1aa8ac",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-analyst-network-monitoring-v001",
+      "tip": "ee8b6c3ec09c3028ff3c38ef6f878a00051ea127",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "12e63685bd77cebf919a36d8a5dc1e7796a0cd1d"
+    },
+    {
+      "branch": "fix/simple-chat-briefness-20260831",
+      "tip": "79fa18de5e2075966e33c8bc266f43f6ae73a7ef",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/v18-frontend-contract-regression-20260831",
+      "tip": "55c93b78743058df266a7251760499e81a0fc88d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "59eb46eb24af522675128964174fa1d2dd1bdc68"
+    },
+    {
+      "branch": "fix/chat-v18-contract-regression",
+      "tip": "c5661f5cf3356f777b8efcc23f9b0cb5440be2ea",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2248387f56309d435f357cad8267a7a925696ec0"
+    },
+    {
+      "branch": "fix/v13-render-contract-20260831",
+      "tip": "a973a450e7ed90e06b3753373bcd9e911b063f28",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "95daad60550674dc8c42c5edc807db2caeb6f15e"
+    },
+    {
+      "branch": "fix/missing-reference-plain-first-20260831",
+      "tip": "10b1f15da0d4540250a8b38fc100bbc9f2ba2eed",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "26b5211dc839d97ae0d983520203c706ee36d211"
+    },
+    {
+      "branch": "feature/ui-compact-answer-actions-ci",
+      "tip": "6d20db7bb1b3ddf96dac615c39ff96fd8146222e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/p2-live-language-semantic-20260831",
+      "tip": "d99f420708c65a76b5d0433bd099a30dbc412862",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/ui-compact-answer-actions",
+      "tip": "6ea2b9a3ae67ad55079ef262015b4c1b8b720047",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "93f63ac8deaef0befbec50454c86bdd2324143d9"
+    },
+    {
+      "branch": "feature/workspace-network-data-plane-v1",
+      "tip": "33c32ab7cb771aef4ad47eb53f130fd5215a2232",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4a-admission",
+      "tip": "eba02feff533760de622decb131eace5d87252cb",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-real-source-acceptance",
+      "tip": "98ae8490b86d75cf1ea5fc9b5b0850fe0437da73",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4b-reflection",
+      "tip": "5e8440686c4c76d49125cb93da9e5bed97be8fce",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "05a3974bfffd77e229e7809880c8c0b494eca4b1"
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-runner",
+      "tip": "c7a3eb21f8279dfe7bfe10a80c4e13952247e3d0",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-cic-real-source-evidence",
+      "tip": "72b06cd9714ca9c065fd3d2fc34f3913c06fa514",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4c-retrieval",
+      "tip": "5c481e6405385c888cf982b5b2b8c3c4ba75e5af",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "45faf9d690c1315689bee0e5d997806740e80855"
+    },
+    {
+      "branch": "fix/cic-real-source-pr-trigger-scope",
+      "tip": "4d7e50d1c3fb7a50f770e2ca547bba2cbb0c5986",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4d-runtime-wiring",
+      "tip": "9ec0352864198bc3b829eecea98b8b721230642b",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "cd4b24ad151051701cb9e6d3f0d0fd5d057ec824"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4e-authenticated-promotion",
+      "tip": "6a3f49f261b356c8404f0c84e4338f18ebb7fc66",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2ba45789c89d9cf230d29846a78446ffddab13a5"
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-lanl-publisher-access-plan",
+      "tip": "601de21ab452b8484da8eb77d2b02561864bb059",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-lanl-operator-handoff",
+      "tip": "38ba7a01c70e00947174ad4ba197e0400ed180d6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4f-bootstrap",
+      "tip": "dde50ce2c26bded96d163931be35ff2305d0870b",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/lanl-publisher-access-pr-trigger-scope",
+      "tip": "db5c17f3ff2775f0be690f74a73e972cde0c1c93",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/update-auth-credential-invariant",
+      "tip": "ff42810ce86b077505f323aad47ad1fea9f65e2f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/adaptive-learning-phase4f-index",
+      "tip": "382aaf5997b34b3e84ab82d543b407730a5e4ac6",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "53cf5b7edaa1d44abdf38dac1256efba3d8926a7"
+    },
+    {
+      "branch": "docs/security-analyst-network-monitoring-research-v1",
+      "tip": "0e5c9f086e1b07b80cb4bb948464a6c67fa9d6af",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "6b6df0458170712d2079803d70b087752c7c5bbd"
+    },
+    {
+      "branch": "fix/adaptive-learning-phase4a1-classification-identity",
+      "tip": "25a84f90d91a1b8529232a76d235b130337ccc96",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "69b2f4919677cf8437da24c08a16e31419423294"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4g-bounded-scheduler",
+      "tip": "5c9c1d053e0d57fade67a1001524781f13e1c25e",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "de8e0141d0a6b4ad7d2c55db49858b0a85ea5d7c"
+    },
+    {
+      "branch": "feature/security-analyst-network-monitoring-integration-v1",
+      "tip": "30c9fce6debc952822372bda8652e7a401352640",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4g-scheduler",
+      "tip": "58bf40c14c2d1ec1441c3c1f24a11f48cdf8e252",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "97a438bcb90cb93c1a50a61b9ad6b38fd6af4dc1"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4h-effectiveness",
+      "tip": "d929503cfa7798c6b1a8a6a38745efccff0cb3c6",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "6993f059f826b9420edb54da84a706ece4d8dbab"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4i-curation-proposals",
+      "tip": "344ae366fdb806aa84011cb3b1f8ed7d2cc59269",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "7d1403acebbef780cf2cac48409ebdbd16fff33d"
+    },
+    {
+      "branch": "fix/update-security-entrypoint-validation",
+      "tip": "54df39480abb72a624ebaa4a06d9444b40101f6a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "docs/workspace-network-v3-02e-lanl-operator-runbook",
+      "tip": "b383f962a9fdefc3ba55b5309e6e853626aeff2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/network-security-intelligence-v002",
+      "tip": "69f30ff32300584992ae2c9a6dcf1c47498aaf9b",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fb3eeb6b7a17ac892bbb5b36d73b3a673e1429d1"
+    },
+    {
+      "branch": "fix/network-public-corpus-dns-pinning",
+      "tip": "3ae26c5b54e451882bebdc2b0f9be3bb60f8e37c",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/network-security-intelligence-v003-correlation-reconciled",
+      "tip": "cb01722db4945955e0110e5f4322c097cd31b7eb",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "f2f8cc9ea24a2ddf78dfdf8f93586812cd74ff00"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4j-curation-revision",
+      "tip": "421dfafccb91df7656402bced9ae805865a27ef5",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/network-security-intelligence-v003-correlation",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-final",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-work",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-work2",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "codex/v0.0.4-network-incident-triage-v1",
+      "tip": "1e57b95296d47f33db1c1a96741d18c9f0da5064",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4k-revision-evaluation",
+      "tip": "c0a45bc300d3373ae1d1fac73e311e445ef6bff7",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/network-security-intelligence-v004-dns-behavior",
+      "tip": "efa46fc9712d89a2504fd03501c550984b9d53d1",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "c70368907de80ef12ce1475ed973399a6e7ba803"
+    },
+    {
+      "branch": "feature/network-security-intelligence-v004-final",
+      "tip": "efa46fc9712d89a2504fd03501c550984b9d53d1",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-final2",
+      "tip": "b231f037a78a493885cef796597e84860831c6c4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "489ac2c12002c347d70af725b91cd300d30abbee"
+    },
+    {
+      "branch": "feature/vulnerability-intelligence-v005-cleanroom",
+      "tip": "4e983dc83f16b0be4b198f3121f12ff8740e08e6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/vulnerability-intelligence-v005-cleanroom-ready",
+      "tip": "4e983dc83f16b0be4b198f3121f12ff8740e08e6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "ci/trusted-self-hosted-r9",
+      "tip": "de2dcc4541579fb5899f1f55863e728ac791cbf9",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "f348f1130337f90d7f7c592687e70cbbef83ceee"
+    },
+    {
+      "branch": "feature/security-configuration-center-v001",
+      "tip": "29f0de2bd15366bde81356dd2c90114ec93a5166",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "12d59369a1b1fcfa1dbd3afd9053590d8d9e566a"
+    },
+    {
+      "branch": "fix/trusted-self-hosted-r9-yaml",
+      "tip": "88373c3983147f9231931f9daefd278ccce7a1b6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "test/read-only-lan-probe-20260901",
+      "tip": "e044a82b126be1afd267d59653687bcce10ae10a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "research/oss-network-security-blueprint",
+      "tip": "0d0d79fa8e6839bb463ec04aec3f7fcffc408572",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "archive/pr-187-pre-reconcile-048fc550",
+      "tip": "048fc5505266ef433f1bbf81520d66ee982217a7",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "validation/security-monitoring-phase1d",
+      "tip": "ee026b5216dba71543e502399bff5e9f4b90aa19",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fa4e8c66ed4095eebf2136f0dddb71938a0dcbe2"
+    },
+    {
+      "branch": "validation/security-monitoring-phase2a",
+      "tip": "5404592bcc1430cc81923f548174f1bc0d01d5f1",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "noop-validation-check",
+      "tip": "2adc9feb59e9a70bdf345f35228d2905060deb40",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "validation/security-monitoring-phase2b",
+      "tip": "087752f8397b67150335b74297abd5d345dad807",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "10afe45d32c96e574e9aee1aaed4ea9aeb30a536"
+    },
+    {
+      "branch": "validation/security-monitoring-phase2c",
+      "tip": "e6db5d6e6ff297ba77ea4a3d9bc305ed2a2e60ec",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b793d41b52ad943894131d73ef9b5dc862b3c6da"
+    },
+    {
+      "branch": "validation/security-monitoring-phase3a",
+      "tip": "a14a09bbf50e831972ea1b36485370f7ff415a21",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "7c3ba17caff12ca06ceab51696fed2aa59daf8d6"
+    },
+    {
+      "branch": "validation/security-monitoring-phase3b",
+      "tip": "1cf7cd5e5733867d76a8f9a6790da60b9fe15352",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "6d1050797e61aff3627a1630b7e01946dca18e93"
+    },
+    {
+      "branch": "validation/security-monitoring-phase3c",
+      "tip": "5b1c659733de2196ccc6fd1ab23197b838b64f6e",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e4987b50db18b638e08a0fede63668e98ab3f988"
+    },
+    {
+      "branch": "validation/security-monitoring-phase4a",
+      "tip": "e1f49783431e90f49b70cee4cd3a2a2cd35b58f9",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "72beaf35ff7fae0919973deb7a4e0f9ff711f017"
+    },
+    {
+      "branch": "validation/security-monitoring-phase4b",
+      "tip": "126a33069d587b61f986a789240f992f3a298f10",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "aee5bf3da3e8b8a76151a263663c0bed4e8d057a"
+    },
+    {
+      "branch": "validation/security-monitoring-phase4c",
+      "tip": "6b5a3d70fc9538efeba12b1ad96294814d2078a4",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "878b790d4752babb1b6646ebce78e7e90f72c575"
+    },
+    {
+      "branch": "feature/security-monitoring-enterprise-governance",
+      "tip": "709c4b38739deb576a0562815d12b917ef1974bb",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "820c1fe2afc8698e630ac4217914c165e67d14b4"
+    },
+    {
+      "branch": "validation/security-monitoring-phase5a",
+      "tip": "99c11cd2ae0aaab788fbdf4ae046432fc110f163",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "b8aa2f56ffd234f8a9c1c3ba25a64006641a43d3"
+    },
+    {
+      "branch": "validation/security-monitoring-phase5b",
+      "tip": "4e8f126cb7525771a9dddb78fd9088668edcf074",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fa207686f1553d523c2b0c5ad1db124ea4138333"
+    },
+    {
+      "branch": "validation/security-monitoring-phase5c",
+      "tip": "29323c94c8be66fc57a7e577494a773b6a0ad598",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "94bc200b8f13270c6320e24f62d875b53b773709"
+    },
+    {
+      "branch": "validation/security-monitoring-phase6a",
+      "tip": "4108729b6203569a78a8a056098fe5366f977e22",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "38c8eac4d6b52ec8abad78fceafbcfc6c358f7dd"
+    },
+    {
+      "branch": "validation/security-monitoring-phase6b",
+      "tip": "d9d5488eea224cbb3722b71b71f754148d1ec975",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "72561c19d2511f8c2d145d35138591cd31bd6fee"
+    },
+    {
+      "branch": "validation/security-monitoring-phase6c",
+      "tip": "11793f4d36600d5aa7982510ef9eccd530164d2a",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "fdfb9c231fb4ff12229a56af33c3ea3a156512cf"
+    },
+    {
+      "branch": "validation/security-monitoring-phase7",
+      "tip": "6b309a37f71685a385a434ded39c1fc8b8a0b309",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "09105b8df1e1aa75c3b21b32853df85185c84253"
+    },
+    {
+      "branch": "feature/security-monitoring-phase1",
+      "tip": "f98227f1887340c9890eb5041e0f1a5b2904c42e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "integration/security-monitoring-main-reconcile",
+      "tip": "fbb6a436fc5d30e47d8eeadc89df5f81205556a0",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d09a14b933fc4f7d18cd12fcbf11f30eefb349b3"
+    },
+    {
+      "branch": "integration/security-monitoring-main-reconcile-v2",
+      "tip": "f6fbc6f5a585c2fbb4a7fb2436ec62237c4266f7",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "validation/ubuntu-pc-deploy-entrypoint",
+      "tip": "6ee4a44e062d6f7a884ae9251be95b5befdeafea",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/deploy_ubuntu_pc.sh",
+        "scripts/test_deploy_ubuntu_pc_contract.sh"
+      ],
+      "before": "7e993154f47b578f20ccd9f1cad282d25f7d0daf"
+    },
+    {
+      "branch": "fix/chat-multimodal-attachments-v4",
+      "tip": "58b939e6f7d3b56994ddb76c244344afa6ce793f",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "4c14a4f5ec7bc04a294bad3cb08f44333c28901a"
+    },
+    {
+      "branch": "fix/deploy-preserve-local-state",
+      "tip": "fb84e298b6fcfc5e1765bf582e6418ec91e9be3d",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "before": "406cf86ae6fe952b62bf8d6724934f9348d838f1"
+    },
+    {
+      "branch": "validation/deploy-preserve-local-state-latest",
+      "tip": "a06973fa1e38d1b6c069307f43a10db136d0fc4f",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "before": "b79340660c4fd79f1ca38cc310b7f7ef66a01abf"
+    },
+    {
+      "branch": "validation/portable-bootstrap-preserve-local-state-final",
+      "tip": "f323d91eff5cb6cb7019cb47ecfa2d9b20bb7496",
+      "status": "merged_conflict_ours",
+      "conflicts": [
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "before": "5402e4b14b96090618060a14cd03963857d0997a"
+    },
+    {
+      "branch": "validation/portable-bootstrap-preserve-local-state-final-v2",
+      "tip": "10ef65d959313cc4d17a646845dfdb04d0652b1a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/non-destructive-immutable-updater-v1",
+      "tip": "ba8f0ae977ba446db5e36ef7f445ec2f3c11c142",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output",
+      "tip": "6cb247662eb864c5ed41651c8a14dbb208d24bac",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v2",
+      "tip": "cc8177b713760a9bc2863dd17f90103dca7f2bff",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v3",
+      "tip": "f9b9b92fc2e57425da2c1583f6a7952bed90d648",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v4",
+      "tip": "7c3c873699741a869f0a60a963f3b2a988933f6a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v5",
+      "tip": "e9cbd8abf669c910aa35d7b7cc28e7c6acaafdc0",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/workflow-studio-draft-library-v1",
+      "tip": "e72f151327f1f983c89f98b27cd2cafc596d28be",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "release/workflow-studio-draft-library-v1-ready",
+      "tip": "0819651934a49ddcdb6832b6efc3ab6e8cdbc220",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v6",
+      "tip": "0b81689c3bd23c3fee27559d9fab3dfd4c9cda07",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/trusted-rtx5090-runner-contract",
+      "tip": "a1ab01af1786a3c20769e90fc0c153c432f1cecf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v7",
+      "tip": "214fe8fd60731b78e70168c0e3fff6323dcad5f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/trusted-rtx5090-runner-contract-v2",
+      "tip": "8327edb08f5d9e7b3d262634847b6128f229f663",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-capability-router-v02",
+      "tip": "cb9559c8a5bf381db1e5780fb38ac8ced892d3dd",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-operation-plan-v03-r2",
+      "tip": "958e0c2d25f2a603d96cef831eb2125c526d69ab",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-operation-plan-v03",
+      "tip": "c2681c5c8c11d2d8b652ed98a9f1e58abfda31e8",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-operation-binding-v04",
+      "tip": "6990bb8097902b25aa2fb53685bbbc2f977d3a94",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v8",
+      "tip": "996da9d1da5717afadf42d7f45037d6987841258",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-typed-invocation-v05",
+      "tip": "97dc2f0417e0da3fd88997ce932ac3afe5ffcddb",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-workflow-audit-v06",
+      "tip": "5ecb893d2938df88aa86cebce9b0613ab578025e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-pcap-task-read-v07",
+      "tip": "a1f810617963b4e4a927a8af4391d16eca8bd972",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/security-pcap-read-hardening-v071",
+      "tip": "e575585d04b53b0d421c4954b1b4070cbb4f41a9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/security-pcap-v071-latest",
+      "tip": "6ce2def620613e416ad2c87f2aeb3a507767fe59",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-flow-analysis-v08",
+      "tip": "ed79f1510636c2800ab91b7d5cd0b732b9c464fe",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "9458099706f41a46b21f13d506f587d6fb9a9662"
+    },
+    {
+      "branch": "feat/chat-current-multimodal-understanding",
+      "tip": "dbff7c078a8fbe7ffcf73343c6e799a12999f38f",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e119fad8312663d3854b0e67b6705d1096afacef"
+    },
+    {
+      "branch": "feature/security-flow-analysis-v09",
+      "tip": "ee60de28a4553af0bcfc9de7b452047b4efd5978",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "49fc65ea1ae5875f0d154f75fc90db3a25ffa8fe"
+    },
+    {
+      "branch": "fix/security-monitoring-cross-platform-icmp",
+      "tip": "3c5381e4ff6583231131dd4b77c9065a95443c46",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "reconcile/pr-187-icmp-a490cc",
+      "tip": "3c5381e4ff6583231131dd4b77c9065a95443c46",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-e2e-closure-v001",
+      "tip": "3e2fbabad51c23cbc281b79d4d0d5e0857c46735",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-intelligence-integration-v1",
+      "tip": "caeaa0d2868c5d5e7a2d11ebfdd16edf2880914a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-flow-analysis-v09-mainline",
+      "tip": "7016bd017b26c8415bb29203dc7b7e39c336c020",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-capability-truth-v1",
+      "tip": "629a7a95421e127e33138d16105e2d803a72db46",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "2941db0285a75940d53d50b6164b7672d1ce74f9"
+    },
+    {
+      "branch": "feature/security-collector-lifecycle-v001",
+      "tip": "70c2c7888e7f2a4a4828a076407a0b3f454f21ce",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "d9252604b0a45b7066c6bf0c8c5b999e0203a0f7"
+    },
+    {
+      "branch": "feature/security-approved-asset-onboarding-v001",
+      "tip": "16ed9fe11115dbff64da9943b13ac9c4c8068116",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "e379db642d9de9cfff40ed6be3b21647d409acd5"
+    },
+    {
+      "branch": "feat/chat-reference-provenance-v1",
+      "tip": "97c5ed56f263579ba46391581084ad0b54f539d6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-capability-truth-v2",
+      "tip": "97c5ed56f263579ba46391581084ad0b54f539d6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-incident-timeline-v010",
+      "tip": "255b568986db087e20d4d19fcc84b7633fea4889",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-capability-truth-v3-mainline",
+      "tip": "8f7d77b124a12e0a81d46a7add7312b80de44cbf",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "reconcile/chat-memory-docs-v22-main",
+      "tip": "7ce49d97c70eb4e76560cb3e4b93b4ff7bf9ecd0",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/chat-intelligence-integration-v2",
+      "tip": "ccf134f66bef9a84ef366945b929e2170931c6ff",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "bb28581f9ce01d06286dd9c155f9671696189df9"
+    },
+    {
+      "branch": "feature/security-approved-asset-onboarding-v011",
+      "tip": "40334341d21ce09afe2d17ea6be8be46fb59b622",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "411336d49c2759bde3f0f2404b4f03bd180a9961"
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v9-mainline",
+      "tip": "384676ef51d843a372f9a2044a1d0e7ae6a25bf8",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/v21-preserve-chat-intelligence-v1",
+      "tip": "d6f07e2b1ec03ceeee09df1cb79cd94d2ad87982",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "50a9586a3134e3d67207512bb64c87fe56836121"
+    },
+    {
+      "branch": "feature/curated-document-skills-v1",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/curated-document-skills-v2",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/v21-preserve-chat-intelligence-v2",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/enterprise-document-skill-registry-v1",
+      "tip": "eaf319314ba9094a5952338d41820d6c8128c4c9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-evidence-case-v011",
+      "tip": "6c612d5fc774a7a2d50711b559e68b7319dafded",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/dfir-case-evidence-contract-v1",
+      "tip": "f03361691845c00d0fbbc19c537b4aa11437386a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-forensic-store-v012",
+      "tip": "520cbb36a7073df440fb93ffb2c67d7c2af73ead",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/security-route-plan-integrity-l9",
+      "tip": "3ccc064c07fc50004238065232bfb98111701bbd",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/updater-release-trust-l10",
+      "tip": "ac42a83df4ae923f21abe8fd503d617d087412f9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-case-report-v015",
+      "tip": "fce5c11310d9c585968f682a52627780b59f8e06",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-normalized-admission-v016",
+      "tip": "cb1ebe53c1bae2777f46286d459fb01d391dc6cd",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-conformance-harness-v017",
+      "tip": "9996e425dfe7a5651207059de439bc0c36929e79",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-forensic-clock-v018",
+      "tip": "d6a685b40eeb7a35887b9c259982f1bebae261be",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-windows-auth-v019",
+      "tip": "4fea766b5e155eb2ff4553b51aa917072c120e56",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-network-protocol-v020",
+      "tip": "205eec960bc77681be4633646f759e58fb51d9c6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-timeline-evidence-v013",
+      "tip": "cb4bf325b89e7d579b9319c8b21c6b04aaee2b8d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "6c33364f0e99c8c153d399cd732762bfb3ebbf07"
+    },
+    {
+      "branch": "fix/dfir-strict-boolean-contract-v012",
+      "tip": "87acc3ea5e4d357dcc83e51afd00c1d0dbd8f4d4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-hypothesis-engine-v014",
+      "tip": "0e3a411a696b6a62cfba70d31d1e66194da14d6d",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "490a68621e3ffee7bb17c8e6a71bf1f9d0437b7a"
+    },
+    {
+      "branch": "integration/dfir-v016-v020",
+      "tip": "61af1535d95c191a163b5d2be7bb69a1f4a4e98f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-document-full-ingestion",
+      "tip": "1b985dd27365b24fc245e4a2b79946a8b41eace9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-document-visual-understanding",
+      "tip": "a274d6cfc7eea59e33ddee28b20e5b4278ea8472",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-pdf-understanding",
+      "tip": "8c93c55e78a5fcd31bcb2302e9b8f82d4c07a04d",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-docx-understanding",
+      "tip": "5c4c7bc3101e7b5dd4c3bfc082bc2ddadb8ed6e9",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-xlsx-understanding",
+      "tip": "bade2f02923b43845586eaea1a7f8a85a79a4ecc",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-pptx-understanding",
+      "tip": "2b3ca752396b4040364ccaafe3c84efc4cf81b5f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-web-document-understanding",
+      "tip": "a4744aedc2b55781904e5d3dcf95dc1985db09ef",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-archive-zip-understanding",
+      "tip": "1dfdcdf78c404fd3ad1ba1ecaf614ba8e6905988",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-provenance-audit",
+      "tip": "3fe9a87db6880b4e17ced55209aff4ad3f221c56",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-dhcp-ip-triage-v001",
+      "tip": "e9d83487e73a6ced9115a5e61271f16acc0c8619",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v021-process-tree-reconstruction",
+      "tip": "63d6357a5048c01df778fe7d449efcc3833c003a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v022-persistence-hunt",
+      "tip": "eb9a56693154d82c56c2039c5b7fdf23d5fdf1ec",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v023-lateral-movement-trace",
+      "tip": "7cbe7006724899135e70616fc2469e177a7706b1",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v024-filesystem-artifact-analysis",
+      "tip": "153e2398b032511a1db9aa1d22739d35334c5467",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v025-memory-forensics-contract",
+      "tip": "afb07a6e5c892edd5bcc7d423f728c4cbfd7729c",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v026-anti-forensics-detection",
+      "tip": "5b31a5c3b3a8e347b5ccafedec59a08bbe58b4be",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v027-credential-abuse-trace",
+      "tip": "898bf7befef313a0ac4d1b95633097d16fe53564",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v028-exfiltration-analysis",
+      "tip": "c9935d48ff649cf96bb40134a87c3b7caf0804a3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/dfir-v029-incident-scope-builder",
+      "tip": "eb87ee388e694dc0744a1efd6faeb118046f52c8",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "integration/dfir-v021-v029-validation",
+      "tip": "634577f089f12c5da6128b484fd101ad52d75cfe",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-registry-admission",
+      "tip": "6c1a4b13075778c636851a52de891abf20126e13",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-docx-understanding-v2",
+      "tip": "66938b0885fbbc65aa87ed404dbad7b2bfe6b3a3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-xlsx-understanding-v2",
+      "tip": "3b605a90f659f2c600cad9cdd979f59f06bf857b",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-pptx-understanding-v2",
+      "tip": "90f012c6034b5bf93e6d2ccc84b5a547cfe2b608",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-web-document-understanding-v2",
+      "tip": "c8a74205d4703496fbd7c3d4104687c27011e2db",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-archive-zip-understanding-v2",
+      "tip": "6562f1e891a143e068e176691c8940b8b0a4edd5",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-provenance-audit-v2",
+      "tip": "6bee70e4a255dc3f9661d7bc84f926f13d46a405",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-registry-admission-v2",
+      "tip": "05c57079a27bd808ec2453208902abccddd90a8e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/execution-governance-v001",
+      "tip": "daafc8897c27b6958e452a0de8de200ac19b2705",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/harness-h1-task-acceptance",
+      "tip": "6e57c5ce86e046687d3345e20d17e3763ce9548f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-composite-strategy-policy-001",
+      "tip": "3faf4a534ab77bbd727975e0636843454593aa88",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-document-visual-understanding-v2",
+      "tip": "7705f3888ee2528746f19f26e5371a713f8d617e",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/skill-pdf-understanding-v2",
+      "tip": "f39bc81e6675bebe8408aa3434deda0499aa8ac6",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "ci/windows-deploy-throughput-v1",
+      "tip": "b5e569e241c021205a68a8eb472f4b176ac66276",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/security-l9-integrity-main-20260903",
+      "tip": "7597645c9437ff8521ea3842693a9397feb789ee",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-h2-memory-foundation",
+      "tip": "d6e1d19cf558f5426aaf9a68658f4e509626a3be",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-h2-checkpoint-foundation",
+      "tip": "6e4d3a19ac93708b6da40af4493be65542f9e320",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/security-asset-dependency-impact-v001",
+      "tip": "b6cebfa53297014c35686ee5632bade266ea004a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feature/internet-egress-policy-v1-20260903",
+      "tip": "6d80a6aeb9eb444d40a89552610e3cf10233e69a",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-01-runtime-chokepoint",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-03-plugin-connector-boundary",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-04-browser-boundary",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-05-audit-privacy",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-06-warning-ux",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-08-ci-security-gate",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-09-os-network-policy",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-10-docs-evidence",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "tmp-ignore",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-h3-context-manifest",
+      "tip": "09fda7495d52afe386b15c2f5874b9a8879406af",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-h3-context-compiler",
+      "tip": "510d47c33cf98d4637bf75ae44b259fa4ec9be9f",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "feat/harness-h3-context-rehydration",
+      "tip": "040d4d0ec911f8185cc9d3c5bbdef3443edd06cb",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "integration/chat-attachment-pipeline-v22-20260903",
+      "tip": "cb0938a090a8c807b62f14dc965bae39affdec10",
+      "status": "merged_clean",
+      "conflicts": [],
+      "before": "41cdb02be1168927cfd2735d5369dfd6a3bd3c4d"
+    },
+    {
+      "branch": "lane/egress-07-bypass-regression",
+      "tip": "b4b4c3304643a549aa094463e27a2ce82b2f3495",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-02-ssrf-redirect",
+      "tip": "a8951f07d3bcc54d0d0f6a492361470e50aa09e3",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "lane/egress-09a1-core-broker-ipc",
+      "tip": "8c872de32b369a257e5487166e0f5e1315928634",
+      "status": "already_ancestor"
+    },
+    {
+      "branch": "fix/baseline-secure-public-search-gate",
+      "tip": "f400ba8758be28b7f27615030f71e424108f7b5a",
+      "status": "already_ancestor"
+    }
+  ]
+}

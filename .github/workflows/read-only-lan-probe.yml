@@ -1,0 +1,262 @@
+name: read-only-lan-probe
+
+on:
+  push:
+    branches:
+      - test/read-only-lan-probe-20260901
+    paths:
+      - '.github/workflows/read-only-lan-probe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: read-only-lan-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ubuntu-read-only-probe:
+    name: Ubuntu read-only LAN probe
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Read-only probe from Ubuntu runner
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/linux-probe.txt"
+          python3 - <<'PY' | tee "$OUT"
+          import hashlib
+          import http.client
+          import socket
+          import ssl
+          import subprocess
+          from datetime import datetime, timezone
+
+          TARGETS = ("192.168.11.116", "192.168.11.1")
+          PORTS = (22, 23, 53, 80, 443, 179, 830, 8080, 8443)
+
+          def run(cmd):
+              try:
+                  p = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
+                  text = (p.stdout + p.stderr).strip()
+                  return p.returncode, text
+              except Exception as exc:
+                  return 999, f"{type(exc).__name__}: {exc}"
+
+          def tcp_open(host, port, timeout=1.5):
+              try:
+                  with socket.create_connection((host, port), timeout=timeout):
+                      return True, "connected"
+              except Exception as exc:
+                  return False, type(exc).__name__
+
+          def http_head(host, port, tls=False):
+              try:
+                  if tls:
+                      ctx = ssl.create_default_context()
+                      ctx.check_hostname = False
+                      ctx.verify_mode = ssl.CERT_NONE
+                      raw = socket.create_connection((host, port), timeout=3)
+                      with ctx.wrap_socket(raw, server_hostname=host) as s:
+                          der = s.getpeercert(binary_form=True)
+                          tls_meta = {
+                              "version": s.version(),
+                              "cipher": s.cipher()[0] if s.cipher() else "",
+                              "cert_sha256": hashlib.sha256(der).hexdigest() if der else "",
+                          }
+                          req = (
+                              f"HEAD / HTTP/1.1\r\nHost: {host}\r\n"
+                              "User-Agent: WorkSpace-readonly-probe/1\r\n"
+                              "Connection: close\r\n\r\n"
+                          ).encode("ascii")
+                          s.sendall(req)
+                          data = s.recv(8192).decode("iso-8859-1", "replace")
+                          first = data.splitlines()[0] if data else "NO_RESPONSE"
+                          server = next((x for x in data.splitlines() if x.lower().startswith("server:")), "")
+                          location = next((x for x in data.splitlines() if x.lower().startswith("location:")), "")
+                          return first, server, location, tls_meta
+                  conn = http.client.HTTPConnection(host, port, timeout=3)
+                  conn.request("HEAD", "/", headers={
+                      "Host": host,
+                      "User-Agent": "WorkSpace-readonly-probe/1",
+                      "Connection": "close",
+                  })
+                  r = conn.getresponse()
+                  result = (f"HTTP/{r.version} {r.status} {r.reason}", r.getheader("Server") or "", r.getheader("Location") or "", {})
+                  conn.close()
+                  return result
+              except Exception as exc:
+                  return f"ERROR {type(exc).__name__}: {exc}", "", "", {}
+
+          print("WORKSPACE READ-ONLY LAN PROBE")
+          print("timestamp_utc=", datetime.now(timezone.utc).isoformat())
+          print("runner_os=linux")
+          print("hostname=", socket.gethostname())
+          print("policy=NO_REBOOT NO_SHUTDOWN NO_CONFIG_CHANGE NO_LOGIN NO_SNMP_WRITE NO_POST_PUT_DELETE")
+          print()
+
+          for cmd in (("ip", "-br", "addr"), ("ip", "route")):
+              rc, text = run(list(cmd))
+              print("$", " ".join(cmd), f"[rc={rc}]")
+              print(text)
+              print()
+
+          for host in TARGETS:
+              print("=" * 72)
+              print("TARGET", host)
+              print("=" * 72)
+              rc, text = run(["ping", "-c", "4", "-W", "1", host])
+              print(f"PING rc={rc}")
+              print(text)
+              print()
+
+              rc, text = run(["ip", "route", "get", host])
+              print(f"ROUTE rc={rc}")
+              print(text)
+              print()
+
+              rc, text = run(["ip", "neigh", "show", host])
+              print(f"NEIGHBOR rc={rc}")
+              print(text or "<none>")
+              print()
+
+              open_ports = []
+              for port in PORTS:
+                  opened, detail = tcp_open(host, port)
+                  print(f"TCP {port}: {'OPEN' if opened else 'CLOSED_OR_FILTERED'} ({detail})")
+                  if opened:
+                      open_ports.append(port)
+              print()
+
+              if 80 in open_ports:
+                  status, server, location, meta = http_head(host, 80, tls=False)
+                  print("HTTP_HEAD_80", status)
+                  print("HTTP_SERVER_80", server)
+                  print("HTTP_LOCATION_80", location)
+                  print()
+              if 443 in open_ports:
+                  status, server, location, meta = http_head(host, 443, tls=True)
+                  print("HTTPS_HEAD_443", status)
+                  print("HTTPS_SERVER_443", server)
+                  print("HTTPS_LOCATION_443", location)
+                  print("TLS_443", meta)
+                  print()
+
+          print("PROBE_COMPLETE=TRUE")
+          PY
+
+      - name: Upload Ubuntu probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-only-lan-probe-ubuntu
+          path: ${{ runner.temp }}/linux-probe.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-read-only-probe:
+    name: Windows read-only LAN probe
+    runs-on: [self-hosted, windows]
+    timeout-minutes: 10
+    steps:
+      - name: Read-only probe from Windows runner
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $Out = Join-Path $env:RUNNER_TEMP 'windows-probe.txt'
+          $Targets = @('192.168.11.116', '192.168.11.1')
+          $Ports = @(22,23,53,80,443,179,830,8080,8443)
+
+          function Write-Line([string]$Text = '') {
+            $Text | Tee-Object -FilePath $Out -Append
+          }
+
+          function Test-TcpReadOnly([string]$HostName, [int]$Port) {
+            $client = New-Object System.Net.Sockets.TcpClient
+            try {
+              $iar = $client.BeginConnect($HostName, $Port, $null, $null)
+              if (-not $iar.AsyncWaitHandle.WaitOne(1500, $false)) { return $false }
+              $client.EndConnect($iar)
+              return $client.Connected
+            } catch {
+              return $false
+            } finally {
+              $client.Close()
+            }
+          }
+
+          function Get-HeadReadOnly([string]$Uri) {
+            try {
+              $handler = New-Object System.Net.Http.HttpClientHandler
+              $handler.ServerCertificateCustomValidationCallback = { $true }
+              $client = New-Object System.Net.Http.HttpClient($handler)
+              $client.Timeout = [TimeSpan]::FromSeconds(5)
+              $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Head, $Uri)
+              $request.Headers.UserAgent.ParseAdd('WorkSpace-readonly-probe/1')
+              $response = $client.SendAsync($request).GetAwaiter().GetResult()
+              $server = ($response.Headers.Server | Out-String).Trim()
+              $location = if ($response.Headers.Location) { $response.Headers.Location.ToString() } else { '' }
+              return "status=$([int]$response.StatusCode) reason=$($response.ReasonPhrase) server=$server location=$location"
+            } catch {
+              return "ERROR $($_.Exception.GetType().Name): $($_.Exception.Message)"
+            } finally {
+              if ($client) { $client.Dispose() }
+              if ($handler) { $handler.Dispose() }
+            }
+          }
+
+          if (Test-Path $Out) { Remove-Item $Out -Force }
+          Write-Line 'WORKSPACE READ-ONLY LAN PROBE'
+          Write-Line "timestamp_utc=$([DateTime]::UtcNow.ToString('o'))"
+          Write-Line 'runner_os=windows'
+          Write-Line "hostname=$env:COMPUTERNAME"
+          Write-Line 'policy=NO_REBOOT NO_SHUTDOWN NO_CONFIG_CHANGE NO_LOGIN NO_SNMP_WRITE NO_POST_PUT_DELETE'
+          Write-Line
+
+          Write-Line '=== IP CONFIGURATION ==='
+          (Get-NetIPConfiguration | Format-List InterfaceAlias,InterfaceDescription,IPv4Address,IPv4DefaultGateway,DNSServer | Out-String) | Tee-Object -FilePath $Out -Append
+
+          foreach ($Target in $Targets) {
+            Write-Line ('=' * 72)
+            Write-Line "TARGET $Target"
+            Write-Line ('=' * 72)
+            Write-Line 'PING'
+            (& ping.exe -n 4 -w 1000 $Target 2>&1 | Out-String) | Tee-Object -FilePath $Out -Append
+
+            Write-Line 'ROUTE'
+            (& route.exe print $Target 2>&1 | Out-String) | Tee-Object -FilePath $Out -Append
+
+            Write-Line 'NEIGHBOR'
+            try {
+              (Get-NetNeighbor -IPAddress $Target -ErrorAction Stop | Format-Table -AutoSize | Out-String) | Tee-Object -FilePath $Out -Append
+            } catch {
+              Write-Line '<none>'
+            }
+
+            $Open = @()
+            foreach ($Port in $Ports) {
+              $Ok = Test-TcpReadOnly -HostName $Target -Port $Port
+              Write-Line "TCP ${Port}: $(if ($Ok) {'OPEN'} else {'CLOSED_OR_FILTERED'})"
+              if ($Ok) { $Open += $Port }
+            }
+            Write-Line
+
+            if ($Open -contains 80) {
+              Write-Line "HTTP_HEAD_80 $(Get-HeadReadOnly -Uri "http://${Target}/")"
+            }
+            if ($Open -contains 443) {
+              Write-Line "HTTPS_HEAD_443 $(Get-HeadReadOnly -Uri "https://${Target}/")"
+            }
+            Write-Line
+          }
+
+          Write-Line 'PROBE_COMPLETE=TRUE'
+
+      - name: Upload Windows probe evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-only-lan-probe-windows
+          path: ${{ runner.temp }}\windows-probe.txt
+          if-no-files-found: error
+          retention-days: 7

@@ -1,7 +1,7 @@
 import unittest
 
-from three_agent.chat_gateway_v12 import PromptAwareWorkflowStudioHTTPHandler
-from three_agent.chat_gateway_v11 import WorkflowStudioHTTPHandler
+from three_agent.chat_gateway import PromptAwareWorkflowStudioHTTPHandler
+from three_agent.chat_gateway import WorkflowStudioHTTPHandler
 from three_agent.prompt_compiler import PROMPT_COMPILER_VERSION
 from three_agent.public_query_compiler import PUBLIC_QUERY_COMPILER_VERSION
 

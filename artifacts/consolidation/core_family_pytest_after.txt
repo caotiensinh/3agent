@@ -1,0 +1,40 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/test_chat_gateway_v15_contract.py ___________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_chat_gateway_v15_contract.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chat_gateway_v15_contract.py:16: in <module>
+    from three_agent.chat_gateway_v15 import (
+E   ImportError: cannot import name 'CONVERSATION_CONTEXT_POLICY_VERSION' from 'three_agent.chat_gateway_v15' (/home/runner/work/3agent/3agent/src/three_agent/chat_gateway_v15.py)
+__________ ERROR collecting tests/test_chat_memory_attachments_v22.py __________
+tests/test_chat_memory_attachments_v22.py:21: in <module>
+    from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
+src/three_agent/chat_gateway_v22.py:7: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+__________ ERROR collecting tests/test_chat_memory_attachments_v3.py ___________
+tests/test_chat_memory_attachments_v3.py:21: in <module>
+    from three_agent.chat_gateway_v19 import ContinuityProjectChatService
+src/three_agent/chat_gateway_v19.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+=========================== short test summary info ============================
+ERROR tests/test_chat_gateway_v15_contract.py
+ERROR tests/test_chat_memory_attachments_v22.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_memory_attachments_v3.py - NameError: name 'connector_rows' is not defined
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+3 errors in 1.73s

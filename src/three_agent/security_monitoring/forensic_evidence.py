@@ -70,6 +70,12 @@ def _sha(value: str, field_name: str) -> str:
     return text
 
 
+def _require_bool(value: object, field_name: str) -> bool:
+    if type(value) is not bool:
+        raise MonitoringContractError(f"{field_name} must be a boolean")
+    return value
+
+
 def _parse_timestamp(value: str, field_name: str) -> datetime:
     text = str(value or "").strip()
     try:
@@ -233,6 +239,12 @@ class EvidenceObject:
             if not isinstance(self.event_time, ForensicEventTime):
                 raise MonitoringContractError("event_time type is invalid")
             self.event_time.validate()
+        for field_name, value in (
+            ("derived", self.derived),
+            ("immutable", self.immutable),
+            ("payload_embedded", self.payload_embedded),
+        ):
+            _require_bool(value, field_name)
         parents = tuple(_evidence_id(value) for value in self.parent_evidence_refs)
         if len(parents) > MAX_DERIVATION_INPUTS:
             raise MonitoringContractError("parent_evidence_refs bound exceeded")
@@ -443,6 +455,14 @@ class CaseAuthorization:
         if set(evidence_types) - FORENSIC_EVIDENCE_TYPES:
             raise MonitoringContractError("allowed_evidence_types contains unsupported forensic evidence type")
         object.__setattr__(self, "allowed_evidence_types", tuple(sorted(evidence_types)))
+        for field_name, value in (
+            ("read_only", self.read_only),
+            ("advisory_only", self.advisory_only),
+            ("case_grants_network_access", self.case_grants_network_access),
+            ("case_grants_collection", self.case_grants_collection),
+            ("case_grants_remediation", self.case_grants_remediation),
+        ):
+            _require_bool(value, field_name)
         if not self.read_only or not self.advisory_only:
             raise MonitoringContractError("forensic case authority must remain read-only and advisory")
         if self.case_grants_network_access or self.case_grants_collection or self.case_grants_remediation:
@@ -483,6 +503,11 @@ class CollectionFootprint:
         ):
             if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
                 raise MonitoringContractError(f"{field_name} is outside the forensic collection bound")
+        for field_name, value in (
+            ("network_read_used", self.network_read_used),
+            ("active_probe_used", self.active_probe_used),
+        ):
+            _require_bool(value, field_name)
         if self.active_probe_used:
             raise MonitoringContractError("P0-A forensic collection footprint does not admit active probing")
         if self.network_read_used and self.authority_fingerprint is None:
@@ -540,6 +565,7 @@ class CaseRecord:
             object.__setattr__(self, "custody_head_sha256", _sha(self.custody_head_sha256, "custody_head_sha256"))
         if self.timeline_fingerprint is not None:
             object.__setattr__(self, "timeline_fingerprint", _sha(self.timeline_fingerprint, "timeline_fingerprint"))
+        _require_bool(self.human_review_required, "human_review_required")
         if not self.human_review_required:
             raise MonitoringContractError("forensic cases require human review")
         if self.authority != "advisory":

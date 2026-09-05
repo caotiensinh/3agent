@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import inspect
 import unittest
-from pathlib import Path
+from types import SimpleNamespace
 
 from three_agent.chat_context import (
     CONTEXT_MODE_FOLLOW_UP,
@@ -12,9 +13,10 @@ from three_agent.chat_output_contract import (
     compile_chat_output_contract,
     tighten_for_missing_reference,
 )
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from three_agent.chat_service_fidelity import (
+    ContractAwareProjectChatService,
+    _bounded_generation_num_predict,
+)
 
 
 class ChatOutputContractTests(unittest.TestCase):
@@ -132,23 +134,18 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(language, "ja")
 
     def test_current_service_preserves_high_reasoning_and_bounds_standard_generation(self):
-        text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('high_effort = str(effort or "").strip().lower() == "high"', text)
-        self.assertIn("think=high_effort", text)
-        self.assertIn("def _bounded_generation_num_predict", text)
-        self.assertIn("if high_effort:", text)
-        self.assertIn("return max(configured, 768)", text)
-        self.assertIn(
-            "generation_num_predict = _bounded_generation_num_predict(contract, high_effort)",
-            text,
-        )
-        self.assertIn("generation_temperature = None if high_effort else 0.0", text)
-        self.assertIn("num_predict=generation_num_predict", text)
-        self.assertIn("temperature=generation_temperature", text)
-        self.assertIn("contract.validate(answer)", text)
-        self.assertIn("workspace.chat.direct.v2", text)
+        standard = SimpleNamespace(num_predict=4096, max_chars=2800)
+        high_floor = SimpleNamespace(num_predict=128, max_chars=600)
+        self.assertEqual(_bounded_generation_num_predict(standard, False), 560)
+        self.assertEqual(_bounded_generation_num_predict(high_floor, True), 768)
+
+        source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
+        self.assertIn("think=high_effort", source)
+        self.assertIn("generation_temperature = None if high_effort else 0.0", source)
+        self.assertIn("num_predict=generation_num_predict", source)
+        self.assertIn("temperature=generation_temperature", source)
+        self.assertIn("contract.validate(answer)", source)
+        self.assertIn('template_version="workspace.chat.direct.v2"', source)
 
 
 if __name__ == "__main__":

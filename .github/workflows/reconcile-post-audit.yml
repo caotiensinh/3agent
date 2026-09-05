@@ -1,0 +1,223 @@
+name: reconcile-post-audit
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v2-20260903
+    paths:
+      - .github/workflows/reconcile-post-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reconcile/all-branches-v2-20260903
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install exact reconciled package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Full verification and repository census
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+          mkdir -p artifacts/reconciliation
+
+          set +e
+          python -m pytest tests/ -q > artifacts/reconciliation/post_reconcile_pytest_20260903.txt 2>&1
+          TEST_RC=$?
+          set -e
+
+          TEST_RC="$TEST_RC" python - <<'PY'
+          from __future__ import annotations
+          import ast, collections, hashlib, json, os, re, subprocess
+          from pathlib import Path
+
+          root = Path('.')
+          tracked = [Path(x) for x in subprocess.check_output(['git','ls-files'], text=True).splitlines() if x]
+          py_files = [p for p in tracked if p.suffix == '.py' and p.is_file()]
+          src_py = [p for p in py_files if str(p).startswith('src/')]
+
+          def sha(path: Path) -> str:
+              return hashlib.sha256(path.read_bytes()).hexdigest()
+
+          def version_root(stem: str):
+              m = re.match(r'^(.*?)(?:_v\d+)(?:_.*)?$', stem)
+              if m:
+                  return m.group(1)
+              m = re.match(r'^(.*?)(?:_part\d+)$', stem)
+              if m:
+                  return m.group(1)
+              return None
+
+          # Version/part families: include the unversioned sibling when present.
+          fam = collections.defaultdict(set)
+          for p in src_py:
+              vr = version_root(p.stem)
+              if vr:
+                  fam[(str(p.parent), vr)].add(str(p))
+                  base = p.parent / f'{vr}.py'
+                  if base.exists():
+                      fam[(str(p.parent), vr)].add(str(base))
+          version_families = []
+          for (parent, name), members in sorted(fam.items()):
+              if len(members) > 1:
+                  version_families.append({
+                      'family': f'{parent}/{name}',
+                      'member_count': len(members),
+                      'members': sorted(members),
+                      'total_lines': sum(len(Path(x).read_text(encoding='utf-8', errors='replace').splitlines()) for x in members),
+                  })
+
+          # Byte-identical files.
+          by_hash = collections.defaultdict(list)
+          for p in tracked:
+              if p.is_file() and p.stat().st_size:
+                  by_hash[sha(p)].append(str(p))
+          exact_duplicates = [
+              {'sha256': h, 'members': sorted(v)}
+              for h, v in by_hash.items() if len(v) > 1
+          ]
+
+          # AST structural equality and symbol inventories for Python.
+          ast_hashes = collections.defaultdict(list)
+          symbol_files = collections.defaultdict(set)
+          parse_errors = []
+          monkeypatch_hits = []
+          imports = collections.defaultdict(list)
+          for p in py_files:
+              text = p.read_text(encoding='utf-8', errors='replace')
+              try:
+                  tree = ast.parse(text, filename=str(p))
+              except SyntaxError as exc:
+                  parse_errors.append({'file': str(p), 'error': str(exc)})
+                  continue
+              dump = ast.dump(tree, annotate_fields=True, include_attributes=False)
+              ast_hashes[hashlib.sha256(dump.encode()).hexdigest()].append(str(p))
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                      symbol_files[node.name].add(str(p))
+                  elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                      if isinstance(node, ast.ImportFrom):
+                          mod = node.module or ''
+                          imports[str(p)].append({'kind':'from','module':mod,'names':[a.name for a in node.names]})
+                      else:
+                          imports[str(p)].append({'kind':'import','module':'','names':[a.name for a in node.names]})
+              # Runtime namespace mutation patterns: module_alias.attr = ... / setattr(alias,...)
+              for node in ast.walk(tree):
+                  if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+                      targets = []
+                      if isinstance(node, ast.Assign): targets = node.targets
+                      else: targets = [node.target]
+                      for target in targets:
+                          if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+                              if re.match(r'^_?v\d+$', target.value.id) or target.value.id.startswith('_v'):
+                                  monkeypatch_hits.append({'file':str(p),'line':getattr(node,'lineno',None),'target':f'{target.value.id}.{target.attr}'})
+                  elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'setattr':
+                      if node.args and isinstance(node.args[0], ast.Name):
+                          monkeypatch_hits.append({'file':str(p),'line':getattr(node,'lineno',None),'target':f'setattr({node.args[0].id},...)'})
+
+          ast_duplicates = [
+              {'ast_sha256': h, 'members': sorted(v)}
+              for h, v in ast_hashes.items() if len(v) > 1
+          ]
+          duplicate_symbols = [
+              {'symbol': name, 'file_count': len(paths), 'files': sorted(paths)}
+              for name, paths in symbol_files.items() if len(paths) > 1
+          ]
+          duplicate_symbols.sort(key=lambda x: (-x['file_count'], x['symbol']))
+
+          # Entrypoints are authoritative production references.
+          pyproject = Path('pyproject.toml').read_text(encoding='utf-8')
+          entrypoints = []
+          in_scripts = False
+          for line in pyproject.splitlines():
+              s=line.strip()
+              if s == '[project.scripts]':
+                  in_scripts=True; continue
+              if in_scripts and s.startswith('['):
+                  break
+              if in_scripts and '=' in s and not s.startswith('#'):
+                  entrypoints.append(s)
+
+          # Aggregate unresolved branch conflicts from reconciliation manifest.
+          manifest_path = Path('artifacts/reconciliation/branch_reconciliation_v2_20260903.json')
+          conflicts = []
+          conflict_files = collections.Counter()
+          if manifest_path.exists():
+              man=json.loads(manifest_path.read_text(encoding='utf-8'))
+              for e in man.get('events', []):
+                  if e.get('status') == 'conflict_requires_manual_reconcile':
+                      conflicts.append(e)
+                      conflict_files.update(e.get('conflicts', []))
+
+          # Test summary tail and failure identities.
+          test_path=Path('artifacts/reconciliation/post_reconcile_pytest_20260903.txt')
+          test_lines=test_path.read_text(encoding='utf-8', errors='replace').splitlines()
+          failures=[]
+          for line in test_lines:
+              s=line.strip()
+              if s.startswith(('FAILED ', 'ERROR ')):
+                  failures.append(s.split(' - ',1)[0])
+
+          payload = {
+              'schema':'workspace-repo-duplicate-audit/v1',
+              'head_sha':subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+              'tracked_file_count':len(tracked),
+              'python_file_count':len(py_files),
+              'src_python_file_count':len(src_py),
+              'version_family_count':len(version_families),
+              'version_family_member_count':sum(x['member_count'] for x in version_families),
+              'version_families':version_families,
+              'exact_duplicate_group_count':len(exact_duplicates),
+              'exact_duplicates':exact_duplicates,
+              'ast_duplicate_group_count':len(ast_duplicates),
+              'ast_duplicates':ast_duplicates,
+              'duplicate_symbol_count':len(duplicate_symbols),
+              'duplicate_symbols_top100':duplicate_symbols[:100],
+              'monkeypatch_hit_count':len(monkeypatch_hits),
+              'monkeypatch_hits':monkeypatch_hits,
+              'parse_errors':parse_errors,
+              'production_entrypoints':entrypoints,
+              'manual_conflict_branch_count':len(conflicts),
+              'manual_conflict_file_count':len(conflict_files),
+              'manual_conflict_files':[
+                  {'file':k,'branch_conflict_count':v} for k,v in conflict_files.most_common()
+              ],
+              'post_reconcile_pytest_rc':int(os.environ['TEST_RC']),
+              'post_reconcile_failures':sorted(set(failures)),
+              'post_reconcile_tail':test_lines[-80:],
+          }
+          Path('artifacts/reconciliation/repo_duplicate_audit_20260903.json').write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
+          print(json.dumps({k:payload[k] for k in ('head_sha','tracked_file_count','python_file_count','version_family_count','version_family_member_count','exact_duplicate_group_count','ast_duplicate_group_count','monkeypatch_hit_count','manual_conflict_branch_count','manual_conflict_file_count','post_reconcile_pytest_rc')}, indent=2))
+          PY
+
+      - name: Commit audit evidence
+        run: |
+          git config user.name "workspace-reconcile-bot"
+          git config user.email "workspace-reconcile-bot@users.noreply.github.com"
+          git add artifacts/reconciliation/repo_duplicate_audit_20260903.json artifacts/reconciliation/post_reconcile_pytest_20260903.txt
+          git commit -m "chore(reconcile): record repository duplicate and conflict census" || true
+          git push origin HEAD:reconcile/all-branches-v2-20260903
+
+      - name: Upload audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconcile-post-audit-20260903
+          path: artifacts/reconciliation/

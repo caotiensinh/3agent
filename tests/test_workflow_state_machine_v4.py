@@ -16,11 +16,17 @@ from three_agent.task_contract import TaskContractCompiler
 from three_agent.validator_ledger import ValidatorLedger
 from three_agent.version import DISPLAY_VERSION
 from three_agent.workflow_state_machine import WorkflowStateError
-from three_agent.workflow_state_machine_v4 import (
+from three_agent.workflow_state_machine import (
     WORKFLOW_V4_MAX_PARALLEL_BRANCHES,
     WORKFLOW_V4_MAX_PARALLEL_WORKERS,
     WorkflowStateMachineV4Controller,
 )
+
+
+# Test synchronization bound only; production workflow timeouts are separate.
+# Five seconds was too tight for a second clean-install test pass on slower
+# Windows/Python 3.11 runners and could break an otherwise valid overlap proof.
+PARALLEL_TEST_SYNC_TIMEOUT_SECONDS = 30
 
 
 def node(node_id, label, kind, action, parents=(), condition="", approval=False):
@@ -84,7 +90,7 @@ class ConcurrentResearchAgent:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
         try:
-            self.barrier.wait(timeout=5)
+            self.barrier.wait(timeout=PARALLEL_TEST_SYNC_TIMEOUT_SECONDS)
             store.set_status(task_id, TaskStatus.RESEARCH_COMPLETED)
             return []
         finally:

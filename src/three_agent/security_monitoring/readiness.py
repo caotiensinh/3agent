@@ -79,9 +79,11 @@ def evaluate_monitoring_readiness(
                 }
             )
 
+    ready = not issues
     return {
         "schema_version": READINESS_SCHEMA,
-        "ready": not issues,
+        "ready": ready,
+        "status": "ready" if ready else "blocked",
         "config_saved": bool(config_saved),
         "policy_fingerprint": config.policy.fingerprint,
         "enabled_asset_count": sum(1 for asset in config.assets if asset.enabled),

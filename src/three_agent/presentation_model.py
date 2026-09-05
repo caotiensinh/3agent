@@ -3,9 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .runtime_efficiency import sanitize_untrusted_payload
+
 
 class PresentationValidationError(ValueError):
     """Raised when model output or presentation input violates the deterministic contract."""
+
+
+PRESENTATION_OUTPUT_SANITIZER_VERSION = "workspace-presentation-output-sanitizer/v1"
+_RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
 @dataclass(frozen=True)
@@ -202,8 +208,48 @@ def _clean_strings(value: Any, limit: int = 8) -> list[str]:
     return cleaned[:limit]
 
 
+def _presentation_output_security(findings: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    risks = [str(item.get("risk", "low")) for item in findings]
+    max_risk = max(risks, key=lambda value: _RISK_ORDER.get(value, -1), default="low")
+    signal_types = sorted({
+        str(signal)
+        for item in findings
+        for signal in item.get("signals", [])
+        if isinstance(signal, str) and signal
+    })
+    safe_findings = [
+        {
+            "path": str(item.get("path", "")),
+            "risk": str(item.get("risk", "low")),
+            "signals": [
+                str(signal)
+                for signal in item.get("signals", [])
+                if isinstance(signal, str) and signal
+            ],
+        }
+        for item in findings
+    ]
+    return {
+        "sanitizer_version": PRESENTATION_OUTPUT_SANITIZER_VERSION,
+        "source": "presentation_plan_input",
+        "destination": "presentation_exports",
+        "trust_classification": "untrusted_model_output",
+        "authorization_effect": "none",
+        "max_risk": max_risk,
+        "finding_count": len(safe_findings),
+        "signal_types": signal_types,
+        "findings": safe_findings,
+    }
+
+
 def normalize_plan(raw_plan: dict[str, Any], catalog: EvidenceCatalog, options: PresentationOptions, task_title: str) -> tuple[dict[str, Any], dict[str, Any]]:
     options = options.normalized()
+    sanitized_raw, sanitizer_findings = sanitize_untrusted_payload(raw_plan)
+    if not isinstance(sanitized_raw, dict):
+        raise PresentationValidationError("presentation plan must sanitize to an object")
+    raw_plan = sanitized_raw
+    output_security = _presentation_output_security(sanitizer_findings)
+
     claim_map = catalog.claim_map
     allowed_kinds = {"title", "content", "comparison", "risks", "decision", "timeline", "summary"}
     raw_slides = raw_plan.get("slides")
@@ -321,6 +367,7 @@ def normalize_plan(raw_plan: dict[str, Any], catalog: EvidenceCatalog, options: 
         "referenced_claim_count": len(referenced_claims), "referenced_verified_fact_count": len(verified_refs),
         "available_claim_count": len(claim_map), "evidence_coverage_ratio": coverage,
         "source_appendix_present": any(slide["kind"] == "sources" for slide in slides), "limitations_visible": bool(limitations),
+        "output_security": output_security,
         "accessibility": {"unique_slide_titles": unique_titles, "title_placeholders_required": True, "deterministic_reading_order": True, "minimum_body_font_target_pt": 20, "color_only_meaning": False},
     }
     plan = {"schema_version": "presentation-plan/v1", "title": " ".join(str(raw_plan.get("title", task_title)).split()) or task_title, "subtitle": " ".join(str(raw_plan.get("subtitle", "")).split()), "audience": options.audience, "purpose": options.purpose, "language": options.language, "slides": slides}

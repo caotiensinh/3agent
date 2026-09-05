@@ -28,6 +28,7 @@ _BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b")
 _TELEGRAM_BOT_TOKEN_RE = re.compile(r"\d{5,}:[A-Za-z0-9_-]{20,}")
 _IPV4_RE = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 _UUID_RE = re.compile(r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b")
+_WORKSPACE_USER_REF_RE = re.compile(r"(?i)\bworkspace-user:usr_[a-z0-9_-]{8,128}\b")
 _ABSOLUTE_PATH_RE = re.compile(r"(?i)(?:\b[A-Z]:\\Users\\|/home/|/Users/|/var/lib/|/srv/|file://)")
 _LOCAL_PATH_VALUE_RE = re.compile(
     r"(?i)(?:[A-Z]:\\(?:Users|ProgramData|Windows)\\[^\s<>\"']+|"
@@ -45,7 +46,7 @@ _PRIVATE_KEY_BLOCK_RE = re.compile(
 )
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?ix)"
-    r"(?:\b(?:password|passwd|pwd|username|user(?:name)?|login|secret|token|"
+    r"(?:\b(?:password|passwd|pwd|username|(?<!workspace-)user(?:name)?|login|secret|token|"
     r"api[_ -]?key|client[_ -]?secret|access[_ -]?token|refresh[_ -]?token|authorization)\b"
     r"|パスワード|ユーザー名|認証情報|"
     r"mật\s*khẩu|tên\s*đăng\s*nhập|tài\s*khoản)"
@@ -122,7 +123,12 @@ def _has_high_entropy_token(value: str) -> bool:
 
 
 def redact_sensitive_text(value: str) -> str:
-    """Redact common secrets and identifiers before local audit logging."""
+    """Redact common secrets and identifiers before local audit logging.
+
+    Canonical ``workspace-user:usr_*`` references are already pseudonymous local
+    identities and must remain stable for authorization/history ownership. They
+    are still classified as INTERNAL and removed or blocked at public egress.
+    """
     text = str(value)
     text = _PRIVATE_KEY_BLOCK_RE.sub("[REDACTED_PRIVATE_KEY]", text)
     text = _GITHUB_TOKEN_RE.sub("[REDACTED_GITHUB_TOKEN]", text)
@@ -177,6 +183,8 @@ def classify_public_egress_sensitivity(value: str) -> tuple[str, tuple[str, ...]
         internal_reasons.append("mac")
     if _UUID_RE.search(text):
         internal_reasons.append("uuid")
+    if _WORKSPACE_USER_REF_RE.search(text):
+        internal_reasons.append("workspace_user_ref")
     if _ABSOLUTE_PATH_RE.search(text) or _LOCAL_PATH_VALUE_RE.search(text):
         internal_reasons.append("local_path")
     if _URL_RE.search(text):
@@ -199,6 +207,7 @@ def _strip_sensitive_for_public_query(value: str) -> tuple[str, int]:
 
     text = remove(_PRIVATE_KEY_BLOCK_RE, text)
     text = remove(_CREDENTIAL_ASSIGNMENT_RE, text)
+    text = remove(_WORKSPACE_USER_REF_RE, text)
     redacted = redact_sensitive_text(text)
     marker_count = len(_REDACTION_MARKER_RE.findall(redacted))
     removed += marker_count
@@ -356,6 +365,8 @@ def assess_public_egress_text(value: str, *, max_chars: int = 240) -> OutboundDL
         reasons.append("known_identifier_or_secret")
     if _UUID_RE.search(normalized):
         reasons.append("uuid")
+    if _WORKSPACE_USER_REF_RE.search(normalized):
+        reasons.append("workspace_user_ref")
     if _ABSOLUTE_PATH_RE.search(normalized):
         reasons.append("local_path")
     if _SENSITIVE_WORD_RE.search(normalized):

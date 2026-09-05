@@ -1,0 +1,108 @@
+name: closure-rtx5090-diagnose
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-rtx5090-diagnose.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted]
+    timeout-minutes: 300
+    env:
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
+      MODEL: qwen3:30b
+      WORKSPACE_FAST_MODEL: qwen3:30b
+      WORKSPACE_RESEARCH_MODEL: qwen3:30b
+      WORKSPACE_PRESENTATION_MODEL: qwen3:30b
+      WORKSPACE_REPORT_MODEL: qwen3:30b
+      WORKSPACE_DEEP_MODEL: qwen3:30b
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Prepare isolated runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          VENV="$RUNNER_TEMP/workspace-diagnose-venv-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          python3 -m pip --version >/dev/null
+
+      - name: Install candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -e . >/dev/null
+
+      - name: Execute benchmark and capture evidence-gate diagnostics
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ROOT="$RUNNER_TEMP/workspace-diagnose-$GITHUB_RUN_ID"
+          BENCH="$ROOT/benchmark"
+          mkdir -p "$BENCH"
+          workspace-benchmark-readiness --source-ref "$CANDIDATE_SHA" --repo-root "$GITHUB_WORKSPACE" --model "$MODEL" --output "$BENCH/environment.json" >/dev/null
+          workspace-benchmark --source-ref "$CANDIDATE_SHA" --root "$BENCH" --repo-root "$GITHUB_WORKSPACE" --task-set "$GITHUB_WORKSPACE/benchmarks/fixed_task_set_v1.json" --config "$GITHUB_WORKSPACE/config/workspace.secure.json" >/dev/null
+          ROOT="$ROOT" BENCH="$BENCH" python - <<'PY'
+          import json, os, sqlite3
+          from pathlib import Path
+          root = Path(os.environ['ROOT'])
+          bench = Path(os.environ['BENCH'])
+          result = {'schema_version':'workspace-benchmark-evidence-gate-diagnostic/v1','variants':{}}
+          for variant in ('baseline-legacy-48k','ranked-48k','ranked-40k','ranked-32k'):
+              db = bench / variant / 'state' / 'tasks.db'
+              conn = sqlite3.connect(db); conn.row_factory = sqlite3.Row
+              tasks=[]
+              for task in conn.execute('SELECT task_id,status FROM tasks ORDER BY task_id'):
+                  tid=task['task_id']
+                  validators=[dict(x) for x in conn.execute('SELECT validator,status,reason_code,attempt FROM validator_results WHERE task_id=? ORDER BY id',(tid,))]
+                  research={}
+                  art=conn.execute("SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_json' ORDER BY id DESC LIMIT 1",(tid,)).fetchone()
+                  if art:
+                      p=json.loads(Path(art['path']).read_text(encoding='utf-8'))
+                      research={
+                          'status':p.get('status'),
+                          'source_assessment_error':p.get('source_assessment_error'),
+                          'synthesis_error':p.get('synthesis_error'),
+                          'source_count':len(p.get('sources') or []),
+                          'assessment_count':len(p.get('source_assessments') or []),
+                          'rejected_source_count':len(p.get('rejected_sources') or []),
+                          'verified_fact_count':len(p.get('verified_facts') or []),
+                          'inference_count':len(p.get('inferences') or []),
+                          'unresolved_count':len(p.get('unresolved_items') or []),
+                          'constraint_gaps':p.get('constraint_gaps') or [],
+                      }
+                  blockers=[]; metrics={}
+                  hp=conn.execute("SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_handoff_json' ORDER BY id DESC LIMIT 1",(tid,)).fetchone()
+                  if hp:
+                      h=json.loads(Path(hp['path']).read_text(encoding='utf-8'))
+                      blockers=[str(x) for x in h.get('blockers') or []]
+                      metrics=h.get('quality_metrics') or {}
+                  tasks.append({'task_id':tid,'task_status':task['status'],'validators':validators,'research':research,'blockers':blockers,'quality_metrics':metrics})
+              conn.close()
+              result['variants'][variant]=tasks
+          (root/'diagnostic.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          print(json.dumps(result,ensure_ascii=False,sort_keys=True))
+          PY
+
+      - name: Publish diagnostic
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-benchmark-evidence-gate-diagnostic
+          if-no-files-found: error
+          retention-days: 7
+          path: ${{ runner.temp }}/workspace-diagnose-${{ github.run_id }}/diagnostic.json

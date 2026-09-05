@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .workflow_design import WorkflowDesignError
-from .workflow_design_v4 import (
+from .workflow_design import (
     V4_WORKFLOW_SCHEMA_VERSION,
+    WorkflowDesignError,
     render_mermaid_v4,
     render_svg_v4,
     validate_contract_v4,
