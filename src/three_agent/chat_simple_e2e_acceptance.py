@@ -76,7 +76,10 @@ def frontend_contract_errors(html: str = WORKSPACE_HTML) -> tuple[str, ...]:
             "frontend_direct_chat_route_marker_missing",
         ),
         ("ui_route:directUi?'direct_chat':'workflow'", "frontend_direct_chat_ui_marker_missing"),
-        ("node.dataset.uiRoute!=='direct_chat'", "frontend_stage_suppression_missing"),
+        ("function shouldShowAnswerStages(job,route)", "frontend_stage_suppression_helper_missing"),
+        ("return route!=='direct_chat'", "frontend_stage_suppression_route_missing"),
+        ("shouldShowAnswerStages(job,d.dataset.uiRoute)", "frontend_initial_stage_suppression_missing"),
+        ("shouldShowAnswerStages(j,node.dataset.uiRoute)", "frontend_stage_suppression_missing"),
     )
     return tuple(code for marker, code in checks if marker not in html)
 
