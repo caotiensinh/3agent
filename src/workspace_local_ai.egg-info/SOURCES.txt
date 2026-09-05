@@ -128,7 +128,6 @@ src/three_agent/security_monitoring_cli.py
 src/three_agent/security_monitoring_scheduler.py
 src/three_agent/security_pcap_runner.py
 src/three_agent/security_reporting_cli.py
-src/three_agent/skill_registry.py
 src/three_agent/skills.py
 src/three_agent/sqlite_budget_guard.py
 src/three_agent/store.py
@@ -590,7 +589,6 @@ tests/test_skill_docx_understanding.py
 tests/test_skill_pdf_understanding.py
 tests/test_skill_pptx_understanding.py
 tests/test_skill_provenance_audit.py
-tests/test_skill_registry.py
 tests/test_skill_registry_admission.py
 tests/test_skill_web_document_understanding.py
 tests/test_skill_xlsx_understanding.py
