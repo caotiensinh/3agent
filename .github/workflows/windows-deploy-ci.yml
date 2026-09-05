@@ -154,17 +154,21 @@ jobs:
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}\three-agent-bin
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
+          BOOTSTRAP_LOG: ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
         run: |
-          $pythonCommand = Get-Command python -ErrorAction Stop
-          Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
-          Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
-          & python --version
-          if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
-          & python -m pip --version
-          if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
-          $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
+          $transcriptStarted = $false
           try {
+            Start-Transcript -Path $env:BOOTSTRAP_LOG -Force | Out-Null
+            $transcriptStarted = $true
+            $pythonCommand = Get-Command python -ErrorAction Stop
+            Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
+            Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
+            & python --version
+            if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
+            & python -m pip --version
+            if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
+            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+            Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
             $scriptText = Invoke-RestMethod -Uri $url
             & ([ScriptBlock]::Create($scriptText))
             $bootstrapSucceeded = $?
@@ -173,10 +177,67 @@ jobs:
             if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
           }
           catch {
-            Write-Error "Bootstrap diagnostic failure: $($_.Exception.Message)"
+            Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
             throw
           }
+          finally {
+            if ($transcriptStarted) {
+              try { Stop-Transcript | Out-Null } catch { Write-Warning "Unable to stop bootstrap transcript: $($_.Exception.Message)" }
+            }
+          }
           $global:LASTEXITCODE = 0
+      - name: Capture failed Windows unit suite
+        if: failure()
+        shell: powershell
+        env:
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
+          UNITTEST_LOG: ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+        run: |
+          $venvPython = Join-Path $env:THREE_AGENT_INSTALL_DIR '.venv\Scripts\python.exe'
+          $stdoutLog = "$env:UNITTEST_LOG.stdout"
+          $stderrLog = "$env:UNITTEST_LOG.stderr"
+          if (-not (Test-Path $venvPython)) {
+            Write-Host "Diagnostic: venv Python missing at $venvPython"
+            exit 0
+          }
+          try {
+            $process = Start-Process `
+              -FilePath $venvPython `
+              -ArgumentList @('-m', 'unittest', 'discover', '-s', 'tests', '-v') `
+              -WorkingDirectory $env:THREE_AGENT_INSTALL_DIR `
+              -NoNewWindow `
+              -Wait `
+              -PassThru `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog
+            '=== stdout ===' | Out-File -FilePath $env:UNITTEST_LOG -Encoding utf8
+            if (Test-Path $stdoutLog) {
+              Get-Content -LiteralPath $stdoutLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            '=== stderr ===' | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            if (Test-Path $stderrLog) {
+              Get-Content -LiteralPath $stderrLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            "unittest exit code: $($process.ExitCode)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic: reproduced Windows unittest exit=$($process.ExitCode)"
+          }
+          catch {
+            "Diagnostic capture exception: $($_.Exception.Message)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic capture exception: $($_.Exception.Message)"
+          }
+          $global:LASTEXITCODE = 0
+      - name: Upload Windows bootstrap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bootstrap-${{ matrix.python }}
+          path: |
+            ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stdout
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stderr
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify installed command and exact GitHub lineage
         shell: powershell
         env:
