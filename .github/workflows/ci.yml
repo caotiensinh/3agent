@@ -54,9 +54,18 @@ jobs:
       - name: Regression bisect N-R
         if: always()
         run: python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
-      - name: Regression bisect S-Z
+      - name: Diagnostic local console direct
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
+        run: python -m unittest -v tests.test_security_local_console
+      - name: Diagnostic security tests
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_security_*.py' -v
+      - name: Diagnostic S prefix
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_s*.py' -v
+      - name: Diagnostic T-Z
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[t-z]*.py' -v
       - name: Unit tests
         if: always()
         run: python -m unittest discover -s tests -v
