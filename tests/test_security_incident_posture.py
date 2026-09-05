@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from three_agent.security_monitoring.incident_posture import (
     INCIDENT_POSTURE_SAMPLE_LIMIT,
     safe_incident_posture_summary,
 )
+from three_agent.security_monitoring.service import SecurityMonitoringService
 
 
 class _FakeReadModel:
@@ -147,6 +149,29 @@ class SecurityIncidentPostureTests(unittest.TestCase):
 
         self.assertEqual(payload["open_sample_count"], 0)
         self.assertEqual(payload["attention_level"], "clear")
+
+    def test_service_uses_constructor_config_and_exposes_no_runtime_selector(self) -> None:
+        sentinel_config = object()
+        expected = {
+            "schema_version": "workspace-security-monitoring/incident-posture-v1",
+            "authority": {"aggregate_only": True, "network_execution": False},
+        }
+        with (
+            patch(
+                "three_agent.security_monitoring.service.load_runtime_config",
+                return_value=sentinel_config,
+            ) as load_config,
+            patch(
+                "three_agent.security_monitoring.service.safe_incident_posture_summary",
+                return_value=expected,
+            ) as projection,
+        ):
+            service = SecurityMonitoringService("monitoring.json")
+            payload = service.incident_posture()
+
+        load_config.assert_called_once_with(Path("monitoring.json"))
+        projection.assert_called_once_with(sentinel_config)
+        self.assertEqual(payload, expected)
 
 
 if __name__ == "__main__":
