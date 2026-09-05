@@ -193,14 +193,15 @@ class SecurityPCAPTaskReadTests(unittest.TestCase):
             with self.assertRaisesRegex(PCAPEvidenceError, "PACKET_COUNT_BOUND_EXCEEDED"):
                 BoundedPCAPEvidenceReader(registry).read_capture("evidence/capture-001")
 
-    def test_pcap_profile_binding_coverage_is_seven_of_fifteen(self):
+    def test_pcap_profile_binding_coverage_is_eight_of_fifteen(self):
         coverage = PCAPSecurityOperationBindingRegistry().coverage()
         self.assertEqual(coverage.total_operations, 15)
-        self.assertEqual(coverage.bound_operations, 7)
-        self.assertEqual(coverage.unbound_operations, 8)
-        self.assertEqual(coverage.bound_percent, 46.667)
+        self.assertEqual(coverage.bound_operations, 8)
+        self.assertEqual(coverage.unbound_operations, 7)
+        self.assertEqual(coverage.bound_percent, 53.333)
         self.assertNotIn("network.pcap.read#read_capture", coverage.unbound_operation_refs)
         self.assertNotIn("network.pcap.read#read_capture_metadata", coverage.unbound_operation_refs)
+        self.assertNotIn("network.flow.analyze#analyze_flow_evidence", coverage.unbound_operation_refs)
 
     def test_typed_request_contains_resource_id_not_path(self):
         request = PCAPEvidenceInvocationRequest("evidence/capture-001").validate()
@@ -248,7 +249,7 @@ class SecurityPCAPTaskReadTests(unittest.TestCase):
                     request=PCAPEvidenceInvocationRequest("evidence/capture-001"),
                 )
 
-    def test_workflow_executes_bound_pcap_step_and_leaves_flow_analysis_unbound(self):
+    def test_workflow_executes_bound_pcap_step_and_keeps_flow_analysis_bound(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             root.joinpath("capture.pcap").write_bytes(_pcap_bytes(*MAGIC_VARIANTS[0][:2], MAGIC_VARIANTS[0][4]))
@@ -259,20 +260,22 @@ class SecurityPCAPTaskReadTests(unittest.TestCase):
             journal = SecurityWorkflowAuditJournal(root / "workflow-audit.jsonl")
             workflow = SecurityAnalystWorkflow(invoker=invoker, journal=journal)
             prepared = workflow.prepare("analyze this pcap packet capture")
-            self.assertEqual(prepared.session.status, "partial")
+            self.assertEqual(prepared.session.status, "ready")
             pcap_steps = [step for step in prepared.session.steps if step.capability_id == "network.pcap.read"]
             flow_steps = [step for step in prepared.session.steps if step.capability_id == "network.flow.analyze"]
             self.assertEqual(len(pcap_steps), 1)
             self.assertEqual(pcap_steps[0].state, "awaiting_typed_input")
             self.assertEqual(len(flow_steps), 1)
-            self.assertEqual(flow_steps[0].state, "unbound")
+            self.assertEqual(flow_steps[0].state, "awaiting_typed_input")
+            self.assertEqual(flow_steps[0].binding_status, "bound")
+            self.assertEqual(flow_steps[0].handler_id, "analysis.flow_evidence.analyze")
 
             execution = workflow.execute_step(
                 prepared,
                 step_id=pcap_steps[0].step_id,
                 request=PCAPEvidenceInvocationRequest("evidence/capture-001"),
             )
-            self.assertEqual(execution.session.status, "partial")
+            self.assertEqual(execution.session.status, "ready")
             self.assertEqual(execution.session.step_completion_percent, 50.0)
             self.assertEqual(execution.result.output.packet_count, 2)
             self.assertEqual(journal.records()[-1].event_type, "STEP_COMPLETED")

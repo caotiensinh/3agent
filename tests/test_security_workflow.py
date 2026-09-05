@@ -142,15 +142,32 @@ class SecurityAnalystWorkflowTests(unittest.TestCase):
             self.assertEqual(prepared.session.steps, ())
             self.assertEqual(journal.verify().record_count, 1)
 
-    def test_unbound_pcap_route_is_explicitly_blocked(self):
+    def test_pcap_route_exposes_unbound_read_and_bound_flow_analysis(self):
         with tempfile.TemporaryDirectory() as tmp:
             workflow, _ = self._workflow(tmp)
             prepared = workflow.prepare("analyze this pcap packet capture")
-            self.assertEqual(prepared.session.status, "blocked")
-            self.assertGreaterEqual(len(prepared.session.steps), 1)
-            self.assertTrue(all(step.state == "unbound" for step in prepared.session.steps))
-            self.assertTrue(
-                all(step.binding_reason_code.startswith("UNBOUND_") for step in prepared.session.steps)
+            self.assertEqual(prepared.session.status, "partial")
+            pcap_steps = [
+                step
+                for step in prepared.session.steps
+                if step.capability_id == "network.pcap.read"
+            ]
+            flow_steps = [
+                step
+                for step in prepared.session.steps
+                if step.capability_id == "network.flow.analyze"
+            ]
+            self.assertEqual(len(pcap_steps), 1)
+            self.assertEqual(len(flow_steps), 1)
+            self.assertEqual(pcap_steps[0].binding_status, "unbound")
+            self.assertEqual(pcap_steps[0].state, "unbound")
+            self.assertTrue(pcap_steps[0].binding_reason_code.startswith("UNBOUND_"))
+            self.assertEqual(flow_steps[0].binding_status, "bound")
+            self.assertEqual(flow_steps[0].state, "awaiting_typed_input")
+            self.assertEqual(flow_steps[0].handler_id, "analysis.flow_evidence.analyze")
+            self.assertEqual(
+                flow_steps[0].binding_reason_code,
+                "BOUND_TO_REVIEWED_RUNTIME_HANDLER",
             )
 
     def test_workflow_exposes_no_run_all_api(self):
