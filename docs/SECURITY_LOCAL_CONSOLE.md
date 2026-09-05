@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`workspace-security-ui` is the first user-facing adapter for the existing WorkSpace security monitoring backend. It exposes monitoring summary, readiness, and an explicitly confirmed read-only monitoring run through a local browser UI without creating a second execution authority.
+`workspace-security-ui` is the first user-facing adapter for the existing WorkSpace security monitoring backend. It exposes monitoring summary, readiness, privacy-safe asset intelligence, and an explicitly confirmed read-only monitoring run through a local browser UI without creating a second execution authority.
 
 The console is intentionally narrow. It is a local operator surface, not a remote administration plane.
 
@@ -17,11 +17,13 @@ The console preserves the existing monitoring backend gates:
 - state-changing browser requests require an anti-CSRF token generated at server startup;
 - the only POST operation requires the exact body `{"confirm_readonly": true}`;
 - monitoring still requires backend readiness, `enabled=true`, `allow_real_network=true`, approved assets, policy authorization, and the existing collector boundaries;
+- asset intelligence is delegated to `SecurityMonitoringService.asset_intelligence()` and exposes aggregate counts only;
+- asset intelligence never exposes asset identifiers, management hosts, credential references, or concrete TCP port values;
 - no CORS response is provided;
 - responses are `no-store`, framing is denied, and the HTML uses a restrictive Content Security Policy;
 - the console does not expose remediation or write authority.
 
-The CLI and UI share `SecurityMonitoringService`, so readiness and execution policy are not reimplemented independently by each user interface.
+The CLI and UI share `SecurityMonitoringService`, so readiness, asset intelligence, and execution policy are not reimplemented independently by each user interface.
 
 ## Start the console
 
@@ -55,6 +57,31 @@ Returns the existing safe monitoring configuration summary. Raw credentials are 
 ### `GET /api/v1/security/monitoring/readiness`
 
 Runs the existing metadata-only readiness evaluation. This does not probe the network, read secret values, capture packets, or execute remediation.
+
+### `GET /api/v1/security/monitoring/asset-intelligence`
+
+Returns the canonical privacy-safe asset intelligence summary from `SecurityMonitoringService.asset_intelligence()`.
+
+The response is intentionally aggregate-only. It may contain:
+
+- total, enabled, and disabled asset counts;
+- enabled-asset role cardinality;
+- counts by approved collector capability;
+- counts by approved data class;
+- count of enabled assets that have a credential reference;
+- count of explicit TCP port bindings;
+- explicit authority flags proving that the summary has no database-write, network-execution, collector-execution, packet-capture, or remediation authority.
+
+The endpoint does **not** expose:
+
+- asset IDs;
+- management IP addresses or hostnames;
+- credential-reference values;
+- role labels;
+- concrete TCP port values;
+- disabled-asset capability or data-class details.
+
+The endpoint accepts no request body or user-supplied target. It therefore adds an observation surface only and does not expand execution authority.
 
 ### `POST /api/v1/security/monitoring/run-hourly`
 
