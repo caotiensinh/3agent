@@ -1,0 +1,66 @@
+{
+  "product_name": "WorkSpace",
+  "environment": "public-research-zone",
+  "confidentiality_mode": "public-research",
+  "test_mode_full_access": false,
+  "database_path": "data/tasks.db",
+  "artifact_root": "data",
+  "profile_root": "profiles",
+  "llm": {
+    "provider": "ollama",
+    "base_url": "http://127.0.0.1:11434",
+    "model": "",
+    "timeout_seconds": 1200,
+    "keep_alive": "2m"
+  },
+  "model_policy": {
+    "enabled": false,
+    "fast_model": "",
+    "research_model": "",
+    "presentation_model": "",
+    "report_model": "",
+    "deep_model": "",
+    "deep_escalation": true,
+    "deep_prompt_chars": 14000,
+    "resource_control": {
+      "enabled": true,
+      "max_vram_percent": 90,
+      "max_ram_percent": 90,
+      "max_gpu_util_percent": 95,
+      "max_gpu_power_percent": 95,
+      "max_gpu_temp_c": 85,
+      "model_size_safety_factor": 1.15,
+      "model_ram_overhead_factor": 0.15,
+      "serialize_generation": true,
+      "reservation_ttl_seconds": 900
+    }
+  },
+  "internet_gateway": {
+    "enabled": true,
+    "mode": "strict",
+    "public_search_enabled": true,
+    "allow_all_outbound_in_test": false,
+    "allowed_search_hosts": [
+      "html.duckduckgo.com",
+      "lite.duckduckgo.com",
+      "www.bing.com"
+    ],
+    "allowed_content_hosts": [],
+    "max_response_bytes": 4194304,
+    "max_query_chars": 240,
+    "grant_ttl_seconds": 120,
+    "direct_egress": true,
+    "audit_log": "data/activity/internet.jsonl"
+  },
+  "execution_gateway": {
+    "enabled": true,
+    "allow_all_commands_in_test": false,
+    "audit_log": "data/activity/execution.jsonl"
+  },
+  "github": {
+    "enabled": true,
+    "repository": "caotiensinh/3agent",
+    "branch": "main",
+    "push_mode": "manual_or_gateway"
+  }
+}

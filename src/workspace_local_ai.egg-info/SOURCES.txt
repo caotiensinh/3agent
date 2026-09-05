@@ -70,6 +70,7 @@ src/three_agent/harness_memory.py
 src/three_agent/harness_task_compiler.py
 src/three_agent/human_report.py
 src/three_agent/inference_scope.py
+src/three_agent/internet_egress_consent.py
 src/three_agent/knowledge_cli.py
 src/three_agent/knowledge_gateway.py
 src/three_agent/knowledge_plane.py
@@ -124,6 +125,7 @@ src/three_agent/resource_metrics.py
 src/three_agent/route_planner.py
 src/three_agent/runtime_efficiency.py
 src/three_agent/runtime_validation.py
+src/three_agent/secure_chat_gateway.py
 src/three_agent/security_monitoring_cli.py
 src/three_agent/security_monitoring_scheduler.py
 src/three_agent/security_pcap_runner.py
@@ -354,6 +356,7 @@ tests/test_d6_no_llm_retrieval.py
 tests/test_d705_external_evaluator_handoff.py
 tests/test_d706_efficiency_evaluator_handoff.py
 tests/test_daily_report.py
+tests/test_default_web_search_policy.py
 tests/test_dfir_case_evidence.py
 tests/test_diagnose_workspace_admin_auth.py
 tests/test_document_extractors.py
@@ -386,6 +389,7 @@ tests/test_harness_h3_context_rehydration.py
 tests/test_human_report.py
 tests/test_human_report_language.py
 tests/test_inference_scope.py
+tests/test_internet_egress_consent.py
 tests/test_internet_egress_policy.py
 tests/test_internet_gateway_no_bypass.py
 tests/test_internet_gateway_ssrf.py

@@ -21,7 +21,7 @@ assert secure["test_mode_full_access"] is False
 secure_gateway = secure["internet_gateway"]
 assert secure_gateway["enabled"] is True
 assert secure_gateway["mode"] == "strict"
-assert secure_gateway["public_search_enabled"] is True
+assert secure_gateway["public_search_enabled"] is False
 assert secure_gateway["egress_policy"] == "workspace.internet-egress/v1"
 assert secure_gateway["egress_mode"] == "sanitized"
 assert secure_gateway["user_warning_on_transform"] is True

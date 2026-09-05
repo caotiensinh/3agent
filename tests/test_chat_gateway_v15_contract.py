@@ -93,8 +93,8 @@ class ChatGatewayV15ContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(f'version = "{PACKAGE_VERSION}"', pyproject)
-        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', pyproject)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', pyproject)
+        self.assertIn('workspace-chat = "three_agent.secure_chat_gateway:main"', pyproject)
+        self.assertIn('three-agent-chat = "three_agent.secure_chat_gateway:main"', pyproject)
         self.assertIn('workspace-chat-acceptance = "three_agent.chat_acceptance:main"', pyproject)
         self.assertIn(
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',

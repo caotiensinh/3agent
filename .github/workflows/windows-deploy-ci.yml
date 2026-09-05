@@ -163,8 +163,13 @@ jobs:
           & python -m pip --version
           if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+          $bootstrapLog = Join-Path $env:RUNNER_TEMP "three-agent-bootstrap-$env:EXPECTED_HEAD.log"
+          $transcriptActive = $false
           Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
+          Write-Host "Bootstrap diagnostic: transcript $bootstrapLog"
           try {
+            Start-Transcript -Path $bootstrapLog -Force | Out-Null
+            $transcriptActive = $true
             $scriptText = Invoke-RestMethod -Uri $url
             & ([ScriptBlock]::Create($scriptText))
             $bootstrapSucceeded = $?
@@ -173,8 +178,22 @@ jobs:
             if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
           }
           catch {
-            Write-Error "Bootstrap diagnostic failure: $($_.Exception.Message)"
+            if ($transcriptActive) {
+              Stop-Transcript | Out-Null
+              $transcriptActive = $false
+            }
+            Write-Host "::group::Bootstrap failure tail"
+            if (Test-Path $bootstrapLog) {
+              Get-Content -Path $bootstrapLog -Tail 220
+            } else {
+              Write-Host 'Bootstrap transcript was not created.'
+            }
+            Write-Host "::endgroup::"
+            Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
             throw
+          }
+          finally {
+            if ($transcriptActive) { Stop-Transcript | Out-Null }
           }
           $global:LASTEXITCODE = 0
       - name: Verify installed command and exact GitHub lineage
