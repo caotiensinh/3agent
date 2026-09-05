@@ -58,6 +58,10 @@ jobs:
         run: python scripts/repair_simple_chat_acceptance.py
       - name: Validate simple-chat stage suppression acceptance
         run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_simple_chat_e2e_acceptance -v
+      - name: Preserve DFIR custody chain diagnostic ordering
+        run: python scripts/repair_dfir_custody_validation_order.py
+      - name: Validate DFIR custody chain contract
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_dfir_case_evidence -v
       - name: Commit validated canonical consolidation
         shell: bash
         run: |
@@ -78,6 +82,8 @@ jobs:
             message="refactor(security): consolidate canonical frontend security"
           elif git diff --cached --name-only | grep -Eq 'chat_simple_e2e_acceptance'; then
             message="test(chat): validate canonical stage suppression semantics"
+          elif git diff --cached --name-only | grep -Eq 'dfir_case_evidence'; then
+            message="fix(dfir): preserve custody chain diagnostics"
           else
             message="chore(governance): consolidate validated canonical modules"
           fi
