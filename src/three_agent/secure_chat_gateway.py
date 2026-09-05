@@ -216,7 +216,7 @@ _FRONTEND_API_ORIGINAL = (
 )
 
 _FRONTEND_API_SECURE = r"""
-const workspaceInternetEgressConsent='workspaceInternetEgressConsent';
+const workspaceSecureEgressMarker='workspaceInternetEgressConsent';
 const workspaceSecureBackendBridge='workspace-secure-backend-bridge/v1';
 function workspaceEgressApprovalText(d){
   const reasons=(d.reasons||[]).join(', ')||'sensitive/internal data';
@@ -264,7 +264,7 @@ async function api(url,opt={},egressRetry=false){
 # fallback path for non-canonical HTML documents. Canonical WorkSpace HTML receives
 # the native api() bridge above instead of a global window.fetch monkey patch.
 _CONSENT_SCRIPT = (
-    '<script id="workspaceInternetEgressConsentFallback">\n'
+    '<script id="workspaceSecureBackendBridgeFallback">\n'
     + _FRONTEND_API_SECURE
     + '\n</script>'
 )
