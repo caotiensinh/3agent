@@ -125,6 +125,7 @@ src/three_agent/resource_metrics.py
 src/three_agent/route_planner.py
 src/three_agent/runtime_efficiency.py
 src/three_agent/runtime_validation.py
+src/three_agent/secure_chat_gateway.py
 src/three_agent/security_monitoring_cli.py
 src/three_agent/security_monitoring_scheduler.py
 src/three_agent/security_pcap_runner.py
