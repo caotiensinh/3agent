@@ -26,8 +26,7 @@ id "$CORE_USER" >/dev/null 2>&1 || useradd --system --home-dir /var/lib/workspac
 id "$PUBLIC_USER" >/dev/null 2>&1 || useradd --system --home-dir /var/lib/workspace-public --shell /usr/sbin/nologin "$PUBLIC_USER"
 id "$EGRESS_USER" >/dev/null 2>&1 || useradd --system --home-dir /var/lib/workspace-egress --shell /usr/sbin/nologin "$EGRESS_USER"
 
-# Core/Public may call the broker over Unix IPC; only the egress user has network authority.
-usermod -a -G "$IPC_GROUP" "$CORE_USER"
+# Deliberately do NOT add workspace-core to the egress IPC group.
 usermod -a -G "$IPC_GROUP" "$PUBLIC_USER"
 usermod -a -G "$IPC_GROUP" "$EGRESS_USER"
 
@@ -52,7 +51,7 @@ Wants=network-online.target
 Type=simple
 User=${EGRESS_USER}
 Group=${IPC_GROUP}
-ExecStart=${VENV}/bin/workspace-egressd --config /etc/workspace/workspace.public-research.json --socket /run/workspace/egress.sock --allow-uid ${PUBLIC_UID} --allow-uid ${CORE_UID}
+ExecStart=${VENV}/bin/workspace-egressd --config /etc/workspace/workspace.public-research.json --socket /run/workspace/egress.sock --allow-uid ${PUBLIC_UID}
 Restart=on-failure
 RestartSec=2
 RuntimeDirectory=workspace
@@ -176,7 +175,7 @@ systemctl enable --now workspace-network-lockdown.service
 systemctl enable --now workspace-egress.service
 
 log "High-assurance boundary installed."
-log "Confidential Core UID=${CORE_UID}: localhost Ollama + broker IPC allowed; no direct Internet/LAN egress."
+log "Confidential Core UID=${CORE_UID}: localhost Ollama only; no broker membership and no Internet/LAN egress."
 log "Public Research UID=${PUBLIC_UID}: separate DB/data, localhost Ollama only, broker IPC allowed, no confidential-data permission."
 log "Egress UID=${EGRESS_UID}: public TCP/443 + local DNS only; both WorkSpace data roots inaccessible."
 log "Confidential command: workspace-secure <command>"

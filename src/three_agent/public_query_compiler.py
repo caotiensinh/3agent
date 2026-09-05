@@ -64,7 +64,7 @@ def compile_public_search_queries(
             continue
         if result.warning_required:
             diagnostics.append(
-                "public_query_policy_warning "
+                "public_query_policy_warning sanitized=true "
                 f"sensitivity={result.sensitivity} action={result.action} "
                 f"removed_fields={result.removed_sensitive_fields}"
             )

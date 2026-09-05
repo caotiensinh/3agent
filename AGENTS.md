@@ -30,7 +30,7 @@ A lower layer can never grant itself authority held by a higher layer.
 - `workspace-egress`: local DNS + public HTTPS only; no WorkSpace data-store permission.
 - `workspace-auth`: separate identity-only broker; fixed Google/GitHub/LINE OAuth/OIDC endpoints only; no WorkSpace data-store permission; exposes only short-lived one-time identity assertions to Core over a loopback redemption boundary.
 - External provider login never grants Gmail, Drive, repository, workflow, LINE Messaging, file, project, chat or AI-tool authority. Local WorkSpace RBAC remains authoritative.
-- Confidential mode: public search disabled.
+- Confidential mode: Core has no direct public egress. Public research is allowed only through the separate `workspace-public`/`workspace-egress` path when trusted deployment policy authorizes it and deterministic query sanitization, strict DLP, host allowlisting, exact result grants, and bounded GET-only retrieval all pass.
 - Public research: DLP + search-host allowlist + exact search-result grants + bounded GET-only responses.
 - Arbitrary POST/upload/webhook/telemetry is denied outside narrowly defined higher-trust brokers such as the fixed identity-token exchange contract above.
 - GitHub push is an operator/deployment activity, never autonomous runtime authority.
@@ -125,84 +125,28 @@ single_canonical_module_guard = PASS
 
 ## Mandatory execution governance
 
-This section is a project-wide working law for every human, AI agent, sub-agent, automation, CI worker, and future execution role that changes, verifies, or reports on WorkSpace. Detailed policy: `docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md`. Machine-readable contract: `config/workspace.execution-governance.json`.
+The **only normative execution-governance source** is:
 
-These rules do not grant capability and never override the security or `TaskContract` authority hierarchy above.
+`config/workspace.execution-governance.json`
 
-### Parallel lane default
+`docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md` is a living explanatory guide. Neither this file nor that guide may redefine numerical limits, terminal-state lists, thresholds, or acceptance rules independently. Git history is the version history; do not create sibling governance policy copies.
 
-- Every non-trivial development session MUST use a parallel work plan.
-- Maintain **5-10 active lanes** by default, targeting 10 when ten independent or dependency-isolated tasks can safely progress.
-- If fewer than five independent units exist, decompose large work until the smallest safe acceptance-bounded units are exposed, or explicitly record the dependency limit.
-- Never invent useless work only to fill a lane count.
-- A blocked lane MUST NOT idle other independent lanes.
+All humans, agents, sub-agents, automations, and CI workers that change, verify, or report on WorkSpace MUST read and apply the canonical JSON contract. These rules do not grant capability and never override security policy or `TaskContract` authority.
 
-### Harness execution law
+Minimum working law:
 
-Apply Harness principles to project work:
+- substantial work uses the parallel-lane window defined by the canonical policy;
+- each lane has an explicit goal, dependencies, write set, acceptance criteria, verification checks, evidence, attempts, and state;
+- shared/canonical write sets have a single writer owner;
+- code written, plans, QA prose, model confidence, and unexecuted tests do not count as completed work;
+- a required lane is complete only after the canonical success state is reached with executed verifier evidence;
+- retryable failure MUST return to diagnose/decompose/replan/execute/verify and cannot be used as a stopping state;
+- repeated materially equivalent failure MUST change strategy rather than repeat the same attempt;
+- unsuccessful terminal states require the exact evidence defined by the canonical policy and MUST NOT be reported as completion;
+- every substantial session reports canonical effectiveness metrics and verified completion/remaining percentages;
+- a passed repository mutation is committed at a coherent acceptance boundary, then exact-head evidence is checked before `READY`;
+- the machine gate is `python scripts/validate_execution_governance.py` and CI MUST execute it.
 
-- understand and normalize the task before execution;
-- inspect and reuse existing implementation before creating a replacement;
-- define acceptance before claiming completion;
-- correctness and security precede optimization;
-- deterministic work stays deterministic;
-- evidence and provenance are first-class;
-- **failure changes strategy**;
-- false completion is forbidden;
-- preserve the smallest high-signal working context;
-- fail closed on authority or security uncertainty.
+A model or agent never decides by assertion that work is `DONE`. The deterministic acceptance/evidence gate decides.
 
-If an implementation is wrong, incomplete, or fails verification, revise it and test again. Repeating the same failed strategy against the same state without new evidence is not progress. After two materially equivalent failures, change strategy by decomposing, reframing, isolating dependencies, replacing the implementation approach, rolling back to an atomic boundary, or collecting new evidence.
-
-Large or difficult problems MUST be recursively decomposed until each leaf task is small enough to have one purpose, bounded side effects, explicit acceptance, and a realistic path to verification within one working session where technically possible.
-
-### Composite strategy default
-
-Detailed supplement: `docs/WORKSPACE_COMPOSITE_STRATEGY_POLICY_V0_0_1.md`.
-
-- For a non-trivial bottleneck, **combine complementary strategies** rather than choosing only one fallback when multiple safe methods can reduce uncertainty independently.
-- When uncertainty is material or the problem is repeatedly failing, use at least three genuinely distinct strategy families where available: direct discovery, history archaeology, dependency isolation, protocol/adapter-first progress, exact-head local inspection, deterministic verification, or negative security testing.
-- Search/index failure is not evidence that implementation is absent. Switch and combine discovery mechanisms instead of retrying the same search blindly.
-- One failed discovery lane MUST NOT block independent contract, adapter, test, security, or documentation lanes.
-- Protocol/adapter-first work may isolate an unknown dependency, but it MUST preserve the existing authoritative source of truth and MUST NOT create a parallel authority or storage system.
-- Parallel strategy results MUST converge through evidence comparison. Contradictions must be resolved before `PASS`, `READY`, or `SUCCESS`.
-- A `BLOCKED` claim requires evidence that viable in-authority composite alternatives were attempted or ruled out.
-
-### Evidence-gated progress
-
-A work unit counts as complete only after mandatory acceptance criteria PASS with evidence.
-
-For a fixed planned scope:
-
-```text
-completion_percent = passed_acceptance_weight / total_planned_acceptance_weight * 100
-remaining_percent  = 100 - completion_percent
-```
-
-Every substantial development session MUST report both completion and remaining percentages. If required scope changes, rebaseline the denominator explicitly; never preserve an inflated percentage silently.
-
-Claims such as `PASS`, `READY`, `DONE`, `SUCCESS`, capacity, or completion percentage require exact-head evidence. Model output or prose assertion is not execution evidence.
-
-### Commit-on-PASS discipline
-
-- When a task or module reaches a coherent acceptance boundary and its mandatory checks PASS, commit it in the same session.
-- Do not present or label a known failing or unverified state as complete.
-- Multiple passed lanes may share one commit only when they form one tightly coupled acceptance boundary; otherwise prefer separate checkpoint commits.
-- Code, tests, schemas, technical identifiers, commit messages, and CI evidence use English.
-- A `READY` claim requires verification against the exact committed head.
-
-### Required session evidence
-
-Every substantial development session MUST provide at least:
-
-- verified base SHA;
-- exact current/head SHA;
-- lane states;
-- acceptance results;
-- tests/CI evidence;
-- `completion_percent`;
-- `remaining_percent`;
-- blockers with evidence;
-- commits created or merged.
-
-Valid terminal task states are `SUCCESS`, `PARTIAL`, `BLOCKED`, `IMPOSSIBLE`, `FAILED_SAFE`, and `ABORTED`. `BLOCKED` is valid only when the blocker is explicit, evidence-backed, and cannot be removed within current authority.
+Detailed composite-strategy guidance remains in `docs/WORKSPACE_COMPOSITE_STRATEGY_POLICY_V0_0_1.md`; it is subordinate to the canonical execution-governance and security policies.

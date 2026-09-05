@@ -59,30 +59,14 @@ class EvaluationLabTests(unittest.TestCase):
         self.assertEqual(code_fix["max_tool_calls"], 10)
         self.assertEqual(code_fix["max_wall_time_ms"], 300000)
 
-    def test_repository_adversarial_corpus_tracks_sanitized_restricted_egress_boundary(self):
+    def test_repository_adversarial_corpus_replays_all_expected_rejections(self):
         corpus = EvaluationCorpus.load(ADVERSARIAL)
         report = EvaluationReplay().replay(corpus, source_ref=SOURCE_REF)
         self.assertTrue(report["passed"])
         self.assertEqual(report["corpus_class"], "adversarial_security")
         self.assertGreaterEqual(report["case_count"], 8)
-
-        cases_by_id = {case.case_id: case for case in corpus.cases}
-        results_by_id = {item["case_id"]: item for item in report["cases"]}
-        restricted = results_by_id["reject-restricted-public-web"]
-        self.assertTrue(restricted["actual"]["accepted"])
-        self.assertEqual(restricted["actual"]["network_scope"], "allowlisted_egress")
-        self.assertIn("web_gateway", restricted["actual"]["allowed_tools"])
-
-        rejected = [
-            case
-            for case in corpus.cases
-            if case.case_id != "reject-restricted-public-web"
-        ]
-        self.assertTrue(all(case.expected == {"accepted": False} for case in rejected))
-        self.assertTrue(
-            all(results_by_id[case.case_id]["actual"] == {"accepted": False} for case in rejected)
-        )
-        self.assertEqual(cases_by_id["reject-restricted-public-web"].expected["accepted"], True)
+        self.assertTrue(all(case.expected == {"accepted": False} for case in corpus.cases))
+        self.assertTrue(all(item["actual"] == {"accepted": False} for item in report["cases"]))
 
     def test_corpus_hash_is_stable_for_same_semantics(self):
         first = EvaluationCorpus.load(GOLDEN)
@@ -198,21 +182,15 @@ class EvaluationLabTests(unittest.TestCase):
             with self.assertRaisesRegex(EvaluationCorpusError, "corpus_class"):
                 EvaluationCorpus.load(path)
 
-    def test_golden_policy_outcomes_track_sanitized_egress_and_no_llm_rejection(self):
+    def test_rejected_policy_cases_are_golden_outcomes_not_errors(self):
         corpus = EvaluationCorpus.load(GOLDEN)
-        by_id = {case.case_id: case for case in corpus.cases}
-
         rejected = [case for case in corpus.cases if case.expected == {"accepted": False}]
-        self.assertEqual({case.case_id for case in rejected}, {"reject-no-llm-extra-tool"})
-        result = EvaluationReplay().replay_case(rejected[0])
-        self.assertTrue(result["passed"])
-        self.assertEqual(result["actual"], {"accepted": False})
-
-        confidential_web = EvaluationReplay().replay_case(by_id["reject-confidential-public-web"])
-        self.assertTrue(confidential_web["passed"])
-        self.assertTrue(confidential_web["actual"]["accepted"])
-        self.assertEqual(confidential_web["actual"]["network_scope"], "allowlisted_egress")
-        self.assertIn("web_gateway", confidential_web["actual"]["allowed_tools"])
+        self.assertGreaterEqual(len(rejected), 2)
+        replay = EvaluationReplay()
+        for case in rejected:
+            result = replay.replay_case(case)
+            self.assertTrue(result["passed"])
+            self.assertEqual(result["actual"], {"accepted": False})
 
 
 if __name__ == "__main__":

@@ -15,13 +15,8 @@
         "sensitivity": "internal",
         "risk_level": "low",
         "network_scope": "internal_only",
-        "allowed_tools": [
-          "search_docs",
-          "read_file"
-        ],
-        "validators": [
-          "policy"
-        ],
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy"],
         "evidence_required": false,
         "route": "MODEL",
         "route_reason_code": "CONTRACT_SMALL_FIRST",
@@ -42,14 +37,8 @@
       "expected": {
         "accepted": true,
         "network_scope": "deny",
-        "allowed_tools": [
-          "search_docs",
-          "read_file"
-        ],
-        "validators": [
-          "policy",
-          "evidence"
-        ],
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence"],
         "evidence_required": true,
         "route": "MODEL",
         "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
@@ -71,15 +60,8 @@
       "expected": {
         "accepted": true,
         "network_scope": "allowlisted_egress",
-        "allowed_tools": [
-          "search_docs",
-          "read_file",
-          "web_gateway"
-        ],
-        "validators": [
-          "policy",
-          "evidence"
-        ],
+        "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+        "validators": ["policy", "evidence"],
         "route": "MODEL",
         "initial_model_tier": "specialist",
         "max_model_tier": "strong",
@@ -96,18 +78,8 @@
       "expected": {
         "accepted": true,
         "network_scope": "internal_only",
-        "allowed_tools": [
-          "search_repo",
-          "read_file",
-          "run_linter",
-          "run_tests"
-        ],
-        "validators": [
-          "policy",
-          "syntax",
-          "lint",
-          "unit_test"
-        ],
+        "allowed_tools": ["search_repo", "read_file", "run_linter", "run_tests"],
+        "validators": ["policy", "syntax", "lint", "unit_test"],
         "evidence_required": false,
         "route": "MODEL",
         "initial_model_tier": "specialist",
@@ -127,9 +99,7 @@
         "accepted": true,
         "network_scope": "deny",
         "allowed_tools": [],
-        "validators": [
-          "policy"
-        ],
+        "validators": ["policy"],
         "evidence_required": false,
         "route": "MODEL",
         "route_reason_code": "CONTRACT_SMALL_FIRST",
@@ -149,14 +119,8 @@
       "expected": {
         "accepted": true,
         "network_scope": "deny",
-        "allowed_tools": [
-          "search_docs",
-          "read_file"
-        ],
-        "validators": [
-          "policy",
-          "evidence"
-        ],
+        "allowed_tools": ["search_docs", "read_file"],
+        "validators": ["policy", "evidence"],
         "evidence_required": true,
         "route": "NO_LLM",
         "route_reason_code": "CONTRACT_NO_LLM",
@@ -176,11 +140,7 @@
       },
       "expected": {
         "accepted": true,
-        "validators": [
-          "policy",
-          "evidence",
-          "human"
-        ],
+        "validators": ["policy", "evidence", "human"],
         "evidence_required": true,
         "route": "MODEL",
         "initial_model_tier": "specialist",
@@ -188,7 +148,7 @@
       }
     },
     {
-      "case_id": "reject-confidential-public-web",
+      "case_id": "confidential-analysis-brokered-public-web",
       "inputs": {
         "task_type": "analysis",
         "sensitivity": "confidential",
@@ -198,21 +158,24 @@
       "expected": {
         "accepted": true,
         "network_scope": "allowlisted_egress",
-        "allowed_tools": [
-          "search_docs",
-          "read_file",
-          "web_gateway"
-        ],
-        "validators": [
-          "policy",
-          "evidence"
-        ],
-        "evidence_required": true,
+        "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+        "validators": ["policy", "evidence"],
         "route": "MODEL",
-        "route_reason_code": "CONTRACT_SPECIALIST_FIRST",
         "initial_model_tier": "specialist",
         "max_model_tier": "strong",
         "escalation_allowed": true
+      }
+    },
+    {
+      "case_id": "reject-secret-public-web",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "secret",
+        "risk_level": "low",
+        "public_web": true
+      },
+      "expected": {
+        "accepted": false
       }
     },
     {
@@ -222,10 +185,7 @@
         "sensitivity": "confidential",
         "risk_level": "low",
         "deterministic_only": true,
-        "allowed_tools": [
-          "search_docs",
-          "calculator"
-        ]
+        "allowed_tools": ["search_docs", "calculator"]
       },
       "expected": {
         "accepted": false

@@ -1,210 +1,161 @@
-# WorkSpace Execution Governance v0.0.1
+# WorkSpace Execution Governance — Living Guide
 
-**Status:** Mandatory project-wide operating policy  
-**Scope:** every human, AI agent, sub-agent, automation, CI worker, or future execution role that changes, evaluates, or reports on WorkSpace  
-**Authority:** subordinate to WorkSpace security policy and `TaskContract`; this document never grants runtime capability
+**Status:** mandatory operating guide, non-normative explanation  
+**Canonical machine policy:** `config/workspace.execution-governance.json`  
+**Scope:** every human, AI agent, sub-agent, automation and CI worker that changes, verifies or reports on WorkSpace
 
-## 1. Purpose
+> This file is intentionally edited in place. Do not create `...V0_0_2.md`, `...FINAL.md`, or sibling policy copies. Git history records revisions. When this guide conflicts with the JSON policy, the JSON policy wins.
 
-This policy turns the Harness philosophy into the default way WorkSpace is developed and operated.
-
-The required behavior is:
+## 1. Core law
 
 ```text
-understand -> decompose -> run independent lanes -> verify -> adapt on failure -> measure -> commit passed units -> report exact evidence
+understand
+  -> decompose
+  -> run independent lanes
+  -> execute real work
+  -> verify
+  -> diagnose failure
+  -> change strategy / decompose again
+  -> verify again
+  -> measure verified progress
+  -> commit passed boundary
+  -> exact-head report
 ```
 
-A difficult problem is not a reason to stop. It is a signal to reduce the problem into smaller acceptance-bounded units, change strategy when a method stagnates, and continue until the requested acceptance boundary passes or an irreducible external/security blocker is proven.
+An agent does not own the meaning of `DONE`. The acceptance gate owns it.
 
-## 2. Project-wide mandatory rules
+## 2. What counts as complete
 
-The keywords **MUST**, **MUST NOT**, **SHALL**, and **SHALL NOT** are normative.
+The only successful terminal state is **`VERIFIED_PASS`**. A substantial session may claim it only when all conditions defined in the canonical policy are true, including:
 
-1. All non-trivial development sessions MUST use a parallel work plan.
-2. The default operating window is **5–10 active lanes**, with a target of **10** when ten independent or dependency-isolated tasks can safely progress.
-3. If fewer than five independent tasks exist, the actor MUST attempt to decompose large tasks into smaller acceptance-bounded units. It MUST NOT invent useless work merely to reach a lane count.
-4. Every lane MUST have a goal, acceptance criteria, dependencies, evidence target, and explicit state.
-5. Existing implementation MUST be inspected and reused before new architecture is added.
-6. No task is `SUCCESS` because code was written or a model said it worked. Mandatory acceptance criteria MUST pass with evidence.
-7. If a result is wrong or incomplete, the actor MUST revise it and rerun verification in the same session where practical.
-8. Repeating the same failed strategy against the same state without new evidence is forbidden.
-9. After two materially equivalent failures, the actor MUST change strategy: decompose, reframe, isolate a dependency, reduce scope, replace the implementation approach, roll back to an atomic boundary, or collect new evidence.
-10. A hard problem MUST be split until each leaf unit is small enough to be completed and verified in one session where technically possible.
-11. Progress MUST be measured and reported every development session.
-12. Any task or module that reaches its acceptance boundary with PASS evidence MUST be committed in the same session at a coherent acceptance boundary.
-13. Claims such as `PASS`, `READY`, `DONE`, `SUCCESS`, capacity, or completion percentage MUST be tied to exact-head evidence.
-14. Security, authority, confidentiality, and fail-closed invariants override throughput. Parallelism never grants authority.
+- every required lane is `VERIFIED_PASS`;
+- every mandatory acceptance criterion actually ran its verifier and passed;
+- evidence exists for the criterion and verification check;
+- goal, verified-completion and evidence coverage meet the canonical thresholds;
+- no retryable/actionable failure remains;
+- no canonical-policy drift/duplicate exists;
+- repository mutations required by the session are committed;
+- completion/remaining percentages are consistent with verified work.
 
-## 3. Ten-lane execution model
+Writing code, producing a plan, performing QA commentary, saying “looks good”, or reporting model confidence is **not** completion evidence.
 
-A normal high-throughput session SHOULD start with this template and adapt lane names to the work:
+## 3. What counts as failure
 
-| Lane | Default responsibility | Required output |
-|---|---|---|
-| L1 | Current-state / exact-head reconnaissance | verified baseline |
-| L2 | Contract / spec | acceptance-bounded contract |
-| L3 | Core implementation | code or deterministic change |
-| L4 | Integration | connection to existing architecture |
-| L5 | Unit tests | focused deterministic tests |
-| L6 | Regression / compatibility | regression evidence |
-| L7 | Security / authority | invariant evidence |
-| L8 | Failure / edge cases | negative-path evidence |
-| L9 | Documentation / operator contract | synchronized docs |
-| L10 | Release / exact-head evidence | commit + CI evidence + progress report |
-
-These are execution lanes, not permanent teams. A lane may finish early and immediately take the next independent atomic task.
-
-### 3.1 Lane state machine
+`FAILED_RETRYABLE` is not terminal. It means the solver must continue:
 
 ```text
-PLANNED -> ACTIVE -> VERIFYING -> PASS -> COMMITTED
-                    |          
-                    +-> FAIL -> ADAPT -> ACTIVE
-                    +-> BLOCKED
+FAILED_RETRYABLE -> DIAGNOSING -> REPLANNED -> ACTIVE -> VERIFYING
 ```
 
-`BLOCKED` is legal only when the blocker is explicit, evidence-backed, and cannot be removed within current authority. A blocked lane does not justify idling other independent lanes.
+A session may stop unsuccessfully only as one of the canonical unsuccessful terminal states:
 
-## 4. Atomic decomposition rule
+- **`BLOCKED_EXTERNAL`** — a genuinely external dependency is preventing progress; blocker, owner, next action and evidence are mandatory.
+- **`HARD_FAILED`** — safe in-authority approaches are exhausted; the minimum strategy diversity and failure evidence from the canonical policy are mandatory.
+- **`ABORTED_BY_OPERATOR`** — the operator explicitly stops the work; the abort evidence is mandatory.
 
-When a unit is too large, uncertain, or repeatedly failing, recursively split it using one or more of these axes:
+None of these states may be reported as completion. Difficulty, elapsed time, context size, or “the task is too complex” are not sufficient stop reasons.
 
-- contract vs implementation;
-- data model vs behavior;
-- read path vs write path;
-- happy path vs failure path;
-- authority decision vs side effect;
-- platform-specific behavior;
-- parser/compiler vs evaluator;
-- deterministic verifier vs model-assisted inference;
-- migration vs compatibility;
-- documentation vs executable enforcement.
+## 4. Parallel lane model
 
-Stop decomposing when the leaf unit has:
+For substantial work, **use the lane window and limits from the canonical JSON**. This guide intentionally does not duplicate the current numerical minimum, target, or maximum. Do not create useless lanes merely to satisfy a number.
 
-- one primary purpose;
-- explicit inputs/outputs;
-- bounded side effects;
-- a deterministic acceptance test where possible;
-- no hidden dependency that prevents independent progress;
-- a realistic path to PASS in one working session.
+Every lane carries the same contract shape:
 
-## 5. Adaptive failure policy
+```text
+lane_id
+ goal
+ required
+ dependencies
+ write_set
+ functional_authority
+ acceptance_criteria
+ verification_checks
+ evidence
+ attempts
+ status
+```
 
-Harness principle: **failure changes strategy**.
+Parallel safety rules:
 
-The actor MUST retain the failure evidence and compare the next attempt against it. Valid adaptations include:
+- independent write sets may run concurrently;
+- one shared/canonical write set has one writer owner at a time;
+- other lanes may inspect/test the same target but must not race to mutate it;
+- a blocked lane must not idle unrelated lanes;
+- if fewer safe independent units exist than the canonical target, record the dependency limit with evidence.
 
-1. reduce the failing surface;
-2. isolate the dependency;
-3. replace inference with deterministic code;
-4. replace the library/algorithm/implementation pattern;
-5. create a reproducer or fixture;
-6. roll back to the last proven boundary;
-7. add instrumentation and collect new evidence;
-8. change ordering or dependency graph;
-9. split one lane into multiple leaf lanes;
-10. mark an irreducible blocker only after viable in-authority alternatives were attempted or ruled out with evidence.
+Illustrative responsibility families for a cybersecurity/network/monitoring session include exact-head evidence, contract/schema acceptance, network implementation, security integration, telemetry, unit tests, regression/compatibility, negative-security paths, documentation/evidence, and release/convergence. Decompose or combine these only as allowed by the canonical policy and the actual dependency graph.
 
-An identical retry with identical inputs, state, and method is not a new attempt.
+## 5. Acceptance contract
 
-## 6. Acceptance and no-false-completion rule
-
-Every non-trivial lane SHOULD define an acceptance contract before implementation.
-
-A mandatory criterion has this minimum shape:
+A required criterion should be machine-checkable whenever possible:
 
 ```yaml
 id: AC-01
 statement: observable condition that must be true
-verifier: deterministic verifier when available
-evidence: exact artifact/test/commit/status source
 required: true
+status: PASS
+verifier: exact command/test/check that was executed
+evidence:
+  - exact artifact/log/status/commit reference
 ```
 
-`SUCCESS` is allowed only when all mandatory criteria pass. Optional scores, model confidence, code coverage percentage, or subjective quality cannot compensate for a failed hard gate.
+A lane cannot be `VERIFIED_PASS` when a required criterion has no verifier, no evidence, or a non-PASS status.
 
-Valid terminal states are:
+## 6. Adaptive solver: no idle failure
 
-- `SUCCESS`
-- `PARTIAL`
-- `BLOCKED`
-- `IMPOSSIBLE`
-- `FAILED_SAFE`
-- `ABORTED`
+After repeated materially equivalent failure, repeating the same strategy is forbidden. Move to a different safe strategy family: decomposition, dependency isolation, deterministic verification, alternate implementation, rollback/rebuild of an atomic unit, new instrumentation/evidence, or another method allowed by the canonical policy.
 
-## 7. Progress measurement
-
-Progress is based on **verified work**, not code volume, elapsed time, messages, or model effort.
-
-For a fixed scope:
+The solver loop is mandatory while the failure is actionable. Failed verification must read the failed logs before an edit or rerun:
 
 ```text
-completion_percent = passed_acceptance_weight / total_planned_acceptance_weight * 100
-remaining_percent  = 100 - completion_percent
+execute -> verify -> read_failed_logs -> diagnose -> decompose/replan -> execute
 ```
 
-A work unit contributes to the numerator only after its mandatory acceptance criteria PASS with evidence.
+## 7. Session effectiveness
 
-If new required scope is discovered, rebaseline explicitly:
+Every substantial session reports the metrics required by the canonical policy. The important distinction is:
 
-```text
-old_scope_weight -> new_scope_weight
-old_completion    -> rebased_completion
-reason            -> evidence-backed scope discovery
+- **activity**: messages, code written, analysis, attempted commands;
+- **effectiveness**: verified acceptance work that now passes with evidence.
+
+Only effectiveness advances completion. A successful session must meet all hard thresholds from the canonical JSON. First-pass yield and rework ratio are diagnostic efficiency metrics; they do not compensate for failed acceptance.
+
+## 8. Machine enforcement
+
+Run the canonical policy check:
+
+```bash
+python scripts/validate_execution_governance.py
 ```
 
-Never silently preserve an inflated percentage after adding required work.
+Validate a session receipt:
 
-### 7.1 Mandatory session report
-
-Every substantial development session MUST report:
-
-- base SHA;
-- exact current/head SHA;
-- lane states;
-- acceptance PASS/FAIL state;
-- tests/CI/evidence;
-- completion %;
-- remaining %;
-- blockers and their evidence;
-- commits created or merged.
-
-## 8. Commit discipline
-
-A commit is a verified checkpoint, not a progress claim.
-
-- Commit a completed task/module in the same session once its coherent acceptance boundary passes.
-- Do not label a known failing or unverified state as complete.
-- Keep code, tests, and security/documentation changes together when they define one acceptance boundary.
-- Multiple passed lanes may share one commit only when they are one tightly coupled module; otherwise prefer separate checkpoint commits.
-- Commit messages, code, tests, schemas, and technical identifiers remain English.
-- Before a `READY` or release claim, verify the exact commit head and its required CI/status evidence.
-
-## 9. Harness principles applied to project work
-
-All actors SHALL apply these defaults:
-
-```text
-avoid > reuse > precompute > compact > parallelize > accelerate > scale hardware
+```bash
+python scripts/validate_execution_governance.py --session path/to/session-receipt.json
 ```
 
-And:
+The validator fails closed on:
 
-- preserve user intent without promoting prompt text to authority;
-- inspect and reuse existing implementation before rebuilding;
-- correctness and security before optimization;
-- deterministic work stays deterministic;
-- evidence and provenance are first-class;
-- no false completion;
-- failure changes strategy;
-- use the smallest high-signal context needed for the current leaf task;
-- fail closed on security or authority uncertainty.
+- multiple execution-governance JSON policy copies;
+- invalid lane limits or terminal states;
+- false PASS without executed verifier/evidence;
+- retryable failure at session stop;
+- success with blockers or incomplete effectiveness thresholds;
+- repository mutation success without commit evidence;
+- under-sized substantial lane plan without dependency-limit evidence;
+- `BLOCKED_EXTERNAL`, `HARD_FAILED`, or operator abort without their required proof.
 
-## 10. Precedence and exceptions
+CI executes the policy validator before the normal test suite. Future runtime/executor layers that want to enforce this contract must call the same validator/contract instead of reimplementing policy values.
 
-This governance is mandatory by default for every actor working on WorkSpace. It cannot override a higher-priority security, legal, repository, CI, or `TaskContract` restriction.
+## 9. Canonical edit rule
 
-If the full 5–10 lane model is temporarily impossible because the task has fewer safe independent units, the actor MUST record the dependency limit and continue all available lanes. This is a dependency exception, not permission to abandon decomposition or progress measurement.
+For any governance upgrade:
 
-An exception to a MUST rule requires explicit operator approval or an evidence-backed higher-authority constraint and must be recorded in the session evidence.
+1. edit `config/workspace.execution-governance.json` in place;
+2. update this existing guide and `AGENTS.md` only as references/explanations;
+3. update the validator/tests when executable enforcement changes;
+4. run verification;
+5. commit the coherent passed boundary;
+6. verify the exact committed head before `READY`.
+
+Never create a second canonical policy to preserve an old version. The repository history already preserves it.
