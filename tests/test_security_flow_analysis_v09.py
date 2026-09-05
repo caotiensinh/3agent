@@ -12,7 +12,9 @@ from three_agent.security_monitoring.flow_analysis import FlowEvidenceAnalysis, 
 from three_agent.security_monitoring.flow_analysis_invocation import (
     FLOW_ANALYSIS_HANDLER_ID,
     FLOW_ANALYSIS_OUTPUT_KIND,
+    FLOW_ANALYSIS_REVIEWED_BINDING,
     FlowAnalysisInvocationRequest,
+    FlowAnalysisReviewedOperationBinding,
     FlowAnalysisSecurityOperationBindingRegistry,
     FlowAnalysisSecurityOperationInvoker,
     reviewed_flow_analysis_runtime_handler_exists,
@@ -21,6 +23,7 @@ from three_agent.security_monitoring.operation_binding import SecurityOperationB
 from three_agent.security_monitoring.operation_invocation import (
     DNSAnalysisInvocationRequest,
     SecurityOperationInvocationDenied,
+    SecurityOperationInvocationError,
     SecurityOperationInvoker,
 )
 from three_agent.security_monitoring.operation_plan import (
@@ -155,21 +158,42 @@ class SecurityFlowAnalysisV09Tests(unittest.TestCase):
         with self.assertRaisesRegex(MonitoringContractError, "requires evidence_ref"):
             analyze_flow_evidence((flow_without_evidence,))
 
-    def test_default_binding_is_canonical_and_compatibility_profile_is_only_an_alias(self) -> None:
+    def test_default_binding_is_canonical_and_compatibility_profile_is_a_closed_facade(self) -> None:
         registry = SecurityCapabilityRegistry()
         default = SecurityOperationBindingRegistry(registry)
         compatibility = FlowAnalysisSecurityOperationBindingRegistry(registry)
 
-        self.assertIs(FlowAnalysisSecurityOperationBindingRegistry, SecurityOperationBindingRegistry)
+        self.assertTrue(issubclass(FlowAnalysisSecurityOperationBindingRegistry, SecurityOperationBindingRegistry))
         binding = default.require_bound("network.flow.analyze", "analyze_flow_evidence")
+        compatibility_binding = compatibility.require_bound(
+            "network.flow.analyze",
+            "analyze_flow_evidence",
+        )
         self.assertEqual(binding.handler_id, FLOW_ANALYSIS_HANDLER_ID)
         self.assertEqual(binding.handler_kind, "pure_function")
+        self.assertIsInstance(compatibility_binding, FlowAnalysisReviewedOperationBinding)
+        self.assertEqual(compatibility_binding.output_kind, FLOW_ANALYSIS_OUTPUT_KIND)
         self.assertEqual(compatibility.fingerprint, default.fingerprint)
         coverage = default.coverage()
         self.assertEqual(coverage.total_operations, 15)
         self.assertEqual(coverage.bound_operations, 6)
         self.assertEqual(coverage.unbound_operations, 9)
         self.assertEqual(coverage.bound_percent, 40.0)
+        with self.assertRaises(TypeError):
+            FlowAnalysisSecurityOperationBindingRegistry(registry=registry, bindings=())  # type: ignore[call-arg]
+
+    def test_legacy_reviewed_binding_data_contract_remains_available(self) -> None:
+        self.assertIsInstance(FLOW_ANALYSIS_REVIEWED_BINDING, FlowAnalysisReviewedOperationBinding)
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.capability_id, "network.flow.analyze")
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.operation_id, "analyze_flow_evidence")
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.status, "bound")
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.handler_id, FLOW_ANALYSIS_HANDLER_ID)
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.handler_kind, "pure_function")
+        self.assertEqual(FLOW_ANALYSIS_REVIEWED_BINDING.output_kind, FLOW_ANALYSIS_OUTPUT_KIND)
+        self.assertEqual(
+            FLOW_ANALYSIS_REVIEWED_BINDING.public_dict()["output_kind"],
+            FLOW_ANALYSIS_OUTPUT_KIND,
+        )
 
     def test_reviewed_flow_runtime_attestation_is_closed(self) -> None:
         self.assertTrue(reviewed_flow_analysis_runtime_handler_exists(FLOW_ANALYSIS_HANDLER_ID))
@@ -199,17 +223,27 @@ class SecurityFlowAnalysisV09Tests(unittest.TestCase):
         self.assertEqual(plan.steps[0].preflight_state, "ready_internal")
         self.assertEqual(set(FlowAnalysisInvocationRequest.__dataclass_fields__), {"events"})
 
-    def test_compatibility_invoker_is_exact_canonical_alias(self) -> None:
-        self.assertIs(FlowAnalysisSecurityOperationInvoker, SecurityOperationInvoker)
+    def test_compatibility_invoker_delegates_canonically_and_rejects_binding_injection(self) -> None:
+        self.assertTrue(issubclass(FlowAnalysisSecurityOperationInvoker, SecurityOperationInvoker))
         registry = SecurityCapabilityRegistry()
         plan = _flow_plan(registry)
         dns, flow = _dns_flow_pair()
-        result = FlowAnalysisSecurityOperationInvoker(registry=registry).invoke(
+        invoker = FlowAnalysisSecurityOperationInvoker(registry=registry)
+        self.assertIsInstance(invoker.binding_registry, FlowAnalysisSecurityOperationBindingRegistry)
+        result = invoker.invoke(
             plan,
             step_id=plan.steps[0].step_id,
             request=FlowAnalysisInvocationRequest(events=(dns, flow)),
         )
         self.assertEqual(result.receipt.output_fingerprint, result.output.fingerprint)
+        with self.assertRaisesRegex(
+            SecurityOperationInvocationError,
+            "flow analysis invoker owns its reviewed binding profile",
+        ):
+            FlowAnalysisSecurityOperationInvoker(
+                registry=registry,
+                binding_registry=SecurityOperationBindingRegistry(registry),
+            )
 
     def test_flow_invocation_rejects_wrong_request_type_and_tampered_plan(self) -> None:
         registry = SecurityCapabilityRegistry()
