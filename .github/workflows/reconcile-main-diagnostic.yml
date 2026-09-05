@@ -78,10 +78,11 @@ jobs:
           test -z "$(git diff --name-only --diff-filter=U)"
           test "$(git rev-parse MERGE_HEAD)" = "$(git rev-parse origin/main)"
 
-          # Keep the coherent current-main evaluation corpora/test contract.
+          # Keep coherent current-main evaluation and high-assurance egress boundaries.
           git checkout origin/main -- \
             evaluation/adversarial_security_v1.json \
-            tests/test_evaluation_lab.py
+            tests/test_evaluation_lab.py \
+            scripts/install_workspace_secure_boundary.sh
 
           # The convergence-only migration is superseded by current-main policy.
           git rm -f scripts/repair_evaluation_golden_egress.py
