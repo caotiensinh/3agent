@@ -354,6 +354,7 @@ tests/test_d6_no_llm_retrieval.py
 tests/test_d705_external_evaluator_handoff.py
 tests/test_d706_efficiency_evaluator_handoff.py
 tests/test_daily_report.py
+tests/test_default_web_search_policy.py
 tests/test_dfir_case_evidence.py
 tests/test_diagnose_workspace_admin_auth.py
 tests/test_document_extractors.py
