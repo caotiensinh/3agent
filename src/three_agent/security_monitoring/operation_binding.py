@@ -17,6 +17,7 @@ SECURITY_OPERATION_BINDING_SCHEMA = "workspace-security-operation-binding/v1"
 SECURITY_BINDING_COVERAGE_SCHEMA = "workspace-security-operation-binding-coverage/v1"
 SECURITY_PLAN_BINDING_SCHEMA = "workspace-security-plan-binding/v1"
 SECURITY_STEP_BINDING_SCHEMA = "workspace-security-step-binding/v1"
+FLOW_ANALYSIS_HANDLER_ID = "analysis.flow_evidence.analyze"
 
 _BINDING_STATUSES = frozenset({"bound", "unbound"})
 _HANDLER_KINDS = frozenset(
@@ -34,6 +35,7 @@ CLOSED_HANDLER_IDS = frozenset(
         "monitoring.dispatch.local_net_read",
         "monitoring.passive_jsonl.read_batch",
         "analysis.dns_behavior.extract_features",
+        FLOW_ANALYSIS_HANDLER_ID,
         "analysis.local_ai_analyst.analyze",
     }
 )
@@ -214,7 +216,7 @@ def _unbound(
     )
 
 
-# v0.4 intentionally binds only operations whose existing implementation contract
+# Guardian v0.1 binds only operations whose existing implementation contract
 # matches the reviewed operation closely enough to be named without guesswork.
 # Everything else remains explicit engineering debt rather than being mapped to a
 # nearby-looking module.
@@ -258,10 +260,11 @@ DEFAULT_SECURITY_OPERATION_BINDINGS = (
         "analysis.dns_behavior.extract_features",
         "pure_function",
     ),
-    _unbound(
+    _bound(
         "network.flow.analyze",
         "analyze_flow_evidence",
-        "UNBOUND_GENERIC_FLOW_ANALYSIS_CONTRACT_REQUIRED",
+        FLOW_ANALYSIS_HANDLER_ID,
+        "pure_function",
     ),
     _unbound(
         "security.authentication.analyze",
@@ -444,6 +447,10 @@ def reviewed_runtime_handler_exists(handler_id: str) -> bool:
         from .dns_behavior import extract_dns_behavior_features
 
         return callable(extract_dns_behavior_features)
+    if handler_id == FLOW_ANALYSIS_HANDLER_ID:
+        from .flow_analysis import analyze_flow_evidence
+
+        return callable(analyze_flow_evidence)
     if handler_id == "analysis.local_ai_analyst.analyze":
         from .ai_analyst import LocalAIAnalyst
 

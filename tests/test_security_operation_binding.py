@@ -6,6 +6,7 @@ from three_agent.security_monitoring.capability_registry import (
 from three_agent.security_monitoring.capability_router import SecurityCapabilityRouter
 from three_agent.security_monitoring.operation_binding import (
     CLOSED_HANDLER_IDS,
+    FLOW_ANALYSIS_HANDLER_ID,
     DEFAULT_SECURITY_OPERATION_BINDINGS,
     SecurityOperationBinding,
     SecurityOperationBindingError,
@@ -40,10 +41,10 @@ class SecurityOperationBindingTests(unittest.TestCase):
     def test_binding_coverage_is_measured_and_explicit(self):
         coverage = self.bindings.coverage()
         self.assertEqual(coverage.total_operations, 15)
-        self.assertEqual(coverage.bound_operations, 5)
-        self.assertEqual(coverage.unbound_operations, 10)
-        self.assertEqual(coverage.bound_percent, 33.333)
-        self.assertEqual(len(coverage.unbound_operation_refs), 10)
+        self.assertEqual(coverage.bound_operations, 6)
+        self.assertEqual(coverage.unbound_operations, 9)
+        self.assertEqual(coverage.bound_percent, 40.0)
+        self.assertEqual(len(coverage.unbound_operation_refs), 9)
         self.assertRegex(coverage.binding_fingerprint, r"^sha256:[0-9a-f]{64}$")
         self.assertEqual(coverage.registry_fingerprint, self.capabilities.fingerprint)
 
@@ -51,6 +52,7 @@ class SecurityOperationBindingTests(unittest.TestCase):
         attestation = verify_reviewed_runtime_handlers(self.bindings)
         self.assertEqual(set(attestation), set(CLOSED_HANDLER_IDS))
         self.assertTrue(all(attestation.values()))
+        self.assertTrue(reviewed_runtime_handler_exists(FLOW_ANALYSIS_HANDLER_ID))
         self.assertFalse(reviewed_runtime_handler_exists("analysis.dynamic.import"))
 
     def test_bound_metadata_exposes_symbolic_ids_not_commands_or_import_paths(self):
@@ -99,6 +101,15 @@ class SecurityOperationBindingTests(unittest.TestCase):
         self.assertEqual(step.handler_id, "analysis.dns_behavior.extract_features")
         self.assertEqual(step.handler_kind, "pure_function")
 
+    def test_flow_analysis_plan_binds_to_reviewed_pure_function_without_execution_authority(self):
+        plan = self.compiler.compile(self.router.route("analyze netflow evidence"))
+        result = self.bindings.bind_plan(plan)
+        self.assertEqual(result.status, "all_bound")
+        self.assertFalse(result.execution_authorized)
+        self.assertEqual(len(result.steps), 1)
+        self.assertEqual(result.steps[0].handler_id, FLOW_ANALYSIS_HANDLER_ID)
+        self.assertEqual(result.steps[0].handler_kind, "pure_function")
+
     def test_network_monitoring_plan_binds_only_to_existing_readonly_handlers(self):
         plan = self.compiler.compile(
             self.router.route("network monitoring from local flow and security telemetry")
@@ -122,10 +133,18 @@ class SecurityOperationBindingTests(unittest.TestCase):
         self.assertEqual(result.status, "partial")
         self.assertFalse(result.execution_authorized)
         self.assertEqual(
-            [(step.capability_id, step.operation_id, step.status) for step in result.steps],
             [
-                ("network.pcap.read", "read_capture", "unbound"),
-                ("network.flow.analyze", "analyze_flow_evidence", "unbound"),
+                (step.capability_id, step.operation_id, step.status, step.handler_id)
+                for step in result.steps
+            ],
+            [
+                ("network.pcap.read", "read_capture", "unbound", None),
+                (
+                    "network.flow.analyze",
+                    "analyze_flow_evidence",
+                    "bound",
+                    FLOW_ANALYSIS_HANDLER_ID,
+                ),
             ],
         )
 
