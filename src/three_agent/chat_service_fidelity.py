@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 from .chat_context import CONTEXT_MODE_FOLLOW_UP
 from .chat_fidelity import direct_chat_answer_valid, direct_chat_system_prompt
-from .chat_gateway import ContextAwareProjectChatService
 from .chat_output_contract import (
     compile_chat_output_contract,
     render_output_contract,
@@ -143,7 +143,7 @@ def _target_language_repair_instruction(language: str) -> str:
     )
 
 
-class ContractAwareProjectChatService(ContextAwareProjectChatService):
+class _ContractAwareProjectChatServiceMixin:
     """Reference-gated local chat plus deterministic response-shape enforcement."""
 
     def _effective_output_contract(self, job: Any, effort: str):
@@ -353,3 +353,43 @@ class ContractAwareProjectChatService(ContextAwareProjectChatService):
                 error=redact_sensitive_text(f"{type(exc).__name__}: {exc}")[:1200],
                 artifacts=[],
             )
+
+
+def _contract_aware_service_class() -> type:
+    """Compose the service only after chat_gateway has defined the context-aware base.
+
+    chat_gateway consumes this module while it is still being initialized in some
+    import orders. Deferring composition removes the reciprocal top-level import
+    without changing the public class or its MRO.
+    """
+
+    cached = globals().get("ContractAwareProjectChatService")
+    if isinstance(cached, type):
+        return cached
+
+    gateway_name = f"{__package__}.chat_gateway"
+    gateway = sys.modules.get(gateway_name)
+    if gateway is None or not hasattr(gateway, "ContextAwareProjectChatService"):
+        from . import chat_gateway as gateway
+
+        cached = globals().get("ContractAwareProjectChatService")
+        if isinstance(cached, type):
+            return cached
+
+    context_base = getattr(gateway, "ContextAwareProjectChatService")
+    service_class = type(
+        "ContractAwareProjectChatService",
+        (_ContractAwareProjectChatServiceMixin, context_base),
+        {
+            "__module__": __name__,
+            "__doc__": _ContractAwareProjectChatServiceMixin.__doc__,
+        },
+    )
+    globals()["ContractAwareProjectChatService"] = service_class
+    return service_class
+
+
+def __getattr__(name: str):
+    if name == "ContractAwareProjectChatService":
+        return _contract_aware_service_class()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
