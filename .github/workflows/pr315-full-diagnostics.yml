@@ -1,0 +1,268 @@
+name: pr315-full-diagnostics
+
+on:
+  push:
+    branches:
+      - feature/default-secure-web-search-20260905
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr315-full-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-diagnostics:
+    name: installer-diagnostics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "pr315-installer"
+      - name: Run every installer contract and harness stage
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          failures=0
+          for script in \
+            scripts/test_installer_contract.sh \
+            scripts/test_ai_stack_contract.sh \
+            scripts/test_model_pool_contract.sh \
+            scripts/test_gpu_worker_pool_contract.sh \
+            scripts/test_ram_baseline_contract.sh \
+            scripts/test_runner_pool_contract.sh \
+            scripts/test_e2e_acceptance_contract.sh \
+            scripts/test_chat_gateway_contract.sh \
+            scripts/test_lan_ai_server_contract.sh \
+            scripts/test_workspace_security_contract.sh \
+            scripts/test_workspace_knowledge_contract.sh \
+            scripts/test_identity_broker_contract.sh
+          do
+            if ! ci_run_logged "installer-$(basename "$script" .sh)" bash "$script"; then
+              failures=$((failures + 1))
+            fi
+          done
+          if ! ci_run_logged "installer-scripts-test" bash scripts/test.sh; then
+            failures=$((failures + 1))
+          fi
+          if ! ci_run_logged "installer-smoke" bash scripts/smoke.sh; then
+            failures=$((failures + 1))
+          fi
+          if [[ "$failures" -ne 0 ]]; then
+            ci_failure_snapshot "pr315-installer-${failures}-failed"
+            echo "::error::Installer diagnostic failures=${failures}"
+            exit 1
+          fi
+      - name: Upload installer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr315-installer-diagnostics
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+
+  harness-diagnostics:
+    name: harness-diagnostics-py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install project dependencies
+        run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "pr315-harness-py${{ matrix.python }}"
+      - name: Run every regression partition without fail-fast
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          failures=0
+          run_group() {
+            local label="$1"
+            local pattern="$2"
+            if ! ci_run_logged "$label" python -m unittest discover -s tests -p "$pattern" -v; then
+              failures=$((failures + 1))
+            fi
+          }
+          run_group regression-A-D 'test_[a-d]*.py'
+          run_group regression-E-H 'test_[e-h]*.py'
+          run_group regression-I-M 'test_[i-m]*.py'
+          run_group regression-N-R 'test_[n-r]*.py'
+          run_group regression-S-Z 'test_[s-z]*.py'
+          if ! ci_run_logged full-unittest python -m unittest discover -s tests -v; then
+            failures=$((failures + 1))
+          fi
+          if [[ "$failures" -ne 0 ]]; then
+            ci_failure_snapshot "pr315-harness-py${{ matrix.python }}-${failures}-failed"
+            echo "::error::Harness diagnostic failing stages=${failures}"
+            exit 1
+          fi
+      - name: Upload harness diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr315-harness-diagnostics-py${{ matrix.python }}
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+
+  portable-diagnostics:
+    name: portable-${{ matrix.os }}-py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.11'
+          - os: ubuntu-24.04
+            python: '3.12'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "pr315-portable-${{ matrix.os }}-py${{ matrix.python }}"
+      - name: Download and execute exact Ubuntu deployment entrypoint
+        shell: bash
+        env:
+          DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/deploy_ubuntu_pc.sh
+          THREE_AGENT_BOOTSTRAP_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/bootstrap.sh
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.ref_name }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
+          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
+          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          source scripts/ci_diagnostics.sh
+          deploy_script="$RUNNER_TEMP/deploy_ubuntu_pc.sh"
+          curl -fsSL --retry 3 --connect-timeout 15 "$DEPLOY_ENTRYPOINT_URL" -o "$deploy_script"
+          printf 'diagnostic_exact_head=%s\n' "${GITHUB_SHA}"
+          printf 'deploy_script_sha256=%s\n' "$(sha256sum "$deploy_script" | awk '{print $1}')"
+          bash -n "$deploy_script"
+          if ! ci_run_logged "portable-first-deploy" bash "$deploy_script"; then
+            ci_failure_snapshot "pr315-portable-first-deploy"
+            exit 1
+          fi
+      - name: Upload portable diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr315-portable-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows-diagnostics:
+    name: windows-bootstrap-py${{ matrix.python }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Execute exact Windows bootstrap with full transcript
+        shell: powershell
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}\three-agent-bin
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $log = Join-Path $env:RUNNER_TEMP "pr315-windows-bootstrap-py${{ matrix.python }}.log"
+          $transcriptActive = $false
+          try {
+            Write-Host "diagnostic_exact_head=$env:EXPECTED_HEAD"
+            Write-Host "powershell_version=$($PSVersionTable.PSVersion)"
+            $pythonCommand = Get-Command python -ErrorAction Stop
+            Write-Host "python_path=$($pythonCommand.Source)"
+            & python --version
+            & python -m pip --version
+            Start-Transcript -Path $log -Force | Out-Null
+            $transcriptActive = $true
+            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+            $scriptText = Invoke-RestMethod -Uri $url
+            if ([string]::IsNullOrWhiteSpace($scriptText)) { throw 'bootstrap.ps1 download returned empty content' }
+            & ([ScriptBlock]::Create($scriptText))
+            $bootstrapSucceeded = $?
+            $nativeExit = $LASTEXITCODE
+            Write-Host "bootstrap_powershell_success=$bootstrapSucceeded"
+            Write-Host "bootstrap_native_exit=$nativeExit"
+            if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported PowerShell failure' }
+          }
+          catch {
+            if ($transcriptActive) {
+              Stop-Transcript | Out-Null
+              $transcriptActive = $false
+            }
+            Write-Host "::group::Windows bootstrap failure transcript"
+            if (Test-Path $log) { Get-Content -Path $log }
+            Write-Host "::endgroup::"
+            Write-Host "diagnostic_exception_type=$($_.Exception.GetType().FullName)"
+            Write-Host "diagnostic_exception_message=$($_.Exception.Message)"
+            Write-Host "diagnostic_script_stack=$($_.ScriptStackTrace)"
+            throw
+          }
+          finally {
+            if ($transcriptActive) { Stop-Transcript | Out-Null }
+          }
+      - name: Upload Windows transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr315-windows-bootstrap-py${{ matrix.python }}
+          path: ${{ runner.temp }}\pr315-windows-bootstrap-*.log
+          if-no-files-found: warn
+          retention-days: 14
