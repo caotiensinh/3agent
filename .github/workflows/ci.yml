@@ -30,6 +30,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install project dependencies including monitoring SNMP extra
         run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Harness diagnostic snapshot
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_diag_snapshot "harness-py${{ matrix.python-version }}"
       - name: Execution governance canonical gate
         run: python scripts/validate_execution_governance.py
       - name: Skill security admission
@@ -63,26 +68,50 @@ jobs:
       - name: Compile
         run: python -m compileall -q src tests scripts/validate_execution_governance.py
       - name: Guardian flow binding regression
-        run: python -m unittest -v tests.test_security_operation_binding
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "guardian-flow-binding" python -m unittest -v tests.test_security_operation_binding
       - name: Guardian flow analysis regression
-        run: python -m unittest -v tests.test_security_flow_analysis_v09
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "guardian-flow-analysis" python -m unittest -v tests.test_security_flow_analysis_v09
       - name: Guardian operation invocation regression
-        run: python -m unittest -v tests.test_security_operation_invocation
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "guardian-operation-invocation" python -m unittest -v tests.test_security_operation_invocation
       - name: Regression bisect A-D
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[a-d]*.py' -v
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "regression-A-D" python -m unittest discover -s tests -p 'test_[a-d]*.py' -v
       - name: Regression bisect E-H
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[e-h]*.py' -v
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "regression-E-H" python -m unittest discover -s tests -p 'test_[e-h]*.py' -v
       - name: Regression bisect I-M
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[i-m]*.py' -v
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "regression-I-M" python -m unittest discover -s tests -p 'test_[i-m]*.py' -v
       - name: Regression bisect N-R
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "regression-N-R" python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
       - name: Regression bisect S-Z
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
+        shell: bash
+        run: |
+          source scripts/ci_diagnostics.sh
+          ci_run_logged "regression-S-Z" python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
       - name: Unit tests
         if: always()
         shell: bash
@@ -100,6 +129,8 @@ jobs:
             echo "::group::Full unittest failure log"
             cat unittest.log
             echo "::endgroup::"
+            source scripts/ci_diagnostics.sh
+            ci_failure_snapshot "harness-full-unit-tests"
             echo "::error::Unit tests failed with exit code ${rc}"
           fi
           exit "${rc}"
@@ -109,6 +140,14 @@ jobs:
         with:
           name: unittest-py${{ matrix.python-version }}
           path: unittest.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload harness diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-diagnostics-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/three-agent-ci-diagnostics
           if-no-files-found: warn
           retention-days: 14
       - name: Enterprise verification EV-01 through EV-10
