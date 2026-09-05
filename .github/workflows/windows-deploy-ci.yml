@@ -164,25 +164,36 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
           $bootstrapLog = Join-Path $env:RUNNER_TEMP "three-agent-bootstrap-$env:EXPECTED_HEAD.log"
+          $transcriptActive = $false
           Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
-          Write-Host "Bootstrap diagnostic: captured log $bootstrapLog"
+          Write-Host "Bootstrap diagnostic: transcript $bootstrapLog"
           try {
+            Start-Transcript -Path $bootstrapLog -Force | Out-Null
+            $transcriptActive = $true
             $scriptText = Invoke-RestMethod -Uri $url
-            & ([ScriptBlock]::Create($scriptText)) *>&1 | Tee-Object -FilePath $bootstrapLog
+            & ([ScriptBlock]::Create($scriptText))
+            $bootstrapSucceeded = $?
             $bootstrapNativeExit = $LASTEXITCODE
-            Write-Host "Bootstrap diagnostic: completed native_exit=$bootstrapNativeExit"
-            if ($bootstrapNativeExit -ne 0) { throw "Downloaded bootstrap left native exit code $bootstrapNativeExit" }
+            Write-Host "Bootstrap diagnostic: PowerShell success=$bootstrapSucceeded native_exit=$bootstrapNativeExit"
+            if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
           }
           catch {
+            if ($transcriptActive) {
+              Stop-Transcript | Out-Null
+              $transcriptActive = $false
+            }
             Write-Host "::group::Bootstrap failure tail"
             if (Test-Path $bootstrapLog) {
               Get-Content -Path $bootstrapLog -Tail 220
             } else {
-              Write-Host 'Bootstrap log was not created.'
+              Write-Host 'Bootstrap transcript was not created.'
             }
             Write-Host "::endgroup::"
             Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
             throw
+          }
+          finally {
+            if ($transcriptActive) { Stop-Transcript | Out-Null }
           }
           $global:LASTEXITCODE = 0
       - name: Verify installed command and exact GitHub lineage
