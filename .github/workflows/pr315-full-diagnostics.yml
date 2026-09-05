@@ -250,6 +250,41 @@ jobs:
             Write-Host "::group::Windows bootstrap failure transcript"
             if (Test-Path $log) { Get-Content -Path $log }
             Write-Host "::endgroup::"
+
+            $installedPython = Join-Path $env:THREE_AGENT_INSTALL_DIR '.venv\Scripts\python.exe'
+            if (Test-Path $installedPython) {
+              $unitStdout = Join-Path $env:RUNNER_TEMP "pr315-windows-bootstrap-py${{ matrix.python }}.unittest.stdout.log"
+              $unitStderr = Join-Path $env:RUNNER_TEMP "pr315-windows-bootstrap-py${{ matrix.python }}.unittest.stderr.log"
+              Write-Host "::group::Windows direct unittest diagnostic"
+              try {
+                $testProcess = Start-Process \
+                  -FilePath $installedPython \
+                  -ArgumentList @('-m','unittest','discover','-s','tests','-v') \
+                  -WorkingDirectory $env:THREE_AGENT_INSTALL_DIR \
+                  -NoNewWindow \
+                  -Wait \
+                  -PassThru \
+                  -RedirectStandardOutput $unitStdout \
+                  -RedirectStandardError $unitStderr
+                Write-Host "diagnostic_unittest_exit=$($testProcess.ExitCode)"
+              }
+              catch {
+                Write-Host "diagnostic_unittest_runner_error=$($_.Exception.Message)"
+              }
+              if (Test-Path $unitStdout) {
+                Write-Host '--- unittest stdout ---'
+                Get-Content -Path $unitStdout
+              }
+              if (Test-Path $unitStderr) {
+                Write-Host '--- unittest stderr ---'
+                Get-Content -Path $unitStderr
+              }
+              Write-Host "::endgroup::"
+            }
+            else {
+              Write-Host "diagnostic_unittest_skipped=installed venv python missing"
+            }
+
             Write-Host "diagnostic_exception_type=$($_.Exception.GetType().FullName)"
             Write-Host "diagnostic_exception_message=$($_.Exception.Message)"
             Write-Host "diagnostic_script_stack=$($_.ScriptStackTrace)"
