@@ -1,0 +1,158 @@
+{
+  "policy_id": "workspace_execution_governance",
+  "version": "0.0.3",
+  "scope": "project_wide",
+  "applies_to": ["human", "agent", "sub_agent", "automation", "ci_worker"],
+  "canonical_source": {
+    "path": "config/workspace.execution-governance.json",
+    "single_source_of_truth": true,
+    "duplicate_policy_files_forbidden": true,
+    "git_history_is_version_history": true,
+    "documentation_must_reference_not_redefine": true,
+    "non_normative_guides": ["AGENTS.md", "docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md"]
+  },
+  "authority": {
+    "inherits_existing_security_policy": true,
+    "cannot_grant_runtime_capabilities": true,
+    "task_contract_remains_authoritative": true,
+    "throughput_never_overrides_security": true
+  },
+  "parallel_execution": {
+    "required_for_substantial_sessions": true,
+    "preferred_active_lanes_min": 20,
+    "target_active_lanes": 20,
+    "maximum_active_lanes": 20,
+    "lanes_must_be_independent_or_dependency_isolated": true,
+    "shared_write_set_requires_single_owner": true,
+    "overlapping_lane_write_sets_forbidden": true,
+    "duplicate_functional_authority_across_lanes_forbidden": true,
+    "canonical_target_requires_single_writer_lane": true,
+    "when_fewer_than_target_exist": "decompose_until_atomic_or_record_dependency_limit_with_evidence",
+    "do_not_invent_useless_work_to_fill_lanes": true,
+    "blocked_lane_must_not_idle_independent_lanes": true
+  },
+  "lane_contract": {
+    "required_fields": ["lane_id", "goal", "required", "dependencies", "write_set", "functional_authority", "acceptance_criteria", "verification_checks", "evidence", "attempts", "status"],
+    "acceptance_criterion_required_fields": ["id", "statement", "required", "status", "verifier", "evidence"],
+    "verification_check_required_fields": ["id", "status", "evidence"],
+    "attempt_required_fields": ["attempt_id", "strategy_family", "outcome", "verification_evidence"],
+    "failed_attempt_required_fields": ["failure_signature", "failed_check", "log_evidence", "diagnosis", "next_action_reason"],
+    "attempt_outcomes": ["PASS", "FAIL"],
+    "later_attempt_after_fail_requires_prior_failure_diagnosis_ref": true,
+    "same_global_acceptance_contract_applies_to_all_lanes": true
+  },
+  "failure_handling": {
+    "failed_verification_requires_log_inspection_before_edit_or_rerun": true,
+    "required_sequence": ["capture_failure", "read_failed_logs", "identify_failure_signature", "classify_root_cause", "record_diagnosis", "choose_justified_next_action", "edit_if_justified", "rerun_targeted_verifier"],
+    "blind_rerun_forbidden": true,
+    "edit_before_failure_evidence_review_forbidden": true,
+    "same_attempt_rerun_without_new_evidence_forbidden": true,
+    "failed_lane_requires": ["failure_signature", "failed_check", "log_evidence", "diagnosis", "next_action_reason"],
+    "rerun_after_failure_requires_prior_failure_diagnosis_ref": true,
+    "rerun_same_strategy_requires_explicit_justification": true
+  },
+  "canonical_implementation": {
+    "single_functional_authority_required": true,
+    "new_version_sibling_files_forbidden": true,
+    "canonical_merge_required_before_main": true,
+    "transient_lane_artifacts_must_be_removed_before_main": true,
+    "production_entrypoints_must_reference_canonical_files": true,
+    "stale_references_for_touched_functional_family_must_be_zero": true,
+    "legacy_baseline_commit": "18f268997e446e0f01db397ef4aeabb087c34c4f",
+    "protected_roots": ["src", "scripts", "config", ".github/workflows"],
+    "forbidden_new_file_name_patterns": ["_v[0-9]+", "_part[0-9]+", "_(new|final|old|backup|bak|copy)([0-9]+)?"],
+    "explicit_compatibility_exceptions": []
+  },
+  "main_integration": {
+    "lane_branches_may_not_create_permanent_parallel_authority": true,
+    "merge_requires_canonical_reconciliation": true,
+    "merge_requires_transient_lane_files_removed": true,
+    "merge_requires_no_new_versioned_functional_files": true,
+    "merge_requires_no_stale_references_from_touched_family": true,
+    "merge_requires_governance_validator_pass": true
+  },
+  "state_machine": {
+    "non_terminal_states": ["PLANNED", "ACTIVE", "VERIFYING", "FAILED_RETRYABLE", "DIAGNOSING", "REPLANNED"],
+    "successful_terminal_state": "VERIFIED_PASS",
+    "unsuccessful_terminal_states": ["BLOCKED_EXTERNAL", "HARD_FAILED", "ABORTED_BY_OPERATOR"],
+    "partial_is_not_terminal": true,
+    "failed_retryable_must_reenter_solver_loop": true,
+    "normal_stop_requires_verified_pass": true,
+    "operator_abort_requires_explicit_operator_evidence": true
+  },
+  "adaptive_solver": {
+    "retry_until_acceptance_or_proven_unsuccessful_terminal_state": true,
+    "solver_loop": ["execute", "verify", "read_failed_logs", "diagnose", "decompose_or_replan", "execute"],
+    "identical_retry_without_new_evidence_is_forbidden": true,
+    "strategy_change_required_after_repeated_failure": true,
+    "repeated_failure_threshold": 2,
+    "minimum_distinct_strategy_families_before_hard_failed": 3,
+    "allowed_strategy_changes": ["decompose", "reframe", "reduce_scope_without_dropping_mandatory_acceptance", "replace_implementation_approach", "use_deterministic_verifier", "isolate_dependency", "rollback_and_rebuild_atomic_unit", "collect_new_evidence"],
+    "blocker_requires_external_dependency": true,
+    "blocker_requires_evidence": true,
+    "hard_failed_requires_exhausted_safe_in_authority_strategies": true,
+    "difficulty_time_or_complexity_alone_is_not_stop_reason": true
+  },
+  "acceptance": {
+    "success_requires_all_mandatory_criteria_pass": true,
+    "mandatory_pass_requires_executed_verifier": true,
+    "mandatory_pass_requires_evidence": true,
+    "verification_checks_must_pass": true,
+    "explicit_pass_or_fail_status_required": true,
+    "optional_score_cannot_mask_hard_gate_failure": true,
+    "model_claim_is_not_execution_evidence": true,
+    "prose_assertion_is_not_execution_evidence": true,
+    "code_written_without_verification_has_zero_completion_credit": true,
+    "planning_or_qa_only_has_zero_completion_credit_unless_it_is_the_requested_artifact": true,
+    "false_completion_forbidden": true,
+    "success_state": "VERIFIED_PASS"
+  },
+  "session_stop_gate": {
+    "successful_stop_allowed_only_when": ["outcome_is_VERIFIED_PASS", "all_required_lanes_are_VERIFIED_PASS", "all_required_acceptance_criteria_are_PASS", "all_required_verification_checks_are_PASS", "evidence_coverage_percent_is_100", "goal_coverage_percent_is_100", "verified_completion_percent_is_100", "completion_percent_is_100", "remaining_percent_is_0", "unresolved_actionable_failures_is_0", "canonical_drift_count_is_0", "new_parallel_implementation_count_is_0", "stale_reference_count_is_0", "transient_lane_artifact_count_is_0", "required_repository_mutations_are_committed"],
+    "unsuccessful_stop_allowed_only_for": ["BLOCKED_EXTERNAL", "HARD_FAILED", "ABORTED_BY_OPERATOR"],
+    "unsuccessful_stop_must_never_be_reported_as_completion": true,
+    "may_stop_false_while_retryable_failure_exists": true
+  },
+  "progress": {
+    "measurement_required_every_session": true,
+    "unit": "weighted_verified_acceptance_work",
+    "completed_definition": "mandatory_acceptance_passed_with_executed_verifier_and_evidence",
+    "formula": "passed_verified_acceptance_weight / total_planned_acceptance_weight * 100",
+    "remaining_formula": "100 - completion_percent",
+    "rebaseline_when_required_scope_changes": true,
+    "silent_denominator_change_forbidden": true,
+    "report_completed_percent": true,
+    "report_remaining_percent": true
+  },
+  "session_effectiveness": {
+    "required_every_substantial_session": true,
+    "required_metrics": ["goal_coverage_percent", "verified_completion_percent", "evidence_coverage_percent", "first_pass_yield_percent", "rework_ratio", "failed_required_lanes", "blocked_required_lanes", "canonical_drift_count", "new_parallel_implementation_count", "stale_reference_count", "transient_lane_artifact_count"],
+    "successful_thresholds": {
+      "goal_coverage_percent": 100,
+      "verified_completion_percent": 100,
+      "evidence_coverage_percent": 100,
+      "failed_required_lanes": 0,
+      "blocked_required_lanes": 0,
+      "canonical_drift_count": 0,
+      "new_parallel_implementation_count": 0,
+      "stale_reference_count": 0,
+      "transient_lane_artifact_count": 0
+    },
+    "narrative_quality_does_not_count_as_effectiveness": true
+  },
+  "commit_discipline": {
+    "commit_after_passed_task_or_module_in_same_session": true,
+    "commit_only_coherent_acceptance_boundary": true,
+    "do_not_commit_known_failing_state_as_complete": true,
+    "repository_mutation_session_requires_commit_for_verified_pass": true,
+    "commit_message_language": "English",
+    "exact_head_evidence_required_before_ready_claim": true
+  },
+  "harness_principles": ["preserve_user_intent_without_authority_escalation", "reuse_before_rebuild", "correctness_before_optimization", "deterministic_work_stays_deterministic", "evidence_and_provenance_are_first_class", "failure_requires_log_read_before_change", "failure_changes_strategy", "blind_rerun_is_forbidden", "no_false_completion", "canonical_source_is_edited_in_place", "single_functional_authority", "smallest_high_signal_context", "fail_closed_on_authority_or_security_uncertainty"],
+  "session_receipt": {
+    "required_fields": ["session_id", "goal", "substantial", "repository_mutation", "base_sha", "head_sha", "outcome", "lanes", "effectiveness", "completion_percent", "remaining_percent", "blockers", "commits"],
+    "repository_mutation_pass_requires": ["canonical_reconciliation_evidence"],
+    "sha_format": "40_lowercase_hex",
+    "validator": "scripts/validate_execution_governance.py"
+  }
+}

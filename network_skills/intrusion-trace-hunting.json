@@ -1,0 +1,72 @@
+{
+  "schema_version": "workspace-network-skill-blueprint/v1",
+  "skill_id": "intrusion-trace-hunting",
+  "name": "Intrusion Trace Hunting",
+  "stage": "candidate_blueprint",
+  "authority": "advisory",
+  "auto_promotable": false,
+  "objective": "Reconstruct an evidence-backed adversary path from the earliest observable foothold through persistence, privilege use, credential abuse, discovery, lateral movement, command-and-control and exfiltration indicators without inventing missing steps.",
+  "evidence_domains": [
+    "authentication-log",
+    "process-execution",
+    "powershell-script",
+    "windows-security",
+    "sysmon",
+    "dns",
+    "network-flow",
+    "firewall-ids",
+    "service-scheduled-task",
+    "registry-file-change"
+  ],
+  "method": [
+    "establish a bounded incident time window and affected identities/assets",
+    "build a cross-source timeline using immutable evidence references",
+    "separate observed facts from inferred attack steps",
+    "identify credential hopping, unusual logon relationships and lateral movement chains",
+    "correlate process, DNS and network activity around suspicious authentication events",
+    "map supported behaviors to reviewed ATT&CK technique references when applicable",
+    "search for persistence, privilege escalation, credential access, defense evasion and exfiltration evidence",
+    "record contradicting evidence and missing telemetry before ranking hypotheses",
+    "emit the earliest supported entry point, affected path and current compromise scope only when evidence supports them"
+  ],
+  "required_output": [
+    "incident_timeline",
+    "affected_assets",
+    "affected_accounts",
+    "observed_attack_steps",
+    "candidate_attack_steps",
+    "supporting_evidence_ids",
+    "contradicting_evidence_ids",
+    "attack_technique_refs",
+    "evidence_gaps",
+    "confidence",
+    "recommended_next_evidence"
+  ],
+  "stop_conditions": [
+    "evidence cannot distinguish compromise from benign administration",
+    "timeline continuity is insufficient to claim an attack path",
+    "required source provenance is missing or invalid",
+    "a requested conclusion would require inventing an unobserved step"
+  ],
+  "source_curriculum": {
+    "enterprise_approved": [
+      "lanl-comprehensive",
+      "splunk-bots-v2",
+      "cse-cic-ids2018"
+    ],
+    "license_gated_high_value": [
+      "otrf-security-datasets",
+      "atomic-evtx"
+    ],
+    "authoritative_reference": [
+      "mitre-attack-stix-data"
+    ]
+  },
+  "promotion_gate": {
+    "requires_multiple_independent_cases": true,
+    "requires_held_out_evaluation": true,
+    "requires_zero_unsupported_confirmed_attack_steps": true,
+    "requires_evidence_for_material_findings": true,
+    "requires_independent_skill_review": true
+  }
+}

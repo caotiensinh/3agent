@@ -32,15 +32,56 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: windows-deploy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy_sensitive: ${{ steps.changes.outputs.deploy_sensitive }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify Windows deployment impact
+        id: changes
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" != "pull_request" ]]; then
+            echo "deploy_sensitive=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$BASE_SHA" || -z "$HEAD_SHA" ]]; then
+            echo "Missing pull-request base/head SHA" >&2
+            exit 1
+          fi
+          changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s\n' "$changed"
+          if printf '%s\n' "$changed" | grep -Eq '^(scripts/bootstrap\.ps1|scripts/test_bootstrap_windows_contract\.ps1|\.github/workflows/windows-deploy-ci\.yml|\.gitattributes|pyproject\.toml|config/test\.example\.json|README\.md|docs/WINDOWS_DEPLOY\.md)$'; then
+            echo "deploy_sensitive=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy_sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
   contract:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive == 'true'
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Windows PowerShell 5.1 syntax and contract
         shell: powershell
         run: .\scripts\test_bootstrap_windows_contract.ps1
@@ -48,18 +89,54 @@ jobs:
         shell: pwsh
         run: .\scripts\test_bootstrap_windows_contract.ps1
 
-  clean-install:
+  runtime-smoke:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive != 'true'
     strategy:
       fail-fast: false
       matrix:
         python: ['3.11', '3.12']
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate in Windows runtime
+        shell: pwsh
+        run: python -m pip install -e .
+      - name: Compile source and tests on Windows
+        shell: pwsh
+        run: python -m compileall -q src tests
+      - name: Run installed WorkSpace smoke command
+        shell: pwsh
+        run: three-agent smoke
+
+  clean-install:
+    needs: classify
+    if: needs.classify.outputs.deploy_sensitive == 'true'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Resolve exact source candidate
         id: source
         shell: pwsh
@@ -77,12 +154,90 @@ jobs:
           THREE_AGENT_BIN_DIR: ${{ runner.temp }}\three-agent-bin
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
+          BOOTSTRAP_LOG: ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
         run: |
-          $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          $scriptText = Invoke-RestMethod -Uri $url
-          & ([ScriptBlock]::Create($scriptText))
-          if (-not $?) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+          $transcriptStarted = $false
+          try {
+            Start-Transcript -Path $env:BOOTSTRAP_LOG -Force | Out-Null
+            $transcriptStarted = $true
+            $pythonCommand = Get-Command python -ErrorAction Stop
+            Write-Host "Bootstrap diagnostic: PowerShell $($PSVersionTable.PSVersion)"
+            Write-Host "Bootstrap diagnostic: Python executable $($pythonCommand.Source)"
+            & python --version
+            if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
+            & python -m pip --version
+            if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
+            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+            Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
+            $scriptText = Invoke-RestMethod -Uri $url
+            & ([ScriptBlock]::Create($scriptText))
+            $bootstrapSucceeded = $?
+            $bootstrapNativeExit = $LASTEXITCODE
+            Write-Host "Bootstrap diagnostic: PowerShell success=$bootstrapSucceeded native_exit=$bootstrapNativeExit"
+            if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+          }
+          catch {
+            Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
+            throw
+          }
+          finally {
+            if ($transcriptStarted) {
+              try { Stop-Transcript | Out-Null } catch { Write-Warning "Unable to stop bootstrap transcript: $($_.Exception.Message)" }
+            }
+          }
           $global:LASTEXITCODE = 0
+      - name: Capture failed Windows unit suite
+        if: failure()
+        shell: powershell
+        env:
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
+          UNITTEST_LOG: ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+        run: |
+          $venvPython = Join-Path $env:THREE_AGENT_INSTALL_DIR '.venv\Scripts\python.exe'
+          $stdoutLog = "$env:UNITTEST_LOG.stdout"
+          $stderrLog = "$env:UNITTEST_LOG.stderr"
+          if (-not (Test-Path $venvPython)) {
+            Write-Host "Diagnostic: venv Python missing at $venvPython"
+            exit 0
+          }
+          try {
+            $process = Start-Process `
+              -FilePath $venvPython `
+              -ArgumentList @('-m', 'unittest', 'discover', '-s', 'tests', '-v') `
+              -WorkingDirectory $env:THREE_AGENT_INSTALL_DIR `
+              -NoNewWindow `
+              -Wait `
+              -PassThru `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog
+            '=== stdout ===' | Out-File -FilePath $env:UNITTEST_LOG -Encoding utf8
+            if (Test-Path $stdoutLog) {
+              Get-Content -LiteralPath $stdoutLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            '=== stderr ===' | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            if (Test-Path $stderrLog) {
+              Get-Content -LiteralPath $stderrLog | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            }
+            "unittest exit code: $($process.ExitCode)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic: reproduced Windows unittest exit=$($process.ExitCode)"
+          }
+          catch {
+            "Diagnostic capture exception: $($_.Exception.Message)" | Out-File -FilePath $env:UNITTEST_LOG -Append -Encoding utf8
+            Write-Host "Diagnostic capture exception: $($_.Exception.Message)"
+          }
+          $global:LASTEXITCODE = 0
+      - name: Upload Windows bootstrap diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bootstrap-${{ matrix.python }}
+          path: |
+            ${{ runner.temp }}\windows-bootstrap-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stdout
+            ${{ runner.temp }}\windows-unittest-${{ matrix.python }}.log.stderr
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify installed command and exact GitHub lineage
         shell: powershell
         env:
@@ -98,6 +253,7 @@ jobs:
           if ($installed -ne $env:EXPECTED_HEAD) { throw "Installed SHA $installed does not match $env:EXPECTED_HEAD" }
           $global:LASTEXITCODE = 0
       - name: Re-run remotely and preserve configuration
+        if: matrix.python == '3.12'
         shell: powershell
         env:
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git

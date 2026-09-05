@@ -42,6 +42,9 @@
     "enabled": true,
     "mode": "strict",
     "public_search_enabled": false,
+    "egress_policy": "workspace.internet-egress/v1",
+    "egress_mode": "sanitized",
+    "user_warning_on_transform": true,
     "allow_all_outbound_in_test": false,
     "allowed_search_hosts": [
       "html.duckduckgo.com",
@@ -61,6 +64,11 @@
     "enabled": true,
     "allow_all_commands_in_test": false,
     "audit_log": "/var/lib/workspace/data/activity/execution.jsonl"
+  },
+  "adaptive_learning": {
+    "runtime_retrieval": {
+      "enabled": false
+    }
   },
   "knowledge": {
     "public_mirror_enabled": true,

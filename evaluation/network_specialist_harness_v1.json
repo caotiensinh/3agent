@@ -1,0 +1,174 @@
+{
+  "schema_version": "workspace-network-specialist-harness/v1",
+  "harness_id": "workspace-network-specialist-harness-v1",
+  "spec_ref": "docs/WORKSPACE_NETWORK_SPECIALIST_HARNESS_SPEC_V1.md",
+  "contract_state": "frozen_before_implementation",
+  "specialists": [
+    "intrusion-trace-hunting",
+    "log-incident-diagnosis",
+    "host-log-forensics"
+  ],
+  "case_classes": [
+    "positive",
+    "negative",
+    "near_miss",
+    "ambiguous",
+    "insufficient_evidence",
+    "telemetry_gap"
+  ],
+  "holdout": {
+    "minimum_non_positive_fraction": 0.25,
+    "ground_truth_hidden_from_specialist": true,
+    "manifest_frozen_before_candidate_run": true,
+    "require_manifest_sha256": true
+  },
+  "absolute_fail_gates": {
+    "unsupported_confirmed_claims": 0,
+    "fabricated_evidence_ids": 0,
+    "out_of_case_evidence_refs": 0,
+    "hidden_ground_truth_accesses": 0,
+    "license_status_violations": 0,
+    "raw_corpus_leaks_into_skill": 0,
+    "autonomous_remediation_authority": 0,
+    "candidate_skill_auto_promotions": 0,
+    "core_internet_authority_changes": 0,
+    "promoted_case_missing_provenance_or_hash": 0,
+    "durable_raw_or_normalized_public_log_policy_violations": 0
+  },
+  "shared_quality": {
+    "output_schema_validity_min": 1.0,
+    "evidence_reference_validity_min": 1.0,
+    "material_finding_evidence_coverage_min": 0.98,
+    "insufficient_evidence_abstention_accuracy_min": 0.90,
+    "hard_negative_false_positive_rate_max": 0.05,
+    "provenance_completeness_min": 1.0,
+    "deterministic_validator_success_min": 1.0
+  },
+  "resource_contract": {
+    "normal_case_model_calls_max": 2,
+    "validator_retry_max": 1,
+    "deterministic_admission_model_calls": 0,
+    "internet_calls_during_specialist_eval": 0,
+    "more_expensive_candidate_requires_measured_quality_gain": true
+  },
+  "verdicts": [
+    "PASS",
+    "FAIL_QUALITY",
+    "FAIL_SECURITY",
+    "FAIL_EVIDENCE",
+    "FAIL_LICENSE",
+    "FAIL_PROVENANCE",
+    "FAIL_RESOURCE",
+    "HARNESS_INVALID",
+    "NOT_ENOUGH_CASES"
+  ],
+  "specialist_gates": {
+    "intrusion-trace-hunting": {
+      "minimum_cases": {
+        "positive": 20,
+        "negative_or_hard_negative": 10,
+        "ambiguous_or_telemetry_gap": 5,
+        "independent_enterprise_sources": 2,
+        "attack_path_families": 3
+      },
+      "metrics": {
+        "observed_attack_step_precision_min": 0.95,
+        "supported_attack_chain_stage_recall_min": 0.85,
+        "affected_asset_account_precision_min": 0.95,
+        "attack_step_evidence_citation_coverage_min": 1.0,
+        "unsupported_confirmed_attack_steps_max": 0,
+        "hard_negative_false_intrusion_confirmations_max": 0,
+        "hard_negative_false_suspicion_rate_max": 0.05,
+        "missing_telemetry_uncertainty_reporting_min": 0.90
+      },
+      "fatal_behaviors": [
+        "invent_unobserved_attack_bridge",
+        "claim_credential_theft_from_usage_only",
+        "claim_lateral_movement_without_required_corroboration",
+        "use_attack_taxonomy_as_incident_truth",
+        "suppress_material_contradictory_evidence"
+      ]
+    },
+    "log-incident-diagnosis": {
+      "minimum_cases": {
+        "confirmed_root_cause": 20,
+        "near_miss": 10,
+        "insufficient_or_telemetry_gap": 10,
+        "failure_domains": 4,
+        "independent_sources": 2
+      },
+      "metrics": {
+        "top1_root_cause_accuracy_min": 0.80,
+        "top3_root_cause_recall_min": 0.95,
+        "candidate_cause_evidence_precision_min": 0.95,
+        "contradictory_evidence_surface_rate_min": 0.90,
+        "correct_discriminator_next_evidence_rate_min": 0.90,
+        "false_confirmed_root_cause_on_insufficient_max": 0,
+        "insufficient_evidence_abstention_accuracy_min": 0.90
+      },
+      "fatal_behaviors": [
+        "promote_downstream_symptom_over_contradictory_root_cause_evidence",
+        "claim_unverified_remediation_as_verified",
+        "ignore_earlier_causal_event_due_to_later_explicit_error",
+        "hide_indistinguishable_cause_uncertainty"
+      ]
+    },
+    "host-log-forensics": {
+      "minimum_cases": {
+        "compromised_host": 20,
+        "benign_or_hard_negative": 10,
+        "incomplete_or_telemetry_gap": 10,
+        "independent_sources": 2
+      },
+      "platform_scope_rule": "cross-platform claim requires both Windows and Linux held-out evidence; otherwise scope remains platform-limited",
+      "metrics": {
+        "forensic_timeline_event_precision_min": 0.98,
+        "timeline_ordering_accuracy_min": 0.95,
+        "artifact_to_finding_evidence_precision_min": 0.98,
+        "supported_behavior_technique_mapping_precision_min": 0.90,
+        "material_forensic_claim_evidence_coverage_min": 1.0,
+        "unsupported_full_forensic_conclusions_max": 0,
+        "benign_admin_false_compromise_confirmations_max": 0,
+        "evidence_gap_declaration_accuracy_min": 0.95
+      },
+      "fatal_behaviors": [
+        "claim_disk_or_memory_fact_from_log_only_evidence",
+        "treat_log_absence_as_proof_of_nonoccurrence_under_incomplete_telemetry",
+        "claim_credential_theft_from_authentication_usage_only",
+        "claim_persistence_without_supporting_artifact",
+        "miss_direct_visible_log_clearing_or_evidence_destruction"
+      ]
+    }
+  },
+  "development_gates": {
+    "G0": "contract_freeze",
+    "G1": "extractor_correctness",
+    "G2": "specialist_baseline",
+    "G3": "heldout_hard_negative_evaluation",
+    "G4": "independent_skill_promotion_review",
+    "G5": "multi_skill_coordinator_after_required_G4"
+  },
+  "first_implementation_sequence": [
+    "V3-01 corpus manifest and hidden-truth fixtures",
+    "V3-02 bounded CIC/LANL/BOTS adapters",
+    "V3-03 incident slicer and evidence-reference builder",
+    "V3-04 deterministic harness validator and scorer",
+    "V3-05 staging deletion and provenance receipt"
+  ],
+  "evidence_receipt_required_fields": [
+    "repository",
+    "exact_head_sha",
+    "specialist_id",
+    "blueprint_sha256",
+    "harness_spec_sha256",
+    "corpus_manifest_sha256",
+    "case_counts_by_class_and_source",
+    "model_runtime_identity",
+    "metric_numerators_denominators",
+    "absolute_gate_results",
+    "resource_measurements",
+    "final_verdict",
+    "failed_gate_ids",
+    "created_at"
+  ]
+}

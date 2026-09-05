@@ -1,0 +1,101 @@
+name: security-readonly-pilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type READ_ONLY_SECURITY_PILOT to authorize one bounded real-network read-only pilot.
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - '.github/security-readonly-pilot.intent'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-readonly-pilot-r9
+  cancel-in-progress: false
+
+jobs:
+  pilot:
+    name: controlled read-only physical pilot
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, r9]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact selected main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          clean: true
+          persist-credentials: false
+
+      - name: Validate explicit operator confirmation
+        shell: bash
+        env:
+          DISPATCH_CONFIRMATION: ${{ github.event_name == 'workflow_dispatch' && inputs.confirmation || '' }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            test "$DISPATCH_CONFIRMATION" = "READ_ONLY_SECURITY_PILOT"
+          elif [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            INTENT_PATH=".github/security-readonly-pilot.intent"
+            test -f "$INTENT_PATH"
+            mapfile -t CHANGED_FILES < <(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+            test "${#CHANGED_FILES[@]}" -eq 1
+            test "${CHANGED_FILES[0]}" = "$INTENT_PATH"
+            read -r -a COMMIT_LINE <<< "$(git rev-list --parents -n 1 "$GITHUB_SHA")"
+            test "${#COMMIT_LINE[@]}" -eq 2
+            PARENT_SHA="${COMMIT_LINE[1]}"
+            mapfile -t INTENT_LINES < "$INTENT_PATH"
+            test "${#INTENT_LINES[@]}" -eq 2
+            test "${INTENT_LINES[0]}" = "READ_ONLY_SECURITY_PILOT"
+            test "${INTENT_LINES[1]}" = "BASE_SHA=$PARENT_SHA"
+            test "$(git log -1 --pretty=%s "$GITHUB_SHA")" = "ops(security): authorize readonly pilot"
+          else
+            exit 64
+          fi
+          printf 'PILOT_CONFIRMATION=READ_ONLY_SECURITY_PILOT\n' >> "$GITHUB_ENV"
+
+      - name: Bootstrap exact source on R9
+        shell: bash
+        env:
+          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
+          THREE_AGENT_REPO_REF: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-security-pilot-install
+          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-security-pilot-bin
+          THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$THREE_AGENT_INSTALL_DIR" "$THREE_AGENT_BIN_DIR"
+          bash scripts/bootstrap.sh
+          "$THREE_AGENT_INSTALL_DIR/.venv/bin/python" -m pip install -e "${THREE_AGENT_INSTALL_DIR}[monitoring-snmp]"
+
+      - name: Run bounded real-network read-only pilot
+        shell: bash
+        env:
+          TARGET_SHA: ${{ github.sha }}
+          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-security-pilot-install
+          PILOT_RECEIPT: ${{ runner.temp }}/security-monitoring-readonly-pilot.json
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="$HOME/.config/workspace/security_monitoring.pilot.json"
+          "$THREE_AGENT_INSTALL_DIR/.venv/bin/python" scripts/run_security_readonly_pilot.py \
+            --config "$CONFIG_PATH" \
+            --installed-dir "$THREE_AGENT_INSTALL_DIR" \
+            --expected-sha "$TARGET_SHA" \
+            --confirmation "$PILOT_CONFIRMATION" \
+            --output "$PILOT_RECEIPT"
+
+      - name: Upload sanitized pilot evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-readonly-pilot-${{ github.sha }}
+          path: ${{ runner.temp }}/security-monitoring-readonly-pilot.json
+          if-no-files-found: warn
+          retention-days: 14

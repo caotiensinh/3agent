@@ -30,7 +30,7 @@ A lower layer can never grant itself authority held by a higher layer.
 - `workspace-egress`: local DNS + public HTTPS only; no WorkSpace data-store permission.
 - `workspace-auth`: separate identity-only broker; fixed Google/GitHub/LINE OAuth/OIDC endpoints only; no WorkSpace data-store permission; exposes only short-lived one-time identity assertions to Core over a loopback redemption boundary.
 - External provider login never grants Gmail, Drive, repository, workflow, LINE Messaging, file, project, chat or AI-tool authority. Local WorkSpace RBAC remains authoritative.
-- Confidential mode: public search disabled.
+- Confidential mode: Core has no direct public egress. Public research is allowed only through the separate `workspace-public`/`workspace-egress` path when trusted deployment policy authorizes it and deterministic query sanitization, strict DLP, host allowlisting, exact result grants, and bounded GET-only retrieval all pass.
 - Public research: DLP + search-host allowlist + exact search-result grants + bounded GET-only responses.
 - Arbitrary POST/upload/webhook/telemetry is denied outside narrowly defined higher-trust brokers such as the fixed identity-token exchange contract above.
 - GitHub push is an operator/deployment activity, never autonomous runtime authority.
@@ -96,3 +96,57 @@ Never fabricate sources, execution, tests, approvals or commit SHAs. Audit secur
 ## Change discipline
 
 Security-boundary changes require tests and documentation in the same coherent change-set. Default-deny behavior must not be weakened to make a demo, benchmark or test easier.
+
+## Single Canonical Module Rule
+
+This is a mandatory repository-wide engineering law.
+
+- Every production module or function family MUST have exactly one canonical implementation file.
+- Git history is the version history. A new behavior/version MUST be implemented by editing the existing canonical file and committing that change; do not preserve source versions by creating sibling implementation files.
+- Production source MUST NOT introduce version/copy/archive suffix families such as `*_v2.py`, `*_v3.py`, `*_part2.py`, `*_new.py`, `*_final.py`, `*_old.py`, `*_backup.py`, `*_bak.py`, `*_copy.py`, or equivalent naming used to keep parallel implementations of the same function.
+- When historical variants already exist, their required behavior MUST be reconciled into the canonical file, all imports/references MUST be rewritten, and the stale variant files MUST be removed after verification.
+- A symbol name collision alone is not evidence of duplication. Consolidation is required when files are successive/parallel implementations of the same functional authority, entrypoint, inheritance chain, monkeypatch chain, adapter, workflow, or frontend surface.
+- Runtime monkeypatch/version chains MUST NOT be used as a substitute for one canonical implementation. Final production behavior must be explicit in the canonical module.
+- Production entrypoints MUST reference canonical unversioned modules.
+- Source, tests, scripts, docs, and configuration MUST NOT retain imports or runtime references to removed implementation variants.
+- Creating a new sibling implementation because editing the canonical file is difficult is forbidden. Decompose the change, preserve compatibility deliberately, and update the canonical implementation instead.
+- Any intentional coexistence of multiple implementation versions is an exception, not the default. It is permitted only for a genuine externally supported API/protocol/schema compatibility boundary, must be documented architecturally, must have an explicit allowlist entry, and must not create competing internal runtime authority.
+- Repository verification MUST fail when an unapproved duplicate/version implementation family or stale variant import/reference is introduced.
+
+The desired steady-state repository invariant is:
+
+```text
+version_family_count = 0
+unapproved_parallel_implementation_count = 0
+deprecated_version_import_count = 0
+canonical_entrypoints = PASS
+single_canonical_module_guard = PASS
+```
+
+## Mandatory execution governance
+
+The **only normative execution-governance source** is:
+
+`config/workspace.execution-governance.json`
+
+`docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md` is a living explanatory guide. Neither this file nor that guide may redefine numerical limits, terminal-state lists, thresholds, or acceptance rules independently. Git history is the version history; do not create sibling governance policy copies.
+
+All humans, agents, sub-agents, automations, and CI workers that change, verify, or report on WorkSpace MUST read and apply the canonical JSON contract. These rules do not grant capability and never override security policy or `TaskContract` authority.
+
+Minimum working law:
+
+- substantial work uses the parallel-lane window defined by the canonical policy;
+- each lane has an explicit goal, dependencies, write set, acceptance criteria, verification checks, evidence, attempts, and state;
+- shared/canonical write sets have a single writer owner;
+- code written, plans, QA prose, model confidence, and unexecuted tests do not count as completed work;
+- a required lane is complete only after the canonical success state is reached with executed verifier evidence;
+- retryable failure MUST return to diagnose/decompose/replan/execute/verify and cannot be used as a stopping state;
+- repeated materially equivalent failure MUST change strategy rather than repeat the same attempt;
+- unsuccessful terminal states require the exact evidence defined by the canonical policy and MUST NOT be reported as completion;
+- every substantial session reports canonical effectiveness metrics and verified completion/remaining percentages;
+- a passed repository mutation is committed at a coherent acceptance boundary, then exact-head evidence is checked before `READY`;
+- the machine gate is `python scripts/validate_execution_governance.py` and CI MUST execute it.
+
+A model or agent never decides by assertion that work is `DONE`. The deterministic acceptance/evidence gate decides.
+
+Detailed composite-strategy guidance remains in `docs/WORKSPACE_COMPOSITE_STRATEGY_POLICY_V0_0_1.md`; it is subordinate to the canonical execution-governance and security policies.

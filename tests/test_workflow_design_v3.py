@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.workflow_design_v3 import WorkflowDesignCompilerV3
+from three_agent.workflow_design import WorkflowDesignCompilerV3
 
 
 class FakeLLM:

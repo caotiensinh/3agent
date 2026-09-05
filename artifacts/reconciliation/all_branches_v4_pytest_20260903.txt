@@ -1,0 +1,259 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/test_chat_gateway_v13_contract.py ___________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_chat_gateway_v13_contract.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chat_gateway_v13_contract.py:5: in <module>
+    from three_agent.chat_gateway_v13 import (
+E   ImportError: cannot import name 'IntentAwareProjectChatService' from 'three_agent.chat_gateway_v13' (/home/runner/work/3agent/3agent/src/three_agent/chat_gateway_v13.py)
+___________ ERROR collecting tests/test_chat_gateway_v15_contract.py ___________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_chat_gateway_v15_contract.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_chat_gateway_v15_contract.py:16: in <module>
+    from three_agent.chat_gateway_v15 import (
+E   ImportError: cannot import name 'CONVERSATION_CONTEXT_POLICY_VERSION' from 'three_agent.chat_gateway_v15' (/home/runner/work/3agent/3agent/src/three_agent/chat_gateway_v15.py)
+_______________ ERROR collecting tests/test_chat_gateway_v17.py ________________
+tests/test_chat_gateway_v17.py:11: in <module>
+    from three_agent.chat_gateway_v17 import (
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_________ ERROR collecting tests/test_chat_gateway_v20_intelligence.py _________
+tests/test_chat_gateway_v20_intelligence.py:1: in <module>
+    from three_agent import chat_gateway_v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+______ ERROR collecting tests/test_chat_gateway_v21_intelligence_chain.py ______
+tests/test_chat_gateway_v21_intelligence_chain.py:3: in <module>
+    from three_agent import chat_gateway_v21
+src/three_agent/chat_gateway_v21.py:11: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+__________ ERROR collecting tests/test_chat_memory_attachments_v22.py __________
+tests/test_chat_memory_attachments_v22.py:21: in <module>
+    from three_agent.chat_gateway_v22 import ContinuitySecurityAwareProjectChatService
+src/three_agent/chat_gateway_v22.py:7: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+__________ ERROR collecting tests/test_chat_memory_attachments_v3.py ___________
+tests/test_chat_memory_attachments_v3.py:21: in <module>
+    from three_agent.chat_gateway_v19 import ContinuityProjectChatService
+src/three_agent/chat_gateway_v19.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+___________ ERROR collecting tests/test_multimodal_attachments_v4.py ___________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_multimodal_attachments_v4.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_multimodal_attachments_v4.py:20: in <module>
+    from three_agent.document_extractors import (
+E   ImportError: cannot import name 'NATIVE_IMAGE_EXTENSIONS' from 'three_agent.document_extractors' (/home/runner/work/3agent/3agent/src/three_agent/document_extractors.py)
+_______ ERROR collecting tests/test_security_asset_onboarding_gateway.py _______
+tests/test_security_asset_onboarding_gateway.py:6: in <module>
+    from three_agent.chat_gateway_v21 import SecurityE2EApplication, SecurityE2EHTTPHandler
+src/three_agent/chat_gateway_v21.py:11: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+________ ERROR collecting tests/test_security_asset_onboarding_v011.py _________
+ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_security_asset_onboarding_v011.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_security_asset_onboarding_v011.py:7: in <module>
+    from three_agent.security_monitoring.asset_onboarding import (
+E   ImportError: cannot import name 'SecurityAssetOnboardingConflict' from 'three_agent.security_monitoring.asset_onboarding' (/home/runner/work/3agent/3agent/src/three_agent/security_monitoring/asset_onboarding.py)
+________ ERROR collecting tests/test_security_configuration_frontend.py ________
+tests/test_security_configuration_frontend.py:6: in <module>
+    from three_agent import chat_gateway_v18
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_ ERROR collecting tests/test_security_monitoring_pcap_approval_confirmation.py _
+tests/test_security_monitoring_pcap_approval_confirmation.py:6: in <module>
+    from three_agent.chat_gateway_v18 import (
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_____ ERROR collecting tests/test_security_monitoring_pcap_integration.py ______
+tests/test_security_monitoring_pcap_integration.py:7: in <module>
+    import three_agent.chat_gateway_v18 as gateway
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_____ ERROR collecting tests/test_security_monitoring_soc_boundaries_ui.py _____
+tests/test_security_monitoring_soc_boundaries_ui.py:6: in <module>
+    from three_agent import chat_gateway_v19
+src/three_agent/chat_gateway_v19.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+________ ERROR collecting tests/test_security_monitoring_soc_gateway.py ________
+tests/test_security_monitoring_soc_gateway.py:10: in <module>
+    from three_agent.chat_gateway_v18 import SecurityMonitoringHTTPHandler
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+__________ ERROR collecting tests/test_security_monitoring_soc_ui.py ___________
+tests/test_security_monitoring_soc_ui.py:6: in <module>
+    from three_agent import chat_gateway_v19
+src/three_agent/chat_gateway_v19.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+_________ ERROR collecting tests/test_security_monitoring_ui_config.py _________
+tests/test_security_monitoring_ui_config.py:10: in <module>
+    from three_agent import chat_gateway_v19
+src/three_agent/chat_gateway_v19.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+________ ERROR collecting tests/test_security_monitoring_ui_gateway.py _________
+tests/test_security_monitoring_ui_gateway.py:6: in <module>
+    from three_agent.chat_gateway_v18 import (
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+__________ ERROR collecting tests/test_simple_chat_e2e_acceptance.py ___________
+tests/test_simple_chat_e2e_acceptance.py:6: in <module>
+    from three_agent.chat_simple_e2e_acceptance import (
+src/three_agent/chat_simple_e2e_acceptance.py:21: in <module>
+    from .chat_gateway_v17 import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+________ ERROR collecting tests/test_workflow_draft_gateway_contract.py ________
+tests/test_workflow_draft_gateway_contract.py:6: in <module>
+    from three_agent import chat_gateway_v20
+src/three_agent/chat_gateway_v20.py:8: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+______ ERROR collecting tests/test_workspace_chat_capability_authority.py ______
+tests/test_workspace_chat_capability_authority.py:3: in <module>
+    from three_agent import chat_gateway_v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+____________ ERROR collecting tests/test_workspace_frontend_v13.py _____________
+tests/test_workspace_frontend_v13.py:6: in <module>
+    from three_agent.chat_gateway_v18 import workspace_ui_capabilities
+src/three_agent/chat_gateway_v18.py:10: in <module>
+    from . import chat_gateway_v17 as _v17
+src/three_agent/chat_gateway_v17.py:46: in <module>
+    from .workspace_frontend_v13 import WORKSPACE_HTML_V13
+src/three_agent/workspace_frontend_v13.py:40: in <module>
+    connector_rows + '      <button class="menu-row" type="button" data-action="github" role="menuitem">',
+    ^^^^^^^^^^^^^^
+E   NameError: name 'connector_rows' is not defined
+=========================== short test summary info ============================
+ERROR tests/test_chat_gateway_v13_contract.py
+ERROR tests/test_chat_gateway_v15_contract.py
+ERROR tests/test_chat_gateway_v17.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_gateway_v20_intelligence.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_gateway_v21_intelligence_chain.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_memory_attachments_v22.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_chat_memory_attachments_v3.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_multimodal_attachments_v4.py
+ERROR tests/test_security_asset_onboarding_gateway.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_asset_onboarding_v011.py
+ERROR tests/test_security_configuration_frontend.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_pcap_approval_confirmation.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_pcap_integration.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_soc_boundaries_ui.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_soc_gateway.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_soc_ui.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_ui_config.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_security_monitoring_ui_gateway.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_simple_chat_e2e_acceptance.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_workflow_draft_gateway_contract.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_workspace_chat_capability_authority.py - NameError: name 'connector_rows' is not defined
+ERROR tests/test_workspace_frontend_v13.py - NameError: name 'connector_rows' is not defined
+!!!!!!!!!!!!!!!!!!! Interrupted: 22 errors during collection !!!!!!!!!!!!!!!!!!!
+22 errors in 1.99s

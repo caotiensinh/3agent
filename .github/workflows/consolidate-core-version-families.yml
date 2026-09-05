@@ -1,0 +1,48 @@
+name: consolidate-core-version-families
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v4-final-20260903
+    paths:
+      - .github/workflows/consolidate-core-version-families.yml
+      - scripts/consolidate_core_version_families.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: reconcile/all-branches-v4-final-20260903
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+      - name: Consolidate with baseline-delta gate
+        run: |
+          set -euo pipefail
+          export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+          python scripts/consolidate_core_version_families.py
+          git config user.name 'workspace-consolidation-bot'
+          git config user.email 'workspace-consolidation-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor(core): consolidate chat context and history modules'
+          git push origin HEAD:reconcile/all-branches-v4-final-20260903
+      - name: Upload consolidation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-version-family-consolidation
+          path: artifacts/consolidation/
+          if-no-files-found: warn

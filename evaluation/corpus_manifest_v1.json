@@ -1,0 +1,89 @@
+{
+  "schema_version": "workspace-evaluation-corpus/v1",
+  "corpus_id": "workspace-evaluation-core-v1",
+  "metric_schema_version": "workspace-evaluation-metrics/v1",
+  "classes": {
+    "golden": {
+      "source_kind": "fixed_task_set",
+      "source_ref": "benchmarks/fixed_task_set_v1.json",
+      "label_policy": "external_holdout_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    },
+    "replay": {
+      "source_kind": "external_replay",
+      "source_ref": null,
+      "label_policy": "external_holdout_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "REPLAY_SCOPE_STABLE",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    },
+    "regression": {
+      "source_kind": "ci_regression",
+      "source_ref": null,
+      "label_policy": "labels_not_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "REGRESSION_SUITE_PASS",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    },
+    "adversarial_security": {
+      "source_kind": "ci_adversarial",
+      "source_ref": null,
+      "label_policy": "labels_not_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "ADVERSARIAL_SECURITY_PASS",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    },
+    "edge_large_context": {
+      "source_kind": "external_large_context",
+      "source_ref": null,
+      "label_policy": "external_holdout_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "LARGE_CONTEXT_CRITICAL_SPANS_PASS",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    },
+    "efficiency_cache_concurrency": {
+      "source_kind": "benchmark_suite",
+      "source_ref": "benchmarks/fixed_task_set_v1.json",
+      "label_policy": "labels_not_required",
+      "required_checks": [
+        "VERIFIED_TASK_SUCCESS_NON_DECREASE",
+        "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE",
+        "EVIDENCE_COVERAGE_NON_DECREASE",
+        "REQUIRED_VALIDATOR_SUCCESS_NON_DECREASE",
+        "EFFICIENCY_MEASURED",
+        "SECURITY_INVARIANTS_PASS"
+      ],
+      "required_for_promotion": true
+    }
+  }
+}

@@ -1,0 +1,33 @@
+name: validate-rtx-runner-bootstrap
+
+on:
+  push:
+    branches:
+      - ops/rtx5090-runner-bootstrap-20260830
+
+permissions:
+  contents: read
+
+jobs:
+  shell-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Bash syntax
+        shell: bash
+        run: bash -n evidence_tools/bootstrap_rtx5090_runner.sh
+      - name: ShellCheck
+        shell: bash
+        run: shellcheck -x evidence_tools/bootstrap_rtx5090_runner.sh
+      - name: Assert fail-closed hardware and model gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          grep -F 'RTX5090_COUNT >= 2' evidence_tools/bootstrap_rtx5090_runner.sh
+          grep -F 'ollama show "$MODEL"' evidence_tools/bootstrap_rtx5090_runner.sh
+          grep -F 'registration-token' evidence_tools/bootstrap_rtx5090_runner.sh
+          ! grep -Fi 'ollama pull' evidence_tools/bootstrap_rtx5090_runner.sh
+          ! grep -Fi 'apt install' evidence_tools/bootstrap_rtx5090_runner.sh

@@ -12,10 +12,9 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64]", text)
-        self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
-        self.assertIn("group: workspace-live-chat-multiturn-main-v2", text)
-        self.assertNotIn("group: workspace-live-chat-multiturn-main\n", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64, r9, rtx5090]", text)
+        self.assertNotIn("workspace-benchmark", text)
+        self.assertIn("group: workspace-live-chat-multiturn-main-v3", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
         self.assertNotIn("pull_request:", text)
@@ -27,6 +26,15 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         self.assertIn("command -v nvidia-smi", text)
         self.assertIn("grep -c 'RTX 5090'", text)
         self.assertIn('test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c \'RTX 5090\')" -ge 2', text)
+
+    def test_acceptance_config_defaults_to_exact_checkout_not_runner_home(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("$GITHUB_WORKSPACE/config/workspace.secure.json", text)
+        self.assertIn("CONFIG_OVERRIDE", text)
+        self.assertNotIn("$HOME/3agent/config/workspace.secure.json", text)
+        self.assertNotIn("cat $WORKSPACE_ACCEPTANCE_CONFIG_PATH", text)
 
     def test_live_workflow_is_read_only_to_host_runtime(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
@@ -48,12 +56,37 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, text)
 
+    def test_live_workflow_isolates_resource_runtime_per_execution(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        runtime = 'RUNTIME_DIR="$RUNNER_TEMP/workspace-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"'
+        self.assertIn(runtime, text)
+        self.assertIn('install -d -m 700 "$RUNTIME_DIR"', text)
+        self.assertIn('THREE_AGENT_RUNTIME_DIR="$RUNTIME_DIR"', text)
+        self.assertGreaterEqual(text.count('rm -rf "$RUNTIME_DIR"'), 2)
+        self.assertIn("'src/three_agent/resource_budget.py'", text)
+        self.assertNotIn("chmod 777", text)
+
+    def test_failure_report_path_is_exported_before_live_command(self):
+        text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        export = 'echo "WORKSPACE_ACCEPTANCE_REPORT=$REPORT" >> "$GITHUB_ENV"'
+        command = '"$WORKSPACE_ACCEPTANCE_VENV/bin/workspace-chat-multiturn-acceptance"'
+        self.assertIn(export, text)
+        self.assertIn(command, text)
+        self.assertLess(text.index(export), text.index(command))
+        self.assertIn("set +e", text)
+        self.assertIn('exit "$rc"', text)
+
     def test_report_is_sanitized_and_artifact_is_bounded(self):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
         self.assertIn("raw prompts/answers: `not persisted`", text)
         self.assertIn("actions/upload-artifact@v4", text)
+        self.assertIn("if: always() && env.WORKSPACE_ACCEPTANCE_REPORT != ''", text)
         self.assertIn("retention-days: 14", text)
 
     def test_portable_gate_tracks_live_acceptance_contract_changes(self):
@@ -70,24 +103,25 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         )
         self.assertIn("workflow_dispatch:", text)
 
-    def test_package_preserves_multiturn_cli_when_product_gateway_advances(self):
+    def test_package_routes_live_acceptance_to_current_contract_service(self):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        self.assertIn('version = "1!0.0.1"', text)
+        self.assertIn('version = "1!0.0.2"', text)
         self.assertIn(
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v18:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v18:main"', text)
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v16.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v17.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v18.py").is_file())
-        v17 = (ROOT / "src/three_agent/chat_gateway_v17.py").read_text(encoding="utf-8")
-        v18 = (ROOT / "src/three_agent/chat_gateway_v18.py").read_text(encoding="utf-8")
-        self.assertIn("ContextAwareProjectChatService", v17)
-        self.assertIn("ContextAwareWorkflowV3HTTPHandler", v17)
-        self.assertIn("WorkflowV4ContextHTTPHandler", v18)
-        self.assertIn("from .chat_gateway_v17 import (", v18)
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', text)
+
+        canonical_acceptance = ROOT / "src/three_agent/chat_multiturn_acceptance.py"
+        self.assertTrue(canonical_acceptance.is_file())
+        self.assertFalse((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").exists())
+
+        canonical_gateway = ROOT / "src/three_agent/chat_gateway.py"
+        self.assertTrue(canonical_gateway.is_file())
+        gateway_text = canonical_gateway.read_text(encoding="utf-8")
+        self.assertIn("ContinuitySecurityAwareProjectChatService", gateway_text)
+        self.assertIn("from .chat_context import", gateway_text)
 
 
 if __name__ == "__main__":

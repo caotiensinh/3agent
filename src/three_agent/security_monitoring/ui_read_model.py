@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 
 from .contracts import MonitoringContractError
+from .reporting import build_deterministic_report
 from .runtime_config import MonitoringRuntimeConfig, load_runtime_config
+from .soc_read_model import build_soc_read_model
 
 UI_SCHEMA = "workspace-security-monitoring/ui-read-v1"
 MAX_PAGE_SIZE = 100
@@ -100,6 +102,20 @@ def _age_seconds(value: str | None, *, now: datetime) -> float | None:
     return max(0.0, (now - observed.astimezone(timezone.utc)).total_seconds())
 
 
+class _QueryOnlyReportStore:
+    """Duck-typed report store that can only borrow the UI read-only connection."""
+
+    def __init__(self, connect_ro: Any) -> None:
+        self._connect_ro = connect_ro
+
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        with self._connect_ro() as conn:
+            if conn is None:
+                raise sqlite3.OperationalError("monitoring database unavailable")
+            yield conn
+
+
 class SecurityMonitoringUIReadModel:
     """Authenticated-UI read model. It never opens the monitoring DB for writes."""
 
@@ -149,6 +165,18 @@ class SecurityMonitoringUIReadModel:
             yield conn
         finally:
             conn.close()
+
+    def soc(self, *, cutoff_at: str | None = None) -> dict[str, Any]:
+        """Return the canonical bounded SOC projection from query-only monitoring data."""
+
+        if self.config_state != "configured" or self.config is None:
+            raise sqlite3.OperationalError("monitoring database unavailable")
+        cutoff = cutoff_at or datetime.now(timezone.utc).isoformat()
+        report = build_deterministic_report(
+            _QueryOnlyReportStore(self._connect_ro),
+            cutoff_at=cutoff,
+        )
+        return build_soc_read_model(report)
 
     def summary(self, *, now: datetime | None = None) -> dict[str, Any]:
         current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)

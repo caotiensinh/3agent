@@ -102,6 +102,12 @@ See `docs/WORKSPACE_DESIGN_PRINCIPLES.md`.
 
 This uses `/var/lib/workspace-public`, disables the execution gateway, and enables only brokered public research. It is never a substitute for the confidential config.
 
+### Lean profile — dual RTX 5090 + 32GB system RAM
+
+`config/workspace.lean-dual5090-32gb.json`
+
+Same security posture and model pool as Confidential Core; only the RAM/VRAM budget and worker-pool wiring are tuned for a host where GPU VRAM is abundant (2× RTX 5090) but system RAM is comparatively scarce (32GB). See `docs/WORKSPACE_LEAN_DUAL_5090_32GB_PROFILE.md` for the reasoning and `scripts/measure_ram_baseline.sh` to validate the effect on the real machine.
+
 ## CLI
 
 Primary commands:
@@ -153,9 +159,18 @@ If the package is already installed, install only the OS boundary:
 sudo WORKSPACE_INSTALL_DIR=/opt/workspace bash scripts/install_workspace_secure_boundary.sh
 ```
 
+## CI runner pool
+
+`scripts/setup_runner_pool.sh` registers a pool of GitHub Actions self-hosted runner
+instances on the workstation, split into a `general` lane (lightweight lint/test CI,
+parallel-safe) and an exclusive `gpu` lane (live-Ollama/benchmark CI, always serialized).
+See `docs/WORKSPACE_RUNNER_POOL.md`.
+
 ## Current capability model
 
 WorkSpace grows by **capabilities and reviewed skills**, not by adding a fixed number of agents. Current areas include research/evidence synthesis, data quality, presentation/report generation, daily reporting, coding/software-development guidance, language quality, local file/Office/PDF safety, skill approval, model/resource routing, dual RTX 5090 scheduling and deterministic citation/evidence validation.
+
+For the planned network/cybersecurity analyst subsystem, see `docs/SECURITY_ANALYST_HACKINGTOOL_DISTILLATION.md`. It defines the WorkSpace-native integration of closed security taxonomy, approved capability registry, curated-first runbooks, evidence-only analyst reasoning, continuous monitoring/correlation, bounded active diagnostics and tool promotion gates without vendoring a general offensive toolkit runtime.
 
 ## Repository transition
 

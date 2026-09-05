@@ -1,0 +1,66 @@
+name: security-normalized-evidence-cross-platform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/three_agent/security_monitoring/normalized_evidence.py'
+      - 'src/three_agent/security_monitoring/evidence_lineage.py'
+      - 'src/three_agent/security_monitoring/analyst_finding.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_audit.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_workflow.py'
+      - 'src/three_agent/security_monitoring/workflow_audit.py'
+      - 'tests/test_security_normalized_evidence.py'
+      - 'tests/test_security_evidence_lineage.py'
+      - 'tests/test_security_analyst_finding.py'
+      - 'tests/test_security_evidence_analysis_workflow.py'
+      - 'tests/test_security_evidence_pipeline_adversarial.py'
+      - 'tests/test_security_workflow.py'
+      - '.github/workflows/security-normalized-evidence-cross-platform.yml'
+  pull_request:
+    paths:
+      - 'src/three_agent/security_monitoring/normalized_evidence.py'
+      - 'src/three_agent/security_monitoring/evidence_lineage.py'
+      - 'src/three_agent/security_monitoring/analyst_finding.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_audit.py'
+      - 'src/three_agent/security_monitoring/evidence_analysis_workflow.py'
+      - 'src/three_agent/security_monitoring/workflow_audit.py'
+      - 'tests/test_security_normalized_evidence.py'
+      - 'tests/test_security_evidence_lineage.py'
+      - 'tests/test_security_analyst_finding.py'
+      - 'tests/test_security_evidence_analysis_workflow.py'
+      - 'tests/test_security_evidence_pipeline_adversarial.py'
+      - 'tests/test_security_workflow.py'
+      - '.github/workflows/security-normalized-evidence-cross-platform.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  normalized-evidence:
+    name: evidence-pipeline-adversarial (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install project dependencies
+        run: python -m pip install -e "."
+      - name: Compile evidence pipeline modules and tests
+        run: python -m compileall -q src/three_agent/security_monitoring/normalized_evidence.py src/three_agent/security_monitoring/evidence_lineage.py src/three_agent/security_monitoring/analyst_finding.py src/three_agent/security_monitoring/evidence_analysis_audit.py src/three_agent/security_monitoring/evidence_analysis_workflow.py tests/test_security_normalized_evidence.py tests/test_security_evidence_lineage.py tests/test_security_analyst_finding.py tests/test_security_evidence_analysis_workflow.py tests/test_security_evidence_pipeline_adversarial.py tests/test_security_workflow.py
+      - name: Run evidence pipeline and adversarial security tests
+        run: python -m unittest tests.test_security_normalized_evidence tests.test_security_evidence_lineage tests.test_security_analyst_finding tests.test_security_evidence_analysis_workflow tests.test_security_evidence_pipeline_adversarial tests.test_security_workflow -v

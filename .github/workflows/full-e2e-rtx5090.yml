@@ -1,0 +1,167 @@
+name: full-e2e-rtx5090
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type FULL_E2E to authorize one exact-head live physical acceptance run.
+        required: true
+        default: ''
+        type: string
+      model:
+        description: Existing local Ollama model to use. The workflow never pulls models.
+        required: true
+        default: qwen3:30b
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-e2e-rtx5090
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: exact-head live full E2E
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'FULL_E2E'
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    timeout-minutes: 180
+    steps:
+      - name: Checkout exact selected main SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          clean: true
+          persist-credentials: false
+
+      - name: Verify physical runtime prerequisites
+        shell: bash
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          set -Eeuo pipefail
+          for cmd in git jq curl python3 nvidia-smi ollama; do
+            command -v "$cmd" >/dev/null
+          done
+          nvidia-smi >/dev/null
+          gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)"
+          test "$gpu_count" -ge 2
+          curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:11434/api/tags >/dev/null
+          ollama list | awk 'NR>1 {print $1}' | grep -Fxq "$MODEL"
+          printf 'GPU_COUNT=%s\n' "$gpu_count" >> "$GITHUB_ENV"
+
+      - name: Prepare isolated exact-head runtime
+        shell: bash
+        env:
+          MODEL: ${{ inputs.model }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          installed="$(git rev-parse HEAD)"
+          test "$installed" = "$TARGET_SHA"
+          rm -rf .venv
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip setuptools wheel
+          .venv/bin/python -m pip install -e .
+          E2E_CONFIG="$RUNNER_TEMP/workspace-full-e2e-config.json"
+          cp config/test.example.json "$E2E_CONFIG"
+          .venv/bin/python - "$E2E_CONFIG" "$MODEL" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          payload.setdefault("llm", {})["model"] = sys.argv[2]
+          path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
+          chmod 600 "$E2E_CONFIG"
+          printf 'E2E_CONFIG=%s\n' "$E2E_CONFIG" >> "$GITHUB_ENV"
+
+      - name: Run exact-head full E2E and write sanitized receipt
+        shell: bash
+        env:
+          MODEL: ${{ inputs.model }}
+          TARGET_SHA: ${{ github.sha }}
+          E2E_RECEIPT: ${{ runner.temp }}/workspace-full-e2e-receipt.json
+        run: |
+          set -Eeuo pipefail
+          rm -rf data/acceptance
+          rm -f "$RUNNER_TEMP/full-e2e.stdout" "$RUNNER_TEMP/full-e2e.stderr"
+          set +e
+          THREE_AGENT_ROOT="$GITHUB_WORKSPACE" \
+          THREE_AGENT_MODEL="$MODEL" \
+          LOCAL_LLM_MODEL="$MODEL" \
+          THREE_AGENT_CONFIG="$E2E_CONFIG" \
+          THREE_AGENT_E2E_SKIP_UPDATE=1 \
+          THREE_AGENT_REQUIRED_RTX5090_COUNT=2 \
+          bash scripts/run_e2e_acceptance.sh \
+            >"$RUNNER_TEMP/full-e2e.stdout" \
+            2>"$RUNNER_TEMP/full-e2e.stderr"
+          e2e_rc=$?
+          set -e
+
+          evidence_dir="$(find data/acceptance -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort | tail -n1 || true)"
+          export E2E_RC="$e2e_rc"
+          export EVIDENCE_DIR="$evidence_dir"
+          .venv/bin/python - "$E2E_RECEIPT" <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          rc = int(os.environ["E2E_RC"])
+          target_sha = os.environ["TARGET_SHA"]
+          evidence_dir = Path(os.environ["EVIDENCE_DIR"]) if os.environ.get("EVIDENCE_DIR") else None
+          required = (
+              "system.json",
+              "workflow-result.json",
+              "workflow-manifest.json",
+              "research-handoff.json",
+              "presentation.json",
+              "daily-report.json",
+          )
+          hashes = {}
+          if evidence_dir and evidence_dir.is_dir():
+              for name in required:
+                  path = evidence_dir / name
+                  if path.is_file():
+                      hashes[name] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+          result = "PASS" if rc == 0 else ("BLOCKED" if rc == 2 else "FAIL")
+          if result == "PASS" and set(hashes) != set(required):
+              result = "FAIL"
+
+          receipt = {
+              "schema": "workspace-e2e/physical-acceptance-v1",
+              "target_sha": target_sha,
+              "model": os.environ["MODEL"],
+              "runner_name": os.environ.get("RUNNER_NAME", "unknown"),
+              "runner_os": os.environ.get("RUNNER_OS", "unknown"),
+              "runner_arch": os.environ.get("RUNNER_ARCH", "unknown"),
+              "rtx5090_count": int(os.environ["GPU_COUNT"]),
+              "exact_checkout_verified": True,
+              "ollama_model_preinstalled": True,
+              "model_pull_executed": False,
+              "driver_mutation_executed": False,
+              "e2e_exit_code": rc,
+              "local_evidence_file_hashes": hashes,
+              "raw_evidence_uploaded": False,
+              "raw_stdout_uploaded": False,
+              "raw_stderr_uploaded": False,
+              "result": result,
+          }
+          Path(os.sys.argv[1]).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          if result != "PASS":
+              raise SystemExit(3)
+          PY
+
+      - name: Upload sanitized Full E2E receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-e2e-receipt-${{ github.sha }}
+          path: ${{ runner.temp }}/workspace-full-e2e-receipt.json
+          if-no-files-found: warn
+          retention-days: 14

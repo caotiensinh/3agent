@@ -3,8 +3,8 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent import workspace_frontend_v13
-from three_agent.workspace_frontend_v13 import WORKSPACE_HTML_V13
+from three_agent import workspace_frontend_security, workspace_frontend
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class SecurityAnalystUISurfaceTests(unittest.TestCase):
@@ -21,17 +21,21 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
             'data-security-tab="reports"',
             'data-security-tab="admin"',
         ):
-            self.assertIn(token, WORKSPACE_HTML_V13)
+            self.assertIn(token, WORKSPACE_HTML)
 
-    def test_surface_is_lightweight_and_preserves_existing_chat_workflow_ui(self):
+    def test_surface_preserves_current_chat_and_connector_ui(self):
         for preserved in (
             "New chat",
             "Search chats",
             "Projects",
             "Workflow Studio",
             "workflowV4PrepareBtn",
+            "Figma",
+            "Canva",
+            "Gmail",
+            "workspaceSenderMark",
         ):
-            self.assertIn(preserved, WORKSPACE_HTML_V13)
+            self.assertIn(preserved, WORKSPACE_HTML)
         for forbidden in (
             "cdn.jsdelivr",
             "unpkg.com",
@@ -39,10 +43,10 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
             "node_modules",
             "new WebSocket",
         ):
-            self.assertNotIn(forbidden, WORKSPACE_HTML_V13)
+            self.assertNotIn(forbidden, WORKSPACE_HTML)
 
     def test_badge_is_aggregate_only_and_polling_is_visibility_aware(self):
-        source = inspect.getsource(workspace_frontend_v13)
+        source = inspect.getsource(workspace_frontend_security)
         self.assertIn("document.visibilityState==='visible'", source)
         self.assertIn("setInterval", source)
         self.assertIn("30000", source)
@@ -58,9 +62,8 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
 
-    def test_security_surface_exposes_no_mutation_action(self):
-        source = inspect.getsource(workspace_frontend_v13)
-        self.assertNotIn("/api/security/", source.replace("/api/security/summary", "").replace("/api/security/findings", "").replace("/api/security/network", "").replace("/api/security/events", "").replace("/api/security/assets", "").replace("/api/security/reports", "").replace("/api/security/admin", ""))
+    def test_security_surface_exposes_no_network_mutation_action(self):
+        source = inspect.getsource(workspace_frontend_security)
         for forbidden in (
             "remediate",
             "packet-capture",
@@ -69,6 +72,10 @@ class SecurityAnalystUISurfaceTests(unittest.TestCase):
             "asset-update",
         ):
             self.assertNotIn(forbidden, source.lower())
+        # V14 is composition-only; it must not add a second security execution path.
+        composed = inspect.getsource(workspace_frontend)
+        self.assertNotIn("/api/security/pcap/approve", composed)
+        self.assertNotIn("fetch('/api/security/", composed)
 
 
 if __name__ == "__main__":

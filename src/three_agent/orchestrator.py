@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from .adaptive_learning_runtime import build_runtime_learning_binding
 from .agents import DailyReportAgent, PresentationAgent, ResearchAgent
 from .artifacts import ArtifactManager
 from .config import AppConfig, legacy_model_policy
@@ -65,6 +66,41 @@ class Orchestrator:
         self.config = config
         self.store = TaskStore(config.database_path)
         self.artifacts = ArtifactManager(config.artifact_root)
+
+        # Phase 4D is a trusted production-consumption boundary. Disabled is an
+        # exact no-op; enabled mode opens only an existing authenticated learning
+        # generation through a read-only SQLite adapter. It never bootstraps,
+        # repairs, signs, promotes, or otherwise mutates learning state.
+        learning_binding = build_runtime_learning_binding(config)
+        self.learning_retrieval = learning_binding.gateway
+        self.learning_retrieval_domain = learning_binding.domain
+
+        self.inference_telemetry_path = os.getenv(
+            "WORKSPACE_INFERENCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "inference.jsonl"),
+        )
+        self.resource_telemetry_path = os.getenv(
+            "WORKSPACE_RESOURCE_TELEMETRY",
+            str(config.artifact_root / "activity" / "resource_events.jsonl"),
+        )
+        os.environ.setdefault("WORKSPACE_INFERENCE_TELEMETRY", self.inference_telemetry_path)
+        os.environ.setdefault("WORKSPACE_RESOURCE_TELEMETRY", self.resource_telemetry_path)
+        self.resource_events = ResourceEventRecorder(self.resource_telemetry_path)
+
+        raw_internet_gateway = InternetGateway(
+            config.internet_gateway, config.test_mode_full_access
+        )
+        raw_execution_gateway = ExecutionGateway(
+            config.execution_gateway, config.test_mode_full_access
+        )
+        self.internet_gateway = MeteredInternetGateway(
+            raw_internet_gateway, self.resource_events
+        )
+        self.execution_gateway = MeteredExecutionGateway(
+            raw_execution_gateway, self.resource_events
+        )
+        self.web_research = WebResearchClient(self.internet_gateway)
+        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
         self.inference_telemetry_path = os.getenv(
             "WORKSPACE_INFERENCE_TELEMETRY",
             str(config.artifact_root / "activity" / "inference.jsonl"),
@@ -208,6 +244,8 @@ class Orchestrator:
             self.research_llm,
             self.web_research,
             self.knowledge_gateway,
+            learning_retrieval=self.learning_retrieval,
+            learning_domain=self.learning_retrieval_domain,
         )
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
@@ -282,6 +320,12 @@ class Orchestrator:
             "runtime_validator_bridge_enabled": True,
             "runtime_validator_contract": "policy+evidence+schema",
             "runtime_validator_public_web": self.runtime_validator_bridge.public_web,
+            "adaptive_learning_retrieval_enabled": self.learning_retrieval is not None,
+            "adaptive_learning_retrieval_domain": (
+                self.learning_retrieval_domain
+                if self.learning_retrieval is not None
+                else None
+            ),
             "structured_output_mode": "ollama_native_json_schema",
             "inference_telemetry": self.inference_telemetry_path,
             "inference_telemetry_raw_prompt": False,
