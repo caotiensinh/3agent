@@ -34,6 +34,10 @@ jobs:
         run: python scripts/consolidate_workspace_frontend.py --apply
       - name: Preserve canonical enterprise governance UI composition
         run: python scripts/repair_canonical_frontend_governance.py
+      - name: Preserve canonical Dispatch UI boundary
+        run: python scripts/repair_canonical_dispatch_ui.py
+      - name: Validate canonical Dispatch UI boundary
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_dispatch_ui -v
       - name: Validate workspace frontend canonicalization
         run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_canonicalization -v
       - name: Revalidate frontend security against canonical frontend
