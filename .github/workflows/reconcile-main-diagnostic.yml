@@ -6,7 +6,7 @@ on:
       - reconcile/all-branches-v4-final-20260903
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   reconcile-current-main:
@@ -69,22 +69,17 @@ jobs:
               evaluation/golden_control_plane_v1.json \
               scripts/test_workspace_security_contract.sh \
               scripts/validate_execution_governance.py
-
-            # main still carries a historical v16 file; the PR already absorbed its
-            # owner-scoped context semantics into canonical chat_gateway.py.
             git rm -f src/three_agent/chat_gateway_v16.py
           fi
 
           test -z "$(git diff --name-only --diff-filter=U)"
           test "$(git rev-parse MERGE_HEAD)" = "$(git rev-parse origin/main)"
 
-          # Keep coherent current-main evaluation and high-assurance egress boundaries.
           git checkout origin/main -- \
             evaluation/adversarial_security_v1.json \
             tests/test_evaluation_lab.py \
             scripts/install_workspace_secure_boundary.sh
 
-          # The convergence-only migration is superseded by current-main policy.
           git rm -f scripts/repair_evaluation_golden_egress.py
           python - <<'PY'
           from pathlib import Path
@@ -98,8 +93,6 @@ jobs:
           PY
 
           git add -A
-          # Two upstream Markdown guides intentionally use trailing double-space
-          # hard line breaks; keep whitespace enforcement on all reconciled code.
           git diff --cached --check -- . \
             ':(exclude)docs/OPEN_SOURCE_DIAGNOSTIC_INFRA_AGENT_CATALOG_V0.1.md' \
             ':(exclude)docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md'
@@ -126,19 +119,18 @@ jobs:
             --json-output "$RUNNER_TEMP/reconcile-canonical-census.json" \
             --markdown-output "$RUNNER_TEMP/reconcile-canonical-census.md"
           python -m compileall -q src tests
-      - name: Recheck remote head then commit and push true merge
+      - name: Publish validated merge tree evidence
         shell: bash
         run: |
           git fetch origin "${GITHUB_REF_NAME}" main
           remote_head=$(git rev-parse "origin/${GITHUB_REF_NAME}")
           current_main=$(git rev-parse origin/main)
           merge_parent=$(git rev-parse MERGE_HEAD)
-          echo "expected_branch_head=${GITHUB_SHA}"
-          echo "remote_branch_head=${remote_head}"
-          echo "merge_parent=${merge_parent}"
-          echo "current_main=${current_main}"
+          tree_sha=$(git write-tree)
+          echo "VALIDATED_BRANCH_PARENT=${GITHUB_SHA}"
+          echo "VALIDATED_REMOTE_BRANCH_HEAD=${remote_head}"
+          echo "VALIDATED_MAIN_PARENT=${current_main}"
+          echo "VALIDATED_MERGE_HEAD=${merge_parent}"
+          echo "VALIDATED_TREE_SHA=${tree_sha}"
           test "$remote_head" = "${GITHUB_SHA}"
           test "$merge_parent" = "$current_main"
-          git commit -m "chore(reconcile): merge current main into PR 311"
-          git merge-base --is-ancestor "$current_main" HEAD
-          git push origin "HEAD:${GITHUB_REF_NAME}"
