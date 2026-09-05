@@ -44,6 +44,10 @@ jobs:
         run: python scripts/repair_canonical_chat_security_ui.py
       - name: Validate chat gateway canonicalization
         run: PYTHONPATH=src python -m unittest tests.test_chat_gateway_canonicalization -v
+      - name: Migrate simple-chat stage suppression acceptance
+        run: python scripts/repair_simple_chat_acceptance.py
+      - name: Validate simple-chat stage suppression acceptance
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_simple_chat_e2e_acceptance -v
       - name: Commit validated canonical consolidation
         shell: bash
         run: |
@@ -62,6 +66,8 @@ jobs:
             message="refactor(frontend): consolidate canonical workspace frontend"
           elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
             message="refactor(security): consolidate canonical frontend security"
+          elif git diff --cached --name-only | grep -Eq 'chat_simple_e2e_acceptance'; then
+            message="test(chat): validate canonical stage suppression semantics"
           else
             message="chore(governance): consolidate validated canonical modules"
           fi
