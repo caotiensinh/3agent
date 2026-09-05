@@ -70,6 +70,7 @@ src/three_agent/harness_memory.py
 src/three_agent/harness_task_compiler.py
 src/three_agent/human_report.py
 src/three_agent/inference_scope.py
+src/three_agent/internet_egress_consent.py
 src/three_agent/knowledge_cli.py
 src/three_agent/knowledge_gateway.py
 src/three_agent/knowledge_plane.py
