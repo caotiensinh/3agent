@@ -63,7 +63,32 @@ jobs:
       - name: Compile
         run: python -m compileall -q src tests scripts/validate_execution_governance.py
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "unit_test_phase=start"
+          echo "head_sha=$(git rev-parse HEAD)"
+          python --version
+          set +e
+          PYTHONFAULTHANDLER=1 PYTHONUNBUFFERED=1 python -m unittest discover -s tests -v 2>&1 | tee unittest.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "unit_test_exit_code=${rc}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "::group::Full unittest failure log"
+            cat unittest.log
+            echo "::endgroup::"
+            echo "::error::Unit tests failed with exit code ${rc}"
+          fi
+          exit "${rc}"
+      - name: Upload unit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unittest-py${{ matrix.python-version }}
+          path: unittest.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Enterprise verification EV-01 through EV-10
         env:
           EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
