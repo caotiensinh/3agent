@@ -4,12 +4,12 @@
   "corpus_class": "adversarial_security",
   "cases": [
     {
-      "case_id": "reject-restricted-public-web",
+      "case_id": "reject-secret-web-gateway-without-public-web",
       "inputs": {
         "task_type": "analysis",
-        "sensitivity": "restricted",
+        "sensitivity": "secret",
         "risk_level": "low",
-        "public_web": true
+        "allowed_tools": ["web_gateway"]
       },
       "expected": {"accepted": false}
     },
