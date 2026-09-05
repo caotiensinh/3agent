@@ -389,6 +389,7 @@ tests/test_harness_h3_context_rehydration.py
 tests/test_human_report.py
 tests/test_human_report_language.py
 tests/test_inference_scope.py
+tests/test_internet_egress_consent.py
 tests/test_internet_egress_policy.py
 tests/test_internet_gateway_no_bypass.py
 tests/test_internet_gateway_ssrf.py
