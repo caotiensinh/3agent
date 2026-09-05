@@ -1,4 +1,4 @@
-name: reconcile-main-diagnostic
+name: reconcile-main-validated
 
 on:
   push:
@@ -6,40 +6,134 @@ on:
       - reconcile/all-branches-v4-final-20260903
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose-main-merge:
+  reconcile-current-main:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Fetch live main
-        run: git fetch origin main
-      - name: Diagnose merge without mutation
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch live main and verify branch head
+        shell: bash
+        run: |
+          git fetch origin main "${GITHUB_REF_NAME}"
+          echo "branch_head=$(git rev-parse HEAD)"
+          echo "remote_branch_head=$(git rev-parse origin/${GITHUB_REF_NAME})"
+          echo "main_head=$(git rev-parse origin/main)"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse origin/${GITHUB_REF_NAME})" = "${GITHUB_SHA}"
+      - name: Merge live main and resolve the audited conflict set
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           set +e
           git merge --no-commit --no-ff origin/main
           merge_status=$?
           set -e
-          echo "branch_head=$(git rev-parse HEAD)"
-          echo "main_head=$(git rev-parse origin/main)"
-          echo "merge_status=$merge_status"
+
           if [ "$merge_status" -ne 0 ]; then
-            echo "::group::Unmerged paths"
-            git diff --name-status --diff-filter=U
-            echo "::endgroup::"
-            git status --short
-            git merge --abort || true
-            exit "$merge_status"
+            mapfile -t actual < <(git diff --name-only --diff-filter=U | sort)
+            expected=(
+              "config/workspace.execution-governance.json"
+              "evaluation/golden_control_plane_v1.json"
+              "scripts/test_workspace_security_contract.sh"
+              "scripts/validate_execution_governance.py"
+              "src/three_agent/chat_gateway_v16.py"
+            )
+            mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+            printf '%s\n' "${actual[@]}" > "$RUNNER_TEMP/actual-conflicts.txt"
+            printf '%s\n' "${expected_sorted[@]}" > "$RUNNER_TEMP/expected-conflicts.txt"
+            if ! diff -u "$RUNNER_TEMP/expected-conflicts.txt" "$RUNNER_TEMP/actual-conflicts.txt"; then
+              echo "Unexpected main reconciliation conflict set; refusing mutation." >&2
+              git merge --abort || true
+              exit 65
+            fi
+
+            git checkout --theirs -- \
+              config/workspace.execution-governance.json \
+              evaluation/golden_control_plane_v1.json \
+              scripts/test_workspace_security_contract.sh \
+              scripts/validate_execution_governance.py
+            git add \
+              config/workspace.execution-governance.json \
+              evaluation/golden_control_plane_v1.json \
+              scripts/test_workspace_security_contract.sh \
+              scripts/validate_execution_governance.py
+
+            # main still carries a historical v16 file; the PR already absorbed its
+            # owner-scoped context semantics into canonical chat_gateway.py.
+            git rm -f src/three_agent/chat_gateway_v16.py
           fi
-          echo "Merge is clean."
-          git diff --cached --stat
-          git merge --abort || true
+
+          test -z "$(git diff --name-only --diff-filter=U)"
+          test "$(git rev-parse MERGE_HEAD)" = "$(git rev-parse origin/main)"
+
+          # Keep the coherent current-main evaluation corpora/test contract.
+          git checkout origin/main -- \
+            evaluation/adversarial_security_v1.json \
+            tests/test_evaluation_lab.py
+
+          # The convergence-only migration is superseded by current-main policy.
+          git rm -f scripts/repair_evaluation_golden_egress.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/canonical-autoheal-safe.yml')
+          source = path.read_text(encoding='utf-8')
+          block = '''      - name: Migrate golden sanitized-egress expectations\n        run: python scripts/repair_evaluation_golden_egress.py\n'''
+          count = source.count(block)
+          if count != 1:
+              raise SystemExit(f'expected one temporary evaluation migration step, found {count}')
+          path.write_text(source.replace(block, '', 1), encoding='utf-8')
+          PY
+
+          git add -A
+          git diff --cached --check
+          echo "Resolved merge staged against main=$(git rev-parse origin/main)"
+      - name: Install merged runtime dependencies
+        run: python -m pip install -e .
+      - name: Validate reconciled governance evaluation and canonical chat contracts
+        shell: bash
+        run: |
+          PYTHONPATH="$PWD:$PWD/src" python -m unittest \
+            tests.test_execution_governance_contract \
+            tests.test_execution_governance \
+            tests.test_evaluation_lab \
+            tests.test_chat_gateway_canonicalization -v
+          bash scripts/test_workspace_security_contract.sh
+          if find src/three_agent -maxdepth 1 -type f -name 'chat_gateway_v*.py' -print -quit | grep -q .; then
+            echo "Versioned chat gateway file reintroduced by main reconciliation." >&2
+            exit 66
+          fi
+      - name: Validate canonical census and source compilation
+        shell: bash
+        run: |
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/reconcile-canonical-census.json" \
+            --markdown-output "$RUNNER_TEMP/reconcile-canonical-census.md"
+          python -m compileall -q src tests
+      - name: Recheck remote head then commit and push true merge
+        shell: bash
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}" main
+          remote_head=$(git rev-parse "origin/${GITHUB_REF_NAME}")
+          current_main=$(git rev-parse origin/main)
+          merge_parent=$(git rev-parse MERGE_HEAD)
+          echo "expected_branch_head=${GITHUB_SHA}"
+          echo "remote_branch_head=${remote_head}"
+          echo "merge_parent=${merge_parent}"
+          echo "current_main=${current_main}"
+          test "$remote_head" = "${GITHUB_SHA}"
+          test "$merge_parent" = "$current_main"
+          git commit -m "chore(reconcile): merge current main into PR 311"
+          git merge-base --is-ancestor "$current_main" HEAD
+          git push origin "HEAD:${GITHUB_REF_NAME}"
