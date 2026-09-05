@@ -334,12 +334,12 @@ class CustodyChain:
         first = self.events[0]
         previous: CustodyEvent | None = None
         for expected_index, event in enumerate(self.events, start=1):
-            event.validate()
-            if event.event_index != expected_index or event.case_id != first.case_id or event.evidence_id != first.evidence_id:
-                raise DFIRCaseEvidenceError("custody chain identity/index mismatch")
             expected_hash = None if previous is None else previous.event_sha256
             if event.previous_event_sha256 != expected_hash:
                 raise DFIRCaseEvidenceError("custody previous hash mismatch")
+            event.validate()
+            if event.event_index != expected_index or event.case_id != first.case_id or event.evidence_id != first.evidence_id:
+                raise DFIRCaseEvidenceError("custody chain identity/index mismatch")
             if previous is not None and event.occurred_at < previous.occurred_at:
                 raise DFIRCaseEvidenceError("custody time cannot move backwards")
             previous = event
