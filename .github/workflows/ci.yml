@@ -54,9 +54,18 @@ jobs:
       - name: Regression bisect N-R
         if: always()
         run: python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
-      - name: Regression bisect S-Z
+      - name: Regression bisect S
         if: always()
-        run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
+        run: python -m unittest discover -s tests -p 'test_s*.py' -v
+      - name: Regression bisect security A-M
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_security_[a-m]*.py' -v
+      - name: Regression bisect security N-Z
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_security_[n-z]*.py' -v
+      - name: Regression bisect T-Z
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[t-z]*.py' -v
       - name: Unit tests
         if: always()
         run: python -m unittest discover -s tests -v
