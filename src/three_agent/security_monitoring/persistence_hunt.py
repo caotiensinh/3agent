@@ -28,10 +28,10 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+\-]{0,255}$")
 
 def _identifier(value: str, field_name: str, *, max_len: int = 256) -> str:
     text = str(value or "").strip()
-    if not text or len(text) > max_len or not _ID_RE.fullmatch(text):
-        raise MonitoringContractError(f"{field_name} must be a compact identifier")
     if "://" in text or "\\" in text or "/" in text:
         raise MonitoringContractError(f"{field_name} must not expose a URL or filesystem path")
+    if not text or len(text) > max_len or not _ID_RE.fullmatch(text):
+        raise MonitoringContractError(f"{field_name} must be a compact identifier")
     return text
 
 
