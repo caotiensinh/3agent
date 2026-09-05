@@ -222,12 +222,40 @@ jobs:
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
         run: |
           $config = Join-Path $env:RUNNER_TEMP 'three-agent-install\config\local.json'
+          $rerunLog = Join-Path $env:RUNNER_TEMP "three-agent-bootstrap-rerun-$env:EXPECTED_HEAD.log"
+          $transcriptActive = $false
           Add-Content -Path $config -Value ''
           $before = (Get-FileHash -Algorithm SHA256 $config).Hash
           $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          $scriptText = Invoke-RestMethod -Uri $url
-          & ([ScriptBlock]::Create($scriptText))
-          if (-not $?) { throw 'Downloaded bootstrap failed during idempotency re-run' }
-          $after = (Get-FileHash -Algorithm SHA256 $config).Hash
-          if ($before -ne $after) { throw 'Existing local config was modified during re-deploy' }
+          try {
+            Start-Transcript -Path $rerunLog -Force | Out-Null
+            $transcriptActive = $true
+            $scriptText = Invoke-RestMethod -Uri $url
+            & ([ScriptBlock]::Create($scriptText))
+            if (-not $?) { throw 'Downloaded bootstrap failed during idempotency re-run' }
+            $after = (Get-FileHash -Algorithm SHA256 $config).Hash
+            if ($before -ne $after) { throw 'Existing local config was modified during re-deploy' }
+          }
+          catch {
+            if ($transcriptActive) {
+              Stop-Transcript | Out-Null
+              $transcriptActive = $false
+            }
+            Write-Host "::group::Bootstrap idempotency failure tail"
+            if (Test-Path $rerunLog) { Get-Content -Path $rerunLog -Tail 220 }
+            Write-Host "::endgroup::"
+            Write-Host "Bootstrap idempotency diagnostic failure: $($_.Exception.Message)"
+            throw
+          }
+          finally {
+            if ($transcriptActive) { Stop-Transcript | Out-Null }
+          }
           $global:LASTEXITCODE = 0
+      - name: Upload full Windows bootstrap transcripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bootstrap-transcripts-py${{ matrix.python }}
+          path: ${{ runner.temp }}\three-agent-bootstrap-*.log
+          if-no-files-found: warn
+          retention-days: 14
