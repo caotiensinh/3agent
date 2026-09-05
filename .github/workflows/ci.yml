@@ -62,7 +62,29 @@ jobs:
           retention-days: 14
       - name: Compile
         run: python -m compileall -q src tests scripts/validate_execution_governance.py
+      - name: Guardian flow binding regression
+        run: python -m unittest -v tests.test_security_operation_binding
+      - name: Guardian flow analysis regression
+        run: python -m unittest -v tests.test_security_flow_analysis_v09
+      - name: Guardian operation invocation regression
+        run: python -m unittest -v tests.test_security_operation_invocation
+      - name: Regression bisect A-D
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[a-d]*.py' -v
+      - name: Regression bisect E-H
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[e-h]*.py' -v
+      - name: Regression bisect I-M
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[i-m]*.py' -v
+      - name: Regression bisect N-R
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
+      - name: Regression bisect S-Z
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
       - name: Unit tests
+        if: always()
         shell: bash
         run: |
           set -o pipefail

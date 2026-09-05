@@ -55,11 +55,8 @@ jobs:
           if [ "$merge_status" -ne 0 ]; then
             mapfile -t actual < <(git diff --name-only --diff-filter=U | sort)
             expected=(
-              "config/workspace.execution-governance.json"
-              "evaluation/golden_control_plane_v1.json"
-              "scripts/test_workspace_security_contract.sh"
-              "scripts/validate_execution_governance.py"
-              "src/three_agent/chat_gateway_v16.py"
+              ".github/workflows/ci.yml"
+              "src/three_agent/security_monitoring/flow_analysis_invocation.py"
             )
             mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
             printf '%s\n' "${actual[@]}" > "$RUNNER_TEMP/actual-conflicts.txt"
@@ -70,17 +67,10 @@ jobs:
               exit 65
             fi
 
-            git checkout --theirs -- \
-              config/workspace.execution-governance.json \
-              evaluation/golden_control_plane_v1.json \
-              scripts/test_workspace_security_contract.sh \
-              scripts/validate_execution_governance.py
-            git add \
-              config/workspace.execution-governance.json \
-              evaluation/golden_control_plane_v1.json \
-              scripts/test_workspace_security_contract.sh \
-              scripts/validate_execution_governance.py
-            git rm -f src/three_agent/chat_gateway_v16.py
+            git checkout --ours -- .github/workflows/ci.yml
+            git add .github/workflows/ci.yml
+            git checkout --theirs -- src/three_agent/security_monitoring/flow_analysis_invocation.py
+            git add src/three_agent/security_monitoring/flow_analysis_invocation.py
           fi
 
           test -z "$(git diff --name-only --diff-filter=U)"
@@ -103,7 +93,7 @@ jobs:
       - name: Install merged runtime dependencies
         if: steps.state.outputs.already_reconciled != 'true'
         run: python -m pip install -e .
-      - name: Validate reconciled governance evaluation and canonical chat contracts
+      - name: Validate reconciled governance evaluation chat and Guardian contracts
         if: steps.state.outputs.already_reconciled != 'true'
         shell: bash
         run: |
@@ -116,7 +106,10 @@ jobs:
             tests.test_execution_governance_contract \
             tests.test_execution_governance \
             tests.test_evaluation_lab \
-            tests.test_chat_gateway_canonicalization -v
+            tests.test_chat_gateway_canonicalization \
+            tests.test_security_operation_binding \
+            tests.test_security_flow_analysis_v09 \
+            tests.test_security_operation_invocation -v
           bash scripts/test_workspace_security_contract.sh
           if find src/three_agent -maxdepth 1 -type f -name 'chat_gateway_v*.py' -print -quit | grep -q .; then
             echo "Versioned chat gateway file reintroduced by main reconciliation." >&2
