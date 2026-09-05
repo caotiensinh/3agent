@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -46,7 +47,7 @@ class _RedirectToMetadataOpener:
             302,
             "Found",
             {"Location": "https://169.254.169.254/latest/meta-data/"},
-            None,
+            BytesIO(b""),
         )
 
 
