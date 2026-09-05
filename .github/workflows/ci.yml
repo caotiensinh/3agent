@@ -36,6 +36,12 @@ jobs:
         run: python scripts/scan_skills.py
       - name: Compile
         run: python -m compileall -q src tests scripts/validate_execution_governance.py
+      - name: Guardian flow binding regression
+        run: python -m unittest -v tests.test_security_operation_binding
+      - name: Guardian flow analysis regression
+        run: python -m unittest -v tests.test_security_flow_analysis_v09
+      - name: Guardian operation invocation regression
+        run: python -m unittest -v tests.test_security_operation_invocation
       - name: Unit tests
         run: python -m unittest discover -s tests -v
       - name: Enterprise verification EV-01 through EV-10
