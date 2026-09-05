@@ -12,6 +12,7 @@ class _FakeService:
     def __init__(self) -> None:
         self.run_calls = 0
         self.asset_intelligence_calls = 0
+        self.evidence_summary_calls = 0
 
     def summary(self) -> dict[str, object]:
         return {
@@ -53,6 +54,51 @@ class _FakeService:
                 "management_hosts_exposed": False,
                 "credential_refs_exposed": False,
                 "allowed_tcp_ports_exposed": False,
+                "database_write": False,
+                "network_execution": False,
+                "collector_execution": False,
+                "packet_capture_execution": False,
+                "remediation_execution": False,
+            },
+        }
+
+    def evidence_summary(self) -> dict[str, object]:
+        self.evidence_summary_calls += 1
+        return {
+            "schema_version": "workspace-security-monitoring/recent-evidence-summary-v1",
+            "count_scope": "recent_bounded_records",
+            "max_records_per_stream": 100,
+            "database_available": True,
+            "health": "attention",
+            "reason_codes": ["HIGH_CRITICAL_FINDINGS"],
+            "observation_sample_count": 4,
+            "observation_evidence_linked_count": 3,
+            "event_sample_count": 2,
+            "event_evidence_linked_count": 1,
+            "finding_sample_count": 2,
+            "finding_evidence_linked_count": 2,
+            "report_sample_count": 1,
+            "open_finding_count": 2,
+            "high_critical_count": 1,
+            "latest_hourly": {
+                "status": "completed",
+                "coverage_pct": 100.0,
+                "expected_assets": 2,
+                "observed_assets": 2,
+                "observed_at": "2026-09-05T14:00:00+00:00",
+                "age_seconds": 60.0,
+            },
+            "contains_raw_evidence": False,
+            "contains_raw_credentials": False,
+            "authority": {
+                "aggregate_only": True,
+                "database_read_only": True,
+                "raw_evidence_exposed": False,
+                "asset_ids_exposed": False,
+                "source_ids_exposed": False,
+                "finding_ids_exposed": False,
+                "evidence_refs_exposed": False,
+                "bundle_refs_exposed": False,
                 "database_write": False,
                 "network_execution": False,
                 "collector_execution": False,
@@ -184,6 +230,56 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertFalse(authority["packet_capture_execution"])
         self.assertFalse(authority["remediation_execution"])
 
+    def test_evidence_summary_is_bounded_readonly_service_surface(self) -> None:
+        status, payload, headers = self.request(
+            "GET",
+            "/api/v1/security/monitoring/evidence-summary?limit=9999&asset_id=secret",
+        )
+        self.assertEqual(status, 200)
+        assert isinstance(payload, dict)
+        self.assertEqual(
+            payload["schema_version"],
+            "workspace-security-monitoring/recent-evidence-summary-v1",
+        )
+        self.assertEqual(payload["count_scope"], "recent_bounded_records")
+        self.assertEqual(payload["max_records_per_stream"], 100)
+        self.assertEqual(payload["observation_sample_count"], 4)
+        self.assertEqual(payload["observation_evidence_linked_count"], 3)
+        self.assertEqual(payload["event_sample_count"], 2)
+        self.assertEqual(payload["finding_sample_count"], 2)
+        self.assertEqual(payload["report_sample_count"], 1)
+        self.assertEqual(payload["open_finding_count"], 2)
+        self.assertEqual(payload["high_critical_count"], 1)
+        self.assertEqual(self.service.evidence_summary_calls, 1)
+        self.assertEqual(self.service.run_calls, 0)
+        self.assertEqual(headers["cache-control"], "no-store")
+
+        serialized = json.dumps(payload, sort_keys=True)
+        for sensitive_value in (
+            "asset-secret-01",
+            "source-secret-01",
+            "finding-secret-01",
+            "evidence://secret",
+            "bundle://secret",
+            "raw-token-secret",
+        ):
+            self.assertNotIn(sensitive_value, serialized)
+        authority = payload["authority"]
+        assert isinstance(authority, dict)
+        self.assertTrue(authority["aggregate_only"])
+        self.assertTrue(authority["database_read_only"])
+        self.assertFalse(authority["raw_evidence_exposed"])
+        self.assertFalse(authority["asset_ids_exposed"])
+        self.assertFalse(authority["source_ids_exposed"])
+        self.assertFalse(authority["finding_ids_exposed"])
+        self.assertFalse(authority["evidence_refs_exposed"])
+        self.assertFalse(authority["bundle_refs_exposed"])
+        self.assertFalse(authority["database_write"])
+        self.assertFalse(authority["network_execution"])
+        self.assertFalse(authority["collector_execution"])
+        self.assertFalse(authority["packet_capture_execution"])
+        self.assertFalse(authority["remediation_execution"])
+
     def test_readonly_execution_requires_csrf_and_explicit_confirmation(self) -> None:
         status, payload, _ = self.request(
             "POST",
@@ -252,8 +348,13 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         assert isinstance(payload, str)
         self.assertIn("WorkSpace Security Console", payload)
         self.assertIn("Asset Intelligence", payload)
-        self.assertIn("アセットID、管理ホスト、資格情報参照、TCPポート値は表示しません", payload)
+        self.assertIn("Evidence / Result History", payload)
+        self.assertIn(
+            "アセットID、ソースID、Finding ID、Evidence参照、Bundle参照、RAW値は表示しません",
+            payload,
+        )
         self.assertIn("/api/v1/security/monitoring/asset-intelligence", payload)
+        self.assertIn("/api/v1/security/monitoring/evidence-summary", payload)
         self.assertIn("読み取り専用監視を実行", payload)
         self.assertNotIn("__CSRF_TOKEN__", payload)
         self.assertIn("content-security-policy", headers)
