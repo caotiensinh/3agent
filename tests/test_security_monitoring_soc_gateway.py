@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import sqlite3
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
-from three_agent.chat_gateway_v18 import SecurityMonitoringHTTPHandler
+from three_agent.chat_gateway import SecurityMonitoringHTTPHandler
 from three_agent.security_monitoring.soc_read_model import SOC_READ_MODEL_SCHEMA_VERSION
 from three_agent.security_monitoring.storage import MonitoringStore
 from three_agent.security_monitoring.ui_read_model import (
@@ -160,14 +162,58 @@ class SecurityMonitoringSOCGatewayTests(unittest.TestCase):
             model.soc(cutoff_at="2026-08-31T17:30:00+09:00")
 
     def test_soc_route_is_authenticated_and_uses_query_only_read_model(self):
-        routes = inspect.getsource(SecurityMonitoringHTTPHandler.do_GET)
-        helper = inspect.getsource(SecurityMonitoringHTTPHandler._security_get)
-        self.assertIn('"/api/security/soc": "soc"', routes)
-        self.assertIn('view == "soc"', helper)
-        self.assertIn("model.soc()", helper)
-        self.assertIn("self._authorized_local()", helper)
-        for forbidden in ("build_deterministic_report(", "MonitoringStore(", "execute_capture"):
-            self.assertNotIn(forbidden, helper)
+        routes_tree = ast.parse(
+            textwrap.dedent(inspect.getsource(SecurityMonitoringHTTPHandler.do_GET))
+        )
+        route_maps = [
+            ast.literal_eval(node.value)
+            for node in ast.walk(routes_tree)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "security_routes"
+                for target in node.targets
+            )
+            and isinstance(node.value, ast.Dict)
+        ]
+        self.assertEqual(len(route_maps), 1)
+        self.assertEqual(route_maps[0].get("/api/security/soc"), "soc")
+
+        helper_tree = ast.parse(
+            textwrap.dedent(inspect.getsource(SecurityMonitoringHTTPHandler._security_get))
+        )
+        self.assertTrue(
+            any(
+                isinstance(node, ast.Compare)
+                and isinstance(node.left, ast.Name)
+                and node.left.id == "view"
+                and any(
+                    isinstance(comparator, ast.Constant) and comparator.value == "soc"
+                    for comparator in node.comparators
+                )
+                for node in ast.walk(helper_tree)
+            )
+        )
+
+        call_names: set[str] = set()
+        for node in ast.walk(helper_tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Name):
+                call_names.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                call_names.add(func.attr)
+                if isinstance(func.value, ast.Name):
+                    call_names.add(f"{func.value.id}.{func.attr}")
+
+        self.assertIn("model.soc", call_names)
+        self.assertIn("self._authorized_local", call_names)
+        for forbidden in (
+            "build_deterministic_report",
+            "MonitoringStore",
+            "execute_capture",
+        ):
+            self.assertNotIn(forbidden, call_names)
 
 
 if __name__ == "__main__":

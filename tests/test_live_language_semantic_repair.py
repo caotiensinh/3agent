@@ -8,7 +8,7 @@ from three_agent.chat_output_contract import (
     render_strict_structured_answer,
     strict_structured_schema,
 )
-from three_agent.chat_service_fidelity_v2 import ContractAwareProjectChatService
+from three_agent.chat_service_fidelity import ContractAwareProjectChatService
 
 
 class _NoopStore:

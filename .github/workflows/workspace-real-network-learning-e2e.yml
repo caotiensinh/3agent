@@ -1,0 +1,244 @@
+name: workspace-real-network-learning-e2e
+
+on:
+  push:
+    branches:
+      - test/read-only-lan-probe-20260901
+    paths:
+      - '.github/workflows/workspace-real-network-learning-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-network-learning-e2e:
+    name: Real LAN evidence to adaptive retrieval
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact test branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Observe approved devices and exercise adaptive learning on temp trust state
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          set -Eeuo pipefail
+          python3 <<'PY'
+          import hashlib
+          import json
+          import tempfile
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from three_agent.security_monitoring.contracts import AssetInventoryRecord
+          from three_agent.security_monitoring.policy import MonitoringPolicy, MonitoringPolicyEngine
+          from three_agent.security_monitoring.collectors import IcmpCollector, TcpConnectCollector
+          from three_agent.adaptive_learning_contract import (
+              EvidenceReference,
+              ExperienceRecord,
+              KnowledgeCandidate,
+              LearningValidationReceipt,
+          )
+          from three_agent.adaptive_learning_store import AdaptiveLearningStore
+          from three_agent.adaptive_learning_checkpoint import (
+              HmacCheckpointKeyring,
+              LearningCheckpointAuthority,
+              LearningOperatorGateway,
+              LearningStagingGateway,
+          )
+          from three_agent.adaptive_learning_retrieval import (
+              LearningRetrievalGateway,
+              LearningRetrievalQuery,
+          )
+
+          NOW = datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+          RUN_ID = 'run:real-lan-learning-e2e'
+          TASK_ID = 'task:real-lan-learning-e2e'
+
+          policy = MonitoringPolicy(
+              profile_id='real-lan-learning-e2e',
+              read_only=True,
+              allow_active_liveness=True,
+              max_workers=2,
+              timeout_seconds=2.0,
+              max_retries=0,
+              max_catch_up_runs=0,
+              allowed_capabilities=('icmp_echo', 'tcp_connect'),
+          ).validate()
+          engine = MonitoringPolicyEngine(policy)
+
+          assets = (
+              AssetInventoryRecord(
+                  asset_id='cisco-lan-switch-test', role='switch',
+                  management_host='192.168.11.116',
+                  collector_capabilities=('icmp_echo','tcp_connect'),
+                  allowed_tcp_ports=(443,), data_class='internal', enabled=True,
+              ).validate(),
+              AssetInventoryRecord(
+                  asset_id='lan-router-test', role='router',
+                  management_host='192.168.11.1',
+                  collector_capabilities=('icmp_echo','tcp_connect'),
+                  allowed_tcp_ports=(80,), data_class='internal', enabled=True,
+              ).validate(),
+          )
+
+          icmp = IcmpCollector(engine)
+          tcp = TcpConnectCollector(engine)
+          raw_observations = []
+          for asset, port in ((assets[0], 443), (assets[1], 80)):
+              for result in (
+                  icmp.collect(asset=asset, run_id=RUN_ID, observed_at=NOW),
+                  tcp.collect(asset=asset, port=port, run_id=RUN_ID, observed_at=NOW),
+              ):
+                  if result.failure_code:
+                      raise SystemExit(f'[FAIL] collector failure: {asset.asset_id}:{result.failure_code}')
+                  for obs in result.observations:
+                      raw_observations.append({
+                          'asset_id': obs.asset_id,
+                          'collector': obs.collector,
+                          'metric': obs.metric,
+                          'status': obs.status,
+                          'value': obs.value,
+                          'unit': obs.unit,
+                          'observed_at': obs.observed_at,
+                      })
+
+          if len(raw_observations) < 6:
+              raise SystemExit(f'[FAIL] expected >=6 observations, got {len(raw_observations)}')
+          if not all(o['status'] == 'ok' for o in raw_observations):
+              raise SystemExit('[FAIL] not all real LAN observations are ok')
+
+          evidence_bytes = json.dumps(raw_observations, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          evidence_sha = 'sha256:' + hashlib.sha256(evidence_bytes).hexdigest()
+
+          print('=== REAL NETWORK OBSERVATION ===')
+          print('observation_count =', len(raw_observations))
+          print('evidence_sha256   =', evidence_sha)
+          for o in raw_observations:
+              print(o)
+
+          evidence = EvidenceReference(
+              ref_id='evidence:real-lan-monitoring-e2e',
+              sha256=evidence_sha,
+              source_type='monitoring_export',
+              source_task_id=TASK_ID,
+              sensitivity='internal',
+              collection_mode='read_only',
+              created_at=NOW,
+              vendor_family='workspace-monitoring',
+              version='e2e-1',
+          ).validate()
+          experience = ExperienceRecord(
+              experience_id='experience:real-lan-monitoring-e2e',
+              domain='network',
+              task_id=TASK_ID,
+              outcome='verified_success',
+              sensitivity='internal',
+              summary=(
+                  'Inventory-bound ICMP and expected management-port TCP checks '
+                  'successfully established basic management-plane reachability '
+                  'for two approved LAN infrastructure assets.'
+              ),
+              evidence=(evidence,),
+              created_at=NOW,
+          ).validate()
+
+          candidate = KnowledgeCandidate.from_experiences(
+              experiences=(experience,),
+              candidate_id='candidate:real-lan-management-plane-check-v1',
+              domain='network',
+              kind='analytical_pattern',
+              title='Bounded LAN management-plane reachability check',
+              content=(
+                  'For an approved LAN infrastructure asset, combine one ICMP echo '
+                  'with one inventory-approved management-port TCP connect. '
+                  'If both succeed, treat the result only as evidence of basic '
+                  'management-plane reachability; do not infer configuration health, '
+                  'security posture, or service correctness without additional evidence.'
+              ),
+              scope='approved-inventory read-only LAN availability analysis',
+              sensitivity='internal',
+              risk_level='low',
+              ownership='learner_managed',
+              action='create',
+              execution_mode='read_only',
+              created_at=NOW,
+          )
+
+          # Persisted knowledge deliberately contains no literal test IP/MAC values.
+          persisted = json.dumps(candidate.to_payload(), ensure_ascii=False, sort_keys=True)
+          for forbidden in ('192.168.11.116', '192.168.11.1'):
+              if forbidden in persisted:
+                  raise SystemExit('[FAIL] raw infrastructure address entered knowledge content')
+
+          with tempfile.TemporaryDirectory() as tmp:
+              root = Path(tmp)
+              store = AdaptiveLearningStore(root / 'learning.db')
+              key = b'workspace-real-network-e2e-key-material-0001'
+              authority = LearningCheckpointAuthority(
+                  root / 'checkpoint' / 'journal.jsonl',
+                  root / 'trusted-head' / 'head.json',
+                  HmacCheckpointKeyring({'key:v1': key}, active_key_id='key:v1'),
+                  store_id='learning-store:real-network-e2e',
+              )
+              bootstrap = authority.bootstrap(store)
+              learner = LearningStagingGateway(store, authority)
+              operator = LearningOperatorGateway(store, authority)
+
+              learner.stage(candidate)
+
+              def receipt(level, human=False, domain=False):
+                  return LearningValidationReceipt(
+                      receipt_id=f'receipt:real-lan:{level}',
+                      candidate_id=candidate.candidate_id,
+                      candidate_sha256=candidate.sha256,
+                      checks={'SCHEMA': True, 'EVIDENCE': True, 'SECURITY': True},
+                      validator_ids=('validator:policy','validator:evidence'),
+                      evidence_ref_ids=candidate.evidence_ref_ids,
+                      evidence_hashes=candidate.evidence_hashes,
+                      domain_reviewer_id='reviewer:network-e2e' if domain else None,
+                      human_reviewer_id='reviewer:operator-e2e' if human else None,
+                      created_at=NOW,
+                  )
+
+              operator.promote(
+                  candidate.candidate_id,
+                  target_level='validated',
+                  receipt=receipt('validated'),
+              )
+              operator.promote(
+                  candidate.candidate_id,
+                  target_level='approved',
+                  receipt=receipt('approved', human=True, domain=True),
+              )
+              final_checkpoint = operator.verify()
+
+              context = LearningRetrievalGateway(store, authority).retrieve(
+                  LearningRetrievalQuery(
+                      query='LAN management plane reachability ICMP TCP check',
+                      domain='network',
+                      task_sensitivity='internal',
+                      max_items=4,
+                  )
+              )
+              matches = [i for i in context.items if i.item_id == candidate.candidate_id]
+              if len(matches) != 1 or matches[0].level != 'approved':
+                  raise SystemExit('[FAIL] approved real-network learning was not retrieved')
+
+              print('=== ADAPTIVE LEARNING RESULT ===')
+              print('checkpoint_bootstrap =', bootstrap.sequence)
+              print('checkpoint_final     =', final_checkpoint.sequence)
+              print('candidate_sha256     =', candidate.sha256)
+              print('retrieved_item_id    =', matches[0].item_id)
+              print('retrieved_level      =', matches[0].level)
+              print('retrieved_domain     =', matches[0].domain)
+              print('retrieved_mode       =', matches[0].execution_mode)
+              print('[PASS] real LAN evidence -> experience -> candidate -> validated -> approved -> retrieval')
+              print('[PASS] temporary trust state only; deployed learning store was not modified')
+          PY

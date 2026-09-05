@@ -5,6 +5,7 @@ from three_agent.handoff_security import (
     verify_handoff_security_metadata,
 )
 from three_agent.research_quality import build_handoff, clean_claims, clean_conflicts
+from three_agent.runtime_efficiency import sanitize_untrusted_payload
 
 
 class ResearchQualityTests(unittest.TestCase):

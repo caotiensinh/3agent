@@ -1,14 +1,26 @@
-from three_agent import chat_gateway_v17
-from three_agent.chat_gateway_v18 import CurrentRequestProjectChatService
-from three_agent.chat_gateway_v20 import IntelligenceAwareProjectChatService
+import inspect
+
+from three_agent import chat_gateway
+from three_agent.chat_gateway import ContinuitySecurityAwareProjectChatService
+from three_agent.chat_gateway import CurrentRequestProjectChatService
+from three_agent.chat_gateway import IntelligenceAwareProjectChatService
 
 
-def test_v20_binds_intelligence_aware_service_to_production_entrypoint():
+def test_v20_intelligence_layer_remains_in_canonical_service_chain():
     assert issubclass(
         IntelligenceAwareProjectChatService,
         CurrentRequestProjectChatService,
     )
-    assert chat_gateway_v17.ContractAwareProjectChatService is IntelligenceAwareProjectChatService
+    assert issubclass(
+        ContinuitySecurityAwareProjectChatService,
+        IntelligenceAwareProjectChatService,
+    )
+
+
+def test_production_entrypoint_uses_latest_canonical_service():
+    source = inspect.getsource(chat_gateway.main)
+    assert "ContinuitySecurityAwareProjectChatService" in source
+    assert "IntelligenceAwareProjectChatService(orchestrator" not in source
 
 
 def test_intelligence_service_keeps_readonly_reference_wrapper_contract():

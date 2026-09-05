@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from three_agent.chat_context import CONTEXT_MODE_FOLLOW_UP
-from three_agent.chat_context_v2 import build_conversation_context, classify_context_request
+from three_agent.chat_context import build_conversation_context, classify_context_request
 from three_agent.chat_fidelity import parse_chat_request
 
 

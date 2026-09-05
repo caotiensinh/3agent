@@ -297,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
         for artifact_path in presentation_payload.get("generated_artifacts", {}).values():
             print(artifact_path)
     elif args.command == "daily-report":
+        # Daily reports may aggregate many tasks; no single task scope is assigned.
         paths = orchestrator.daily_report(args.date, live=args.live)
         print("\n".join(str(path) for path in paths))
     elif args.command == "metrics":

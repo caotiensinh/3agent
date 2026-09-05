@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.chat_gateway_v8 import HTML_V8, ProjectKnowledgeHTTPHandler
-from three_agent.chat_gateway_v9 import HTML_V9, ProjectUIHTTPHandler
+from three_agent.chat_gateway import HTML_V8, ProjectKnowledgeHTTPHandler
+from three_agent.chat_gateway import HTML_V9, ProjectUIHTTPHandler
 
 
 class ProjectGatewayContractTests(unittest.TestCase):

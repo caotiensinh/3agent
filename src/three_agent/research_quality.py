@@ -21,7 +21,8 @@ _CONTEXT_RECALL_PROXY_SCOPE = "research_synthesis_context_budget"
 
 
 def _clean_text(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
+    sanitized, _ = sanitize_untrusted_payload(str(value or ""))
+    return re.sub(r"\s+", " ", str(sanitized)).strip()
 
 
 def _claim_key(value: str) -> str:
@@ -66,6 +67,10 @@ def clean_claims(items: Any, valid_source_ids: set[str]) -> tuple[list[dict], li
     The function is intentionally deterministic. The model may propose claims, but
     only claims with collected source IDs can pass through this gate. Optional
     evidence_quotes are retained for later verbatim/numerical validation.
+
+    Untrusted text is normalized before it can become a canonical claim. Embedded
+    role/instruction-like text is preserved as data; build_handoff() records the
+    corresponding security findings for the Agent-1 -> Agent-2 boundary.
     """
     accepted_by_key: dict[str, dict] = {}
     rejected: list[str] = []
@@ -496,7 +501,7 @@ def build_handoff(research: dict) -> dict:
     if constraint_gaps:
         conclusion = (
             "The collected evidence does not fully satisfy the request's core requirements: "
-            + ", ".join(constraint_gaps)
+            + ", ".join(_clean_text(item) for item in constraint_gaps)
             + ". Unsupported details remain unresolved and must not be treated as verified."
         )
 

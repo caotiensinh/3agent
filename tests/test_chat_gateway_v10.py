@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.chat_gateway_v10 import FourWayLoginHTTPHandler, HTML_V10
+from three_agent.chat_gateway import FourWayLoginHTTPHandler, HTML_V10
 
 
 class FourWayLoginGatewayTests(unittest.TestCase):

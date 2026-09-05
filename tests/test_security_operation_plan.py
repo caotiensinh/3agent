@@ -174,6 +174,28 @@ class SecurityOperationPlanTests(unittest.TestCase):
         for forbidden in ("argv", "shell", "command", "password", "credential_ref"):
             self.assertNotIn(forbidden, rendered)
 
+    def test_plan_validate_rejects_step_content_tamper_with_stale_step_id(self):
+        plan = self.compiler.compile(self.router.route("analyze DNS evidence"))
+        tampered_step = replace(plan.steps[0], capability_id="network.flow.analyze")
+        tampered_plan = replace(plan, steps=(tampered_step,))
+        with self.assertRaisesRegex(
+            SecurityOperationPlanError,
+            "step_id does not match deterministic content",
+        ):
+            tampered_plan.validate()
+
+    def test_plan_validate_rejects_content_tamper_with_stale_plan_fingerprint(self):
+        plan = self.compiler.compile(self.router.route("analyze DNS evidence"))
+        tampered_plan = replace(
+            plan,
+            reason_codes=plan.reason_codes + ("TAMPERED_REASON",),
+        )
+        with self.assertRaisesRegex(
+            SecurityOperationPlanError,
+            "plan_fingerprint does not match canonical plan content",
+        ):
+            tampered_plan.validate()
+
     def test_wrong_authority_helper_fails_closed(self):
         internal_plan = self.compiler.compile(self.router.route("analyze DNS evidence"))
         with self.assertRaisesRegex(

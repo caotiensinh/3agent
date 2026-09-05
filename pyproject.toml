@@ -9,7 +9,10 @@ description = "WorkSpace: local-first AI runtime for confidential internal busin
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "defusedxml>=0.7.1,<1",
+  "openpyxl>=3.1.5,<4",
   "Pillow>=10,<13",
+  "pypdf>=6.16.2,<7",
   "python-docx>=1.1.2,<2",
   "python-pptx>=1.0.2,<2",
   "reportlab>=4.2,<5",
@@ -28,9 +31,9 @@ workspace-benchmark-canonicalize = "three_agent.benchmark_artifact_canonicalize:
 workspace-benchmark-readiness = "three_agent.benchmark_readiness:main"
 workspace-benchmark-verify = "three_agent.benchmark_evidence:main"
 workspace-capability = "three_agent.capability_revocation:main"
-workspace-chat = "three_agent.chat_gateway_v22:main"
+workspace-chat = "three_agent.chat_gateway:main"
 workspace-chat-acceptance = "three_agent.chat_acceptance:main"
-workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"
+workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"
 workspace-egressd = "three_agent.egress_broker:main"
 workspace-eval = "three_agent.evaluation_lab:main"
 workspace-eval-efficiency-handoff = "three_agent.efficiency_evaluator_handoff:main"
@@ -47,8 +50,10 @@ workspace-retrieval = "three_agent.deterministic_retrieval_cli:main"
 workspace-security-monitor = "three_agent.security_monitoring_cli:main"
 workspace-security-pcap = "three_agent.security_pcap_runner:main"
 workspace-security-report = "three_agent.security_reporting_cli:main"
+workspace-security-scheduler = "three_agent.security_monitoring_scheduler:main"
+workspace-security-ui = "three_agent.security_local_console:main"
 three-agent = "three_agent.cli:main"
-three-agent-chat = "three_agent.chat_gateway_v22:main"
+three-agent-chat = "three_agent.chat_gateway:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -12,8 +12,8 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / ".github/workflows/live-chat-multiturn-acceptance.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("runs-on: [self-hosted, Linux, X64, workspace-benchmark]", text)
-        self.assertNotIn("runs-on: [self-hosted, Linux, X64, rtx5090]", text)
+        self.assertIn("runs-on: [self-hosted, Linux, X64, r9, rtx5090]", text)
+        self.assertNotIn("workspace-benchmark", text)
         self.assertIn("group: workspace-live-chat-multiturn-main-v3", text)
         self.assertIn("github.ref == 'refs/heads/main'", text)
         self.assertIn("branches: [main]", text)
@@ -107,19 +107,21 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
         text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('version = "1!0.0.2"', text)
         self.assertIn(
-            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance_v2:main"',
+            'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway_v21:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway_v21:main"', text)
-        self.assertTrue((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").is_file())
-        v18 = (ROOT / "src/three_agent/chat_gateway_v18.py").read_text(encoding="utf-8")
-        self.assertIn("CurrentRequestProjectChatService", v18)
-        self.assertIn("chat_context_v2", v18)
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v17.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v19.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v20.py").is_file())
-        self.assertTrue((ROOT / "src/three_agent/chat_gateway_v21.py").is_file())
+        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', text)
+
+        canonical_acceptance = ROOT / "src/three_agent/chat_multiturn_acceptance.py"
+        self.assertTrue(canonical_acceptance.is_file())
+        self.assertFalse((ROOT / "src/three_agent/chat_multiturn_acceptance_v2.py").exists())
+
+        canonical_gateway = ROOT / "src/three_agent/chat_gateway.py"
+        self.assertTrue(canonical_gateway.is_file())
+        gateway_text = canonical_gateway.read_text(encoding="utf-8")
+        self.assertIn("ContinuitySecurityAwareProjectChatService", gateway_text)
+        self.assertIn("from .chat_context import", gateway_text)
 
 
 if __name__ == "__main__":

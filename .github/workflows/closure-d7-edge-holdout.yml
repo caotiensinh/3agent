@@ -1,0 +1,118 @@
+name: closure-d7-edge-holdout
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-d7-edge-holdout.yml'
+      - 'evidence_tools/d7_edge_external.py'
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BASELINE_SHA: 38cd80c7c4ebe36bf5a22bc4a7cec625d66695c4
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
+    steps:
+      - name: Bind runner-local evidence root
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          echo "EVIDENCE_ROOT=$RUNNER_TEMP/workspace-d7-edge-$GITHUB_RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Checkout evidence evaluator only
+        uses: actions/checkout@v4
+        with:
+          ref: evidence/closure-rtx5090-20260830
+          path: evaluator
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout exact baseline
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BASELINE_SHA }}
+          path: baseline
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact external-evaluation lineage
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "$BASELINE_SHA"
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git -C baseline status --porcelain --untracked-files=no)"
+          test -z "$(git -C candidate status --porcelain --untracked-files=no)"
+
+      - name: Install exact candidate adapter without dependency resolution
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --no-deps -e candidate
+          workspace-eval-profile --help >/dev/null
+
+      - name: Generate runtime-only holdout and evaluate baseline vs candidate
+        shell: bash
+        env:
+          TOKEN_SEED: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$EVIDENCE_ROOT"
+          SEED="$(printf '%s:%s' "$TOKEN_SEED" "$GITHUB_RUN_ID" | sha256sum | awk '{print $1}')"
+          python3 evaluator/evidence_tools/d7_edge_external.py \
+            --candidate-root "$GITHUB_WORKSPACE/candidate" \
+            --baseline-root "$GITHUB_WORKSPACE/baseline" \
+            --candidate-ref "$CANDIDATE_SHA" \
+            --seed "$SEED" \
+            --run-id "$GITHUB_RUN_ID" \
+            --output-root "$EVIDENCE_ROOT"
+          test -s "$EVIDENCE_ROOT/result.json"
+          test -s "$EVIDENCE_ROOT/summary.json"
+
+      - name: Admit external result through repository adapter
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          workspace-eval-profile \
+            --profile "$GITHUB_WORKSPACE/candidate/evaluation/edge_large_context_profile_v1.json" \
+            --result "$EVIDENCE_ROOT/result.json" \
+            --evidence-id "d7-edge-external-${GITHUB_RUN_ID}" \
+            --output "$EVIDENCE_ROOT/promotion-evidence.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/promotion-evidence.json"
+          python3 - <<'PY'
+          import json, os
+          root = os.environ['EVIDENCE_ROOT']
+          summary = json.load(open(root + '/summary.json', encoding='utf-8'))
+          evidence = json.load(open(root + '/promotion-evidence.json', encoding='utf-8'))
+          assert summary['all_required_checks_passed'] is True
+          assert summary['raw_holdout_labels_published'] is False
+          assert evidence['security_passed'] is True
+          assert evidence['evaluator_attested'] is True
+          assert evidence['candidate_ref'] == os.environ['CANDIDATE_SHA']
+          PY
+
+      - name: Publish metadata-only external D7-05 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: d7-edge-external-${{ env.CANDIDATE_SHA }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ env.EVIDENCE_ROOT }}/result.json
+            ${{ env.EVIDENCE_ROOT }}/summary.json
+            ${{ env.EVIDENCE_ROOT }}/promotion-evidence.json

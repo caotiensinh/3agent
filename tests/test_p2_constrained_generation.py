@@ -7,17 +7,17 @@ from types import SimpleNamespace
 from unittest import mock
 
 from three_agent.chat_fidelity import direct_chat_answer_valid
-from three_agent.chat_gateway_v16 import (
+from three_agent.chat_gateway import (
     CONVERSATION_CONTEXT_POLICY_VERSION,
     FOLLOW_UP_REFERENCE_ANCHOR_POLICY,
 )
-from three_agent.chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
+from three_agent.chat_multiturn_acceptance import DiagnosticRecordingLLM
 from three_agent.chat_output_contract import (
     ChatOutputContract,
     render_strict_structured_answer,
     strict_structured_schema,
 )
-from three_agent.chat_service_fidelity_v2 import (
+from three_agent.chat_service_fidelity import (
     ContractAwareProjectChatService,
     _bounded_generation_num_predict,
     _strict_structured_mode,
@@ -309,7 +309,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         policy = " ".join(FOLLOW_UP_REFERENCE_ANCHOR_POLICY)
         self.assertEqual(
             CONVERSATION_CONTEXT_POLICY_VERSION,
-            "deterministic-reference-gated/v2",
+            "bounded-conversation-continuity/v3",
         )
         self.assertIn("semantic subject or concept", policy)
         self.assertIn("preserve the semantic label", policy)
@@ -360,7 +360,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         self.assertFalse(hasattr(evidence, "answer"))
 
     def test_production_service_wires_bounded_budget_and_structured_decoding(self):
-        text = (ROOT / "src/three_agent/chat_service_fidelity_v2.py").read_text(
+        text = (ROOT / "src/three_agent/chat_service_fidelity.py").read_text(
             encoding="utf-8"
         )
         self.assertIn(
@@ -381,7 +381,7 @@ class P2ConstrainedGenerationTests(unittest.TestCase):
         self.assertIn("Technical commands and identifiers may remain unchanged", text)
 
     def test_reference_policy_is_wired_only_into_follow_up_context(self):
-        text = (ROOT / "src/three_agent/chat_gateway_v16.py").read_text(
+        text = (ROOT / "src/three_agent/chat_gateway.py").read_text(
             encoding="utf-8"
         )
         self.assertIn("*FOLLOW_UP_REFERENCE_ANCHOR_POLICY", text)

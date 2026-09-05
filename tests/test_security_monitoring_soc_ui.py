@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import inspect
 import unittest
 
-from three_agent import chat_gateway_v19
-from three_agent.workspace_frontend_security_v2 import (
+from three_agent import chat_gateway
+from three_agent.workspace_frontend_security import (
     SOC_SECURITY_JS,
-    WORKSPACE_HTML_SECURITY_V2,
+    WORKSPACE_HTML_SECURITY_V3,
 )
 
 
@@ -22,7 +21,7 @@ class SecurityMonitoringSOCUITests(unittest.TestCase):
             "Administration",
             "Workflow Studio",
         ):
-            self.assertIn(token, WORKSPACE_HTML_SECURITY_V2)
+            self.assertIn(token, WORKSPACE_HTML_SECURITY_V3)
 
     def test_soc_ui_consumes_only_canonical_read_only_projection(self):
         for token in (
@@ -54,13 +53,10 @@ class SecurityMonitoringSOCUITests(unittest.TestCase):
         self.assertNotIn("innerHTML", SOC_SECURITY_JS)
         self.assertNotIn("insertAdjacentHTML", SOC_SECURITY_JS)
 
-    def test_current_gateway_serves_composed_soc_ui_without_new_handler(self):
-        source = inspect.getsource(chat_gateway_v19)
-        self.assertIn('data-security-tab="soc"', chat_gateway_v19._v17.HTML_V17)
-        self.assertIn("_BASE_HANDLER = _v18.SecurityMonitoringHTTPHandler", source)
-        self.assertIn("_v17.HTML_V17 =", source)
-        self.assertNotIn('"/api/security/soc"', source)
-        self.assertNotIn("build_soc_read_model", source)
+    def test_current_gateway_serves_canonical_composed_soc_ui(self):
+        self.assertEqual(chat_gateway.HTML_V17, WORKSPACE_HTML_SECURITY_V3)
+        self.assertIn('data-security-tab="soc"', chat_gateway.HTML_V17)
+        self.assertIn('data-security-tab="boundaries"', chat_gateway.HTML_V17)
 
 
 if __name__ == "__main__":

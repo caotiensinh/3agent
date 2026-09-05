@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from three_agent.chat_gateway_v14 import IntentAwareProjectChatService
+from three_agent.chat_gateway import IntentAwareProjectChatService
 
 
 class FakeKnowledgeGateway:

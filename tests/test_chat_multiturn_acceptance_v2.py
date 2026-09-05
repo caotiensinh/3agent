@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 
 from three_agent import chat_multiturn_acceptance as acceptance
-from three_agent.chat_service_fidelity_v2 import ContractAwareProjectChatService
-from three_agent.chat_multiturn_acceptance_v2 import (
+from three_agent.chat_service_fidelity import ContractAwareProjectChatService
+from three_agent.chat_multiturn_acceptance import (
     DiagnosticContractAwareProjectChatService,
     DiagnosticRecordingLLM,
     RuntimePromptEvidence,

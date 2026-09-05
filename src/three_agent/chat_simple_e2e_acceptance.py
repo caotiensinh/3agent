@@ -18,10 +18,10 @@ from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from .chat_acceptance import assert_local_model_endpoints
 from .chat_fidelity import response_language_matches
-from .chat_gateway_v17 import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler
+from .chat_gateway import WorkflowV4ContextApplication, WorkflowV4ContextHTTPHandler
 from .chat_multiturn_acceptance import _sha256, _wait, isolated_config
-from .chat_multiturn_acceptance_v2 import DiagnosticRecordingLLM
-from .chat_service_fidelity_v2 import ContractAwareProjectChatService
+from .chat_multiturn_acceptance import DiagnosticRecordingLLM
+from .chat_service_fidelity import ContractAwareProjectChatService
 from .config import AppConfig, load_config
 from .orchestrator import Orchestrator
 from .workspace_external_identity import (
@@ -29,7 +29,7 @@ from .workspace_external_identity import (
     ExternalIdentityStore,
     ExternalSessionAuthStore,
 )
-from .workspace_frontend_v12 import WORKSPACE_HTML_V12
+from .workspace_frontend import WORKSPACE_HTML
 
 SCHEMA_VERSION = "workspace-simple-chat-e2e/v2"
 FORBIDDEN_WORKFLOW_STAGES = frozenset({"research", "presentation", "daily_report"})
@@ -61,7 +61,7 @@ CASES: tuple[SimpleChatCase, ...] = (
 )
 
 
-def frontend_contract_errors(html: str = WORKSPACE_HTML_V12) -> tuple[str, ...]:
+def frontend_contract_errors(html: str = WORKSPACE_HTML) -> tuple[str, ...]:
     """Verify the shipped browser request and ordinary-chat rendering contract."""
 
     checks = (
@@ -76,7 +76,10 @@ def frontend_contract_errors(html: str = WORKSPACE_HTML_V12) -> tuple[str, ...]:
             "frontend_direct_chat_route_marker_missing",
         ),
         ("ui_route:directUi?'direct_chat':'workflow'", "frontend_direct_chat_ui_marker_missing"),
-        ("node.dataset.uiRoute!=='direct_chat'", "frontend_stage_suppression_missing"),
+        ("function shouldShowAnswerStages(job,route)", "frontend_stage_suppression_helper_missing"),
+        ("return route!=='direct_chat'", "frontend_stage_suppression_route_missing"),
+        ("shouldShowAnswerStages(job,d.dataset.uiRoute)", "frontend_initial_stage_suppression_missing"),
+        ("shouldShowAnswerStages(j,node.dataset.uiRoute)", "frontend_stage_suppression_missing"),
     )
     return tuple(code for marker, code in checks if marker not in html)
 

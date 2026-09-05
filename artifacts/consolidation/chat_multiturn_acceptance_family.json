@@ -1,0 +1,24 @@
+{
+  "schema": "workspace-source-consolidation/chat-multiturn-acceptance-v1",
+  "family": [
+    "src/three_agent/chat_multiturn_acceptance.py"
+  ],
+  "removed": [
+    "src/three_agent/chat_multiturn_acceptance_v2.py"
+  ],
+  "baseline_returncode": 1,
+  "final_returncode": 1,
+  "baseline_failures": [
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service",
+    "FAILED tests/test_p2_constrained_generation.py::P2ConstrainedGenerationTests::test_production_service_wires_bounded_budget_and_structured_decoding"
+  ],
+  "final_failures": [
+    "FAILED tests/test_chat_gateway_v16_contract.py::ChatGatewayV16ContractTests::test_v16_remains_context_rollback_layer_while_entrypoint_advances_to_v21",
+    "FAILED tests/test_live_multiturn_workflow_contract.py::LiveMultiturnWorkflowContractTests::test_package_routes_live_acceptance_to_current_contract_service",
+    "FAILED tests/test_p2_constrained_generation.py::P2ConstrainedGenerationTests::test_production_service_wires_bounded_budget_and_structured_decoding"
+  ],
+  "new_failures": [],
+  "removed_failures": [],
+  "remaining_variant_files": []
+}

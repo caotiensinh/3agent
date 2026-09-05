@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.workspace_frontend_v16 import (
-    WORKSPACE_HTML_V16,
+from three_agent.workspace_frontend import (
+    WORKSPACE_HTML,
     _insert_after_workflow_description,
 )
 
 
 class WorkflowDraftFrontendCompositionTests(unittest.TestCase):
     def test_workflow_draft_library_composes_exactly_once_on_semantic_studio_anchor(self) -> None:
-        html = WORKSPACE_HTML_V16
+        html = WORKSPACE_HTML
         for element_id in (
             "workflowDescription",
             "workflowLibraryBtn",
@@ -34,7 +34,7 @@ class WorkflowDraftFrontendCompositionTests(unittest.TestCase):
         self.assertIn("Draft = design only · execution authority unchanged", html)
 
     def test_workflow_draft_library_preserves_hardened_security_surfaces(self) -> None:
-        html = WORKSPACE_HTML_V16
+        html = WORKSPACE_HTML
         for token in (
             'data-security-tab="soc"',
             'id="securitySocView"',

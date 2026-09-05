@@ -9,6 +9,7 @@ DUAL_PORT="${THREE_AGENT_DUAL_OLLAMA_PORT:-11434}"
 TEST_MODEL="${THREE_AGENT_WORKER_TEST_MODEL:-qwen3:14b}"
 KEEP_ALIVE="${THREE_AGENT_MODEL_KEEP_ALIVE:-2m}"
 SELF_TEST=0
+RETIRE_DUAL_SERVICE=0
 CONFIG_BACKUP=""
 UNIT0_BACKUP=""
 UNIT1_BACKUP=""
@@ -19,6 +20,7 @@ COMPLETE=0
 for arg in "$@"; do
   case "$arg" in
     --self-test) SELF_TEST=1 ;;
+    --retire-dual-service) RETIRE_DUAL_SERVICE=1 ;;
     *) printf '[3Agent-GPUWorkers][ERROR] Unknown argument: %s\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -262,6 +264,72 @@ sleep 2
 systemctl --user is-active --quiet 3agent-chat.service || die "3Agent chat service did not recover"
 
 COMPLETE=1
+
+# Optional, opt-in avoid-duplicate-work step (see docs/WORKSPACE_LEAN_DUAL_5090_32GB_PROFILE.md).
+#
+# ollama.service (the pre-existing dual-GPU daemon on $DUAL_PORT) is only reachable by
+# OllamaWorkerPool as a fallback when a model does not fit the single-GPU VRAM budget of
+# either worker. If every model in the configured pool fits one RTX 5090, that fallback
+# path is never exercised and the resident dual-GPU daemon is pure duplicate overhead
+# (a third Ollama runtime plus its own model-metadata cache) on a host where system RAM,
+# not GPU VRAM, is the constrained resource. Retirement is opt-in and reversible: it only
+# proceeds after verifying every configured model actually fits, and it never touches the
+# already-verified GPU0/GPU1 worker units.
+retire_dual_service_if_safe() {
+  log "Evaluating whether ollama.service (dual-GPU fallback) can be retired for this model pool."
+
+  local vram_limit_percent
+  vram_limit_percent="$(jq -r '.model_policy.resource_control.max_vram_percent // 90' "$CONFIG_FILE")"
+  [[ "$vram_limit_percent" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { warn "Cannot read max_vram_percent from $CONFIG_FILE"; return 1; }
+
+  local -a gpu_total_mib
+  mapfile -t gpu_total_mib < <(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
+  (( ${#gpu_total_mib[@]} >= 2 )) || { warn "Could not read per-GPU VRAM totals"; return 1; }
+  local smallest_total_mib="${gpu_total_mib[0]}" candidate
+  for candidate in "${gpu_total_mib[@]}"; do
+    (( candidate < smallest_total_mib )) && smallest_total_mib="$candidate"
+  done
+  local budget_mib
+  budget_mib="$(awk -v t="$smallest_total_mib" -v p="$vram_limit_percent" 'BEGIN { printf "%d", (t * p / 100) }')"
+
+  local -a pool_models
+  mapfile -t pool_models < <(jq -r '
+      (.model_policy | [.fast_model, .research_model, .presentation_model, .report_model, .deep_model]) // []
+      | map(select(type == "string" and length > 0)) | unique[]
+    ' "$CONFIG_FILE" 2>/dev/null)
+  (( ${#pool_models[@]} > 0 )) || { warn "No configured model pool found in $CONFIG_FILE; leaving ollama.service running"; return 1; }
+
+  local tags_json
+  tags_json="$(curl -fsS "http://127.0.0.1:${GPU0_PORT}/api/tags")" || { warn "Could not query GPU0 worker for model sizes"; return 1; }
+
+  local model size_bytes size_mib
+  for model in "${pool_models[@]}"; do
+    size_bytes="$(jq -r --arg m "$model" '
+        [.models[] | select(.name == $m or (.name | split(":")[0]) == ($m | split(":")[0])) | .size][0] // empty
+      ' <<<"$tags_json")"
+    if [[ -z "$size_bytes" ]]; then
+      warn "Model $model has no size metadata on the GPU0 worker yet; leaving ollama.service running"
+      return 1
+    fi
+    size_mib="$(awk -v b="$size_bytes" 'BEGIN { printf "%d", (b / 1024 / 1024) * 1.15 }')"
+    if (( size_mib > budget_mib )); then
+      warn "Model $model (~${size_mib}MiB with safety margin) exceeds the single-GPU budget (~${budget_mib}MiB);" \
+        "the dual-GPU fallback is still required. Leaving ollama.service running."
+      return 1
+    fi
+    log "Model $model fits the single-GPU budget: ~${size_mib}MiB <= ~${budget_mib}MiB"
+  done
+
+  log "Every pooled model fits one RTX 5090's VRAM budget; ollama.service is redundant capacity for this pool."
+  sudo systemctl disable --now ollama.service
+  log "ollama.service (dual-GPU fallback) is now stopped and disabled. GPU0/GPU1 workers are unaffected."
+  log "Re-enable it any time with: sudo systemctl enable --now ollama.service"
+  return 0
+}
+
+if [[ "$RETIRE_DUAL_SERVICE" == "1" ]]; then
+  retire_dual_service_if_safe || warn "Dual-service retirement was skipped; ollama.service is left running and unchanged."
+fi
 trap - ERR
 log "FINAL PASS: GPU-affined worker pool enabled."
 log "GPU0 worker: http://127.0.0.1:${GPU0_PORT} -> ${GPU0_UUID}"

@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'scripts/bootstrap.sh'
-      - 'scripts/test_bootstrap_contract.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
@@ -30,10 +29,10 @@ on:
       - 'tests/test_vulnerability_intelligence*.py'
       - 'docs/knowledge/VULNERABILITY_INTELLIGENCE*.md'
       - 'src/three_agent/chat_context.py'
-      - 'src/three_agent/chat_gateway_v17.py'
+      - 'src/three_agent/chat_gateway.py'
       - 'src/three_agent/chat_output_contract.py'
-      - 'src/three_agent/chat_service_fidelity_v2.py'
-      - 'src/three_agent/chat_multiturn_acceptance_v2.py'
+      - 'src/three_agent/chat_service_fidelity.py'
+      - 'src/three_agent/chat_multiturn_acceptance.py'
       - 'tests/test_chat_output_contract.py'
       - 'tests/test_live_multiturn_workflow_contract.py'
       - 'pyproject.toml'
@@ -43,7 +42,6 @@ on:
   pull_request:
     paths:
       - 'scripts/bootstrap.sh'
-      - 'scripts/test_bootstrap_contract.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
       - 'scripts/update_code_safe.sh'
@@ -68,10 +66,10 @@ on:
       - 'tests/test_vulnerability_intelligence*.py'
       - 'docs/knowledge/VULNERABILITY_INTELLIGENCE*.md'
       - 'src/three_agent/chat_context.py'
-      - 'src/three_agent/chat_gateway_v17.py'
+      - 'src/three_agent/chat_gateway.py'
       - 'src/three_agent/chat_output_contract.py'
-      - 'src/three_agent/chat_service_fidelity_v2.py'
-      - 'src/three_agent/chat_multiturn_acceptance_v2.py'
+      - 'src/three_agent/chat_service_fidelity.py'
+      - 'src/three_agent/chat_multiturn_acceptance.py'
       - 'tests/test_chat_output_contract.py'
       - 'tests/test_live_multiturn_workflow_contract.py'
       - 'pyproject.toml'
@@ -94,7 +92,6 @@ jobs:
           sudo apt-get install -y shellcheck
       - name: Deployment entrypoint contracts
         run: |
-          bash scripts/test_bootstrap_contract.sh
           bash scripts/test_deploy_ubuntu_pc_contract.sh
           bash scripts/test_update_code_safe_contract.sh
           bash scripts/test_update_workspace_ubuntu_contract.sh
@@ -102,7 +99,6 @@ jobs:
         run: |
           shellcheck \
             scripts/bootstrap.sh \
-            scripts/test_bootstrap_contract.sh \
             scripts/deploy_ubuntu_pc.sh \
             scripts/test_deploy_ubuntu_pc_contract.sh \
             scripts/update_code_safe.sh \

@@ -1,0 +1,3 @@
+tests/test_multimodal_attachments_v4.py
+tests/test_chat_memory_attachments_v22.py
+tests/test_chat_memory_attachments_v3.py
