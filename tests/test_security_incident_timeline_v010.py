@@ -192,9 +192,9 @@ class SecurityIncidentTimelineV010Tests(unittest.TestCase):
         self.assertNotEqual(reviewed.fingerprint, default.fingerprint)
         coverage = reviewed.coverage()
         self.assertEqual(coverage.total_operations, 15)
-        self.assertEqual(coverage.bound_operations, 6)
-        self.assertEqual(coverage.unbound_operations, 9)
-        self.assertEqual(coverage.bound_percent, 40.0)
+        self.assertEqual(coverage.bound_operations, 7)
+        self.assertEqual(coverage.unbound_operations, 8)
+        self.assertEqual(coverage.bound_percent, 46.667)
 
         for capability in registry.list_approved():
             for operation in capability.operations:
