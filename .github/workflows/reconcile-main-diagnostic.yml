@@ -97,7 +97,11 @@ jobs:
           PY
 
           git add -A
-          git diff --cached --check
+          # Two upstream Markdown guides intentionally use trailing double-space
+          # hard line breaks; keep whitespace enforcement on all reconciled code.
+          git diff --cached --check -- . \
+            ':(exclude)docs/OPEN_SOURCE_DIAGNOSTIC_INFRA_AGENT_CATALOG_V0.1.md' \
+            ':(exclude)docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md'
           echo "Resolved merge staged against main=$(git rev-parse origin/main)"
       - name: Install merged runtime dependencies
         run: python -m pip install -e .
