@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from three_agent.security_monitoring.asset_onboarding import SecurityAssetOnboardingService
@@ -36,8 +37,9 @@ class WindowsSQLiteConnectionLifecycleTests(unittest.TestCase):
     def test_onboarding_readonly_context_releases_sqlite_handle(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             database_path = Path(td) / "monitoring.sqlite3"
-            with sqlite3.connect(database_path) as seed:
-                seed.execute("CREATE TABLE lifecycle_probe(id INTEGER PRIMARY KEY)")
+            with closing(sqlite3.connect(database_path)) as seed:
+                with seed:
+                    seed.execute("CREATE TABLE lifecycle_probe(id INTEGER PRIMARY KEY)")
 
             service = SecurityAssetOnboardingService(_ConfigManagerStub(database_path))
             conn = service._connect_readonly()
