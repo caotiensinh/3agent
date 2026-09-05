@@ -22,15 +22,26 @@ jobs:
         with:
           python-version: '3.12'
       - name: Fetch live main and verify branch head
+        id: state
         shell: bash
         run: |
           git fetch origin main "${GITHUB_REF_NAME}"
-          echo "branch_head=$(git rev-parse HEAD)"
-          echo "remote_branch_head=$(git rev-parse origin/${GITHUB_REF_NAME})"
-          echo "main_head=$(git rev-parse origin/main)"
-          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse origin/${GITHUB_REF_NAME})" = "${GITHUB_SHA}"
+          branch_head=$(git rev-parse HEAD)
+          remote_head=$(git rev-parse origin/${GITHUB_REF_NAME})
+          main_head=$(git rev-parse origin/main)
+          echo "branch_head=${branch_head}"
+          echo "remote_branch_head=${remote_head}"
+          echo "main_head=${main_head}"
+          test "${branch_head}" = "${GITHUB_SHA}"
+          test "${remote_head}" = "${GITHUB_SHA}"
+          if git merge-base --is-ancestor "${main_head}" HEAD; then
+            echo "already_reconciled=true" >> "$GITHUB_OUTPUT"
+            echo "Current main is already an ancestor; reconciliation is a validated no-op."
+          else
+            echo "already_reconciled=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Merge live main and resolve the audited conflict set
+        if: steps.state.outputs.already_reconciled != 'true'
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
@@ -75,16 +86,11 @@ jobs:
           test -z "$(git diff --name-only --diff-filter=U)"
           test "$(git rev-parse MERGE_HEAD)" = "$(git rev-parse origin/main)"
 
-          # Keep current-main policy/security semantics that are newer than the
-          # convergence branch, while preserving the branch's canonical chat tree.
           git checkout origin/main -- \
             evaluation/adversarial_security_v1.json \
             tests/test_evaluation_lab.py \
             scripts/install_workspace_secure_boundary.sh
 
-          # GitHub Actions tokens cannot push commits that alter workflow files.
-          # Preserve the exact PR-parent workflow tree during this true Git merge;
-          # workflow reconciliation is handled separately through the GitHub connector.
           git rm -r -f .github/workflows
           git checkout "${GITHUB_SHA}" -- .github/workflows
 
@@ -95,8 +101,10 @@ jobs:
             ':(exclude)docs/WORKSPACE_EXECUTION_GOVERNANCE_V0_0_1.md'
           echo "Resolved merge staged against main=$(git rev-parse origin/main)"
       - name: Install merged runtime dependencies
+        if: steps.state.outputs.already_reconciled != 'true'
         run: python -m pip install -e .
       - name: Validate reconciled governance evaluation and canonical chat contracts
+        if: steps.state.outputs.already_reconciled != 'true'
         shell: bash
         run: |
           python scripts/repair_evaluation_golden_egress.py
@@ -115,6 +123,7 @@ jobs:
             exit 66
           fi
       - name: Validate canonical census and source compilation
+        if: steps.state.outputs.already_reconciled != 'true'
         shell: bash
         run: |
           python scripts/canonical_module_guard.py \
@@ -122,6 +131,7 @@ jobs:
             --markdown-output "$RUNNER_TEMP/reconcile-canonical-census.md"
           python -m compileall -q src tests
       - name: Recheck remote head then commit and push true merge
+        if: steps.state.outputs.already_reconciled != 'true'
         shell: bash
         run: |
           git fetch origin "${GITHUB_REF_NAME}" main
