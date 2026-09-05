@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`workspace-security-ui` is the first user-facing adapter for the existing WorkSpace security monitoring backend. It exposes monitoring summary, readiness, privacy-safe asset intelligence, bounded evidence/result-history aggregates, and an explicitly confirmed read-only monitoring run through a local browser UI without creating a second execution authority.
+`workspace-security-ui` is the first user-facing adapter for the existing WorkSpace security monitoring backend. It exposes monitoring summary, readiness, privacy-safe asset intelligence, bounded evidence/result-history aggregates, bounded incident posture aggregates, and an explicitly confirmed read-only monitoring run through a local browser UI without creating a second execution authority.
 
 The console is intentionally narrow. It is a local operator surface, not a remote administration plane or a forensic evidence browser.
 
@@ -23,12 +23,15 @@ The console preserves the existing monitoring backend gates:
 - evidence/result history is server-bounded to at most 100 recent rows per internal stream before reduction to aggregate counts;
 - detailed read-model identifiers and references are reduced inside the canonical service and are never returned by the evidence-summary HTTP endpoint;
 - evidence/result history never exposes asset IDs, source IDs, finding IDs, evidence references, bundle references, manifest hashes, or raw observation values;
+- incident posture is delegated to `SecurityMonitoringService.incident_posture()` and uses the same query-only read model;
+- incident posture is server-bounded to at most 100 recent findings and reduces severity/status to fixed buckets before returning data;
+- incident posture never exposes finding IDs, asset references, evidence references, rule IDs, category values, raw evidence, credentials, or browser-controlled filters;
 - no CORS response is provided;
 - responses are `no-store`, framing is denied, and the HTML uses a restrictive Content Security Policy;
 - browser rendering uses `textContent` for monitoring-derived values;
 - the console does not expose remediation or write authority.
 
-The CLI and UI share `SecurityMonitoringService`, so readiness, asset intelligence, evidence projection, and execution policy are not reimplemented independently by each user interface.
+The CLI and UI share `SecurityMonitoringService`, so readiness, asset intelligence, evidence projection, incident posture, and execution policy are not reimplemented independently by each user interface.
 
 ## Start the console
 
@@ -124,6 +127,34 @@ The endpoint does **not** expose:
 
 Query-string values are not forwarded to the service and cannot select an asset, source, evidence reference, path, target, or page size. This endpoint performs no database writes, network execution, collector execution, packet capture, or remediation.
 
+### `GET /api/v1/security/monitoring/incident-posture`
+
+Returns a privacy-safe bounded incident posture projection from `SecurityMonitoringService.incident_posture()`.
+
+The service requests at most 100 recent findings from the existing query-only `SecurityMonitoringUIReadModel`. Detailed rows are reduced before the HTTP response is constructed. Severity and status values are normalized into fixed approved buckets; any unrecognized value collapses to `other` instead of being reflected to the browser.
+
+The response may contain:
+
+- bounded finding sample count;
+- open and closed sample counts;
+- fixed-bucket severity counts;
+- fixed-bucket status counts;
+- a derived attention level (`clear`, `low`, `medium`, `high`, or `critical`);
+- explicit authority flags proving the projection is aggregate-only and database-read-only.
+
+The endpoint does **not** expose:
+
+- finding IDs;
+- asset references;
+- evidence references;
+- rule IDs;
+- category values;
+- arbitrary stored severity/status strings;
+- raw evidence;
+- credentials or secret values.
+
+Query-string values are ignored by the handler and are not forwarded to the service. The browser therefore cannot select a finding, asset, evidence reference, page size, path, target, or execution option. This endpoint performs no database writes, network execution, collector execution, packet capture, or remediation.
+
 ### `POST /api/v1/security/monitoring/run-hourly`
 
 Requires:
@@ -150,15 +181,15 @@ This version does not expose:
 - generic operation invocation;
 - raw evidence downloads;
 - identifier-addressable evidence browsing;
-- browser-controlled evidence filters or pagination.
+- browser-controlled evidence or incident filters or pagination.
 
 Those capabilities must remain behind reviewed capability, permission, typed-input, privacy, and physical/user-confirmation boundaries before any future UI exposure.
 
 ## Next UI slices
 
-After the bounded evidence-summary slice is accepted, the safest next additions are:
+After the bounded incident-posture slice is accepted, the safest next additions are:
 
 1. privacy-reviewed structured flow-analysis evidence visualization;
-2. incident timeline/read-only reporting with identifier minimization;
-3. correlation and asset-health/risk posture summaries;
+2. correlation and asset-health/risk posture summaries;
+3. incident timeline/read-only reporting only after identifier minimization and time-bucketing are reviewed;
 4. explicit permission-request UI for any future active diagnostic operation.
