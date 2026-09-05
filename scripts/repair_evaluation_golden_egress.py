@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-CORPUS = Path("evaluation/golden_control_plane_v1.json")
+GOLDEN = Path("evaluation/golden_control_plane_v1.json")
+ADVERSARIAL = Path("evaluation/adversarial_security_v1.json")
 TEST = Path("tests/test_evaluation_lab.py")
-CASE_ID = "reject-confidential-public-web"
+GOLDEN_CASE_ID = "reject-confidential-public-web"
+ADVERSARIAL_CASE_ID = "reject-restricted-public-web"
 
-EXPECTED = {
+GOLDEN_EXPECTED = {
     "accepted": True,
     "network_scope": "allowlisted_egress",
     "allowed_tools": ["search_docs", "read_file", "web_gateway"],
@@ -20,7 +22,15 @@ EXPECTED = {
     "escalation_allowed": True,
 }
 
-OLD_TEST = '''    def test_rejected_policy_cases_are_golden_outcomes_not_errors(self):
+ADVERSARIAL_EXPECTED = {
+    "accepted": True,
+    "network_scope": "allowlisted_egress",
+    "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+    "validators": ["policy", "evidence"],
+    "evidence_required": True,
+}
+
+OLD_GOLDEN_TEST = '''    def test_rejected_policy_cases_are_golden_outcomes_not_errors(self):
         corpus = EvaluationCorpus.load(GOLDEN)
         rejected = [case for case in corpus.cases if case.expected == {"accepted": False}]
         self.assertGreaterEqual(len(rejected), 2)
@@ -31,7 +41,7 @@ OLD_TEST = '''    def test_rejected_policy_cases_are_golden_outcomes_not_errors(
             self.assertEqual(result["actual"], {"accepted": False})
 '''
 
-NEW_TEST = '''    def test_golden_policy_outcomes_track_sanitized_egress_and_no_llm_rejection(self):
+NEW_GOLDEN_TEST = '''    def test_golden_policy_outcomes_track_sanitized_egress_and_no_llm_rejection(self):
         corpus = EvaluationCorpus.load(GOLDEN)
         by_id = {case.case_id: case for case in corpus.cases}
 
@@ -48,46 +58,107 @@ NEW_TEST = '''    def test_golden_policy_outcomes_track_sanitized_egress_and_no_
         self.assertIn("web_gateway", confidential_web["actual"]["allowed_tools"])
 '''
 
+OLD_ADVERSARIAL_TEST = '''    def test_repository_adversarial_corpus_replays_all_expected_rejections(self):
+        corpus = EvaluationCorpus.load(ADVERSARIAL)
+        report = EvaluationReplay().replay(corpus, source_ref=SOURCE_REF)
+        self.assertTrue(report["passed"])
+        self.assertEqual(report["corpus_class"], "adversarial_security")
+        self.assertGreaterEqual(report["case_count"], 8)
+        self.assertTrue(all(case.expected == {"accepted": False} for case in corpus.cases))
+        self.assertTrue(all(item["actual"] == {"accepted": False} for item in report["cases"]))
+'''
 
-def repair_corpus() -> bool:
-    payload = json.loads(CORPUS.read_text(encoding="utf-8"))
+NEW_ADVERSARIAL_TEST = '''    def test_repository_adversarial_corpus_tracks_sanitized_restricted_egress_boundary(self):
+        corpus = EvaluationCorpus.load(ADVERSARIAL)
+        report = EvaluationReplay().replay(corpus, source_ref=SOURCE_REF)
+        self.assertTrue(report["passed"])
+        self.assertEqual(report["corpus_class"], "adversarial_security")
+        self.assertGreaterEqual(report["case_count"], 8)
+
+        cases_by_id = {case.case_id: case for case in corpus.cases}
+        results_by_id = {item["case_id"]: item for item in report["cases"]}
+        restricted = results_by_id["reject-restricted-public-web"]
+        self.assertTrue(restricted["actual"]["accepted"])
+        self.assertEqual(restricted["actual"]["network_scope"], "allowlisted_egress")
+        self.assertIn("web_gateway", restricted["actual"]["allowed_tools"])
+
+        rejected = [
+            case
+            for case in corpus.cases
+            if case.case_id != "reject-restricted-public-web"
+        ]
+        self.assertTrue(all(case.expected == {"accepted": False} for case in rejected))
+        self.assertTrue(
+            all(results_by_id[case.case_id]["actual"] == {"accepted": False} for case in rejected)
+        )
+        self.assertEqual(cases_by_id["reject-restricted-public-web"].expected["accepted"], True)
+'''
+
+
+def repair_case(path: Path, case_id: str, expected: dict[str, object]) -> bool:
+    payload = json.loads(path.read_text(encoding="utf-8"))
     cases = payload.get("cases")
     if not isinstance(cases, list):
-        raise SystemExit("golden corpus cases must be a list")
-    matches = [row for row in cases if isinstance(row, dict) and row.get("case_id") == CASE_ID]
+        raise SystemExit(f"{path} cases must be a list")
+    matches = [row for row in cases if isinstance(row, dict) and row.get("case_id") == case_id]
     if len(matches) != 1:
-        raise SystemExit(f"expected exactly one {CASE_ID} case, found {len(matches)}")
+        raise SystemExit(f"expected exactly one {case_id} case in {path}, found {len(matches)}")
     row = matches[0]
     current = row.get("expected")
-    if current == EXPECTED:
+    if current == expected:
         return False
     if current != {"accepted": False}:
-        raise SystemExit(f"unexpected existing expectation for {CASE_ID}: {current!r}")
-    row["expected"] = EXPECTED
-    CORPUS.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        raise SystemExit(f"unexpected existing expectation for {case_id}: {current!r}")
+    row["expected"] = expected
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return True
+
+
+def replace_test_block(source: str, old: str, new: str, label: str) -> tuple[str, bool]:
+    if new in source:
+        return source, False
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"expected exactly one stale {label} test block, found {count}")
+    return source.replace(old, new, 1), True
 
 
 def repair_test() -> bool:
     source = TEST.read_text(encoding="utf-8")
-    if NEW_TEST in source:
-        return False
-    count = source.count(OLD_TEST)
-    if count != 1:
-        raise SystemExit(f"expected exactly one stale evaluation test block, found {count}")
-    TEST.write_text(source.replace(OLD_TEST, NEW_TEST, 1), encoding="utf-8")
-    return True
+    source, golden_changed = replace_test_block(
+        source,
+        OLD_GOLDEN_TEST,
+        NEW_GOLDEN_TEST,
+        "golden evaluation",
+    )
+    source, adversarial_changed = replace_test_block(
+        source,
+        OLD_ADVERSARIAL_TEST,
+        NEW_ADVERSARIAL_TEST,
+        "adversarial evaluation",
+    )
+    if golden_changed or adversarial_changed:
+        TEST.write_text(source, encoding="utf-8")
+    return golden_changed or adversarial_changed
 
 
 def main() -> int:
-    corpus_changed = repair_corpus()
+    golden_changed = repair_case(GOLDEN, GOLDEN_CASE_ID, GOLDEN_EXPECTED)
+    adversarial_changed = repair_case(
+        ADVERSARIAL,
+        ADVERSARIAL_CASE_ID,
+        ADVERSARIAL_EXPECTED,
+    )
     test_changed = repair_test()
+    changed = golden_changed or adversarial_changed or test_changed
     print(
         json.dumps(
             {
-                "status": "updated" if corpus_changed or test_changed else "noop",
-                "case_id": CASE_ID,
-                "corpus_changed": corpus_changed,
+                "status": "updated" if changed else "noop",
+                "golden_case_id": GOLDEN_CASE_ID,
+                "adversarial_case_id": ADVERSARIAL_CASE_ID,
+                "golden_changed": golden_changed,
+                "adversarial_changed": adversarial_changed,
                 "test_changed": test_changed,
                 "policy": "sanitized_allowlisted_egress",
             },
