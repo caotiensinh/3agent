@@ -9,11 +9,15 @@ from pathlib import Path
 from typing import Any
 
 OLD_DEFAULT_FINGERPRINT = {
+    "product_name": "WorkSpace",
+    "environment": "test",
     "confidentiality_mode": "development-test",
     "test_mode_full_access": True,
+    "internet_enabled": True,
     "internet_mode": "legacy_test",
     "public_search_enabled": False,
     "allow_all_outbound_in_test": True,
+    "execution_enabled": True,
     "allow_all_commands_in_test": True,
 }
 
@@ -30,15 +34,19 @@ def _matches_old_generated_default(data: dict[str, Any]) -> bool:
     if not isinstance(internet, dict) or not isinstance(execution, dict):
         return False
     return (
-        str(data.get("confidentiality_mode", "")).strip().lower()
+        data.get("product_name") == OLD_DEFAULT_FINGERPRINT["product_name"]
+        and data.get("environment") == OLD_DEFAULT_FINGERPRINT["environment"]
+        and str(data.get("confidentiality_mode", "")).strip().lower()
         == OLD_DEFAULT_FINGERPRINT["confidentiality_mode"]
         and data.get("test_mode_full_access") is OLD_DEFAULT_FINGERPRINT["test_mode_full_access"]
+        and internet.get("enabled") is OLD_DEFAULT_FINGERPRINT["internet_enabled"]
         and str(internet.get("mode", "")).strip().lower()
         == OLD_DEFAULT_FINGERPRINT["internet_mode"]
         and internet.get("public_search_enabled")
         is OLD_DEFAULT_FINGERPRINT["public_search_enabled"]
         and internet.get("allow_all_outbound_in_test")
         is OLD_DEFAULT_FINGERPRINT["allow_all_outbound_in_test"]
+        and execution.get("enabled") is OLD_DEFAULT_FINGERPRINT["execution_enabled"]
         and execution.get("allow_all_commands_in_test")
         is OLD_DEFAULT_FINGERPRINT["allow_all_commands_in_test"]
     )
