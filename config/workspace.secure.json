@@ -11,7 +11,7 @@
     "base_url": "http://127.0.0.1:11434",
     "model": "qwen3:30b",
     "timeout_seconds": 1200,
-    "keep_alive": "20m"
+    "keep_alive": "2m"
   },
   "model_policy": {
     "enabled": true,
@@ -35,7 +35,14 @@
       "model_size_safety_factor": 1.15,
       "model_ram_overhead_factor": 0.15,
       "serialize_generation": true,
-      "reservation_ttl_seconds": 900
+      "reservation_ttl_seconds": 900,
+      "residency": {
+        "enabled": true,
+        "strategy": "on_demand",
+        "idle_ttl_seconds": 120,
+        "eviction_policy": "idle_lru",
+        "runtime_download": false
+      }
     }
   },
   "internet_gateway": {
