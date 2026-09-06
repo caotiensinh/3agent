@@ -1,6 +1,6 @@
 # Qwen3 Embedding Candidate Audit and Runtime Acceptance
 
-Status: candidate evidence + gated runtime acceptance workflow  
+Status: candidate evidence + reviewed runtime acceptance request  
 Approval state: **NOT APPROVED**  
 Runtime authority: **NONE until admitted to `config/models.approved.json` after review**
 
@@ -114,20 +114,46 @@ The retained directory is review staging, not the production model store and not
 - blocks Python socket connection attempts during load/inference;
 - emits `workspace.model-candidate-acceptance/v1` with `approval.approved=false`.
 
-## Gated real Qwen3 acceptance workflow
+## Reviewed real Qwen3 acceptance trigger
 
-The manual workflow is:
+The workflow is:
 
 ```text
 .github/workflows/qwen3-embedding-runtime-acceptance.yml
 ```
 
-It is intentionally `workflow_dispatch` only. It is not triggered by pull requests or normal pushes because the candidate is approximately 1.2 GB and real model acceptance is a deliberate review operation.
-
-The workflow executes this boundary:
+A reviewed request is stored at:
 
 ```text
-immutable candidate source
+config/model-candidates/qwen3-embedding-0.6b.acceptance-request.json
+```
+
+The request is deliberately non-authoritative:
+
+```json
+{
+  "status": "requested",
+  "gate": "offline_runtime_acceptance",
+  "production_approval": false,
+  "runtime_authority": false
+}
+```
+
+The workflow supports two deliberate triggers:
+
+1. `workflow_dispatch` for an explicit reviewed rerun;
+2. a push to `main` that changes exactly the Qwen3 acceptance-request path.
+
+It has no pull-request trigger. Ordinary branch pushes do not run the real model acceptance job. Therefore adding or changing the request must first pass normal PR review/CI; the expensive real acceptance executes from the resulting `main` commit after merge.
+
+Before any model download, the workflow checks that the request still matches the immutable candidate source repo/revision and that neither production approval nor runtime authority was granted by the request.
+
+The workflow then executes:
+
+```text
+reviewed non-authoritative request on main
+  -> immutable candidate source
+  -> prove Linux network-namespace isolation is available
   -> download exact allowlist once
   -> audit exact files + SHA-256 + size
   -> compare regenerated evidence with pinned source anchors
@@ -139,7 +165,7 @@ immutable candidate source
   -> upload JSON evidence/receipt only
 ```
 
-Before downloading the model, the workflow proves that the hosted runner can create a network namespace containing no external interface. If that isolation prerequisite is unavailable, the workflow fails before the expensive model download.
+If network namespace isolation is unavailable, the workflow fails before the expensive model download.
 
 The workflow artifact must contain only:
 
