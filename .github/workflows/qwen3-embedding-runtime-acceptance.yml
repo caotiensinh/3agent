@@ -1,0 +1,198 @@
+name: qwen3-embedding-runtime-acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qwen3-embedding-runtime-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONUNBUFFERED: '1'
+  HF_HOME: ${{ runner.temp }}/workspace-hf-home
+  SENTENCE_TRANSFORMERS_HOME: ${{ runner.temp }}/workspace-sentence-transformers
+  HF_HUB_DISABLE_TELEMETRY: '1'
+
+jobs:
+  runtime-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact dispatch ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install review and embedding runtime dependencies
+        run: python -m pip install -e '.[model-provisioning,embedding-runtime]'
+
+      - name: Read immutable candidate identity
+        id: candidate
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          source = json.loads(
+              Path('config/model-candidates/qwen3-embedding-0.6b.source.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if source.get('status') != 'candidate_only':
+              raise SystemExit('candidate source must remain candidate_only')
+          approval = source.get('approval')
+          if not isinstance(approval, dict) or approval.get('approved') is not False:
+              raise SystemExit('candidate source must remain explicitly unapproved')
+          print(f"repo_id={source['repo_id']}")
+          print(f"revision={source['revision']}")
+          print(f"artifact_file={source['artifact_file']}")
+          PY
+
+      - name: Download once and retain only the audited snapshot
+        shell: bash
+        run: |
+          python scripts/audit_hf_model_candidate.py \
+            --repo-id '${{ steps.candidate.outputs.repo_id }}' \
+            --revision '${{ steps.candidate.outputs.revision }}' \
+            --artifact-file '${{ steps.candidate.outputs.artifact_file }}' \
+            --output "$RUNNER_TEMP/qwen3-embedding-candidate-evidence.json" \
+            --snapshot-output "$RUNNER_TEMP/qwen3-embedding-verified-snapshot"
+
+      - name: Verify audited evidence against pinned source anchors
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = json.loads(
+              Path('config/model-candidates/qwen3-embedding-0.6b.source.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          evidence = json.loads(
+              (Path.home() / 'work' / '_temp' / 'qwen3-embedding-candidate-evidence.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if evidence.get('schema') != 'workspace.model-candidate-evidence/v1':
+              raise SystemExit('unexpected candidate evidence schema')
+          if evidence.get('status') != 'candidate_only':
+              raise SystemExit('candidate evidence must remain candidate_only')
+          if evidence.get('runtime_download') is not False:
+              raise SystemExit('candidate evidence must keep runtime_download=false')
+          approval = evidence.get('approval')
+          if not isinstance(approval, dict) or approval.get('approved') is not False:
+              raise SystemExit('candidate evidence must remain explicitly unapproved')
+          if evidence.get('repo_id') != source.get('repo_id'):
+              raise SystemExit('candidate repo_id drift detected')
+          if evidence.get('revision') != source.get('revision'):
+              raise SystemExit('candidate revision drift detected')
+
+          by_path = {item['path']: item for item in evidence.get('artifacts', [])}
+          for relative, anchor in source.get('expected_anchors', {}).items():
+              observed = by_path.get(relative)
+              if observed is None:
+                  raise SystemExit(f'missing anchored artifact: {relative}')
+              expected_sha = anchor.get('sha256')
+              if observed.get('sha256') != expected_sha:
+                  raise SystemExit(
+                      f'candidate anchor mismatch for {relative}: '
+                      f"expected {expected_sha}, got {observed.get('sha256')}"
+                  )
+          print('candidate evidence matches all pinned source anchors')
+          PY
+
+      - name: Run acceptance with operating-system network egress removed
+        shell: bash
+        env:
+          HF_HUB_OFFLINE: '1'
+          TRANSFORMERS_OFFLINE: '1'
+          HF_HUB_DISABLE_TELEMETRY: '1'
+        run: |
+          PYTHON_BIN="$(command -v python)"
+          sudo --preserve-env=HF_HUB_OFFLINE,TRANSFORMERS_OFFLINE,HF_HUB_DISABLE_TELEMETRY,HF_HOME,SENTENCE_TRANSFORMERS_HOME \
+            unshare --net -- \
+            "$PYTHON_BIN" scripts/accept_hf_model_candidate.py \
+              --evidence "$RUNNER_TEMP/qwen3-embedding-candidate-evidence.json" \
+              --snapshot "$RUNNER_TEMP/qwen3-embedding-verified-snapshot" \
+              --model-id qwen3-embedding-0.6b \
+              --dimensions 1024 \
+              --batch-size 2 \
+              --output "$RUNNER_TEMP/qwen3-embedding-runtime-acceptance.json"
+
+      - name: Validate non-authoritative acceptance receipt
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = json.loads(
+              (Path(os.environ['RUNNER_TEMP']) / 'qwen3-embedding-runtime-acceptance.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          source = json.loads(
+              Path('config/model-candidates/qwen3-embedding-0.6b.source.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if receipt.get('schema') != 'workspace.model-candidate-acceptance/v1':
+              raise SystemExit('unexpected runtime acceptance schema')
+          if receipt.get('status') != 'runtime_acceptance_pass':
+              raise SystemExit('runtime acceptance did not pass')
+          approval = receipt.get('approval')
+          if not isinstance(approval, dict) or approval.get('approved') is not False:
+              raise SystemExit('acceptance receipt must not grant model approval')
+          candidate = receipt.get('candidate', {})
+          if candidate.get('repo_id') != source.get('repo_id'):
+              raise SystemExit('acceptance receipt repo_id drift detected')
+          if candidate.get('revision') != source.get('revision'):
+              raise SystemExit('acceptance receipt revision drift detected')
+          runtime = receipt.get('runtime', {})
+          if runtime.get('runtime_download') is not False:
+              raise SystemExit('runtime acceptance must forbid runtime download')
+          if runtime.get('python_socket_attempts') != 0:
+              raise SystemExit('runtime acceptance observed a Python socket attempt')
+          if runtime.get('HF_HUB_OFFLINE') != '1':
+              raise SystemExit('HF_HUB_OFFLINE was not authoritative during acceptance')
+          if runtime.get('TRANSFORMERS_OFFLINE') != '1':
+              raise SystemExit('TRANSFORMERS_OFFLINE was not authoritative during acceptance')
+          if receipt.get('checks', {}).get('residency_eviction') is not True:
+              raise SystemExit('residency eviction acceptance did not pass')
+          print('runtime acceptance receipt is valid and remains non-authoritative')
+          PY
+
+      - name: Delete model bytes and local model caches
+        if: always()
+        shell: bash
+        run: |
+          rm -rf \
+            "$RUNNER_TEMP/qwen3-embedding-verified-snapshot" \
+            "$HF_HOME" \
+            "$SENTENCE_TRANSFORMERS_HOME"
+
+      - name: Upload evidence receipts only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen3-embedding-runtime-acceptance-evidence
+          path: |
+            ${{ runner.temp }}/qwen3-embedding-candidate-evidence.json
+            ${{ runner.temp }}/qwen3-embedding-runtime-acceptance.json
+          if-no-files-found: warn
+          retention-days: 14
