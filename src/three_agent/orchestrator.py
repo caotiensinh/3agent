@@ -10,7 +10,7 @@ from .agents import DailyReportAgent, PresentationAgent, ResearchAgent
 from .artifacts import ArtifactManager
 from .config import AppConfig, legacy_model_policy
 from .gateways import ExecutionGateway, InternetGateway
-from .knowledge_gateway import KnowledgeGateway
+from .knowledge_gateway import KnowledgeGatewayV3
 from .llm import OllamaClient
 from .metered_runtime import (
     MeteredAdaptiveOllamaClient,
@@ -100,7 +100,7 @@ class Orchestrator:
             raw_execution_gateway, self.resource_events
         )
         self.web_research = WebResearchClient(self.internet_gateway)
-        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.knowledge_gateway = KnowledgeGatewayV3(config.artifact_root, self.web_research)
         self.inference_telemetry_path = os.getenv(
             "WORKSPACE_INFERENCE_TELEMETRY",
             str(config.artifact_root / "activity" / "inference.jsonl"),
@@ -126,7 +126,7 @@ class Orchestrator:
             raw_execution_gateway, self.resource_events
         )
         self.web_research = WebResearchClient(self.internet_gateway)
-        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.knowledge_gateway = KnowledgeGatewayV3(config.artifact_root, self.web_research)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
