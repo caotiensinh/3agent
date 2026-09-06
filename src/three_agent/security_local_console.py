@@ -210,6 +210,7 @@ function renderCapabilityCenter(matrix) {
   byId("cap-ready").textContent=text(count("ready"));
   byId("cap-gated").textContent=text(count("gated"));
   byId("cap-disabled").textContent=text(count("disabled")+count("not_configured"));
+  for (const id of ["cap-active","cap-ready","cap-gated","cap-disabled"]) { byId(id).className="value"; }
   renderTable("cap-read-table",[["name","Capability"],["state","State"],["reason_code","Reason"]],readSurfaces);
   renderTable("cap-operations-table",[["name","Operation"],["state","State"],["reason_code","Reason"],["user_confirmation_required","Confirmation"]],operations);
   renderTable("cap-collectors-table",[["name","Collector"],["state","State"],["reason_code","Reason"],["configured_asset_count","Approved assets"],["user_confirmation_required","Confirmation"]],collectors);
