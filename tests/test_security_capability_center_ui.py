@@ -58,8 +58,11 @@ class SecurityCapabilityCenterUITests(unittest.TestCase):
         self.assertIn("Remediation", page)
         self.assertIn("textContent", page)
         self.assertIn('td.textContent="No data"', page)
-        self.assertIn('const message="Backend connection error: "+error', page)
+        self.assertIn("Promise.allSettled", page)
+        self.assertIn("surfaceUnavailable", page)
+        self.assertIn('clearAnalystSurface(surfaceUnavailable("analyst-snapshot"))', page)
         self.assertIn('byId("run").disabled=true', page)
+        self.assertNotIn('const message="Backend connection error: "+error', page)
         self.assertNotIn("innerHTML", page)
         self.assertNotIn("fetch(\"/api/v1/security/monitoring/capability", page)
 
