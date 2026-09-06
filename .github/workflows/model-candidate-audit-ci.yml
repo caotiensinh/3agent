@@ -22,8 +22,6 @@ jobs:
     env:
       HF_HUB_DISABLE_TELEMETRY: '1'
       HF_HUB_DISABLE_PROGRESS_BARS: '1'
-      HF_HOME: ${{ runner.temp }}/workspace-hf-home
-      EVIDENCE_DIR: ${{ runner.temp }}/workspace-model-evidence
       SOURCE_FILE: config/model-candidates/qwen3-embedding-0.6b.source.json
     steps:
       - name: Checkout exact candidate head
@@ -31,6 +29,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+
+      - name: Initialize ephemeral audit paths
+        shell: bash
+        run: |
+          printf 'HF_HOME=%s\n' "$RUNNER_TEMP/workspace-hf-home" >> "$GITHUB_ENV"
+          printf 'EVIDENCE_DIR=%s\n' "$RUNNER_TEMP/workspace-model-evidence" >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
