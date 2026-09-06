@@ -1,6 +1,5 @@
 import hashlib
 import importlib.util
-import json
 import socket
 import sys
 import tempfile
@@ -36,7 +35,7 @@ def _sha256(data: bytes) -> str:
 
 def _prepare_snapshot(root: Path):
     snapshot = root / "snapshot"
-    snapshot.mkdir()
+    snapshot.mkdir(parents=True)
     files = {
         "config.json": b"{}",
         "model.safetensors": b"weights",
