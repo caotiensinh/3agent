@@ -32,7 +32,7 @@ def _event(
         severity=severity,
         message_sha256="sha256:" + "a" * 64,
         parser_version="parser-secret-v1",
-        evidence_ref=f"evidence://secret/{event_id}",
+        evidence_ref=f"evidence-secret-{event_id}",
     ).validate()
     context = EventEntityContext(event_id=event_id, references=refs).validate()
     return CorrelationEvent(event=event, context=context).validate()
