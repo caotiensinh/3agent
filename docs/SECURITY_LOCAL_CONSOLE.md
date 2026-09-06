@@ -1,163 +1,143 @@
-# WorkSpace Security Local Console v0.1
+# WorkSpace Security Local Console
 
 ## Purpose
 
-`workspace-security-ui` is the first user-facing adapter for the existing WorkSpace security monitoring backend. It exposes monitoring summary, readiness, privacy-safe asset intelligence, bounded evidence/result-history aggregates, bounded incident posture aggregates, and an explicitly confirmed read-only monitoring run through a local browser UI without creating a second execution authority.
+`workspace-security-ui` is the local browser surface for the existing WorkSpace security, network, monitoring, and operator-posture backend. The console does not create a second monitoring or execution authority: canonical reads and operations continue to flow through `SecurityMonitoringService`, the existing query-only UI read model, the monitoring store, and existing readiness/policy gates.
 
-The console is intentionally narrow. It is a local operator surface, not a remote administration plane or a forensic evidence browser.
+The UI now has four operator surfaces:
 
-## Security model
+- **Overview** — privacy-safe monitoring, asset intelligence, evidence, incident, and operator-posture aggregates;
+- **Analyst Workspace** — bounded read-only rows for assets, network observations, canonical security events, findings, reports, and admin/safety state;
+- **Operations** — bounded local SQLite initialization and explicitly confirmed read-only monitoring;
+- **Readiness** — current blocking reasons and safety state.
 
-The console preserves the existing monitoring backend gates:
+## Fastest safe test: Demo Mode
 
-- configuration is selected once when the console starts;
-- HTTP requests cannot supply a filesystem path, network target, credential, collector selector, shell command, argv, executable, or remediation action;
-- binding is restricted to `127.0.0.1` or `localhost`;
-- non-loopback `Host` headers are rejected;
-- state-changing browser requests require an anti-CSRF token generated at server startup;
-- the only POST operation requires the exact body `{"confirm_readonly": true}`;
-- monitoring still requires backend readiness, `enabled=true`, `allow_real_network=true`, approved assets, policy authorization, and the existing collector boundaries;
-- asset intelligence is delegated to `SecurityMonitoringService.asset_intelligence()` and exposes aggregate counts only;
-- asset intelligence never exposes asset identifiers, management hosts, credential references, or concrete TCP port values;
-- evidence/result history is delegated to `SecurityMonitoringService.evidence_summary()` and uses the existing `SecurityMonitoringUIReadModel` query-only SQLite boundary;
-- evidence/result history is server-bounded to at most 100 recent rows per internal stream before reduction to aggregate counts;
-- detailed read-model identifiers and references are reduced inside the canonical service and are never returned by the evidence-summary HTTP endpoint;
-- evidence/result history never exposes asset IDs, source IDs, finding IDs, evidence references, bundle references, manifest hashes, or raw observation values;
-- incident posture is delegated to `SecurityMonitoringService.incident_posture()` and uses the same query-only read model;
-- incident posture is server-bounded to at most 100 recent findings and reduces severity/status to fixed buckets before returning data;
-- incident posture never exposes finding IDs, asset references, evidence references, rule IDs, category values, raw evidence, credentials, or browser-controlled filters;
-- no CORS response is provided;
-- responses are `no-store`, framing is denied, and the HTML uses a restrictive Content Security Policy;
-- browser rendering uses `textContent` for monitoring-derived values;
-- the console does not expose remediation or write authority.
-
-The CLI and UI share `SecurityMonitoringService`, so readiness, asset intelligence, evidence projection, incident posture, and execution policy are not reimplemented independently by each user interface.
-
-## Start the console
-
-Install/update WorkSpace so the new console entrypoint is available, then run:
+After installing the repository package, run:
 
 ```bash
-workspace-security-ui \
-  --config config/security_monitoring.example.json \
-  --host 127.0.0.1 \
-  --port 8765
+workspace-security-ui --demo
 ```
 
-Open:
+Then open:
 
 ```text
 http://127.0.0.1:8765/
 ```
 
-The command prints the local URL at startup. No browser is opened automatically.
+Demo Mode creates an isolated temporary monitoring configuration and SQLite database containing synthetic data only. It uses the real monitoring storage, canonical event, entity-context, finding, correlation, flow, timeline, and operator-posture code paths.
 
-## HTTP surface
+The demo dataset contains four synthetic assets and a bounded DNS -> FLOW -> AUTH -> PROCESS -> IDS event chain so the Analyst Workspace and Operator Posture are visibly non-empty. Demo Mode sets `allow_real_network=false` and the HTTP handler rejects `run-hourly`; it does not execute collectors, packet capture, remediation, or any real-network operation.
 
-### `GET /api/v1/health`
+## Normal local startup
 
-Returns console health and explicitly reports that the surface is local-only and has no write authority.
+The normal portable start no longer requires a hand-written config path:
 
-### `GET /api/v1/security/monitoring/summary`
+```bash
+workspace-security-ui
+```
 
-Returns the existing safe monitoring configuration summary. Raw credentials are never included.
+If the default user configuration does not exist, the console creates a safe disabled configuration under the current user's WorkSpace config directory. The default database and secret-directory paths are derived from that user directory, so the first launch is portable across supported operating systems instead of depending on the Linux-only example paths.
 
-### `GET /api/v1/security/monitoring/readiness`
+You may still pin an explicit reviewed configuration:
 
-Runs the existing metadata-only readiness evaluation. This does not probe the network, read secret values, capture packets, or execute remediation.
+```bash
+workspace-security-ui --config /absolute/path/to/security-monitoring.json --host 127.0.0.1 --port 8765
+```
 
-### `GET /api/v1/security/monitoring/asset-intelligence`
+On Windows PowerShell, pass an absolute Windows path when using `--config`.
 
-Returns the canonical privacy-safe asset intelligence summary from `SecurityMonitoringService.asset_intelligence()`.
+## First-run flow
 
-The response is intentionally aggregate-only. It may contain:
+1. Start `workspace-security-ui`.
+2. Open `http://127.0.0.1:8765/`.
+3. Review **Readiness**. A new safe-default configuration is expected to be blocked because monitoring and real-network access are disabled.
+4. Use **Operations -> Initialize local monitoring DB** to create the local SQLite schema and synchronize only the approved inventory already present in the fixed startup configuration. This operation performs no network communication.
+5. Configure approved assets and policy outside the browser using the canonical monitoring configuration boundary.
+6. Restart the console with that reviewed configuration.
+7. Only when readiness is `READY`, explicitly confirm **Run read-only monitoring**.
 
-- total, enabled, and disabled asset counts;
-- enabled-asset role cardinality;
-- counts by approved collector capability;
-- counts by approved data class;
-- count of enabled assets that have a credential reference;
-- count of explicit TCP port bindings;
-- explicit authority flags proving that the summary has no database-write, network-execution, collector-execution, packet-capture, or remediation authority.
+Real-network execution remains fail-closed. The service requires `enabled=true`, `allow_real_network=true`, an approved inventory, policy authorization, readiness success, and explicit read-only confirmation.
 
-The endpoint does **not** expose:
+## Analyst Workspace boundary
 
-- asset IDs;
-- management IP addresses or hostnames;
-- credential-reference values;
-- role labels;
-- concrete TCP port values;
-- disabled-asset capability or data-class details.
+`GET /api/v1/security/monitoring/analyst-snapshot` is a bounded projection over `SecurityMonitoringUIReadModel`.
 
-The endpoint accepts no request body or user-supplied target. It therefore adds an observation surface only and does not expand execution authority.
+The server fixes the maximum to 50 rows per stream and does not forward browser query strings as selectors or pagination. The response can show:
 
-### `GET /api/v1/security/monitoring/evidence-summary`
+- anonymized asset aliases such as `Asset 01`;
+- enabled state, approved data-class bucket, approved collector bucket, last-status bucket, and recency bucket;
+- network observation collector/status/recency plus boolean value/evidence presence;
+- canonical event source bucket, stage (`DNS`, `FLOW`, `AUTH`, `PROCESS`, `IDS`, `OTHER`), severity, recency, and evidence-presence boolean;
+- finding severity/status, bounded asset/evidence link counts, and recency bucket;
+- report period/status/recency;
+- database/schema and safety-policy state.
 
-Returns a privacy-safe, bounded recent-evidence projection from `SecurityMonitoringService.evidence_summary()`.
+It does **not** return raw asset IDs, management hosts/IP addresses, credential references, evidence references, event IDs, finding IDs, rule IDs, arbitrary raw observation values, or browser-controlled targets.
 
-The service reuses `SecurityMonitoringUIReadModel`, whose database connection is opened with SQLite `mode=ro` and `PRAGMA query_only=ON`. The browser does not receive or control the read-model pagination parameters. The service always requests at most 100 recent rows from each of these internal streams:
+## Capability Activation Matrix
 
-- observations;
-- canonical events;
-- findings;
-- archive/report receipts.
+The Analyst Workspace `admin` projection includes a privacy-safe capability matrix. The existing **Admin / Safety Status** frontend renders this matrix through `textContent`; no separate execution endpoint, POST operation, target selector, or credential selector is added.
 
-Those detailed rows are reduced to aggregate metadata before the HTTP response is built. The response may contain:
+The matrix uses only fixed states:
 
-- whether the monitoring database is available;
-- bounded sample counts for observations, events, findings, and reports;
-- counts of sampled observations, events, and findings that have evidence linkage;
-- open finding and high/critical finding counts from the existing UI summary;
-- a safe latest-hourly projection containing status, coverage, expected/observed asset counts, observation time, and age;
-- bounded monitoring health/reason codes;
-- explicit authority flags proving the projection is aggregate-only and database-read-only.
+- `active` — an existing local read surface is available now;
+- `ready` — the existing config/policy/readiness gates allow the capability to be requested through its already-reviewed path, but user confirmation is still required where applicable;
+- `gated` — a current policy, readiness, credential-boundary, or real-network gate blocks execution;
+- `disabled` — the capability is deliberately unavailable from the Local Console;
+- `not_configured` — no enabled approved asset declares that collector capability.
 
-The endpoint does **not** expose:
+Collector capability status is derived from the canonical inventory, `MonitoringPolicy`, and `evaluate_monitoring_readiness()`. The matrix does not execute the capability while determining its state. Fixed reason codes explain the result, such as `ACTIVE_LIVENESS_DISABLED`, `REAL_NETWORK_NOT_ALLOWED`, `SNMP_CREDENTIAL_BOUNDARY_NOT_READY`, `MONITORING_READINESS_BLOCKED`, and `READONLY_CAPABILITY_READY`.
 
-- run IDs;
-- asset IDs;
-- source IDs;
-- event IDs;
-- finding IDs;
-- evidence-reference values;
-- bundle references;
-- manifest hashes;
-- raw observation values;
-- credentials or secret values.
+The matrix covers the existing approved collector vocabulary:
 
-Query-string values are not forwarded to the service and cannot select an asset, source, evidence reference, path, target, or page size. This endpoint performs no database writes, network execution, collector execution, packet capture, or remediation.
+- `icmp_echo`;
+- `tcp_connect`;
+- `snmpv3_read`;
+- `local_net_read`;
+- `fixed_readonly_adapter`.
 
-### `GET /api/v1/security/monitoring/incident-posture`
+The matrix also makes the safety boundary explicit. These surfaces remain `disabled` with `NOT_EXPOSED_BY_LOCAL_CONSOLE`:
 
-Returns a privacy-safe bounded incident posture projection from `SecurityMonitoringService.incident_posture()`.
+- arbitrary target scan;
+- browser credential entry;
+- packet capture;
+- remediation;
+- shell execution.
 
-The service requests at most 100 recent findings from the existing query-only `SecurityMonitoringUIReadModel`. Detailed rows are reduced before the HTTP response is constructed. Severity and status values are normalized into fixed approved buckets; any unrecognized value collapses to `other` instead of being reflected to the browser.
+No raw asset ID, management host/IP address, concrete port, credential reference, secret value, evidence reference, or browser query selector is returned by the capability matrix. Its top-level authority remains metadata-only with database write, network execution, collector execution, packet capture, remediation, and shell execution all set to false.
 
-The response may contain:
+## Existing aggregate endpoints
 
-- bounded finding sample count;
-- open and closed sample counts;
-- fixed-bucket severity counts;
-- fixed-bucket status counts;
-- a derived attention level (`clear`, `low`, `medium`, `high`, or `critical`);
-- explicit authority flags proving the projection is aggregate-only and database-read-only.
+The Local Console preserves these existing safe endpoints:
 
-The endpoint does **not** expose:
+- `GET /api/v1/health`
+- `GET /api/v1/security/monitoring/summary`
+- `GET /api/v1/security/monitoring/readiness`
+- `GET /api/v1/security/monitoring/asset-intelligence`
+- `GET /api/v1/security/monitoring/evidence-summary`
+- `GET /api/v1/security/monitoring/incident-posture`
+- `GET /api/v1/security/monitoring/operator-posture`
 
-- finding IDs;
-- asset references;
-- evidence references;
-- rule IDs;
-- category values;
-- arbitrary stored severity/status strings;
-- raw evidence;
-- credentials or secret values.
+The operator-posture projection integrates bounded risk, asset-health, correlation, flow, and incident-timeline summaries. Exact timestamps and raw identifiers remain hidden from that aggregate surface.
 
-Query-string values are ignored by the handler and are not forwarded to the service. The browser therefore cannot select a finding, asset, evidence reference, page size, path, target, or execution option. This endpoint performs no database writes, network execution, collector execution, packet capture, or remediation.
+## Local state-changing endpoints
+
+### `POST /api/v1/security/monitoring/initialize`
+
+Requires the per-process CSRF token and the exact body:
+
+```json
+{
+  "confirm_initialize": true
+}
+```
+
+It delegates to `SecurityMonitoringService.initialize()`, creating/synchronizing the local monitoring SQLite state only. It does not execute collectors or network probes.
 
 ### `POST /api/v1/security/monitoring/run-hourly`
 
-Requires:
+Requires the per-process CSRF token and the exact body:
 
 ```json
 {
@@ -165,31 +145,20 @@ Requires:
 }
 ```
 
-and the per-process `X-Workspace-CSRF` token used by the locally served page. The operation delegates to the same backend service used by `workspace-security-monitor run-hourly --execute-readonly`.
+It delegates to the same canonical service used by `workspace-security-monitor run-hourly --execute-readonly`. Demo Mode blocks this endpoint regardless of the submitted confirmation.
 
-## Deliberate non-goals for v0.1
+## Security invariants
 
-This version does not expose:
+- bind is restricted to `127.0.0.1` or `localhost`;
+- non-loopback `Host` headers are rejected;
+- no CORS response is provided;
+- responses are `no-store`, framing is denied, and CSP is restrictive;
+- monitoring-derived browser values are rendered with `textContent`, never `innerHTML`;
+- browser requests cannot submit a filesystem path, network target, credential, collector selector, shell command, argv, executable, packet-capture path, or remediation action;
+- query strings are ignored as execution or identity selectors;
+- state-changing operations require CSRF plus exact typed confirmation bodies;
+- no remediation, firewall change, arbitrary shell execution, raw evidence download, generic operation invocation, or remote/LAN administration authority is exposed.
 
-- arbitrary diagnostic targets;
-- shell or command execution;
-- packet-capture paths;
-- credential entry;
-- firewall or network configuration changes;
-- remote/LAN binding;
-- remediation actions;
-- generic operation invocation;
-- raw evidence downloads;
-- identifier-addressable evidence browsing;
-- browser-controlled evidence or incident filters or pagination.
+## What "activated" means
 
-Those capabilities must remain behind reviewed capability, permission, typed-input, privacy, and physical/user-confirmation boundaries before any future UI exposure.
-
-## Next UI slices
-
-After the bounded incident-posture slice is accepted, the safest next additions are:
-
-1. privacy-reviewed structured flow-analysis evidence visualization;
-2. correlation and asset-health/risk posture summaries;
-3. incident timeline/read-only reporting only after identifier minimization and time-bucketing are reviewed;
-4. explicit permission-request UI for any future active diagnostic operation.
+The Local Console activates the existing **safe observation and test surfaces** so they are visible and testable from the browser. It does not silently activate higher-risk capabilities. Packet capture, remediation, active diagnostics, credential use, and any future disruptive operation remain behind their existing reviewed capability, permission, policy, and explicit-user-confirmation boundaries.
