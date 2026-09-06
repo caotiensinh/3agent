@@ -67,6 +67,45 @@ class SecurityConsoleUXTests(unittest.TestCase):
             self.assertTrue(operator["timeline"]["available"])
             self.assertGreater(operator["timeline"]["entry_count"], 0)
 
+    def test_analyst_snapshot_http_route_delegates_to_canonical_service(self) -> None:
+        class AnalystSnapshotOnlyService:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def analyst_snapshot(self) -> dict[str, object]:
+                self.calls += 1
+                return {"source": "canonical-service", "authority": {"database_read_only": True}}
+
+            def load_config(self):
+                raise AssertionError("HTTP analyst snapshot route must not bypass the canonical service")
+
+        service = AnalystSnapshotOnlyService()
+        server = build_server(
+            "127.0.0.1",
+            0,
+            service,  # type: ignore[arg-type]
+            csrf_token="c" * 64,
+            csp_nonce="d" * 32,
+            demo_mode=False,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+            conn.request("GET", "/api/v1/security/monitoring/analyst-snapshot")
+            response = conn.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            status = response.status
+            conn.close()
+
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["source"], "canonical-service")
+            self.assertEqual(service.calls, 1)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_demo_http_surface_connects_backend_and_blocks_real_network_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             config_path = create_demo_environment(Path(temp))
