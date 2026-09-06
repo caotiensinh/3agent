@@ -18,7 +18,7 @@ from .ui_read_model import SecurityMonitoringUIReadModel
 def _read_correlation_events_query_only(
     config: MonitoringRuntimeConfig,
 ) -> tuple[CorrelationEvent, ...]:
-    """Read a fixed recent correlation sample without schema initialization or writes."""
+    """Read a fixed evidence-bound sample without schema initialization or writes."""
 
     path = config.database_path
     if path.is_symlink() or not path.is_file():
@@ -34,9 +34,10 @@ def _read_correlation_events_query_only(
             SELECT ce.event_id,ce.source_id,ce.source_type,ce.observed_at,
                    ce.category,ce.severity,ce.message_sha256,ce.parser_version,ce.evidence_ref
             FROM canonical_events ce
-            WHERE EXISTS (
-                SELECT 1 FROM event_entities ee WHERE ee.event_id=ce.event_id
-            )
+            WHERE ce.evidence_ref IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM event_entities ee WHERE ee.event_id=ce.event_id
+              )
             ORDER BY julianday(ce.observed_at) DESC,ce.event_id DESC
             LIMIT ?
             """,
