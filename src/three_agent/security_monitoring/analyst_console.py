@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from .capability_matrix import safe_capability_matrix
 from .runtime_config import MonitoringRuntimeConfig
 from .ui_read_model import SecurityMonitoringUIReadModel
 
@@ -105,6 +106,7 @@ def safe_analyst_snapshot(
     config: MonitoringRuntimeConfig,
     *,
     now: datetime | None = None,
+    config_saved: bool = True,
 ) -> dict[str, object]:
     """Return bounded analyst rows without exposing raw identifiers or sensitive refs.
 
@@ -116,6 +118,7 @@ def safe_analyst_snapshot(
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     read_model = SecurityMonitoringUIReadModel(config, config_state="configured")
     database_available = config.database_path.is_file() and not config.database_path.is_symlink()
+    capability_matrix = safe_capability_matrix(config, config_saved=config_saved)
 
     if not database_available:
         return {
@@ -128,7 +131,10 @@ def safe_analyst_snapshot(
             "events": [],
             "findings": [],
             "reports": [],
-            "admin": {"database_available": False},
+            "admin": {
+                "database_available": False,
+                "capability_matrix": capability_matrix,
+            },
             "authority": _authority(),
         }
 
@@ -150,7 +156,10 @@ def safe_analyst_snapshot(
             "events": [],
             "findings": [],
             "reports": [],
-            "admin": {"database_available": True},
+            "admin": {
+                "database_available": True,
+                "capability_matrix": capability_matrix,
+            },
             "authority": _authority(),
         }
 
@@ -245,6 +254,7 @@ def safe_analyst_snapshot(
         "read_only": bool(policy_map.get("read_only", True)),
         "active_liveness": bool(policy_map.get("allow_active_liveness", False)),
         "packet_analysis_mode": str(policy_map.get("packet_analysis_mode") or "unknown")[:64],
+        "capability_matrix": capability_matrix,
     }
 
     return {
