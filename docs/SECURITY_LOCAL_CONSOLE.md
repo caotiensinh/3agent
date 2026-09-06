@@ -75,6 +75,38 @@ The server fixes the maximum to 50 rows per stream and does not forward browser 
 
 It does **not** return raw asset IDs, management hosts/IP addresses, credential references, evidence references, event IDs, finding IDs, rule IDs, arbitrary raw observation values, or browser-controlled targets.
 
+## Capability Activation Matrix
+
+The Analyst Workspace `admin` projection includes a privacy-safe capability matrix. The existing **Admin / Safety Status** frontend renders this matrix through `textContent`; no separate execution endpoint, POST operation, target selector, or credential selector is added.
+
+The matrix uses only fixed states:
+
+- `active` — an existing local read surface is available now;
+- `ready` — the existing config/policy/readiness gates allow the capability to be requested through its already-reviewed path, but user confirmation is still required where applicable;
+- `gated` — a current policy, readiness, credential-boundary, or real-network gate blocks execution;
+- `disabled` — the capability is deliberately unavailable from the Local Console;
+- `not_configured` — no enabled approved asset declares that collector capability.
+
+Collector capability status is derived from the canonical inventory, `MonitoringPolicy`, and `evaluate_monitoring_readiness()`. The matrix does not execute the capability while determining its state. Fixed reason codes explain the result, such as `ACTIVE_LIVENESS_DISABLED`, `REAL_NETWORK_NOT_ALLOWED`, `SNMP_CREDENTIAL_BOUNDARY_NOT_READY`, `MONITORING_READINESS_BLOCKED`, and `READONLY_CAPABILITY_READY`.
+
+The matrix covers the existing approved collector vocabulary:
+
+- `icmp_echo`;
+- `tcp_connect`;
+- `snmpv3_read`;
+- `local_net_read`;
+- `fixed_readonly_adapter`.
+
+The matrix also makes the safety boundary explicit. These surfaces remain `disabled` with `NOT_EXPOSED_BY_LOCAL_CONSOLE`:
+
+- arbitrary target scan;
+- browser credential entry;
+- packet capture;
+- remediation;
+- shell execution.
+
+No raw asset ID, management host/IP address, concrete port, credential reference, secret value, evidence reference, or browser query selector is returned by the capability matrix. Its top-level authority remains metadata-only with database write, network execution, collector execution, packet capture, remediation, and shell execution all set to false.
+
 ## Existing aggregate endpoints
 
 The Local Console preserves these existing safe endpoints:
