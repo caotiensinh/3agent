@@ -5,8 +5,10 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
 from urllib.request import Request, urlopen
+
+from .resource_budget import ResourceAdmissionError, ResourceBusyError
 
 
 class ResidencyBackend(Protocol):
@@ -260,3 +262,50 @@ class ModelResidencyManager:
                 "evictions": self._evictions,
                 "models": states,
             }
+
+
+class ResidencyManagedClient:
+    """Attach demand-only residency to an existing local inference client.
+
+    The wrapped client remains responsible for the actual inference transport and
+    resource admission. This wrapper only owns lifecycle: lease, idle cleanup,
+    and one bounded LRU reclaim/retry when admission fails specifically because
+    VRAM or RAM is occupied. It never downloads or preloads a model.
+    """
+
+    def __init__(self, client: Any, residency: ModelResidencyManager):
+        self.client = client
+        self.residency = residency
+        self.config = client.config
+        self.budget_managed_residency = True
+
+    @staticmethod
+    def _is_memory_pressure(exc: ResourceAdmissionError) -> bool:
+        text = str(exc).upper()
+        return "VRAM" in text or "RAM" in text
+
+    def _call(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        model = str(self.config.model).strip()
+        with self.residency.lease(model):
+            try:
+                return getattr(self.client, method)(*args, **kwargs)
+            except ResourceBusyError:
+                raise
+            except ResourceAdmissionError as exc:
+                if not self._is_memory_pressure(exc):
+                    raise
+                evicted = self.residency.evict_inactive(exclude={model})
+                if not evicted:
+                    raise
+                # One deterministic retry only. A second failure is authoritative;
+                # do not enter an unbounded eviction/retry loop.
+                return getattr(self.client, method)(*args, **kwargs)
+
+    def generate(self, system_prompt: str, user_prompt: str, **kwargs: Any) -> str:
+        return self._call("generate", system_prompt, user_prompt, **kwargs)
+
+    def generate_json(self, system_prompt: str, user_prompt: str, **kwargs: Any) -> dict[str, Any]:
+        return self._call("generate_json", system_prompt, user_prompt, **kwargs)
+
+    def unload(self) -> None:
+        self.client.unload()
