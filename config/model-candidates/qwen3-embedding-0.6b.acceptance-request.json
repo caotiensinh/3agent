@@ -1,0 +1,11 @@
+{
+  "schema": "workspace.model-candidate-acceptance-request/v1",
+  "status": "requested",
+  "candidate_id": "qwen3-embedding-0.6b",
+  "repo_id": "Qwen/Qwen3-Embedding-0.6B",
+  "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "gate": "offline_runtime_acceptance",
+  "production_approval": false,
+  "runtime_authority": false,
+  "reason": "Execute the evidence-bound offline load, embedding, eviction and reload gate before production benchmark or model admission."
+}
