@@ -1,4 +1,5 @@
 import hashlib
+import importlib.util
 import json
 import os
 import tempfile
@@ -8,7 +9,6 @@ from unittest.mock import patch
 
 from three_agent.model_artifacts import (
     ApprovedModelManifest,
-    HuggingFaceModelProvisioner,
     ModelManifestError,
     ModelProvisioningError,
     ModelResolutionError,
@@ -18,13 +18,36 @@ from three_agent.model_artifacts import (
 
 
 REVISION = "a" * 40
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PROVISION_SCRIPT = REPO_ROOT / "scripts" / "provision_approved_models.py"
+
+
+def _load_provisioner_class():
+    spec = importlib.util.spec_from_file_location(
+        "workspace_deployment_model_provisioner",
+        PROVISION_SCRIPT,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load deployment model provisioner")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.HuggingFaceModelProvisioner
+
+
+HuggingFaceModelProvisioner = _load_provisioner_class()
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def manifest_payload(*, model_id="embedding", revision=REVISION, local_subdir="embedding", data=b"weights"):
+def manifest_payload(
+    *,
+    model_id="embedding",
+    revision=REVISION,
+    local_subdir="embedding",
+    data=b"weights",
+):
     return {
         "schema": "workspace.model-manifest/v1",
         "runtime_download": False,
@@ -85,6 +108,13 @@ class ApprovedModelManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ModelManifestError, "unsafe path segment"):
                 ApprovedModelManifest.load(self.write_manifest(root, payload))
 
+    def test_local_subdir_rejects_windows_drive_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = manifest_payload(local_subdir="C:/workspace/models/embedding")
+            with self.assertRaisesRegex(ModelManifestError, "safe non-empty relative path"):
+                ApprovedModelManifest.load(self.write_manifest(root, payload))
+
     def test_manifest_requires_artifact_sha256(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -96,12 +126,23 @@ class ApprovedModelManifestTests(unittest.TestCase):
     def test_capability_lookup_is_manifest_derived(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            manifest = ApprovedModelManifest.load(self.write_manifest(root, manifest_payload()))
+            manifest = ApprovedModelManifest.load(
+                self.write_manifest(root, manifest_payload())
+            )
             self.assertEqual(
                 [model.model_id for model in manifest.for_capability("retrieval.embedding")],
                 ["embedding"],
             )
             self.assertEqual(manifest.for_capability("unapproved.capability"), ())
+
+    def test_runtime_package_contains_no_hugging_face_downloader(self):
+        runtime_source = (
+            REPO_ROOT / "src" / "three_agent" / "model_artifacts.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("huggingface_hub", runtime_source)
+        self.assertNotIn("snapshot_download", runtime_source)
+        deployment_source = PROVISION_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("from huggingface_hub import snapshot_download", deployment_source)
 
 
 class ProvisioningTests(unittest.TestCase):
@@ -109,6 +150,10 @@ class ProvisioningTests(unittest.TestCase):
         manifest_path = root / "models.json"
         manifest_path.write_text(json.dumps(manifest_payload(data=data)), encoding="utf-8")
         return ApprovedModelManifest.load(manifest_path), root / "store"
+
+    @staticmethod
+    def write_valid_snapshot(target: Path):
+        (target / "model.safetensors").write_bytes(b"weights")
 
     def test_provision_uses_exact_revision_and_controlled_staging(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -119,7 +164,7 @@ class ProvisioningTests(unittest.TestCase):
             def downloader(**kwargs):
                 calls.append(kwargs)
                 target = Path(kwargs["local_dir"])
-                (target / "model.safetensors").write_bytes(b"weights")
+                self.write_valid_snapshot(target)
                 return str(target)
 
             provisioner = HuggingFaceModelProvisioner(
@@ -145,8 +190,35 @@ class ProvisioningTests(unittest.TestCase):
                 (target / "model.safetensors").write_bytes(b"tampered")
                 return str(target)
 
-            provisioner = HuggingFaceModelProvisioner(manifest, store, snapshot_downloader=downloader)
-            with self.assertRaisesRegex(ModelProvisioningError, "SHA-256 mismatch|size mismatch"):
+            provisioner = HuggingFaceModelProvisioner(
+                manifest,
+                store,
+                snapshot_downloader=downloader,
+            )
+            with self.assertRaisesRegex(
+                ModelProvisioningError,
+                "SHA-256 mismatch|size mismatch",
+            ):
+                provisioner.provision("embedding")
+            self.assertFalse((store / "embedding").exists())
+
+    def test_unapproved_extra_file_never_promotes_staging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest, store = self.prepare(root)
+
+            def downloader(**kwargs):
+                target = Path(kwargs["local_dir"])
+                self.write_valid_snapshot(target)
+                (target / "remote_code.py").write_text("raise SystemExit", encoding="utf-8")
+                return str(target)
+
+            provisioner = HuggingFaceModelProvisioner(
+                manifest,
+                store,
+                snapshot_downloader=downloader,
+            )
+            with self.assertRaisesRegex(ModelProvisioningError, "unapproved files"):
                 provisioner.provision("embedding")
             self.assertFalse((store / "embedding").exists())
 
@@ -159,11 +231,18 @@ class ProvisioningTests(unittest.TestCase):
 
             def downloader(**kwargs):
                 target = Path(kwargs["local_dir"])
-                (target / "model.safetensors").write_bytes(b"weights")
+                self.write_valid_snapshot(target)
                 return str(outside)
 
-            provisioner = HuggingFaceModelProvisioner(manifest, store, snapshot_downloader=downloader)
-            with self.assertRaisesRegex(ModelProvisioningError, "outside the controlled staging"):
+            provisioner = HuggingFaceModelProvisioner(
+                manifest,
+                store,
+                snapshot_downloader=downloader,
+            )
+            with self.assertRaisesRegex(
+                ModelProvisioningError,
+                "outside the controlled staging",
+            ):
                 provisioner.provision("embedding")
 
     def test_existing_install_survives_failed_replacement(self):
@@ -179,10 +258,38 @@ class ProvisioningTests(unittest.TestCase):
                 (target / "model.safetensors").write_bytes(b"bad")
                 return str(target)
 
-            provisioner = HuggingFaceModelProvisioner(manifest, store, snapshot_downloader=downloader)
+            provisioner = HuggingFaceModelProvisioner(
+                manifest,
+                store,
+                snapshot_downloader=downloader,
+            )
             with self.assertRaises(ModelProvisioningError):
                 provisioner.provision("embedding")
-            self.assertEqual((existing / "sentinel.txt").read_text(encoding="utf-8"), "keep")
+            self.assertEqual(
+                (existing / "sentinel.txt").read_text(encoding="utf-8"),
+                "keep",
+            )
+
+    def test_hub_local_metadata_is_removed_before_exact_set_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest, store = self.prepare(root)
+
+            def downloader(**kwargs):
+                target = Path(kwargs["local_dir"])
+                self.write_valid_snapshot(target)
+                metadata = target / ".cache" / "huggingface"
+                metadata.mkdir(parents=True)
+                (metadata / "download.json").write_text("{}", encoding="utf-8")
+                return str(target)
+
+            provisioner = HuggingFaceModelProvisioner(
+                manifest,
+                store,
+                snapshot_downloader=downloader,
+            )
+            installed = provisioner.provision("embedding")
+            self.assertFalse((installed / ".cache").exists())
 
 
 class RuntimeResolverTests(unittest.TestCase):
@@ -240,6 +347,15 @@ class RuntimeResolverTests(unittest.TestCase):
             with self.assertRaisesRegex(ModelResolutionError, "mismatch"):
                 resolver.resolve("embedding")
 
+    def test_runtime_rejects_unapproved_extra_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest, store = self.prepare_installed(root)
+            (store / "embedding" / "extra.py").write_text("pass", encoding="utf-8")
+            resolver = RuntimeModelResolver(manifest, store)
+            with self.assertRaisesRegex(ModelResolutionError, "unapproved files"):
+                resolver.resolve("embedding")
+
     def test_runtime_detects_manifest_receipt_identity_change(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -261,6 +377,20 @@ class RuntimeResolverTests(unittest.TestCase):
             resolver = RuntimeModelResolver(manifest, root / "store")
             with self.assertRaisesRegex(ModelManifestError, "not approved"):
                 resolver.resolve("user-controlled-model")
+
+    @unittest.skipIf(os.name == "nt", "symlink creation is privilege-dependent on Windows")
+    def test_runtime_rejects_symlinked_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest, store = self.prepare_installed(root)
+            model_root = store / "embedding"
+            artifact = model_root / "model.safetensors"
+            real = model_root / "real.bin"
+            artifact.rename(real)
+            artifact.symlink_to(real.name)
+            resolver = RuntimeModelResolver(manifest, store)
+            with self.assertRaisesRegex(ModelResolutionError, "symlinked model content"):
+                resolver.resolve("embedding")
 
 
 if __name__ == "__main__":
