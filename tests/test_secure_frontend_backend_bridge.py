@@ -5,7 +5,11 @@ from http import HTTPStatus
 from pathlib import Path
 
 from three_agent.config import load_config
-from three_agent.secure_chat_gateway import _secure_html, workspace_ui_capabilities
+from three_agent.secure_chat_gateway import (
+    _FRONTEND_API_SECURE,
+    _secure_html,
+    workspace_ui_capabilities,
+)
 from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
@@ -24,7 +28,11 @@ class SecureFrontendBackendBridgeTests(unittest.TestCase):
         self.assertIn("mode:state.requestMode", html)
         self.assertIn("/api/chat", html)
         self.assertIn("/api/jobs/", html)
-        self.assertNotIn("window.fetch=", html)
+        # The consent bridge itself must use the frontend's native fetch path and
+        # must not monkey-patch global fetch. Other established security overlays
+        # in the canonical frontend may independently wrap window.fetch.
+        self.assertIn("await fetch(url,request)", _FRONTEND_API_SECURE)
+        self.assertNotIn("window.fetch=", _FRONTEND_API_SECURE)
         self.assertEqual(html.count("workspaceInternetEgressConsent"), 1)
         self.assertEqual(_secure_html(html), html)
 
