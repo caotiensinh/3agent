@@ -188,6 +188,7 @@ class SecurityConsoleUXTests(unittest.TestCase):
                 self.assertIn("function clearAnalystSurface(message)", page)
                 self.assertIn('clearReadinessSurface(surfaceUnavailable("readiness"));', page)
                 self.assertIn('clearAnalystSurface(surfaceUnavailable("analyst-snapshot"));', page)
+                self.assertIn('for (const id of ["cap-active","cap-ready","cap-gated","cap-disabled"]) { byId(id).className="value"; }', page)
                 self.assertIn('renderTable("assets-table",[["alias","Asset"]', page)
                 self.assertIn('byId("run").disabled=true;', page)
 
