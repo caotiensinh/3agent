@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.security_monitoring.asset_dependency import AssetDependency
 from three_agent.security_monitoring.contracts import AssetInventoryRecord, MonitoringContractError
 from three_agent.security_monitoring.demo import create_demo_environment
 from three_agent.security_monitoring.operator_posture_reader import safe_operator_posture_summary
@@ -97,16 +96,17 @@ class SecurityDependencyImpactPostureV001Tests(unittest.TestCase):
             _asset(f"asset-{index:03d}", f"node-{index:03d}.example.test")
             for index in range(257)
         )
-        config = MonitoringRuntimeConfig(
-            enabled=True,
-            allow_real_network=False,
-            database_path=Path("/tmp/workspace-security-monitoring.sqlite3"),
-            secret_directory=None,
-            policy=MonitoringPolicy(),
-            assets=assets,
-        )
+        with tempfile.TemporaryDirectory() as temp:
+            config = MonitoringRuntimeConfig(
+                enabled=True,
+                allow_real_network=False,
+                database_path=(Path(temp) / "monitoring.sqlite3").resolve(),
+                secret_directory=None,
+                policy=MonitoringPolicy(),
+                assets=assets,
+            )
 
-        self.assertEqual(config.validate().dependencies, ())
+            self.assertEqual(config.validate().dependencies, ())
 
     def test_demo_dependency_impact_is_real_bounded_and_privacy_safe(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
