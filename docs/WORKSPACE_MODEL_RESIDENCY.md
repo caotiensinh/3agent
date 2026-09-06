@@ -8,7 +8,7 @@ Security posture: local-only, deployment-provisioned, runtime-download forbidden
 
 WorkSpace MUST NOT preload the complete AI model pack into VRAM.
 
-Model files are provisioned to local disk during reviewed deployment. Runtime model residency is demand-driven:
+Model artifacts are provisioned to local disk during reviewed deployment. Runtime residency is demand-driven:
 
 ```text
 approved deployment manifest
@@ -18,18 +18,19 @@ local model disk/cache
         |
         | capability actually requests model
         v
+select smallest sufficient backend/model
+        |
+        v
 resource admission
         |
         v
-load/use model in VRAM
+ACTIVE LEASE -> local inference -> VRAM residency
         |
         v
-release active lease
+release lease
         |
         +---- reuse while useful
-        |
         +---- TTL/LRU unload when idle
-        |
         +---- earlier LRU reclaim under VRAM/RAM pressure
 ```
 
@@ -37,60 +38,59 @@ A model existing on disk is not the same as a model being resident in VRAM.
 
 ## 2. PicoLM-derived operating rule
 
-WorkSpace applies the constraint-first optimization ladder to model execution:
+WorkSpace applies the constraint-first optimization ladder:
 
 ```text
 avoid > reuse > precompute > compact > parallelize > accelerate > add hardware
 ```
 
-For model residency this means:
+Applied to model execution:
 
 1. **Avoid** loading a model when no capability needs it.
-2. **Reuse** an already-resident model instead of unloading/reloading it between adjacent requests.
-3. **Precompute** deterministic retrieval, parsing, correlation and cached evidence before invoking a larger model.
-4. **Compact** context and evidence so the smallest sufficient model can be selected.
-5. **Parallelize** only independent work that fits the resource budget.
-6. **Accelerate** with GPU scheduling only after unnecessary work has been removed.
-7. **Add hardware** only when measured workload cannot meet requirements after the earlier steps.
+2. **Reuse** an already-resident model instead of reloading identical weights.
+3. **Precompute** deterministic retrieval, parsing, correlation and cached evidence before model inference.
+4. **Compact** context/evidence so the smallest sufficient model can be selected.
+5. **Parallelize** only independent work that fits the measured resource budget.
+6. **Accelerate** after unnecessary work and data movement are removed.
+7. **Add hardware** only after measurements prove the earlier stages are insufficient.
 
-The model router therefore optimizes useful work, not resident-model count.
+The router optimizes useful work, not resident-model count.
 
 ## 3. Hard invariants
 
 Production rules:
 
 - no `preload_all` mode;
-- no fixed number of resident models;
+- no fixed resident-model count;
 - no runtime model download;
-- no model identifier may come from user/file/web/model output;
+- no runtime remote repair of a missing model;
+- no model identifier/revision from user, file, web, telemetry or model output;
 - active model leases are never eviction candidates;
+- Linux processes coordinate eviction with kernel file locks;
 - resource admission remains authoritative;
-- VRAM/RAM pressure may reclaim only inactive models;
+- memory pressure may reclaim only inactive models;
 - pressure reclaim uses deterministic LRU order;
 - normal idle cleanup requires TTL expiration;
-- resource reclaim receives one bounded retry only;
+- memory reclaim receives one bounded retry only;
 - thermal, power and busy-GPU failures do not trigger memory eviction;
 - model weights remain outside the Git repository;
-- deployment and runtime authority remain separate.
+- deployment authority and runtime authority remain separate.
 
-## 4. Lifecycle states
-
-A model can conceptually be in these states:
+## 4. Lifecycle
 
 ```text
 PROVISIONED_ON_DISK
       |
-      | first approved capability request
+      | approved capability needs this model
       v
 ACTIVE_LEASE
       |
+      | local backend materializes weights
       v
 RESIDENT_REUSABLE
       |
-      +---- request -> ACTIVE_LEASE
-      |
+      +---- new demand -> ACTIVE_LEASE
       +---- idle TTL -> EVICTED_TO_DISK
-      |
       +---- memory pressure + inactive -> EVICTED_TO_DISK
 ```
 
@@ -98,23 +98,20 @@ There is deliberately no `REMOTE_DOWNLOAD` runtime state.
 
 ## 5. Demand loading
 
-`ModelResidencyManager.acquire()` does **not** load a model. It records a lease and observes whether the model is already resident.
+`ModelResidencyManager.acquire()` does not load or download a model. It records a lease and observes whether the model is already resident.
 
-The normal local inference transport is the only operation that causes an already-provisioned model to be materialized by the local backend. For Ollama this is the `/api/generate` request.
+The normal local inference request remains the only demand signal that can materialize an already-provisioned model. For Ollama this is the local `/api/generate` request.
 
-Consequences:
+Therefore there is:
 
-- no speculative loading;
+- no speculative preload;
 - no startup VRAM flood;
-- no separate loader thread;
 - no autonomous model discovery;
-- the capability request itself is the demand signal.
+- no background model loader with network authority.
 
-## 6. Reuse
+## 6. Reuse window
 
-A resident model stays available for a short bounded period so adjacent workflow stages can reuse it without paying load latency repeatedly.
-
-The secure profile currently uses:
+The secure profile uses:
 
 ```json
 {
@@ -129,45 +126,46 @@ The secure profile currently uses:
 }
 ```
 
-The TTL is a reuse window, not a guarantee that a model will remain resident for that entire time. Memory pressure can reclaim an inactive model earlier.
+The TTL is a bounded reuse window, not a guarantee. Memory pressure can reclaim an inactive model earlier.
 
-## 7. Lease and eviction safety
+## 7. Lease safety and cross-process protection
 
-Every managed inference obtains a model lease before execution and releases it after execution.
+Every managed inference takes a model lease before execution and releases it afterward.
 
-The manager tracks in-process reference counts. On high-assurance Linux deployments it also uses shared/exclusive `flock` leases:
+The manager maintains in-process reference counts. On high-assurance Linux deployments it additionally uses shared/exclusive `flock` leases:
 
-- inference holds a shared lease lock;
+- inference holds a shared lock for the model/backend scope;
 - eviction must obtain an exclusive non-blocking lock;
-- if another process still uses that model, exclusive acquisition fails and eviction skips it;
-- kernel file locks are released automatically if a process exits.
+- an active process prevents exclusive acquisition;
+- eviction therefore skips a model still in use elsewhere;
+- kernel locks disappear automatically when a process exits.
 
-This avoids relying only on stale in-memory reference counts.
+Backend URL and model names are hashed for lock filenames; raw model names are not used as filesystem paths.
 
 ## 8. Idle eviction
 
-Normal eviction is TTL + LRU:
+Normal cleanup is TTL + deterministic LRU:
 
 ```text
 resident models
-    -> remove excluded/current model
-    -> remove active leased models
-    -> remove models younger than idle TTL
-    -> sort by last-used timestamp
-    -> deterministic model-name tie break
+    -> exclude current model
+    -> exclude local active leases
+    -> exclude cross-process active leases
+    -> exclude models younger than TTL
+    -> sort by last-used time, then model name
     -> unload oldest first
 ```
 
-Unknown externally resident models are observed before becoming an eviction candidate. This prevents a new WorkSpace process from immediately unloading pre-existing local model state it has not yet classified.
+A resident model not previously observed by the manager is observed first rather than immediately evicted.
 
-## 9. Pressure eviction
+## 9. Pressure reclaim
 
-The inference wrapper keeps existing resource admission authoritative.
+The existing `ResourceBudgetManager` remains authoritative.
 
-If admission fails specifically because projected **VRAM or RAM** exceeds budget:
+If admission fails specifically because projected **VRAM or RAM** exceeds policy:
 
 ```text
-admission denied for memory
+memory admission denial
         |
         v
 find inactive resident models
@@ -176,84 +174,95 @@ find inactive resident models
 LRU reclaim
         |
         v
-retry admission/inference ONCE
+retry exactly once
 ```
-
-A second failure is returned as authoritative.
 
 No reclaim/retry occurs for:
 
-- GPU temperature failure;
-- GPU power failure;
-- temporary busy GPU timeout;
-- malformed model metadata;
-- unrelated local inference errors.
+- temperature safety failures;
+- power safety failures;
+- temporary busy-GPU timeouts;
+- unrelated inference failures.
 
-This avoids converting a real safety signal into an eviction loop.
+A second resource failure is authoritative. There is no unbounded eviction/retry loop.
 
-## 10. Current integration
+## 10. Single-endpoint integration
 
-The default secure single-endpoint Ollama path is integrated through:
+The canonical secure local endpoint uses one shared residency manager for role-routed Ollama clients. Research, presentation/report and deep-model clients therefore share one view of resident weights on that endpoint.
+
+Relevant files:
 
 - `src/three_agent/model_residency.py`
 - `src/three_agent/orchestrator.py`
 - `src/three_agent/config.py`
 - `config/workspace.secure.json`
 
-The existing `ResourceBudgetManager` still decides whether a model may start. Residency management only reduces avoidable resident memory before a bounded retry.
+## 11. Multi-GPU worker-pool integration
 
-The worker-pool path remains a separate integration boundary because each GPU-affined Ollama endpoint requires its own residency manager and lock scope. It must not be declared complete until its routing tests cover per-worker eviction.
+`OllamaWorkerPool` creates a separate residency manager for each endpoint:
 
-## 11. Hugging Face model adapters
+```text
+gpu0 worker -> residency scope A
+gpu1 worker -> residency scope B
+dual worker -> residency scope C
+```
 
-Future Hugging Face backends must implement the same lifecycle contract rather than adding their own uncontrolled cache policy.
+This prevents an eviction decision on one endpoint from being mistaken for the residency state of another endpoint.
 
-Examples:
+Routing also applies the reuse rule before estimating model load cost:
 
-- Qwen3 Embedding: load local snapshot only when retrieval requires embedding;
-- Qwen3 Reranker: load only when candidate reranking is required;
-- Chronos-2: load only when a monitoring forecast is requested;
-- security specialist model: load only for a routed specialist analysis.
+```text
+if candidate model already resident on worker:
+    candidate_load_bytes = 0
+else:
+    candidate_load_bytes = estimated_model_bytes
+```
 
-Required backend behavior:
+This avoids rejecting an otherwise safe worker by double-counting weights already present in VRAM.
+
+## 12. Hugging Face backend contract
+
+Future Qwen embedding/reranker, Chronos and security-specialist backends must use the same lifecycle instead of inventing independent cache policies.
+
+Required conceptual operations:
 
 ```text
 load_from_local_snapshot_only()
-is_resident()
+resident_models() / is_resident()
 unload()
 ```
 
-Runtime adapters MUST use local files only and MUST NOT call Hugging Face Hub to repair a missing model. A missing local model is a deployment/provisioning failure.
+Runtime Hugging Face adapters MUST use approved local snapshots only. A missing local snapshot is a deployment failure; it is not permission to reach Hugging Face Hub.
 
-## 12. Deployment boundary
+## 13. Deployment boundary
 
-Deployment is allowed to obtain reviewed model artifacts. Runtime is not.
+Deployment may obtain approved artifacts. Runtime may not.
 
-Deployment responsibilities:
+Deployment:
 
-1. read approved model manifest;
-2. resolve exact approved revision;
+1. read reviewed model manifest;
+2. resolve exact revision;
 3. download into staging;
-4. verify provenance/integrity/license policy;
-5. promote to local model store;
+4. verify provenance, integrity and license policy;
+5. promote into local model store;
 6. run smoke/benchmark gates;
 7. write deployment receipt;
-8. enable runtime offline mode.
+8. enable offline runtime mode.
 
-Runtime responsibilities:
+Runtime:
 
-1. select an already-approved role/model mapping;
-2. prove resources are available;
-3. acquire a residency lease;
-4. invoke the local backend;
-5. release lease;
-6. reuse or evict according to policy.
+1. select trusted role/model mapping;
+2. do deterministic work first;
+3. select the smallest sufficient model;
+4. perform resource admission;
+5. acquire residency lease;
+6. invoke local backend;
+7. release lease;
+8. reuse or evict according to policy.
 
-Runtime must never convert a missing model into permission to access the Internet.
+## 14. Metrics
 
-## 13. Metrics
-
-The residency snapshot exposes at least:
+Residency state exposes:
 
 - acquisitions;
 - reuse hits;
@@ -262,9 +271,10 @@ The residency snapshot exposes at least:
 - idle TTL;
 - eviction policy;
 - runtime-download state;
-- fixed-model-count flag.
+- fixed-model-count flag;
+- Linux cross-process flock posture.
 
-These support later measurements such as:
+Operational measurements should include:
 
 ```text
 reuse_rate = reuse_hits / acquisitions
@@ -274,31 +284,34 @@ VRAM_before / VRAM_after
 resource_denials_before / after reclaim
 ```
 
-Optimization claims are not accepted without these measurements.
+No optimization claim is accepted without measurement.
 
-## 14. Acceptance criteria
+## 15. Acceptance criteria
 
-The default secure path is ready only when automated tests prove:
+Automated tests must prove:
 
 - acquiring a lease does not load/download a model;
 - already-resident models are reused;
 - idle models expire after TTL;
 - active leases cannot be evicted;
-- cross-process active evidence can block eviction;
-- LRU ordering is deterministic;
+- cross-process activity can block eviction;
+- LRU order is deterministic;
 - memory pressure can reclaim inactive models and retry once;
-- non-memory resource failures do not cause eviction;
+- non-memory resource failures do not trigger eviction;
 - runtime download configuration is rejected;
 - no fixed resident-model count is introduced;
+- worker endpoints have independent residency scopes;
+- worker routing does not double-count an already-resident model;
 - existing resource-admission tests remain green;
-- canonical-module and security CI remain green.
+- canonical-module and Internet-egress security CI remain green.
 
-## 15. Next implementation boundary
+## 16. Next implementation boundary
 
-After the default Ollama path passes CI:
+After this lifecycle converges in CI:
 
-1. add per-worker residency managers to `OllamaWorkerPool`;
-2. add the approved Hugging Face model manifest/provisioner;
-3. implement local-only embedding/reranker/Chronos backend adapters;
-4. benchmark load/reuse/eviction behavior on the dual-RTX5090 host;
-5. tune TTL from measured workload rather than intuition.
+1. add the approved Hugging Face model manifest/provisioner;
+2. implement local-only Qwen3 Embedding adapter;
+3. implement local-only Qwen3 Reranker adapter;
+4. implement local-only Chronos-2 monitoring adapter;
+5. benchmark load/reuse/eviction behavior on the dual-RTX5090 host;
+6. tune TTL from measured workload rather than intuition.
