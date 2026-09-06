@@ -22,6 +22,7 @@ from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .resource_events import ResourceEventRecorder
 from .runtime_validation import RuntimeValidatorBridge
 from .store import TaskStore
+from .trusted_runtime_context import TrustedRuntimeContextLLM
 from .web_research import WebResearchClient
 from .workflow import WorkflowRunner
 
@@ -238,7 +239,7 @@ class Orchestrator:
             self.presentation_llm = shared
             self.report_llm = shared
 
-        self.llm = self.research_llm
+        self.llm = TrustedRuntimeContextLLM(self.research_llm)
         self.research_agent = ResearchAgent(
             config.profile_root,
             self.research_llm,
