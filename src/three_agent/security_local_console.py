@@ -216,6 +216,37 @@ function renderCapabilityCenter(matrix) {
   renderTable("cap-restricted-table",[["name","Restricted surface"],["state","State"],["reason_code","Reason"]],restricted);
   byId("cap-authority").textContent=JSON.stringify(matrix.authority||{},null,2);
 }
+function markValueError(ids) {
+  for (const id of ids) { byId(id).textContent="ERROR"; byId(id).className="value bad"; }
+}
+function surfaceUnavailable(label) { return "Backend surface unavailable: "+label; }
+function settledPayload(result) {
+  if (!result || result.status!=="fulfilled" || !result.value || typeof result.value!=="object" || Array.isArray(result.value)) return null;
+  return result.value;
+}
+function clearReadinessSurface(message) {
+  readiness=null;
+  markValueError(["ready"]);
+  byId("readiness-json").textContent=message;
+  const list=byId("issues"); list.replaceChildren();
+  const li=document.createElement("li"); li.textContent=message; list.appendChild(li);
+  byId("run").disabled=true;
+  byId("result").textContent=message;
+}
+function clearAnalystSurface(message) {
+  markValueError(["analyst-state","analyst-assets-count","analyst-network-count","analyst-events-count","analyst-findings-count","cap-active","cap-ready","cap-gated","cap-disabled"]);
+  renderTable("assets-table",[["alias","Asset"],["enabled","Enabled"],["data_class","Data class"],["collector_capabilities","Collectors"],["last_status","Status"],["recency","Recency"]],[]);
+  renderTable("network-table",[["asset","Asset"],["collector","Collector"],["status","Status"],["recency","Recency"],["has_value","Value"],["has_evidence","Evidence"]],[]);
+  renderTable("events-table",[["source_type","Source"],["stage","Stage"],["severity","Severity"],["recency","Recency"],["has_evidence","Evidence"]],[]);
+  renderTable("findings-table",[["severity","Severity"],["status","Status"],["asset_link_count","Assets"],["evidence_link_count","Evidence"],["recency","Recency"]],[]);
+  renderTable("reports-table",[["period_kind","Period"],["status","Status"],["recency","Recency"]],[]);
+  renderTable("cap-read-table",[["name","Capability"],["state","State"],["reason_code","Reason"]],[]);
+  renderTable("cap-operations-table",[["name","Operation"],["state","State"],["reason_code","Reason"],["user_confirmation_required","Confirmation"]],[]);
+  renderTable("cap-collectors-table",[["name","Collector"],["state","State"],["reason_code","Reason"],["configured_asset_count","Approved assets"],["user_confirmation_required","Confirmation"]],[]);
+  renderTable("cap-restricted-table",[["name","Restricted surface"],["state","State"],["reason_code","Reason"]],[]);
+  byId("admin-status").textContent=message;
+  byId("cap-authority").textContent=message;
+}
 document.querySelectorAll(".tab").forEach(el => el.addEventListener("click", () => activatePanel(el.dataset.panel)));
 
 async function jsonGet(path) {
@@ -223,34 +254,73 @@ async function jsonGet(path) {
   if (!response.ok) throw new Error(payload.reason_code || path); return payload;
 }
 async function refresh() {
-  try {
-    const [summary, ready, asset, evidence, incident, operator, analyst] = await Promise.all([
-      jsonGet("/api/v1/security/monitoring/summary"),
-      jsonGet("/api/v1/security/monitoring/readiness"),
-      jsonGet("/api/v1/security/monitoring/asset-intelligence"),
-      jsonGet("/api/v1/security/monitoring/evidence-summary"),
-      jsonGet("/api/v1/security/monitoring/incident-posture"),
-      jsonGet("/api/v1/security/monitoring/operator-posture"),
-      jsonGet("/api/v1/security/monitoring/analyst-snapshot")
-    ]);
-    readiness=ready;
-    setState(byId("enabled"),summary.enabled===true); setState(byId("network"),summary.allow_real_network===true);
-    byId("ready").textContent=ready.ready?"READY":"BLOCKED"; byId("ready").className="value "+(ready.ready?"good":"bad");
-    byId("assets").textContent=text(summary.enabled_asset_count||0);
-    byId("evidence-open").textContent=text(evidence.open_finding_count||0); byId("evidence-high").textContent=text(evidence.high_critical_count||0);
-    const corr=operator.correlation||{}, flow=operator.flow||{}, timeline=operator.timeline||{};
-    byId("operator-graphs").textContent=text(corr.incident_graph_count||0); byId("operator-flows").textContent=text(flow.flow_event_count||0); byId("operator-timeline").textContent=text(timeline.entry_count||0);
-    byId("asset-intelligence").textContent=JSON.stringify(asset,null,2);
-    byId("evidence-summary").textContent=JSON.stringify(evidence,null,2);
-    byId("incident-posture").textContent=JSON.stringify(incident,null,2);
-    byId("operator-posture").textContent=JSON.stringify(operator,null,2);
-    byId("readiness-json").textContent=JSON.stringify(ready,null,2);
+  const [summaryResult, readyResult, assetResult, evidenceResult, incidentResult, operatorResult, analystResult] = await Promise.allSettled([
+    jsonGet("/api/v1/security/monitoring/summary"),
+    jsonGet("/api/v1/security/monitoring/readiness"),
+    jsonGet("/api/v1/security/monitoring/asset-intelligence"),
+    jsonGet("/api/v1/security/monitoring/evidence-summary"),
+    jsonGet("/api/v1/security/monitoring/incident-posture"),
+    jsonGet("/api/v1/security/monitoring/operator-posture"),
+    jsonGet("/api/v1/security/monitoring/analyst-snapshot")
+  ]);
 
-    byId("analyst-state").textContent=text(analyst.data_state);
-    byId("analyst-assets-count").textContent=text((analyst.assets||[]).length);
-    byId("analyst-network-count").textContent=text((analyst.network||[]).length);
-    byId("analyst-events-count").textContent=text((analyst.events||[]).length);
-    byId("analyst-findings-count").textContent=text((analyst.findings||[]).length);
+  const summary=settledPayload(summaryResult);
+  if (summary) {
+    setState(byId("enabled"),summary.enabled===true); setState(byId("network"),summary.allow_real_network===true);
+    byId("assets").textContent=text(summary.enabled_asset_count||0); byId("assets").className="value";
+  } else {
+    markValueError(["enabled","network","assets"]);
+  }
+
+  const ready=settledPayload(readyResult);
+  if (ready) {
+    readiness=ready;
+    byId("ready").textContent=ready.ready?"READY":"BLOCKED"; byId("ready").className="value "+(ready.ready?"good":"bad");
+    byId("readiness-json").textContent=JSON.stringify(ready,null,2);
+    const list=byId("issues"); list.replaceChildren();
+    for (const issue of ready.issues||[]) { const li=document.createElement("li"); li.textContent=(issue.code||"UNKNOWN")+": "+(issue.message||""); list.appendChild(li); }
+    if (!(ready.issues||[]).length) { const li=document.createElement("li"); li.textContent="No blocking issues"; list.appendChild(li); }
+    byId("run").disabled=!ready.ready || demoMode;
+    byId("result").textContent=demoMode ? "DEMO MODE: 実ネットワーク監視は無効です。Analyst Workspace で合成データを確認してください。" : (ready.ready?"実行可能":"Readiness BLOCKED");
+  } else {
+    clearReadinessSurface(surfaceUnavailable("readiness"));
+  }
+
+  const asset=settledPayload(assetResult);
+  byId("asset-intelligence").textContent=asset ? JSON.stringify(asset,null,2) : surfaceUnavailable("asset-intelligence");
+
+  const evidence=settledPayload(evidenceResult);
+  if (evidence) {
+    byId("evidence-open").textContent=text(evidence.open_finding_count||0); byId("evidence-open").className="value";
+    byId("evidence-high").textContent=text(evidence.high_critical_count||0); byId("evidence-high").className="value";
+    byId("evidence-summary").textContent=JSON.stringify(evidence,null,2);
+  } else {
+    markValueError(["evidence-open","evidence-high"]);
+    byId("evidence-summary").textContent=surfaceUnavailable("evidence-summary");
+  }
+
+  const incident=settledPayload(incidentResult);
+  byId("incident-posture").textContent=incident ? JSON.stringify(incident,null,2) : surfaceUnavailable("incident-posture");
+
+  const operator=settledPayload(operatorResult);
+  if (operator) {
+    const corr=operator.correlation||{}, flow=operator.flow||{}, timeline=operator.timeline||{};
+    byId("operator-graphs").textContent=text(corr.incident_graph_count||0); byId("operator-graphs").className="value";
+    byId("operator-flows").textContent=text(flow.flow_event_count||0); byId("operator-flows").className="value";
+    byId("operator-timeline").textContent=text(timeline.entry_count||0); byId("operator-timeline").className="value";
+    byId("operator-posture").textContent=JSON.stringify(operator,null,2);
+  } else {
+    markValueError(["operator-graphs","operator-flows","operator-timeline"]);
+    byId("operator-posture").textContent=surfaceUnavailable("operator-posture");
+  }
+
+  const analyst=settledPayload(analystResult);
+  if (analyst) {
+    byId("analyst-state").textContent=text(analyst.data_state); byId("analyst-state").className="value";
+    byId("analyst-assets-count").textContent=text((analyst.assets||[]).length); byId("analyst-assets-count").className="value";
+    byId("analyst-network-count").textContent=text((analyst.network||[]).length); byId("analyst-network-count").className="value";
+    byId("analyst-events-count").textContent=text((analyst.events||[]).length); byId("analyst-events-count").className="value";
+    byId("analyst-findings-count").textContent=text((analyst.findings||[]).length); byId("analyst-findings-count").className="value";
     renderTable("assets-table",[["alias","Asset"],["enabled","Enabled"],["data_class","Data class"],["collector_capabilities","Collectors"],["last_status","Status"],["recency","Recency"]],analyst.assets);
     renderTable("network-table",[["asset","Asset"],["collector","Collector"],["status","Status"],["recency","Recency"],["has_value","Value"],["has_evidence","Evidence"]],analyst.network);
     renderTable("events-table",[["source_type","Source"],["stage","Stage"],["severity","Severity"],["recency","Recency"],["has_evidence","Evidence"]],analyst.events);
@@ -260,24 +330,11 @@ async function refresh() {
     const matrix=admin.capability_matrix||{};
     renderCapabilityCenter(matrix);
     byId("admin-status").textContent=JSON.stringify({admin:admin,authority:analyst.authority},null,2);
-
-    const list=byId("issues"); list.replaceChildren();
-    for (const issue of ready.issues||[]) { const li=document.createElement("li"); li.textContent=(issue.code||"UNKNOWN")+": "+(issue.message||""); list.appendChild(li); }
-    if (!(ready.issues||[]).length) { const li=document.createElement("li"); li.textContent="No blocking issues"; list.appendChild(li); }
-    byId("run").disabled=!ready.ready || demoMode;
-    byId("result").textContent=demoMode ? "DEMO MODE: 実ネットワーク監視は無効です。Analyst Workspace で合成データを確認してください。" : (ready.ready?"実行可能":"Readiness BLOCKED");
-    byId("demo-banner").hidden=!demoMode;
-  } catch (error) {
-    readiness=null;
-    const message="Backend connection error: "+error;
-    for (const id of ["enabled","network","ready","assets","evidence-open","evidence-high","operator-graphs","operator-flows","operator-timeline","analyst-state","analyst-assets-count","analyst-network-count","analyst-events-count","analyst-findings-count","cap-active","cap-ready","cap-gated","cap-disabled"]) {
-      byId(id).textContent="ERROR"; byId(id).className="value bad";
-    }
-    for (const id of ["asset-intelligence","evidence-summary","incident-posture","operator-posture","readiness-json","admin-status","cap-authority","result"]) {
-      byId(id).textContent=message;
-    }
-    byId("run").disabled=true;
+  } else {
+    clearAnalystSurface(surfaceUnavailable("analyst-snapshot"));
   }
+
+  byId("demo-banner").hidden=!demoMode;
 }
 async function postExact(path,payload,target) {
   target.textContent="実行中...";
