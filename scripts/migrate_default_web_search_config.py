@@ -57,7 +57,7 @@ def migrate_payload(data: dict[str, Any]) -> tuple[dict[str, Any], bool, str]:
         return data, False, "custom-or-already-migrated"
 
     migrated = json.loads(json.dumps(data))
-    migrated["environment"] = "local"
+    migrated["environment"] = "public-research-zone"
     migrated["confidentiality_mode"] = "public-research"
     migrated["test_mode_full_access"] = False
 
