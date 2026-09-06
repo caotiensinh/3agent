@@ -6,6 +6,7 @@ import json
 import os
 import socket
 import struct
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
@@ -49,7 +50,14 @@ def _safe_identity(request: dict) -> tuple[str, str | None]:
 
 
 class EgressBroker:
-    def __init__(self, config_path: str, socket_path: Path, allowed_uid: int):
+    def __init__(self, config_path: str, socket_path: Path, allowed_uid: int | Iterable[int]):
+        if isinstance(allowed_uid, int):
+            allowed_uids = (int(allowed_uid),)
+        else:
+            allowed_uids = tuple(int(uid) for uid in allowed_uid)
+        if not allowed_uids or any(uid < 0 for uid in allowed_uids):
+            raise ValueError("egress broker requires at least one non-negative allowed UID")
+
         app = load_config(config_path)
         direct_config = replace(
             app.internet_gateway,
@@ -58,7 +66,7 @@ class EgressBroker:
         )
         self.gateway = InternetGateway(direct_config, test_mode_full_access=False)
         self.socket_path = Path(socket_path)
-        self.allowed_uid = int(allowed_uid)
+        self.allowed_uids = frozenset(allowed_uids)
 
     def _dispatch(self, request: dict) -> bytes:
         agent_id, task_id = _safe_identity(request)
@@ -84,7 +92,7 @@ class EgressBroker:
 
     def _serve_connection(self, conn: socket.socket) -> None:
         peer_uid = _peer_uid(conn)
-        if peer_uid is None or peer_uid != self.allowed_uid:
+        if peer_uid is None or peer_uid not in self.allowed_uids:
             raise PermissionError("egress broker peer UID rejected")
         request_size = struct.unpack("!I", _recv_exact(conn, 4))[0]
         if request_size <= 0 or request_size > _MAX_REQUEST_BYTES:
@@ -126,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workspace-egressd")
     parser.add_argument("--config", default=os.getenv("WORKSPACE_CONFIG", "/etc/workspace/workspace.secure.json"))
     parser.add_argument("--socket", default="/run/workspace/egress.sock")
-    parser.add_argument("--allow-uid", type=int, required=True)
+    parser.add_argument("--allow-uid", type=int, action="append", required=True)
     return parser
 
 
