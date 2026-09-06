@@ -26,6 +26,10 @@ monitoring-snmp = [
 model-provisioning = [
   "huggingface-hub>=0.34,<2",
 ]
+embedding-runtime = [
+  "sentence-transformers>=6.0.1,<7",
+  "transformers>=5.16.1,<6",
+]
 
 [project.scripts]
 workspace = "three_agent.cli:main"
