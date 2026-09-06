@@ -3,6 +3,7 @@ name: model-candidate-acceptance-ci
 on:
   pull_request:
     paths:
+      - 'config/model-candidates/qwen3-embedding-0.6b.acceptance-request.json'
       - 'scripts/accept_hf_model_candidate.py'
       - 'scripts/audit_hf_model_candidate.py'
       - 'tests/test_model_candidate_acceptance.py'
@@ -15,6 +16,7 @@ on:
       - '.github/workflows/qwen3-embedding-runtime-acceptance.yml'
   push:
     paths:
+      - 'config/model-candidates/qwen3-embedding-0.6b.acceptance-request.json'
       - 'scripts/accept_hf_model_candidate.py'
       - 'scripts/audit_hf_model_candidate.py'
       - 'tests/test_model_candidate_acceptance.py'
