@@ -8,269 +8,288 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .security_monitoring.demo import create_demo_environment
 from .security_monitoring.locking import MonitoringRunAlreadyLocked
 from .security_monitoring.service import SecurityMonitoringService
+from .security_monitoring.ui_config import (
+    SecurityMonitoringUIConfigManager,
+    default_config_path,
+    safe_default_payload,
+)
 
 MAX_REQUEST_BYTES = 4096
 _LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 
-_PAGE = """<!doctype html>
+_PAGE = r'''<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>WorkSpace Security Console</title>
   <style nonce="__CSP_NONCE__">
-    :root { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color-scheme: light dark; }
-    body { margin: 0; background: #111827; color: #e5e7eb; }
-    main { max-width: 1080px; margin: 0 auto; padding: 28px 20px 48px; }
-    h1 { margin: 0 0 6px; font-size: 28px; }
-    .muted { color: #9ca3af; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 14px; margin-top: 20px; }
-    .card { border: 1px solid #374151; border-radius: 12px; padding: 16px; background: #1f2937; }
-    .label { color: #9ca3af; font-size: 13px; }
-    .value { margin-top: 6px; font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
-    .good { color: #86efac; } .bad { color: #fca5a5; } .warn { color: #fde68a; }
-    button { margin-top: 18px; border: 0; border-radius: 9px; padding: 11px 15px; font-weight: 700; cursor: pointer; }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid #374151; border-radius: 10px; padding: 14px; background: #111827; }
-    ul { padding-left: 20px; }
+    :root { font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:#0b1220; color:#e5e7eb; }
+    main { max-width:1280px; margin:0 auto; padding:24px 18px 48px; }
+    h1 { margin:0 0 4px; font-size:28px; }
+    h2 { margin:0 0 8px; font-size:20px; }
+    .muted { color:#94a3b8; }
+    .banner { margin:16px 0; border:1px solid #0ea5e9; border-radius:10px; padding:12px; background:#082f49; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0; position:sticky; top:0; padding:10px 0; background:#0b1220; z-index:2; }
+    .tabs button { margin:0; background:#1e293b; color:#e2e8f0; }
+    .tabs button.active { background:#0369a1; }
+    .panel { display:none; }
+    .panel.active { display:block; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-top:12px; }
+    .card { border:1px solid #334155; border-radius:12px; padding:14px; background:#111827; }
+    .label { color:#94a3b8; font-size:12px; }
+    .value { margin-top:5px; font-size:21px; font-weight:700; overflow-wrap:anywhere; }
+    .good { color:#86efac; } .bad { color:#fca5a5; } .warn { color:#fde68a; }
+    button { border:0; border-radius:8px; padding:10px 14px; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .primary { background:#0369a1; color:white; }
+    .safe { background:#166534; color:white; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; border:1px solid #334155; border-radius:10px; padding:12px; background:#020617; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
+    th,td { border-bottom:1px solid #334155; text-align:left; padding:9px 7px; vertical-align:top; }
+    th { color:#94a3b8; font-weight:600; }
+    .table-wrap { overflow:auto; max-height:420px; }
+    ul { padding-left:20px; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
   </style>
 </head>
 <body>
 <main>
   <h1>WorkSpace Security Console</h1>
-  <div class="muted">ローカル専用・読み取り専用監視コンソール</div>
-  <div class="grid">
-    <section class="card"><div class="label">監視</div><div id="enabled" class="value">読込中</div></section>
-    <section class="card"><div class="label">実ネットワーク読取</div><div id="network" class="value">読込中</div></section>
-    <section class="card"><div class="label">準備状況</div><div id="ready" class="value">読込中</div></section>
-    <section class="card"><div class="label">有効アセット</div><div id="assets" class="value">-</div></section>
-  </div>
+  <div class="muted">ローカル専用 Security / Network / Monitoring / Analyst Console</div>
+  <div id="demo-banner" class="banner" hidden>DEMO MODE — 合成データのみ。実ネットワーク、Packet Capture、Remediation は実行しません。</div>
 
-  <section class="card" style="margin-top:14px">
-    <strong>Asset Intelligence</strong>
-    <p class="muted">承認済み設定から集計値のみを表示します。アセットID、管理ホスト、資格情報参照、TCPポート値は表示しません。</p>
-    <div class="grid">
-      <section class="card"><div class="label">全アセット</div><div id="asset-total" class="value">-</div></section>
-      <section class="card"><div class="label">無効アセット</div><div id="asset-disabled" class="value">-</div></section>
-      <section class="card"><div class="label">有効ロール数</div><div id="asset-roles" class="value">-</div></section>
-      <section class="card"><div class="label">資格情報参照あり</div><div id="asset-credentials" class="value">-</div></section>
-      <section class="card"><div class="label">明示TCPポート割当数</div><div id="asset-port-bindings" class="value">-</div></section>
-    </div>
-    <pre id="asset-intelligence">Asset Intelligence を読み込んでいます...</pre>
-  </section>
+  <nav class="tabs">
+    <button class="tab active" data-panel="overview">Overview</button>
+    <button class="tab" data-panel="analyst">Analyst Workspace</button>
+    <button class="tab" data-panel="capability-center">Capability Center</button>
+    <button class="tab" data-panel="operations">Operations</button>
+    <button class="tab" data-panel="readiness-panel">Readiness</button>
+  </nav>
 
-  <section class="card" style="margin-top:14px">
-    <strong>Evidence / Result History</strong>
-    <p class="muted">監視DBの直近最大100件/ストリームを集計値だけで表示します。アセットID、ソースID、Finding ID、Evidence参照、Bundle参照、RAW値は表示しません。</p>
+  <section id="overview" class="panel active">
     <div class="grid">
-      <section class="card"><div class="label">監視DB</div><div id="evidence-db" class="value">-</div></section>
-      <section class="card"><div class="label">監視状態</div><div id="evidence-health" class="value">-</div></section>
-      <section class="card"><div class="label">Observation sample</div><div id="evidence-observations" class="value">-</div></section>
-      <section class="card"><div class="label">Evidence-linked observations</div><div id="evidence-observation-links" class="value">-</div></section>
-      <section class="card"><div class="label">Event sample</div><div id="evidence-events" class="value">-</div></section>
-      <section class="card"><div class="label">Evidence-linked events</div><div id="evidence-event-links" class="value">-</div></section>
-      <section class="card"><div class="label">Finding sample</div><div id="evidence-findings" class="value">-</div></section>
-      <section class="card"><div class="label">Evidence-linked findings</div><div id="evidence-finding-links" class="value">-</div></section>
-      <section class="card"><div class="label">Report sample</div><div id="evidence-reports" class="value">-</div></section>
+      <section class="card"><div class="label">監視</div><div id="enabled" class="value">読込中</div></section>
+      <section class="card"><div class="label">実ネットワーク読取</div><div id="network" class="value">読込中</div></section>
+      <section class="card"><div class="label">準備状況</div><div id="ready" class="value">読込中</div></section>
+      <section class="card"><div class="label">有効アセット</div><div id="assets" class="value">-</div></section>
       <section class="card"><div class="label">Open findings</div><div id="evidence-open" class="value">-</div></section>
       <section class="card"><div class="label">High / Critical</div><div id="evidence-high" class="value">-</div></section>
-    </div>
-    <pre id="evidence-summary">Evidence summary を読み込んでいます...</pre>
-  </section>
-
-  <section class="card" style="margin-top:14px">
-    <strong>Incident Posture</strong>
-    <p class="muted">直近最大100件のFindingを固定バケットの集計値だけで表示します。Finding ID、Asset参照、Evidence参照、Rule ID、Category値は表示しません。</p>
-    <div class="grid">
-      <section class="card"><div class="label">Attention</div><div id="incident-attention" class="value">-</div></section>
-      <section class="card"><div class="label">Finding sample</div><div id="incident-sample" class="value">-</div></section>
-      <section class="card"><div class="label">Open sample</div><div id="incident-open" class="value">-</div></section>
-      <section class="card"><div class="label">Closed sample</div><div id="incident-closed" class="value">-</div></section>
-    </div>
-    <pre id="incident-posture">Incident posture を読み込んでいます...</pre>
-  </section>
-
-  <section class="card" style="margin-top:14px">
-    <strong>Operator Posture</strong>
-    <p class="muted">Risk・Asset Health・Correlation・Flow・Timeline を固定集計値で統合します。Event/Graph/Entity/Evidence/Rule/Asset ID、IP、RAW値、正確な時刻は表示しません。</p>
-    <div class="grid">
-      <section class="card"><div class="label">Data state</div><div id="operator-data-state" class="value">-</div></section>
-      <section class="card"><div class="label">Today High/Critical</div><div id="operator-risk" class="value">-</div></section>
-      <section class="card"><div class="label">Healthy assets</div><div id="operator-healthy" class="value">-</div></section>
       <section class="card"><div class="label">Correlation graphs</div><div id="operator-graphs" class="value">-</div></section>
       <section class="card"><div class="label">Flow events</div><div id="operator-flows" class="value">-</div></section>
       <section class="card"><div class="label">Timeline entries</div><div id="operator-timeline" class="value">-</div></section>
     </div>
-    <pre id="operator-posture">Operator posture を読み込んでいます...</pre>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Asset Intelligence</h2>
+      <p class="muted">承認済み設定から集計値のみを表示します。アセットID、管理ホスト、資格情報参照、TCPポート値は表示しません。</p>
+      <pre id="asset-intelligence">Asset Intelligence を読み込んでいます...</pre>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <h2>Evidence / Result History</h2>
+      <p class="muted">監視DBの直近最大100件/ストリームを集計値だけで表示します。アセットID、ソースID、Finding ID、Evidence参照、Bundle参照、RAW値は表示しません。</p>
+      <pre id="evidence-summary">Evidence summary を読み込んでいます...</pre>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <h2>Incident Posture</h2>
+      <p class="muted">Finding ID、Asset参照、Evidence参照、Rule ID、Category値は表示しません。</p>
+      <pre id="incident-posture">Incident posture を読み込んでいます...</pre>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <h2>Operator Posture</h2>
+      <p class="muted">Risk・Asset Health・Correlation・Flow・Timeline を固定集計値で統合します。正確な時刻は表示しません。</p>
+      <pre id="operator-posture">Operator posture を読み込んでいます...</pre>
+    </section>
   </section>
 
-  <section class="card" style="margin-top:14px">
-    <strong>Read-only monitoring</strong>
-    <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
-    <button id="run" disabled>読み取り専用監視を実行</button>
-    <pre id="result">準備状況を確認しています...</pre>
+  <section id="analyst" class="panel">
+    <section class="card">
+      <h2>Analyst Workspace — Read Only</h2>
+      <p class="muted">Backend の query-only read model を最大50件/streamで表示します。Raw Asset ID / IP / Hostname / Credential / Evidence Ref / Event ID / Finding ID / Rule ID はブラウザへ返しません。</p>
+      <div class="grid">
+        <section class="card"><div class="label">Data state</div><div id="analyst-state" class="value">-</div></section>
+        <section class="card"><div class="label">Assets</div><div id="analyst-assets-count" class="value">-</div></section>
+        <section class="card"><div class="label">Network observations</div><div id="analyst-network-count" class="value">-</div></section>
+        <section class="card"><div class="label">Events</div><div id="analyst-events-count" class="value">-</div></section>
+        <section class="card"><div class="label">Findings</div><div id="analyst-findings-count" class="value">-</div></section>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:14px"><h2>Assets</h2><div class="table-wrap"><table id="assets-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Network Observations</h2><div class="table-wrap"><table id="network-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Security Events</h2><div class="table-wrap"><table id="events-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Findings</h2><div class="table-wrap"><table id="findings-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Reports</h2><div class="table-wrap"><table id="reports-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Admin / Safety Status</h2><pre id="admin-status">読込中...</pre></section>
   </section>
 
-  <section class="card" style="margin-top:14px">
-    <strong>Readiness</strong>
-    <ul id="issues"></ul>
+  <section id="capability-center" class="panel">
+    <section class="card">
+      <h2>Capability Center — Safe Activation Status</h2>
+      <p class="muted">Backend capability の状態を表示するだけです。ACTIVE / READY はブラウザに新しい実行権限を与えません。Packet Capture、Remediation、Shell、任意Target Scan、Credential入力は無効のままです。</p>
+      <div class="grid">
+        <section class="card"><div class="label">ACTIVE</div><div id="cap-active" class="value">-</div></section>
+        <section class="card"><div class="label">READY</div><div id="cap-ready" class="value">-</div></section>
+        <section class="card"><div class="label">GATED</div><div id="cap-gated" class="value">-</div></section>
+        <section class="card"><div class="label">DISABLED / NOT CONFIGURED</div><div id="cap-disabled" class="value">-</div></section>
+      </div>
+    </section>
+    <section class="card" style="margin-top:14px"><h2>Read Surfaces</h2><div class="table-wrap"><table id="cap-read-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Local Operations</h2><p class="muted">READY でも実行時には既存の CSRF / readiness / policy / explicit confirmation gate が必要です。</p><div class="table-wrap"><table id="cap-operations-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Collector Capabilities</h2><div class="table-wrap"><table id="cap-collectors-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Restricted Surfaces</h2><div class="table-wrap"><table id="cap-restricted-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Matrix Authority</h2><pre id="cap-authority">読込中...</pre></section>
+  </section>
+
+  <section id="operations" class="panel">
+    <section class="card">
+      <h2>Local setup</h2>
+      <p class="muted">Initialize はローカルSQLite schemaと承認済みinventoryだけを同期します。ネットワーク通信は発生しません。</p>
+      <div class="actions"><button id="initialize" class="safe">ローカル監視DBを初期化</button></div>
+      <pre id="initialize-result">未実行</pre>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <h2>Read-only monitoring</h2>
+      <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
+      <div class="actions"><button id="run" class="primary" disabled>読み取り専用監視を実行</button></div>
+      <pre id="result">準備状況を確認しています...</pre>
+    </section>
+  </section>
+
+  <section id="readiness-panel" class="panel">
+    <section class="card"><h2>Readiness</h2><ul id="issues"></ul><pre id="readiness-json"></pre></section>
   </section>
 </main>
 <script nonce="__CSP_NONCE__">
 const csrf = "__CSRF_TOKEN__";
+const demoMode = __DEMO_MODE__;
 const byId = (id) => document.getElementById(id);
-let summary = null;
 let readiness = null;
-let assetIntelligence = null;
-let evidenceSummary = null;
-let incidentPosture = null;
-let operatorPosture = null;
 
-function stateText(value) { return value ? "有効" : "無効"; }
 function setState(el, value) {
-  el.textContent = stateText(value);
+  el.textContent = value ? "有効" : "無効";
   el.className = "value " + (value ? "good" : "bad");
 }
+function text(value) { return value === null || value === undefined ? "-" : String(value); }
+function renderTable(id, columns, rows) {
+  const table = byId(id); table.replaceChildren();
+  const thead = document.createElement("thead"); const trh = document.createElement("tr");
+  for (const [key,label] of columns) { const th=document.createElement("th"); th.textContent=label; trh.appendChild(th); }
+  thead.appendChild(trh); table.appendChild(thead);
+  const tbody=document.createElement("tbody");
+  const safeRows=Array.isArray(rows)?rows:[];
+  if (!safeRows.length) {
+    const tr=document.createElement("tr"); const td=document.createElement("td");
+    td.colSpan=columns.length; td.textContent="No data"; tr.appendChild(td); tbody.appendChild(tr);
+  } else {
+    for (const row of safeRows) {
+      const tr=document.createElement("tr");
+      for (const [key] of columns) { const td=document.createElement("td"); const v=row[key]; td.textContent=Array.isArray(v)?v.join(", "):text(v); tr.appendChild(td); }
+      tbody.appendChild(tr);
+    }
+  }
+  table.appendChild(tbody);
+}
+function activatePanel(name) {
+  document.querySelectorAll(".panel").forEach(el => el.classList.toggle("active", el.id===name));
+  document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.panel===name));
+}
+function renderCapabilityCenter(matrix) {
+  const readSurfaces=matrix.read_surfaces||[];
+  const operations=matrix.local_operations||[];
+  const collectors=matrix.collector_capabilities||[];
+  const restricted=matrix.restricted_surfaces||[];
+  const all=[...readSurfaces,...operations,...collectors,...restricted];
+  const count=(state)=>all.filter(item=>item && item.state===state).length;
+  byId("cap-active").textContent=text(count("active"));
+  byId("cap-ready").textContent=text(count("ready"));
+  byId("cap-gated").textContent=text(count("gated"));
+  byId("cap-disabled").textContent=text(count("disabled")+count("not_configured"));
+  renderTable("cap-read-table",[["name","Capability"],["state","State"],["reason_code","Reason"]],readSurfaces);
+  renderTable("cap-operations-table",[["name","Operation"],["state","State"],["reason_code","Reason"],["user_confirmation_required","Confirmation"]],operations);
+  renderTable("cap-collectors-table",[["name","Collector"],["state","State"],["reason_code","Reason"],["configured_asset_count","Approved assets"],["user_confirmation_required","Confirmation"]],collectors);
+  renderTable("cap-restricted-table",[["name","Restricted surface"],["state","State"],["reason_code","Reason"]],restricted);
+  byId("cap-authority").textContent=JSON.stringify(matrix.authority||{},null,2);
+}
+document.querySelectorAll(".tab").forEach(el => el.addEventListener("click", () => activatePanel(el.dataset.panel)));
 
+async function jsonGet(path) {
+  const response=await fetch(path,{cache:"no-store"}); const payload=await response.json();
+  if (!response.ok) throw new Error(payload.reason_code || path); return payload;
+}
 async function refresh() {
   try {
-    const [summaryResp, readinessResp, assetResp, evidenceResp, incidentResp, operatorResp] = await Promise.all([
-      fetch("/api/v1/security/monitoring/summary", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/evidence-summary", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/incident-posture", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/operator-posture", {cache:"no-store"})
+    const [summary, ready, asset, evidence, incident, operator, analyst] = await Promise.all([
+      jsonGet("/api/v1/security/monitoring/summary"),
+      jsonGet("/api/v1/security/monitoring/readiness"),
+      jsonGet("/api/v1/security/monitoring/asset-intelligence"),
+      jsonGet("/api/v1/security/monitoring/evidence-summary"),
+      jsonGet("/api/v1/security/monitoring/incident-posture"),
+      jsonGet("/api/v1/security/monitoring/operator-posture"),
+      jsonGet("/api/v1/security/monitoring/analyst-snapshot")
     ]);
-    summary = await summaryResp.json();
-    readiness = await readinessResp.json();
-    assetIntelligence = await assetResp.json();
-    evidenceSummary = await evidenceResp.json();
-    incidentPosture = await incidentResp.json();
-    operatorPosture = await operatorResp.json();
-    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok || !incidentResp.ok || !operatorResp.ok) throw new Error("backend status unavailable");
+    readiness=ready;
+    setState(byId("enabled"),summary.enabled===true); setState(byId("network"),summary.allow_real_network===true);
+    byId("ready").textContent=ready.ready?"READY":"BLOCKED"; byId("ready").className="value "+(ready.ready?"good":"bad");
+    byId("assets").textContent=text(summary.enabled_asset_count||0);
+    byId("evidence-open").textContent=text(evidence.open_finding_count||0); byId("evidence-high").textContent=text(evidence.high_critical_count||0);
+    const corr=operator.correlation||{}, flow=operator.flow||{}, timeline=operator.timeline||{};
+    byId("operator-graphs").textContent=text(corr.incident_graph_count||0); byId("operator-flows").textContent=text(flow.flow_event_count||0); byId("operator-timeline").textContent=text(timeline.entry_count||0);
+    byId("asset-intelligence").textContent=JSON.stringify(asset,null,2);
+    byId("evidence-summary").textContent=JSON.stringify(evidence,null,2);
+    byId("incident-posture").textContent=JSON.stringify(incident,null,2);
+    byId("operator-posture").textContent=JSON.stringify(operator,null,2);
+    byId("readiness-json").textContent=JSON.stringify(ready,null,2);
 
-    setState(byId("enabled"), summary.enabled === true);
-    setState(byId("network"), summary.allow_real_network === true);
-    byId("ready").textContent = readiness.ready ? "READY" : "BLOCKED";
-    byId("ready").className = "value " + (readiness.ready ? "good" : "bad");
-    byId("assets").textContent = String(summary.enabled_asset_count ?? 0);
+    byId("analyst-state").textContent=text(analyst.data_state);
+    byId("analyst-assets-count").textContent=text((analyst.assets||[]).length);
+    byId("analyst-network-count").textContent=text((analyst.network||[]).length);
+    byId("analyst-events-count").textContent=text((analyst.events||[]).length);
+    byId("analyst-findings-count").textContent=text((analyst.findings||[]).length);
+    renderTable("assets-table",[["alias","Asset"],["enabled","Enabled"],["data_class","Data class"],["collector_capabilities","Collectors"],["last_status","Status"],["recency","Recency"]],analyst.assets);
+    renderTable("network-table",[["asset","Asset"],["collector","Collector"],["status","Status"],["recency","Recency"],["has_value","Value"],["has_evidence","Evidence"]],analyst.network);
+    renderTable("events-table",[["source_type","Source"],["stage","Stage"],["severity","Severity"],["recency","Recency"],["has_evidence","Evidence"]],analyst.events);
+    renderTable("findings-table",[["severity","Severity"],["status","Status"],["asset_link_count","Assets"],["evidence_link_count","Evidence"],["recency","Recency"]],analyst.findings);
+    renderTable("reports-table",[["period_kind","Period"],["status","Status"],["recency","Recency"]],analyst.reports);
+    const admin=analyst.admin||{};
+    const matrix=admin.capability_matrix||{};
+    renderCapabilityCenter(matrix);
+    byId("admin-status").textContent=JSON.stringify({admin:admin,authority:analyst.authority},null,2);
 
-    byId("asset-total").textContent = String(assetIntelligence.asset_count ?? 0);
-    byId("asset-disabled").textContent = String(assetIntelligence.disabled_asset_count ?? 0);
-    byId("asset-roles").textContent = String(assetIntelligence.unique_role_count ?? 0);
-    byId("asset-credentials").textContent = String(assetIntelligence.credential_ref_asset_count ?? 0);
-    byId("asset-port-bindings").textContent = String(assetIntelligence.explicit_tcp_port_binding_count ?? 0);
-    byId("asset-intelligence").textContent = JSON.stringify({
-      capability_counts: assetIntelligence.capability_counts || {},
-      data_class_counts: assetIntelligence.data_class_counts || {},
-      authority: assetIntelligence.authority || {}
-    }, null, 2);
-
-    byId("evidence-db").textContent = evidenceSummary.database_available ? "利用可能" : "利用不可";
-    byId("evidence-db").className = "value " + (evidenceSummary.database_available ? "good" : "warn");
-    byId("evidence-health").textContent = String(evidenceSummary.health ?? "unknown");
-    byId("evidence-observations").textContent = String(evidenceSummary.observation_sample_count ?? 0);
-    byId("evidence-observation-links").textContent = String(evidenceSummary.observation_evidence_linked_count ?? 0);
-    byId("evidence-events").textContent = String(evidenceSummary.event_sample_count ?? 0);
-    byId("evidence-event-links").textContent = String(evidenceSummary.event_evidence_linked_count ?? 0);
-    byId("evidence-findings").textContent = String(evidenceSummary.finding_sample_count ?? 0);
-    byId("evidence-finding-links").textContent = String(evidenceSummary.finding_evidence_linked_count ?? 0);
-    byId("evidence-reports").textContent = String(evidenceSummary.report_sample_count ?? 0);
-    byId("evidence-open").textContent = String(evidenceSummary.open_finding_count ?? 0);
-    byId("evidence-high").textContent = String(evidenceSummary.high_critical_count ?? 0);
-    byId("evidence-summary").textContent = JSON.stringify({
-      count_scope: evidenceSummary.count_scope,
-      max_records_per_stream: evidenceSummary.max_records_per_stream,
-      reason_codes: evidenceSummary.reason_codes || [],
-      latest_hourly: evidenceSummary.latest_hourly,
-      authority: evidenceSummary.authority || {}
-    }, null, 2);
-
-    byId("incident-attention").textContent = String(incidentPosture.attention_level ?? "unknown");
-    byId("incident-sample").textContent = String(incidentPosture.sample_count ?? 0);
-    byId("incident-open").textContent = String(incidentPosture.open_sample_count ?? 0);
-    byId("incident-closed").textContent = String(incidentPosture.closed_sample_count ?? 0);
-    byId("incident-posture").textContent = JSON.stringify({
-      count_scope: incidentPosture.count_scope,
-      max_findings: incidentPosture.max_findings,
-      severity_counts: incidentPosture.severity_counts || {},
-      status_counts: incidentPosture.status_counts || {},
-      authority: incidentPosture.authority || {}
-    }, null, 2);
-
-    const operatorHealth = operatorPosture.asset_health || {};
-    const operatorHealthCounts = operatorHealth.state_counts || {};
-    const operatorCorrelation = operatorPosture.correlation || {};
-    const operatorFlow = operatorPosture.flow || {};
-    const operatorTimeline = operatorPosture.timeline || {};
-    const operatorRisk = operatorPosture.risk || {};
-    byId("operator-data-state").textContent = String(operatorPosture.data_state ?? "unknown");
-    byId("operator-risk").textContent = String(operatorRisk.today_open_high_critical ?? 0);
-    byId("operator-healthy").textContent = String(operatorHealthCounts.healthy ?? 0);
-    byId("operator-graphs").textContent = String(operatorCorrelation.incident_graph_count ?? 0);
-    byId("operator-flows").textContent = String(operatorFlow.flow_event_count ?? 0);
-    byId("operator-timeline").textContent = String(operatorTimeline.entry_count ?? 0);
-    byId("operator-posture").textContent = JSON.stringify({
-      risk: operatorRisk,
-      asset_health: operatorHealth,
-      correlation: operatorCorrelation,
-      flow: operatorFlow,
-      timeline: operatorTimeline,
-      authority: operatorPosture.authority || {}
-    }, null, 2);
-
-    const list = byId("issues");
-    list.replaceChildren();
-    for (const item of [...(readiness.issues || []), ...(readiness.warnings || [])]) {
-      const li = document.createElement("li");
-      li.textContent = `${item.code}: ${item.message}`;
-      list.appendChild(li);
-    }
-    if (!list.children.length) {
-      const li = document.createElement("li");
-      li.textContent = "No readiness issues.";
-      li.className = "good";
-      list.appendChild(li);
-    }
-    byId("run").disabled = !(readiness.ready && summary.enabled && summary.allow_real_network);
-    byId("result").textContent = "Backend connected. User action is required before execution.";
+    const list=byId("issues"); list.replaceChildren();
+    for (const issue of ready.issues||[]) { const li=document.createElement("li"); li.textContent=(issue.code||"UNKNOWN")+": "+(issue.message||""); list.appendChild(li); }
+    if (!(ready.issues||[]).length) { const li=document.createElement("li"); li.textContent="No blocking issues"; list.appendChild(li); }
+    byId("run").disabled=!ready.ready || demoMode;
+    byId("result").textContent=demoMode ? "DEMO MODE: 実ネットワーク監視は無効です。Analyst Workspace で合成データを確認してください。" : (ready.ready?"実行可能":"Readiness BLOCKED");
+    byId("demo-banner").hidden=!demoMode;
   } catch (error) {
-    byId("result").textContent = `接続エラー: ${error.message}`;
-    byId("asset-intelligence").textContent = "Asset Intelligence を取得できません。";
-    byId("evidence-summary").textContent = "Evidence summary を取得できません。";
-    byId("incident-posture").textContent = "Incident posture を取得できません。";
-    byId("operator-posture").textContent = "Operator posture を取得できません。";
+    readiness=null;
+    const message="Backend connection error: "+error;
+    for (const id of ["enabled","network","ready","assets","evidence-open","evidence-high","operator-graphs","operator-flows","operator-timeline","analyst-state","analyst-assets-count","analyst-network-count","analyst-events-count","analyst-findings-count","cap-active","cap-ready","cap-gated","cap-disabled"]) {
+      byId(id).textContent="ERROR"; byId(id).className="value bad";
+    }
+    for (const id of ["asset-intelligence","evidence-summary","incident-posture","operator-posture","readiness-json","admin-status","cap-authority","result"]) {
+      byId(id).textContent=message;
+    }
+    byId("run").disabled=true;
   }
 }
-
-byId("run").addEventListener("click", async () => {
-  if (!window.confirm("承認済みアセットに対して読み取り専用監視を実行しますか？")) return;
-  const button = byId("run");
-  button.disabled = true;
-  byId("result").textContent = "実行中...";
-  try {
-    const response = await fetch("/api/v1/security/monitoring/run-hourly", {
-      method: "POST",
-      headers: {"Content-Type":"application/json", "X-Workspace-CSRF": csrf},
-      body: JSON.stringify({confirm_readonly:true})
-    });
-    const payload = await response.json();
-    byId("result").textContent = JSON.stringify(payload, null, 2);
-  } catch (error) {
-    byId("result").textContent = `実行エラー: ${error.message}`;
-  } finally {
-    await refresh();
-  }
-});
-
+async function postExact(path,payload,target) {
+  target.textContent="実行中...";
+  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Workspace-CSRF":csrf},body:JSON.stringify(payload),cache:"no-store"});
+  const data=await response.json(); target.textContent=JSON.stringify(data,null,2); await refresh();
+}
+byId("run").addEventListener("click",async()=>{ if(!readiness?.ready||demoMode)return; if(!window.confirm("承認済みアセットに対して読み取り専用監視を実行しますか？"))return; await postExact("/api/v1/security/monitoring/run-hourly",{confirm_readonly:true},byId("result")); });
+byId("initialize").addEventListener("click",async()=>{ if(!window.confirm("ローカル監視DBを初期化し、承認済みinventoryを同期しますか？"))return; await postExact("/api/v1/security/monitoring/initialize",{confirm_initialize:true},byId("initialize-result")); });
 refresh();
 </script>
 </body>
-</html>
-"""
+</html>'''
 
 
 def validate_loopback_host(host: str) -> str:
@@ -280,78 +299,98 @@ def validate_loopback_host(host: str) -> str:
     return normalized
 
 
-def _host_header_is_loopback(value: str | None) -> bool:
+def _request_host_is_loopback(value: str | None) -> bool:
     raw = str(value or "").strip().lower()
     if not raw:
         return False
-    host = raw.split(":", 1)[0]
+    if raw.startswith("["):
+        return False
+    host = raw.rsplit(":", 1)[0] if ":" in raw else raw
     return host in _LOCAL_HOSTS
 
 
-class SecurityConsoleServer(ThreadingHTTPServer):
+class _Server(ThreadingHTTPServer):
     daemon_threads = True
+    allow_reuse_address = True
 
-    def __init__(
-        self,
-        server_address: tuple[str, int],
-        service: SecurityMonitoringService,
-        *,
-        csrf_token: str | None = None,
-        csp_nonce: str | None = None,
-    ) -> None:
+    def __init__(self, address: tuple[str, int], service: SecurityMonitoringService, *, csrf_token: str, csp_nonce: str, demo_mode: bool) -> None:
+        super().__init__(address, _Handler)
         self.service = service
-        self.csrf_token = csrf_token or secrets.token_hex(32)
-        self.csp_nonce = csp_nonce or secrets.token_hex(16)
-        super().__init__(server_address, SecurityConsoleHandler)
+        self.csrf_token = csrf_token
+        self.csp_nonce = csp_nonce
+        self.demo_mode = demo_mode
 
 
-class SecurityConsoleHandler(BaseHTTPRequestHandler):
-    server: SecurityConsoleServer
+class _Handler(BaseHTTPRequestHandler):
+    server: _Server
 
-    def log_message(self, format: str, *args) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:
         return
 
-    def _security_headers(self) -> None:
+    def _headers(self, content_type: str) -> None:
+        self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
-        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", f"default-src 'none'; style-src 'nonce-{self.server.csp_nonce}'; script-src 'nonce-{self.server.csp_nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
 
     def _json(self, status: int, payload: dict[str, object]) -> None:
-        body = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self._security_headers()
+        self._headers("application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(raw)
 
     def _html(self) -> None:
-        page = _PAGE.replace("__CSRF_TOKEN__", self.server.csrf_token).replace(
-            "__CSP_NONCE__", self.server.csp_nonce
+        page = (
+            _PAGE.replace("__CSRF_TOKEN__", self.server.csrf_token)
+            .replace("__CSP_NONCE__", self.server.csp_nonce)
+            .replace("__DEMO_MODE__", "true" if self.server.demo_mode else "false")
         )
-        body = page.encode("utf-8")
+        raw = page.encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'none'; connect-src 'self'; "
-            f"script-src 'nonce-{self.server.csp_nonce}'; "
-            f"style-src 'nonce-{self.server.csp_nonce}'; base-uri 'none'; frame-ancestors 'none'",
-        )
-        self._security_headers()
+        self._headers("text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(raw)
 
-    def _valid_host(self) -> bool:
-        if _host_header_is_loopback(self.headers.get("Host")):
+    def _host_ok(self) -> bool:
+        if _request_host_is_loopback(self.headers.get("Host")):
             return True
         self._json(421, {"status": "blocked", "reason_code": "LOOPBACK_HOST_REQUIRED"})
         return False
 
-    def do_GET(self) -> None:  # noqa: N802
-        if not self._valid_host():
+    def _body(self) -> dict[str, object] | None:
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            self._json(400, {"status": "blocked", "reason_code": "INVALID_CONTENT_LENGTH"})
+            return None
+        if length <= 0 or length > MAX_REQUEST_BYTES:
+            self._json(400, {"status": "blocked", "reason_code": "INVALID_REQUEST_SIZE"})
+            return None
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._json(400, {"status": "blocked", "reason_code": "INVALID_JSON"})
+            return None
+        if not isinstance(payload, dict):
+            self._json(400, {"status": "blocked", "reason_code": "JSON_OBJECT_REQUIRED"})
+            return None
+        return payload
+
+    def _csrf_ok(self) -> bool:
+        supplied = str(self.headers.get("X-Workspace-CSRF") or "")
+        if supplied and hmac.compare_digest(supplied, self.server.csrf_token):
+            return True
+        self._json(403, {"status": "blocked", "reason_code": "CSRF_TOKEN_REQUIRED"})
+        return False
+
+    def do_GET(self) -> None:
+        if not self._host_ok():
             return
         path = urlsplit(self.path).path
         try:
@@ -363,9 +402,11 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
                     200,
                     {
                         "status": "ok",
-                        "service": "workspace-security-console",
+                        "service": "WorkSpace Security Console",
                         "local_only": True,
                         "write_authority": False,
+                        "bounded_local_initialize": True,
+                        "demo_mode": self.server.demo_mode,
                     },
                 )
                 return
@@ -387,58 +428,59 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
             if path == "/api/v1/security/monitoring/operator-posture":
                 self._json(200, self.server.service.operator_posture())
                 return
-        except Exception:
-            self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
-            return
-        self._json(404, {"status": "not_found"})
+            if path == "/api/v1/security/monitoring/analyst-snapshot":
+                self._json(200, self.server.service.analyst_snapshot())
+                return
+            self._json(404, {"status": "not_found", "reason_code": "ENDPOINT_NOT_FOUND"})
+        except Exception as exc:
+            self._json(500, {"status": "error", "reason_code": type(exc).__name__})
 
-    def do_POST(self) -> None:  # noqa: N802
-        if not self._valid_host():
+    def do_POST(self) -> None:
+        if not self._host_ok() or not self._csrf_ok():
             return
         path = urlsplit(self.path).path
-        if path != "/api/v1/security/monitoring/run-hourly":
-            self._json(404, {"status": "not_found"})
+        if path not in {
+            "/api/v1/security/monitoring/run-hourly",
+            "/api/v1/security/monitoring/initialize",
+        }:
+            self._json(404, {"status": "not_found", "reason_code": "ENDPOINT_NOT_FOUND"})
             return
-        if not hmac.compare_digest(
-            str(self.headers.get("X-Workspace-CSRF") or ""),
-            self.server.csrf_token,
-        ):
-            self._json(403, {"status": "blocked", "reason_code": "CSRF_TOKEN_REQUIRED"})
+        payload = self._body()
+        if payload is None:
             return
-        if self.headers.get_content_type() != "application/json":
-            self._json(415, {"status": "blocked", "reason_code": "JSON_BODY_REQUIRED"})
+        if path.endswith("/run-hourly"):
+            if set(payload) != {"confirm_readonly"}:
+                self._json(400, {"status": "blocked", "reason_code": "UNSUPPORTED_REQUEST_FIELDS"})
+                return
+            if payload.get("confirm_readonly") is not True:
+                self._json(409, {"status": "blocked", "reason_code": "USER_CONFIRMATION_REQUIRED"})
+                return
+            if self.server.demo_mode:
+                self._json(409, {"status": "blocked", "reason_code": "DEMO_MODE_NETWORK_EXECUTION_DISABLED"})
+                return
+            try:
+                result = self.server.service.run_hourly(execute_readonly=True)
+            except MonitoringRunAlreadyLocked:
+                self._json(409, {"status": "blocked", "reason_code": "MONITORING_RUN_ALREADY_LOCKED"})
+                return
+            except RuntimeError as exc:
+                self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
+                return
+            self._json(200, result)
             return
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            self._json(400, {"status": "blocked", "reason_code": "INVALID_CONTENT_LENGTH"})
-            return
-        if length <= 0 or length > MAX_REQUEST_BYTES:
-            self._json(413, {"status": "blocked", "reason_code": "REQUEST_SIZE_OUT_OF_BOUNDS"})
-            return
-        try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            self._json(400, {"status": "blocked", "reason_code": "INVALID_JSON"})
-            return
-        if not isinstance(payload, dict) or set(payload) != {"confirm_readonly"}:
+
+        if set(payload) != {"confirm_initialize"}:
             self._json(400, {"status": "blocked", "reason_code": "UNSUPPORTED_REQUEST_FIELDS"})
             return
-        if payload.get("confirm_readonly") is not True:
+        if payload.get("confirm_initialize") is not True:
             self._json(409, {"status": "blocked", "reason_code": "USER_CONFIRMATION_REQUIRED"})
             return
         try:
-            receipt = self.server.service.run_hourly(execute_readonly=True)
-        except MonitoringRunAlreadyLocked:
-            self._json(409, {"status": "blocked", "reason_code": "HOURLY_SLOT_ALREADY_LOCKED"})
-            return
+            result = self.server.service.initialize()
         except RuntimeError as exc:
-            self._json(409, {"status": "blocked", "reason_code": str(exc)})
+            self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
             return
-        except Exception:
-            self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
-            return
-        self._json(200, receipt)
+        self._json(200, result)
 
 
 def build_server(
@@ -448,42 +490,55 @@ def build_server(
     *,
     csrf_token: str | None = None,
     csp_nonce: str | None = None,
-) -> SecurityConsoleServer:
-    host = validate_loopback_host(host)
-    if not 0 <= int(port) <= 65535:
-        raise ValueError("SECURITY_CONSOLE_PORT_OUT_OF_BOUNDS")
-    return SecurityConsoleServer(
-        (host, int(port)),
+    demo_mode: bool = False,
+) -> _Server:
+    bind = validate_loopback_host(host)
+    return _Server(
+        (bind, int(port)),
         service,
-        csrf_token=csrf_token,
-        csp_nonce=csp_nonce,
+        csrf_token=csrf_token or secrets.token_hex(32),
+        csp_nonce=csp_nonce or secrets.token_hex(16),
+        demo_mode=demo_mode,
     )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="workspace-security-ui")
-    parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", default=8765, type=int)
-    return parser
+def _ensure_safe_default(path: Path) -> None:
+    if path.is_file():
+        return
+    manager = SecurityMonitoringUIConfigManager(path.resolve(), path_source="workspace_default")
+    manager.save(safe_default_payload(path.resolve()))
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    service = SecurityMonitoringService(args.config)
-    server = build_server(args.host, args.port, service)
-    print(
-        json.dumps(
-            {
-                "status": "serving",
-                "service": "workspace-security-console",
-                "url": f"http://{args.host}:{server.server_port}/",
-                "local_only": True,
-            },
-            sort_keys=True,
-        ),
-        flush=True,
+    parser = argparse.ArgumentParser(
+        description="WorkSpace local-only security monitoring console"
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Monitoring config path. Defaults to the portable WorkSpace user config.",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Launch isolated synthetic demo data with all real-network execution disabled.",
+    )
+    args = parser.parse_args(argv)
+    host = validate_loopback_host(args.host)
+    if args.demo:
+        config_path = create_demo_environment()
+    else:
+        config_path = (args.config or default_config_path()).expanduser().resolve()
+        _ensure_safe_default(config_path)
+    service = SecurityMonitoringService(config_path)
+    server = build_server(host, args.port, service, demo_mode=args.demo)
+    print(f"WorkSpace Security Console: http://{host}:{server.server_port}/")
+    print(f"Monitoring config: {config_path}")
+    if args.demo:
+        print("DEMO MODE: synthetic data only; real network execution is disabled")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -491,3 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         server.server_close()
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
