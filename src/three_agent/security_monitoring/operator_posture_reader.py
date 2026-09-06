@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 
+from .asset_dependency import MAX_IMPACT_SEEDS
 from .contracts import CanonicalEvent, MonitoringContractError
 from .correlation_graph import CorrelationEvent
 from .entity_context import ENTITY_CONTEXT_SCHEMA, EventEntityContext, EventEntityReference
@@ -13,6 +15,9 @@ from .operator_posture import (
 )
 from .runtime_config import MonitoringRuntimeConfig
 from .ui_read_model import SecurityMonitoringUIReadModel
+
+_DEPENDENCY_FINDING_LIMIT = 100
+_UNRESOLVED_FINDING_STATUSES = ("open", "correlated", "investigating", "reopened")
 
 
 def _read_correlation_events_query_only(
@@ -102,6 +107,79 @@ def _read_correlation_events_query_only(
     return tuple(sorted(result, key=lambda item: (item.observed, item.event.event_id)))
 
 
+def _read_dependency_seeds_query_only(
+    config: MonitoringRuntimeConfig,
+) -> dict[str, object]:
+    """Derive bounded impact seeds from unresolved findings without exposing identifiers."""
+
+    path = config.database_path
+    if path.is_symlink() or not path.is_file():
+        return {
+            "seed_asset_ids": (),
+            "source_finding_count": 0,
+            "ignored_seed_ref_count": 0,
+            "seed_input_truncated": False,
+        }
+
+    enabled_ids = {asset.asset_id for asset in config.assets if asset.enabled}
+    uri = path.resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=1.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    conn.execute("PRAGMA busy_timeout=1000")
+    try:
+        rows = conn.execute(
+            """
+            SELECT asset_refs_json
+            FROM findings
+            WHERE status IN ('open','correlated','investigating','reopened')
+            ORDER BY CASE severity
+                WHEN 'critical' THEN 4
+                WHEN 'high' THEN 3
+                WHEN 'medium' THEN 2
+                WHEN 'low' THEN 1
+                ELSE 0
+            END DESC,
+            julianday(last_seen) DESC,
+            finding_id DESC
+            LIMIT ?
+            """,
+            (_DEPENDENCY_FINDING_LIMIT,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    selected: list[str] = []
+    selected_set: set[str] = set()
+    ignored = 0
+    truncated = False
+    for row in rows:
+        try:
+            raw_refs = json.loads(str(row["asset_refs_json"]))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise MonitoringContractError("dependency seed asset references are invalid") from exc
+        if not isinstance(raw_refs, list) or any(not isinstance(value, str) for value in raw_refs):
+            raise MonitoringContractError("dependency seed asset references must be a string array")
+        for asset_id in sorted(set(raw_refs)):
+            if asset_id not in enabled_ids:
+                ignored += 1
+                continue
+            if asset_id in selected_set:
+                continue
+            if len(selected) >= MAX_IMPACT_SEEDS:
+                truncated = True
+                continue
+            selected.append(asset_id)
+            selected_set.add(asset_id)
+
+    return {
+        "seed_asset_ids": tuple(selected),
+        "source_finding_count": len(rows),
+        "ignored_seed_ref_count": ignored,
+        "seed_input_truncated": truncated,
+    }
+
+
 def safe_operator_posture_summary(
     config: MonitoringRuntimeConfig,
     *,
@@ -116,12 +194,21 @@ def safe_operator_posture_summary(
     soc: dict[str, object] = {}
     assets: dict[str, object] = {"items": []}
     correlation_events: tuple[CorrelationEvent, ...] = ()
+    dependency_seeds: dict[str, object] = {
+        "seed_asset_ids": (),
+        "source_finding_count": 0,
+        "ignored_seed_ref_count": 0,
+        "seed_input_truncated": False,
+    }
+    dependency_seed_data_state = "unavailable"
     data_state = "unavailable"
     if database_available:
         try:
             soc = read_model.soc(cutoff_at=current.isoformat())
             assets = read_model.assets()
             correlation_events = _read_correlation_events_query_only(config)
+            dependency_seeds = _read_dependency_seeds_query_only(config)
+            dependency_seed_data_state = "available"
             data_state = "available"
         except sqlite3.OperationalError:
             # Missing/incomplete durable storage is a read-side data gap, not a reason
@@ -129,6 +216,13 @@ def safe_operator_posture_summary(
             soc = {}
             assets = {"items": []}
             correlation_events = ()
+            dependency_seeds = {
+                "seed_asset_ids": (),
+                "source_finding_count": 0,
+                "ignored_seed_ref_count": 0,
+                "seed_input_truncated": False,
+            }
+            dependency_seed_data_state = "data_gap"
             data_state = "data_gap"
 
     payload = reduce_operator_posture(
@@ -136,6 +230,13 @@ def safe_operator_posture_summary(
         assets=assets,
         correlation_events=correlation_events,
         now=current,
+        dependency_inventory=config.assets,
+        dependencies=config.dependencies,
+        dependency_seed_asset_ids=dependency_seeds["seed_asset_ids"],  # type: ignore[arg-type]
+        dependency_seed_data_state=dependency_seed_data_state,
+        dependency_source_finding_count=int(dependency_seeds["source_finding_count"]),
+        dependency_ignored_seed_ref_count=int(dependency_seeds["ignored_seed_ref_count"]),
+        dependency_seed_input_truncated=bool(dependency_seeds["seed_input_truncated"]),
     )
     payload["database_available"] = bool(database_available)
     payload["data_state"] = data_state

@@ -81,6 +81,20 @@ def create_demo_environment(root: Path | None = None) -> Path:
             "enabled": True,
         },
     ]
+    dependencies = [
+        {
+            "upstream_asset_id": "demo-router-01",
+            "downstream_asset_id": "demo-switch-01",
+            "relation": "network_path",
+            "declaration_sha256": _message_hash("demo-dependency-router-switch"),
+        },
+        {
+            "upstream_asset_id": "demo-switch-01",
+            "downstream_asset_id": "demo-camera-01",
+            "relation": "network_path",
+            "declaration_sha256": _message_hash("demo-dependency-switch-camera"),
+        },
+    ]
     payload = {
         "enabled": True,
         "allow_real_network": False,
@@ -101,6 +115,7 @@ def create_demo_environment(root: Path | None = None) -> Path:
             "allowed_capabilities": ["local_net_read"],
         },
         "assets": assets,
+        "dependencies": dependencies,
     }
     config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     config = load_runtime_config(config_path)
@@ -195,7 +210,7 @@ def create_demo_environment(root: Path | None = None) -> Path:
             status="investigating",
             first_seen=_iso(now - timedelta(minutes=4)),
             last_seen=_iso(now - timedelta(minutes=1)),
-            asset_refs=("demo-workstation-01",),
+            asset_refs=("demo-router-01", "demo-workstation-01"),
             evidence_refs=("evidence-demo-event-ids", "evidence-demo-event-auth"),
             correlation_key="demo-correlation-critical",
             rule_id="demo-rule-multi-stage",
