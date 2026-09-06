@@ -379,6 +379,39 @@ def _browser_safe_payload(payload: dict[str, object]) -> dict[str, object]:
     return safe
 
 
+_PUBLIC_RUNTIME_BLOCK_REASONS = frozenset(
+    {
+        "MONITORING_DISABLED",
+        "REAL_NETWORK_NOT_ALLOWED_BY_CONFIG",
+        "EXPLICIT_READONLY_EXECUTION_FLAG_REQUIRED",
+    }
+)
+_PUBLIC_READINESS_BLOCK_REASONS = frozenset(
+    {
+        "CONFIG_NOT_SAVED",
+        "REAL_NETWORK_NOT_ALLOWED",
+        "SECRET_DIRECTORY_REQUIRED",
+        "CREDENTIAL_REF_REQUIRED",
+        "SECRET_REF_UNRESOLVED",
+    }
+)
+_READINESS_RUNTIME_PREFIX = "MONITORING_READINESS_BLOCKED:"
+
+
+def _public_runtime_block_reason(exc: RuntimeError) -> str | None:
+    reason = str(exc)
+    if reason in _PUBLIC_RUNTIME_BLOCK_REASONS:
+        return reason
+    if not reason.startswith(_READINESS_RUNTIME_PREFIX):
+        return None
+    tokens = reason.removeprefix(_READINESS_RUNTIME_PREFIX).split(",")
+    if not tokens or tokens != sorted(set(tokens)):
+        return None
+    if any(token not in _PUBLIC_READINESS_BLOCK_REASONS for token in tokens):
+        return None
+    return reason
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -534,7 +567,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(409, {"status": "blocked", "reason_code": "MONITORING_RUN_ALREADY_LOCKED"})
                 return
             except RuntimeError as exc:
-                self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
+                reason = _public_runtime_block_reason(exc)
+                if reason is None:
+                    self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
+                else:
+                    self._json(409, {"status": "blocked", "reason_code": reason})
                 return
             except Exception:
                 self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
@@ -550,9 +587,6 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             result = self.server.service.initialize()
-        except RuntimeError as exc:
-            self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
-            return
         except Exception:
             self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
             return
