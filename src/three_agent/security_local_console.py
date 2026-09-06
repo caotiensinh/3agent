@@ -339,8 +339,14 @@ async function refresh() {
 }
 async function postExact(path,payload,target) {
   target.textContent="実行中...";
-  const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Workspace-CSRF":csrf},body:JSON.stringify(payload),cache:"no-store"});
-  const data=await response.json(); target.textContent=JSON.stringify(data,null,2); await refresh();
+  try {
+    const response=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json","X-Workspace-CSRF":csrf},body:JSON.stringify(payload),cache:"no-store"});
+    const data=await response.json();
+    target.textContent=JSON.stringify(data,null,2);
+  } catch {
+    target.textContent="Backend operation unavailable";
+  }
+  await refresh();
 }
 byId("run").addEventListener("click",async()=>{ if(!readiness?.ready||demoMode)return; if(!window.confirm("承認済みアセットに対して読み取り専用監視を実行しますか？"))return; await postExact("/api/v1/security/monitoring/run-hourly",{confirm_readonly:true},byId("result")); });
 byId("initialize").addEventListener("click",async()=>{ if(!window.confirm("ローカル監視DBを初期化し、承認済みinventoryを同期しますか？"))return; await postExact("/api/v1/security/monitoring/initialize",{confirm_initialize:true},byId("initialize-result")); });
