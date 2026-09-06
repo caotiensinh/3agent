@@ -23,6 +23,9 @@ dependencies = [
 monitoring-snmp = [
   "pysnmp>=7.1.29,<7.2",
 ]
+model-provisioning = [
+  "huggingface-hub>=0.34,<2",
+]
 
 [project.scripts]
 workspace = "three_agent.cli:main"
