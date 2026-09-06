@@ -57,6 +57,9 @@ class SecurityCapabilityCenterUITests(unittest.TestCase):
         self.assertIn("Packet Capture", page)
         self.assertIn("Remediation", page)
         self.assertIn("textContent", page)
+        self.assertIn('td.textContent="No data"', page)
+        self.assertIn('const message="Backend connection error: "+error', page)
+        self.assertIn('byId("run").disabled=true', page)
         self.assertNotIn("innerHTML", page)
         self.assertNotIn("fetch(\"/api/v1/security/monitoring/capability", page)
 
