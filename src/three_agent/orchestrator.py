@@ -18,6 +18,12 @@ from .metered_runtime import (
     MeteredInternetGateway,
     MeteredOllamaWorkerPool,
 )
+from .model_residency import (
+    ModelResidencyConfig,
+    ModelResidencyManager,
+    OllamaResidencyBackend,
+    ResidencyManagedClient,
+)
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .resource_events import ResourceEventRecorder
 from .runtime_validation import RuntimeValidatorBridge
@@ -145,6 +151,17 @@ class Orchestrator:
             serialize_generation=policy.serialize_generation,
             reservation_ttl_seconds=policy.reservation_ttl_seconds,
         )
+        self.residency_config = (
+            ModelResidencyConfig(
+                enabled=True,
+                strategy=policy.residency_strategy,
+                idle_ttl_seconds=policy.residency_idle_ttl_seconds,
+                eviction_policy=policy.residency_eviction_policy,
+                runtime_download=policy.runtime_model_download,
+            )
+            if policy.enabled and policy.residency_enabled
+            else None
+        )
 
         raw_policy = config.raw.get("model_policy", {}) if isinstance(config.raw, dict) else {}
         raw_workers = raw_policy.get("worker_pool", {}) if isinstance(raw_policy, dict) else {}
@@ -168,6 +185,16 @@ class Orchestrator:
         if policy.enabled and policy.resource_control_enabled and not self.worker_pool_enabled:
             self.resource_manager = ResourceBudgetManager(config.llm.base_url, resource_config)
 
+        self.model_residency = None
+        if self.residency_config is not None and not self.worker_pool_enabled:
+            self.model_residency = ModelResidencyManager(
+                OllamaResidencyBackend(
+                    config.llm.base_url,
+                    timeout_seconds=min(config.llm.timeout_seconds, 60),
+                ),
+                self.residency_config,
+            )
+
         if policy.enabled:
             if self.worker_pool_enabled:
                 def routed(model: str):
@@ -177,6 +204,7 @@ class Orchestrator:
                         gpu0_url=self.worker_urls["gpu0"],
                         gpu1_url=self.worker_urls["gpu1"],
                         dual_url=self.worker_urls["dual"],
+                        residency_config=self.residency_config,
                         resource_events=self.resource_events,
                     )
 
@@ -185,26 +213,19 @@ class Orchestrator:
                 report_primary = routed(policy.report_model)
                 deep = routed(policy.deep_model) if policy.deep_model else None
             else:
-                research_primary = OllamaClient(
-                    replace(config.llm, model=policy.research_model),
-                    self.resource_manager,
-                )
-                presentation_primary = OllamaClient(
-                    replace(config.llm, model=policy.presentation_model),
-                    self.resource_manager,
-                )
-                report_primary = OllamaClient(
-                    replace(config.llm, model=policy.report_model),
-                    self.resource_manager,
-                )
-                deep = (
-                    OllamaClient(
-                        replace(config.llm, model=policy.deep_model),
+                def local_client(model: str):
+                    client = OllamaClient(
+                        replace(config.llm, model=model),
                         self.resource_manager,
                     )
-                    if policy.deep_model
-                    else None
-                )
+                    if self.model_residency is None:
+                        return client
+                    return ResidencyManagedClient(client, self.model_residency)
+
+                research_primary = local_client(policy.research_model)
+                presentation_primary = local_client(policy.presentation_model)
+                report_primary = local_client(policy.report_model)
+                deep = local_client(policy.deep_model) if policy.deep_model else None
             self.research_llm = MeteredAdaptiveOllamaClient(
                 research_primary,
                 deep=deep,
@@ -308,6 +329,12 @@ class Orchestrator:
             "gpu_queue_wait_seconds": policy.queue_wait_seconds,
             "model_ram_overhead_factor": policy.model_ram_overhead_factor,
             "serialize_generation": policy.serialize_generation,
+            "model_residency_policy_enabled": bool(policy.enabled and policy.residency_enabled),
+            "model_residency_runtime_enabled": self.residency_config is not None,
+            "model_residency_strategy": policy.residency_strategy,
+            "model_idle_ttl_seconds": policy.residency_idle_ttl_seconds,
+            "model_eviction_policy": policy.residency_eviction_policy,
+            "runtime_model_download": policy.runtime_model_download,
             "fixed_model_count_limit": False,
             "worker_pool_enabled": self.worker_pool_enabled,
             "worker_gpu0_url": self.worker_urls["gpu0"],
