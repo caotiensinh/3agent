@@ -138,12 +138,20 @@ run_safe_update() {
   bash "$TMP_UPDATER"
 }
 
+migrate_generated_default_config() {
+  local migrator="${INSTALL_DIR}/scripts/migrate_default_web_search_config.py"
+  [[ -f "$migrator" ]] || die "Missing config migration helper after update: ${migrator}"
+  log "Checking legacy generated config for secure Web Search migration"
+  python3 "$migrator" --config "$CONFIG_PATH"
+}
+
 verify_final_state() {
   local expected="$1" active
   active="$(active_sha)"
   [[ "$active" == "$expected" ]] || return 1
   [[ -x "${BIN_DIR}/3agent" ]] || die "Installed command is missing: ${BIN_DIR}/3agent"
   [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
+  migrate_generated_default_config
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
   return 0
 }
@@ -178,7 +186,7 @@ main() {
     latest="$(resolve_target_sha)"
     if [[ "$active" == "$expected" && "$latest" == "$expected" ]] && verify_final_state "$expected"; then
       log "FINAL PASS: all WorkSpace code is active at ${expected}"
-      log "Configuration preserved at: ${CONFIG_PATH}"
+      log "Configuration verified at: ${CONFIG_PATH}"
       log "Prior releases preserved at: ${RELEASES_DIR}"
       log "Activation history: ${ACTIVATION_LOG}"
       return 0
