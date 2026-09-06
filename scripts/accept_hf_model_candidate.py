@@ -17,13 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from three_agent.local_embedding import (
-    LocalEmbeddingAdapter,
-    LocalSentenceTransformerBackend,
-)
+from three_agent.local_embedding import LocalEmbeddingAdapter, LocalSentenceTransformerBackend
 from three_agent.model_artifacts import apply_runtime_offline_environment
 from three_agent.model_residency import ModelResidencyConfig, ModelResidencyManager
-
 
 EVIDENCE_SCHEMA = "workspace.model-candidate-evidence/v1"
 ACCEPTANCE_SCHEMA = "workspace.model-candidate-acceptance/v1"
@@ -63,13 +59,10 @@ def _canonical_sha256(payload: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _sha256_file(path: Path, *, chunk_size: int = 4 * 1024 * 1024) -> str:
+def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
-        while True:
-            chunk = handle.read(chunk_size)
-            if not chunk:
-                break
+        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -115,7 +108,6 @@ def parse_candidate_evidence(raw: Mapping[str, Any]) -> CandidateEvidence:
     artifacts_raw = raw.get("artifacts")
     if not isinstance(artifacts_raw, list) or not artifacts_raw:
         raise CandidateAcceptanceError("candidate evidence requires a non-empty artifact set")
-
     artifacts: list[CandidateArtifact] = []
     for item in artifacts_raw:
         if not isinstance(item, Mapping):
@@ -137,7 +129,6 @@ def parse_candidate_evidence(raw: Mapping[str, Any]) -> CandidateEvidence:
     paths = [item.path for item in artifacts]
     if len(paths) != len(set(paths)):
         raise CandidateAcceptanceError("candidate evidence contains duplicate artifact paths")
-
     return CandidateEvidence(
         repo_id=repo_id,
         revision=revision,
@@ -146,7 +137,7 @@ def parse_candidate_evidence(raw: Mapping[str, Any]) -> CandidateEvidence:
     )
 
 
-def load_candidate_evidence(path: str | Path) -> tuple[CandidateEvidence, dict[str, Any]]:
+def load_candidate_evidence(path: str | Path) -> CandidateEvidence:
     source = Path(path)
     try:
         raw = json.loads(source.read_text(encoding="utf-8"))
@@ -154,16 +145,11 @@ def load_candidate_evidence(path: str | Path) -> tuple[CandidateEvidence, dict[s
         raise CandidateAcceptanceError(f"cannot read candidate evidence: {source}: {exc}") from exc
     if not isinstance(raw, dict):
         raise CandidateAcceptanceError("candidate evidence must be a JSON object")
-    return parse_candidate_evidence(raw), raw
+    return parse_candidate_evidence(raw)
 
 
 class CandidateEvidenceResolver:
-    """Review-only resolver that proves a local snapshot matches candidate evidence.
-
-    This resolver is intentionally outside the runtime package. It exists only to
-    exercise the local embedding adapter before the candidate is admitted to the
-    approved runtime manifest.
-    """
+    """Review-only resolver proving a local snapshot matches immutable evidence."""
 
     def __init__(self, model_id: str, evidence: CandidateEvidence, snapshot_root: str | Path):
         self.model_id = str(model_id).strip()
@@ -180,23 +166,18 @@ class CandidateEvidenceResolver:
         root_resolved = root.resolve()
         expected = {artifact.path for artifact in self.evidence.artifacts}
         actual: set[str] = set()
-
         for path in root.rglob("*"):
             relative = path.relative_to(root).as_posix()
             if path.is_symlink():
-                raise CandidateAcceptanceError(
-                    f"symlinked candidate content is forbidden: {relative}"
-                )
-            if not path.is_file():
-                continue
-            resolved = path.resolve()
-            try:
-                resolved.relative_to(root_resolved)
-            except ValueError as exc:
-                raise CandidateAcceptanceError(
-                    f"candidate artifact escaped snapshot root: {relative}"
-                ) from exc
-            actual.add(relative)
+                raise CandidateAcceptanceError(f"symlinked candidate content is forbidden: {relative}")
+            if path.is_file():
+                try:
+                    path.resolve().relative_to(root_resolved)
+                except ValueError as exc:
+                    raise CandidateAcceptanceError(
+                        f"candidate artifact escaped snapshot root: {relative}"
+                    ) from exc
+                actual.add(relative)
 
         unexpected = sorted(actual - expected)
         missing = sorted(expected - actual)
@@ -237,38 +218,31 @@ class CandidateEvidenceResolver:
 
 @contextmanager
 def block_python_network() -> Iterable[list[str]]:
-    """Fail closed on Python socket connection attempts during runtime acceptance.
-
-    This guard complements HF/Transformers offline flags. It proves that the
-    Python runtime did not attempt a socket connection; it is not a substitute
-    for a host/network-namespace packet-capture acceptance test.
-    """
+    """Reject Python socket connections while local runtime acceptance executes."""
 
     attempts: list[str] = []
-    original_connect = socket.socket.connect
-    original_connect_ex = socket.socket.connect_ex
+    original_socket = socket.socket
     original_create_connection = socket.create_connection
 
-    def blocked_connect(_sock: socket.socket, address: Any) -> None:
+    class GuardedSocket(original_socket):
+        def connect(self, address: Any) -> None:
+            attempts.append(repr(address))
+            raise CandidateAcceptanceError(f"runtime network attempt blocked: {address!r}")
+
+        def connect_ex(self, address: Any) -> int:
+            attempts.append(repr(address))
+            raise CandidateAcceptanceError(f"runtime network attempt blocked: {address!r}")
+
+    def blocked_create_connection(address: Any, *args: Any, **kwargs: Any) -> Any:
         attempts.append(repr(address))
         raise CandidateAcceptanceError(f"runtime network attempt blocked: {address!r}")
 
-    def blocked_connect_ex(_sock: socket.socket, address: Any) -> int:
-        attempts.append(repr(address))
-        raise CandidateAcceptanceError(f"runtime network attempt blocked: {address!r}")
-
-    def blocked_create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
-        attempts.append(repr(address))
-        raise CandidateAcceptanceError(f"runtime network attempt blocked: {address!r}")
-
-    socket.socket.connect = blocked_connect  # type: ignore[method-assign]
-    socket.socket.connect_ex = blocked_connect_ex  # type: ignore[method-assign]
+    socket.socket = GuardedSocket  # type: ignore[assignment,misc]
     socket.create_connection = blocked_create_connection  # type: ignore[assignment]
     try:
         yield attempts
     finally:
-        socket.socket.connect = original_connect  # type: ignore[method-assign]
-        socket.socket.connect_ex = original_connect_ex  # type: ignore[method-assign]
+        socket.socket = original_socket  # type: ignore[assignment]
         socket.create_connection = original_create_connection  # type: ignore[assignment]
 
 
@@ -277,12 +251,9 @@ def _rows(value: Any) -> list[list[float]]:
         value = value.tolist()
     try:
         rows = [list(row) for row in value]
-    except TypeError as exc:
-        raise CandidateAcceptanceError("embedding result must be a two-dimensional sequence") from exc
-    try:
         return [[float(item) for item in row] for row in rows]
     except (TypeError, ValueError) as exc:
-        raise CandidateAcceptanceError("embedding result contains a non-numeric value") from exc
+        raise CandidateAcceptanceError("embedding result must be a numeric two-dimensional sequence") from exc
 
 
 def _validate_vectors(
@@ -358,7 +329,6 @@ def accept_candidate(
     apply_runtime_offline_environment()
     resolver = CandidateEvidenceResolver(model_id, evidence, snapshot_root)
     backend = LocalSentenceTransformerBackend(resolver, loader=loader)
-
     with tempfile.TemporaryDirectory(prefix="workspace-model-acceptance-locks-") as lock_tmp:
         residency = ModelResidencyManager(
             backend,
@@ -384,7 +354,6 @@ def accept_candidate(
             started = time.perf_counter()
             document_vectors = adapter.encode_documents(documents)
             document_ms = (time.perf_counter() - started) * 1000.0
-
             query_check = _validate_vectors(
                 query_vectors,
                 expected_rows=len(queries),
@@ -404,7 +373,7 @@ def accept_candidate(
                     f"candidate residency eviction failed: expected {(model_id,)}, got {evicted}"
                 )
             if backend.resident_models():
-                raise CandidateAcceptanceError("candidate model remained resident after explicit idle eviction")
+                raise CandidateAcceptanceError("candidate model remained resident after idle eviction")
             gpu_evicted = _gpu_memory_snapshot()
 
             started = time.perf_counter()
@@ -423,9 +392,8 @@ def accept_candidate(
             )
         if resolver.resolve_calls < 2:
             raise CandidateAcceptanceError(
-                "candidate residency reload did not re-resolve the integrity-verified local snapshot"
+                "candidate residency reload did not re-resolve the integrity-verified snapshot"
             )
-
         residency_snapshot = adapter.snapshot()
 
     return {
@@ -491,7 +459,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = _build_parser().parse_args(list(argv) if argv is not None else None)
-    evidence, _ = load_candidate_evidence(args.evidence)
+    evidence = load_candidate_evidence(args.evidence)
     queries = args.query or [
         "camera offline after PoE switch restart",
         "router uplink packet loss diagnosis",
