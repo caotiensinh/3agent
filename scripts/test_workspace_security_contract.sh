@@ -46,17 +46,17 @@ grep -Fq 'workspace-egress' scripts/install_workspace_secure_boundary.sh
 
 # Core may reach the constrained Unix-domain broker, but must retain no direct
 # Internet/LAN egress capability. Both invariants are required together.
-grep -Fq 'usermod -a -G "$IPC_GROUP" "$CORE_USER"' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'usermod -a -G "$IPC_GROUP" "$PUBLIC_USER"' scripts/install_workspace_secure_boundary.sh
+grep -Fq "usermod -a -G \"\$IPC_GROUP\" \"\$CORE_USER\"" scripts/install_workspace_secure_boundary.sh
+grep -Fq "usermod -a -G \"\$IPC_GROUP\" \"\$PUBLIC_USER\"" scripts/install_workspace_secure_boundary.sh
 grep -Fq 'InaccessiblePaths=/var/lib/workspace /var/lib/workspace-public' scripts/install_workspace_secure_boundary.sh
-grep -Fq -- '--allow-uid ${PUBLIC_UID} --allow-uid ${CORE_UID}' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'meta skuid ${CORE_UID} counter reject' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'meta skuid ${PUBLIC_UID} counter reject' scripts/install_workspace_secure_boundary.sh
+grep -Fq -- "--allow-uid \${PUBLIC_UID} --allow-uid \${CORE_UID}" scripts/install_workspace_secure_boundary.sh
+grep -Fq "meta skuid \${CORE_UID} counter reject" scripts/install_workspace_secure_boundary.sh
+grep -Fq "meta skuid \${PUBLIC_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq '127.0.0.1 tcp dport 11434-11436 accept' scripts/install_workspace_secure_boundary.sh
 grep -Fq '127.0.0.53 udp dport 53 accept' scripts/install_workspace_secure_boundary.sh
 grep -Fq '192.168.0.0/16' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'meta skuid ${EGRESS_UID} tcp dport 443 accept' scripts/install_workspace_secure_boundary.sh
-grep -Fq 'meta skuid ${EGRESS_UID} counter reject' scripts/install_workspace_secure_boundary.sh
+grep -Fq "meta skuid \${EGRESS_UID} tcp dport 443 accept" scripts/install_workspace_secure_boundary.sh
+grep -Fq "meta skuid \${EGRESS_UID} counter reject" scripts/install_workspace_secure_boundary.sh
 grep -Fq '/usr/local/bin/workspace-secure' scripts/install_workspace_secure_boundary.sh
 grep -Fq '/usr/local/bin/workspace-public' scripts/install_workspace_secure_boundary.sh
 
