@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 from urllib.request import Request, urlopen
 
@@ -55,6 +58,7 @@ class OllamaResidencyBackend:
     def __init__(self, base_url: str, *, timeout_seconds: float = 30.0):
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = max(1.0, float(timeout_seconds))
+        self.scope = f"ollama:{self.base_url}"
 
     def resident_models(self) -> set[str]:
         with urlopen(f"{self.base_url}/api/ps", timeout=min(self.timeout_seconds, 10.0)) as response:
@@ -100,6 +104,7 @@ class ModelResidencyManager:
     - this component never downloads or preloads a model;
     - a model is considered active while a lease is held;
     - active models are never eviction candidates;
+    - Linux processes coordinate through shared/exclusive file leases;
     - unknown resident models are observed first, not immediately evicted;
     - idle eviction uses TTL then least-recently-used order;
     - pressure eviction ignores TTL but still protects active models;
@@ -113,6 +118,7 @@ class ModelResidencyManager:
         *,
         clock: Callable[[], float] = time.monotonic,
         active_probe: Callable[[], set[str]] | None = None,
+        lock_root: Path | None = None,
     ):
         self.backend = backend
         self.config = config or ModelResidencyConfig()
@@ -123,6 +129,74 @@ class ModelResidencyManager:
         self._acquisitions = 0
         self._reuse_hits = 0
         self._evictions = 0
+        runtime_dir = Path(os.getenv("THREE_AGENT_RUNTIME_DIR", "/tmp"))
+        self._lock_root = lock_root or runtime_dir / "workspace-model-residency"
+        backend_scope = str(getattr(backend, "scope", backend.__class__.__name__))
+        self._scope_hash = hashlib.sha256(backend_scope.encode("utf-8")).hexdigest()[:16]
+
+    def _lease_path(self, model: str) -> Path:
+        model_hash = hashlib.sha256(model.encode("utf-8")).hexdigest()[:24]
+        return self._lock_root / f"{self._scope_hash}-{model_hash}.lock"
+
+    @contextmanager
+    def _cross_process_active_lease(self, model: str) -> Iterator[None]:
+        """Hold a shared Linux flock for the lifetime of one inference lease."""
+        path = self._lease_path(model)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+", encoding="utf-8")
+        locked = False
+        try:
+            try:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+                locked = True
+            except (ImportError, OSError):
+                # Non-Linux deployments retain in-process protection. The
+                # high-assurance WorkSpace deployment is Linux and gets flock.
+                pass
+            yield
+        finally:
+            if locked:
+                try:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+            handle.close()
+
+    @contextmanager
+    def _exclusive_eviction_guard(self, model: str) -> Iterator[bool]:
+        """Try to prove no other Linux process currently holds an active lease."""
+        path = self._lease_path(model)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+", encoding="utf-8")
+        locked = False
+        allowed = True
+        try:
+            try:
+                import fcntl
+
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                except BlockingIOError:
+                    allowed = False
+            except (ImportError, OSError):
+                # Fall back to local lease/ref-count protection on platforms
+                # without flock. Do not invent a network coordination service.
+                allowed = True
+            yield allowed
+        finally:
+            if locked:
+                try:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except (ImportError, OSError):
+                    pass
+            handle.close()
 
     def _external_active_models(self) -> set[str]:
         if self._active_probe is None:
@@ -130,8 +204,8 @@ class ModelResidencyManager:
         try:
             return {str(model) for model in self._active_probe() if str(model).strip()}
         except Exception:
-            # Fail safe: if cross-process activity cannot be established, do not
-            # force an eviction pass. TTL eviction still protects local leases.
+            # Fail safe for an optional external activity source: keep all locally
+            # known models out of forced eviction if the source is unavailable.
             return set(self._states)
 
     def resident_models(self) -> set[str]:
@@ -171,12 +245,16 @@ class ModelResidencyManager:
         if not self.config.enabled:
             yield
             return
-        self.acquire(model)
-        try:
-            self.evict_idle(exclude={model})
-            yield
-        finally:
-            self.release(model)
+        model = str(model).strip()
+        if not model:
+            raise ValueError("model lease requires a non-empty model name")
+        with self._cross_process_active_lease(model):
+            self.acquire(model)
+            try:
+                self.evict_idle(exclude={model})
+                yield
+            finally:
+                self.release(model)
 
     def active_leases(self, model: str) -> int:
         with self._lock:
@@ -214,11 +292,18 @@ class ModelResidencyManager:
         for _, model in candidates:
             if limit is not None and len(evicted) >= max(0, limit):
                 break
-            if self.backend.unload(model):
+            with self._exclusive_eviction_guard(model) as can_evict:
+                if not can_evict:
+                    continue
                 with self._lock:
-                    self._states.pop(model, None)
-                    self._evictions += 1
-                evicted.append(model)
+                    state = self._states.get(model)
+                    if state is not None and state.active_leases > 0:
+                        continue
+                if self.backend.unload(model):
+                    with self._lock:
+                        self._states.pop(model, None)
+                        self._evictions += 1
+                    evicted.append(model)
         return tuple(evicted)
 
     def evict_idle(self, *, exclude: set[str] | None = None) -> tuple[str, ...]:
@@ -257,6 +342,7 @@ class ModelResidencyManager:
                 "idle_ttl_seconds": self.config.idle_ttl_seconds,
                 "runtime_download": self.config.runtime_download,
                 "fixed_model_count_limit": False,
+                "cross_process_linux_flock": True,
                 "acquisitions": self._acquisitions,
                 "reuse_hits": self._reuse_hits,
                 "evictions": self._evictions,
