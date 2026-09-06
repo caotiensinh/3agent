@@ -27,7 +27,8 @@ def test_runner_download_is_official_and_digest_verified():
     text = _text()
 
     assert "https://api.github.com/repos/actions/runner/releases/latest" in text
-    assert "https://github.com/actions/runner/releases/download/" in text
+    assert "browser_download_url" in text
+    assert r"https://github\.com/actions/runner/releases/download/" in text
     assert "digest" in text
     assert "sha256sum -c -" in text
     assert "--proto '=https'" in text
