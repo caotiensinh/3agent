@@ -8,7 +8,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .security_monitoring.analyst_console import safe_analyst_snapshot
 from .security_monitoring.demo import create_demo_environment
 from .security_monitoring.locking import MonitoringRunAlreadyLocked
 from .security_monitoring.service import SecurityMonitoringService
@@ -416,7 +415,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, self.server.service.operator_posture())
                 return
             if path == "/api/v1/security/monitoring/analyst-snapshot":
-                self._json(200, safe_analyst_snapshot(self.server.service.load_config()))
+                self._json(200, self.server.service.analyst_snapshot())
                 return
             self._json(404, {"status": "not_found", "reason_code": "ENDPOINT_NOT_FOUND"})
         except Exception as exc:
