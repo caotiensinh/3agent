@@ -67,6 +67,39 @@ class SecurityConsoleUXTests(unittest.TestCase):
             self.assertTrue(operator["timeline"]["available"])
             self.assertGreater(operator["timeline"]["entry_count"], 0)
 
+            triage = operator["network_triage"]
+            self.assertTrue(triage["available"])
+            self.assertEqual(triage["data_state"], "available")
+            self.assertGreater(triage["triage_count"], 0)
+            self.assertEqual(
+                triage["triage_count"],
+                sum(triage["severity_counts"].values()),
+            )
+            self.assertTrue(triage["authority"]["advisory_only"])
+            self.assertTrue(triage["authority"]["aggregate_only"])
+            self.assertFalse(triage["authority"]["network_execution"])
+            self.assertFalse(triage["authority"]["packet_capture_execution"])
+            self.assertFalse(triage["authority"]["command_execution"])
+            self.assertFalse(triage["authority"]["remediation_execution"])
+
+            operator_serialized = json.dumps(operator, sort_keys=True)
+            for sensitive in (
+                "demo-router-01",
+                "demo-switch-01",
+                "demo-camera-01",
+                "demo-workstation-01",
+                "192.0.2.10",
+                "192.0.2.20",
+                "192.0.2.30",
+                "192.0.2.40",
+                "198.51.100.10",
+                "198.51.100.20",
+                "demo-event-dns",
+                "demo-finding-critical",
+                "demo-rule-multi-stage",
+            ):
+                self.assertNotIn(sensitive, operator_serialized)
+
     def test_analyst_snapshot_http_route_delegates_to_canonical_service(self) -> None:
         class AnalystSnapshotOnlyService:
             def __init__(self) -> None:
@@ -145,6 +178,12 @@ class SecurityConsoleUXTests(unittest.TestCase):
                 self.assertTrue(health["demo_mode"])
                 self.assertFalse(health["write_authority"])
 
+                status, page = request("GET", "/")
+                self.assertEqual(status, 200)
+                self.assertIn('id="operator-posture"', page)
+                self.assertIn('byId("operator-posture").textContent=JSON.stringify(operator,null,2);', page)
+                self.assertIn('"operator-posture","readiness-json"', page)
+
                 status, analyst = request("GET", "/api/v1/security/monitoring/analyst-snapshot?asset_id=secret&limit=9999")
                 self.assertEqual(status, 200)
                 self.assertEqual(analyst["max_rows_per_stream"], 50)
@@ -153,6 +192,12 @@ class SecurityConsoleUXTests(unittest.TestCase):
                 status, operator = request("GET", "/api/v1/security/monitoring/operator-posture")
                 self.assertEqual(status, 200)
                 self.assertGreater(operator["correlation"]["incident_graph_count"], 0)
+                self.assertIn("network_triage", operator)
+                self.assertTrue(operator["network_triage"]["available"])
+                self.assertGreater(operator["network_triage"]["triage_count"], 0)
+                self.assertFalse(operator["network_triage"]["authority"]["network_execution"])
+                self.assertFalse(operator["network_triage"]["authority"]["packet_capture_execution"])
+                self.assertFalse(operator["network_triage"]["authority"]["remediation_execution"])
 
                 status, blocked = request(
                     "POST",
