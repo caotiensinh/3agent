@@ -97,7 +97,8 @@ class MonitoringRuntimeConfig:
             asset_ids.add(asset.asset_id)
         if len(self.dependencies) > MAX_DEPENDENCIES:
             raise MonitoringContractError("asset dependency bound exceeded")
-        DeclaredAssetDependencyGraph(self.assets, self.dependencies)
+        if self.dependencies:
+            DeclaredAssetDependencyGraph(self.assets, self.dependencies)
         return self
 
 
