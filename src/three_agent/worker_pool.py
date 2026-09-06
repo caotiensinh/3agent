@@ -6,6 +6,12 @@ from typing import Any, Callable
 
 from .config import LLMConfig
 from .llm import LocalLLMError, OllamaClient
+from .model_residency import (
+    ModelResidencyConfig,
+    ModelResidencyManager,
+    OllamaResidencyBackend,
+    ResidencyManagedClient,
+)
 from .resource_budget import ResourceAdmissionError, ResourceBudgetConfig, ResourceBudgetManager
 
 
@@ -25,6 +31,10 @@ class OllamaWorkerPool:
     worker is reserved for models that cannot safely fit on either single card.
     For dual-GPU work, projected VRAM skew must be within the configured balance
     target before execution starts.
+
+    When residency_config is supplied, every endpoint owns an independent
+    on-demand residency manager. No worker preloads models; an actual inference
+    request is still the only demand signal that materializes weights in VRAM.
     """
 
     def __init__(
@@ -37,16 +47,20 @@ class OllamaWorkerPool:
         dual_url: str = "http://127.0.0.1:11434",
         manager_factory: Callable[[OllamaWorker], ResourceBudgetManager] | None = None,
         client_factory: Callable[[OllamaWorker, ResourceBudgetManager], OllamaClient] | None = None,
+        residency_config: ModelResidencyConfig | None = None,
+        residency_factory: Callable[[OllamaWorker], ModelResidencyManager] | None = None,
     ):
         self.config = llm_config
         self.resource_config = resource_config
+        self.residency_config = residency_config
         self.workers = (
             OllamaWorker("gpu0", gpu0_url.rstrip("/"), (0,), False),
             OllamaWorker("gpu1", gpu1_url.rstrip("/"), (1,), False),
         )
         self.dual_worker = OllamaWorker("dual", dual_url.rstrip("/"), (0, 1), True)
-        self._clients: dict[str, OllamaClient] = {}
+        self._clients: dict[str, Any] = {}
         self._managers: dict[str, ResourceBudgetManager] = {}
+        self._residency: dict[str, ModelResidencyManager] = {}
         for worker in (*self.workers, self.dual_worker):
             manager = (
                 manager_factory(worker)
@@ -62,6 +76,20 @@ class OllamaWorkerPool:
                 if client_factory is not None
                 else OllamaClient(replace(llm_config, base_url=worker.base_url), manager)
             )
+            if residency_config is not None and residency_config.enabled:
+                residency = (
+                    residency_factory(worker)
+                    if residency_factory is not None
+                    else ModelResidencyManager(
+                        OllamaResidencyBackend(
+                            worker.base_url,
+                            timeout_seconds=min(llm_config.timeout_seconds, 60),
+                        ),
+                        residency_config,
+                    )
+                )
+                client = ResidencyManagedClient(client, residency)
+                self._residency[worker.name] = residency
             self._managers[worker.name] = manager
             self._clients[worker.name] = client
 
@@ -72,13 +100,16 @@ class OllamaWorkerPool:
     def _single_candidates(self, model: str) -> list[OllamaWorker]:
         candidates: list[tuple[int, float, OllamaWorker]] = []
         for worker in self.workers:
+            residency = self._residency.get(worker.name)
+            if residency is not None:
+                residency.evict_idle(exclude={model})
             manager = self._managers[worker.name]
             try:
                 snapshot = manager.snapshot()
                 if not snapshot.gpus:
                     continue
                 gpu = snapshot.gpus[0]
-                model_bytes = manager.estimate_model_bytes(model)
+                model_bytes = 0 if model in snapshot.loaded_models else manager.estimate_model_bytes(model)
             except Exception:
                 continue
             cap_bytes = gpu.total_bytes * min(90.0, self.resource_config.max_vram_percent) / 100.0
@@ -98,11 +129,14 @@ class OllamaWorkerPool:
         return tuple(singles) if singles else (self.dual_worker,)
 
     def _project_dual_skew(self, model: str) -> float | None:
+        residency = self._residency.get(self.dual_worker.name)
+        if residency is not None:
+            residency.evict_idle(exclude={model})
         manager = self._managers[self.dual_worker.name]
         snapshot = manager.snapshot()
         if len(snapshot.gpus) < 2:
             return None
-        model_bytes = manager.estimate_model_bytes(model)
+        model_bytes = 0 if model in snapshot.loaded_models else manager.estimate_model_bytes(model)
         gpus = list(snapshot.gpus)
         projected = [float(gpu.used_bytes) for gpu in gpus]
         totals = [float(gpu.total_bytes) for gpu in gpus]
@@ -186,6 +220,11 @@ class OllamaWorkerPool:
                         }
                         for gpu in snap.gpus
                     ],
+                    "residency": (
+                        self._residency[worker.name].snapshot()
+                        if worker.name in self._residency
+                        else None
+                    ),
                 }
             except Exception as exc:
                 result[worker.name] = {
