@@ -151,6 +151,17 @@ class Orchestrator:
             serialize_generation=policy.serialize_generation,
             reservation_ttl_seconds=policy.reservation_ttl_seconds,
         )
+        self.residency_config = (
+            ModelResidencyConfig(
+                enabled=True,
+                strategy=policy.residency_strategy,
+                idle_ttl_seconds=policy.residency_idle_ttl_seconds,
+                eviction_policy=policy.residency_eviction_policy,
+                runtime_download=policy.runtime_model_download,
+            )
+            if policy.enabled and policy.residency_enabled
+            else None
+        )
 
         raw_policy = config.raw.get("model_policy", {}) if isinstance(config.raw, dict) else {}
         raw_workers = raw_policy.get("worker_pool", {}) if isinstance(raw_policy, dict) else {}
@@ -175,19 +186,13 @@ class Orchestrator:
             self.resource_manager = ResourceBudgetManager(config.llm.base_url, resource_config)
 
         self.model_residency = None
-        if policy.enabled and policy.residency_enabled and not self.worker_pool_enabled:
+        if self.residency_config is not None and not self.worker_pool_enabled:
             self.model_residency = ModelResidencyManager(
                 OllamaResidencyBackend(
                     config.llm.base_url,
                     timeout_seconds=min(config.llm.timeout_seconds, 60),
                 ),
-                ModelResidencyConfig(
-                    enabled=True,
-                    strategy=policy.residency_strategy,
-                    idle_ttl_seconds=policy.residency_idle_ttl_seconds,
-                    eviction_policy=policy.residency_eviction_policy,
-                    runtime_download=policy.runtime_model_download,
-                ),
+                self.residency_config,
             )
 
         if policy.enabled:
@@ -199,6 +204,7 @@ class Orchestrator:
                         gpu0_url=self.worker_urls["gpu0"],
                         gpu1_url=self.worker_urls["gpu1"],
                         dual_url=self.worker_urls["dual"],
+                        residency_config=self.residency_config,
                         resource_events=self.resource_events,
                     )
 
@@ -324,7 +330,7 @@ class Orchestrator:
             "model_ram_overhead_factor": policy.model_ram_overhead_factor,
             "serialize_generation": policy.serialize_generation,
             "model_residency_policy_enabled": bool(policy.enabled and policy.residency_enabled),
-            "model_residency_runtime_enabled": self.model_residency is not None,
+            "model_residency_runtime_enabled": self.residency_config is not None,
             "model_residency_strategy": policy.residency_strategy,
             "model_idle_ttl_seconds": policy.residency_idle_ttl_seconds,
             "model_eviction_policy": policy.residency_eviction_policy,
