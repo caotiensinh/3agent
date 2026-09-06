@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .asset_dependency import AssetDependency, DeclaredAssetDependencyGraph, MAX_DEPENDENCIES
 from .contracts import AssetInventoryRecord, MonitoringContractError, SecretReference
 from .policy import MonitoringPolicy
 
@@ -19,7 +20,15 @@ _FORBIDDEN_SECRET_KEYS = {
     "secret",
     "api_key",
 }
-_TOP_LEVEL_KEYS = {"enabled", "allow_real_network", "database_path", "secret_directory", "policy", "assets"}
+_TOP_LEVEL_KEYS = {
+    "enabled",
+    "allow_real_network",
+    "database_path",
+    "secret_directory",
+    "policy",
+    "assets",
+    "dependencies",
+}
 _ASSET_KEYS = {
     "asset_id",
     "role",
@@ -29,6 +38,12 @@ _ASSET_KEYS = {
     "data_class",
     "enabled",
     "credential_ref",
+}
+_DEPENDENCY_KEYS = {
+    "upstream_asset_id",
+    "downstream_asset_id",
+    "relation",
+    "declaration_sha256",
 }
 _POLICY_KEYS = {
     "profile_id",
@@ -66,6 +81,7 @@ class MonitoringRuntimeConfig:
     secret_directory: Path | None
     policy: MonitoringPolicy
     assets: tuple[AssetInventoryRecord, ...]
+    dependencies: tuple[AssetDependency, ...] = ()
 
     def validate(self) -> "MonitoringRuntimeConfig":
         if not self.database_path.is_absolute():
@@ -79,6 +95,9 @@ class MonitoringRuntimeConfig:
             if asset.asset_id in asset_ids:
                 raise MonitoringContractError(f"duplicate asset_id: {asset.asset_id}")
             asset_ids.add(asset.asset_id)
+        if len(self.dependencies) > MAX_DEPENDENCIES:
+            raise MonitoringContractError("asset dependency bound exceeded")
+        DeclaredAssetDependencyGraph(self.assets, self.dependencies)
         return self
 
 
@@ -127,6 +146,29 @@ def load_runtime_config(path: str | Path) -> MonitoringRuntimeConfig:
             ).validate()
         )
 
+    raw_dependencies = payload.get("dependencies") or []
+    if not isinstance(raw_dependencies, list):
+        raise MonitoringContractError("dependencies must be an array")
+    if len(raw_dependencies) > MAX_DEPENDENCIES:
+        raise MonitoringContractError("asset dependency bound exceeded")
+    dependencies: list[AssetDependency] = []
+    for raw in raw_dependencies:
+        if not isinstance(raw, dict):
+            raise MonitoringContractError("each dependency must be an object")
+        unknown_dependency = set(raw) - _DEPENDENCY_KEYS
+        if unknown_dependency:
+            raise MonitoringContractError(
+                f"unknown asset dependency keys: {sorted(unknown_dependency)}"
+            )
+        dependencies.append(
+            AssetDependency(
+                upstream_asset_id=raw.get("upstream_asset_id", ""),
+                downstream_asset_id=raw.get("downstream_asset_id", ""),
+                relation=raw.get("relation", ""),
+                declaration_sha256=raw.get("declaration_sha256", ""),
+            ).validate()
+        )
+
     database_path = Path(str(payload.get("database_path") or ""))
     raw_secret_directory = payload.get("secret_directory")
     secret_directory = Path(str(raw_secret_directory)) if raw_secret_directory else None
@@ -137,4 +179,5 @@ def load_runtime_config(path: str | Path) -> MonitoringRuntimeConfig:
         secret_directory=secret_directory,
         policy=policy,
         assets=tuple(assets),
+        dependencies=tuple(dependencies),
     ).validate()
