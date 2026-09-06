@@ -34,6 +34,27 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
+      - name: Prove network namespace isolation is available
+        shell: bash
+        run: |
+          PYTHON_BIN="$(command -v python)"
+          sudo unshare --net -- "$PYTHON_BIN" - <<'PY'
+          import socket
+
+          interfaces = {name for _, name in socket.if_nameindex()}
+          unexpected = sorted(interfaces - {'lo'})
+          if unexpected:
+              raise SystemExit(f'isolated network namespace has unexpected interfaces: {unexpected}')
+          probe = socket.socket()
+          probe.settimeout(1.0)
+          try:
+              if probe.connect_ex(('1.1.1.1', 443)) == 0:
+                  raise SystemExit('isolated network namespace unexpectedly has Internet egress')
+          finally:
+              probe.close()
+          print('network namespace isolation available with no external interface')
+          PY
+
       - name: Install review and embedding runtime dependencies
         run: python -m pip install -e '.[model-provisioning,embedding-runtime]'
 
@@ -75,6 +96,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           source = json.loads(
@@ -83,7 +105,7 @@ jobs:
               )
           )
           evidence = json.loads(
-              (Path.home() / 'work' / '_temp' / 'qwen3-embedding-candidate-evidence.json').read_text(
+              (Path(os.environ['RUNNER_TEMP']) / 'qwen3-embedding-candidate-evidence.json').read_text(
                   encoding='utf-8'
               )
           )
