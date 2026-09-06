@@ -1,6 +1,12 @@
 import unittest
+from types import SimpleNamespace
 
-from three_agent.model_residency import ModelResidencyConfig, ModelResidencyManager
+from three_agent.model_residency import (
+    ModelResidencyConfig,
+    ModelResidencyManager,
+    ResidencyManagedClient,
+)
+from three_agent.resource_budget import ResourceAdmissionError, ResourceBusyError
 
 
 class FakeBackend:
@@ -26,6 +32,29 @@ class FakeClock:
 
     def advance(self, seconds):
         self.value += seconds
+
+
+class FakeClient:
+    def __init__(self, model="model-a", failures=()):
+        self.config = SimpleNamespace(model=model)
+        self.failures = list(failures)
+        self.calls = 0
+        self.unload_calls = 0
+
+    def generate(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return "READY"
+
+    def generate_json(self, *_args, **_kwargs):
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        return {"status": "READY"}
+
+    def unload(self):
+        self.unload_calls += 1
 
 
 class ModelResidencyTests(unittest.TestCase):
@@ -150,6 +179,51 @@ class ModelResidencyTests(unittest.TestCase):
     def test_runtime_download_cannot_be_enabled(self):
         with self.assertRaisesRegex(ValueError, "runtime model download is forbidden"):
             ModelResidencyConfig(runtime_download=True)
+
+    def test_memory_pressure_reclaims_inactive_model_then_retries_once(self):
+        backend = FakeBackend({"model-b"})
+        clock = FakeClock()
+        manager = self.manager(backend, clock, idle_ttl_seconds=9999.0)
+        # Observe model-b so a pressure pass may reclaim it.
+        self.assertEqual(manager.evict_inactive(), ())
+        client = FakeClient(
+            failures=(ResourceAdmissionError("projected VRAM exceeds budget"),)
+        )
+        wrapped = ResidencyManagedClient(client, manager)
+
+        self.assertEqual(wrapped.generate("system", "user"), "READY")
+        self.assertEqual(client.calls, 2)
+        self.assertEqual(backend.unloaded, ["model-b"])
+
+    def test_non_memory_admission_failure_does_not_trigger_eviction(self):
+        backend = FakeBackend({"model-b"})
+        clock = FakeClock()
+        manager = self.manager(backend, clock)
+        self.assertEqual(manager.evict_inactive(), ())
+        client = FakeClient(
+            failures=(ResourceAdmissionError("GPU0 temperature is 86.0C"),)
+        )
+        wrapped = ResidencyManagedClient(client, manager)
+
+        with self.assertRaises(ResourceAdmissionError):
+            wrapped.generate("system", "user")
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(backend.unloaded, [])
+
+    def test_busy_admission_failure_does_not_trigger_eviction(self):
+        backend = FakeBackend({"model-b"})
+        clock = FakeClock()
+        manager = self.manager(backend, clock)
+        self.assertEqual(manager.evict_inactive(), ())
+        client = FakeClient(
+            failures=(ResourceBusyError("timed out waiting for GPU"),)
+        )
+        wrapped = ResidencyManagedClient(client, manager)
+
+        with self.assertRaises(ResourceBusyError):
+            wrapped.generate("system", "user")
+        self.assertEqual(client.calls, 1)
+        self.assertEqual(backend.unloaded, [])
 
 
 if __name__ == "__main__":
