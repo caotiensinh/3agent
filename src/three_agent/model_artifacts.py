@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 MANIFEST_SCHEMA = "workspace.model-manifest/v1"
 RECEIPT_SCHEMA = "workspace.model-provision-receipt/v1"
+RECEIPT_FILENAME = ".workspace-model-receipt.json"
 _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -252,19 +253,66 @@ class ApprovedModelManifest:
 
 
 def receipt_path(model_root: Path) -> Path:
-    return model_root / ".workspace-model-receipt.json"
+    return model_root / RECEIPT_FILENAME
+
+
+def _assert_no_symlink_components(root: Path, relative_path: str) -> None:
+    current = root
+    for part in Path(relative_path).parts:
+        current = current / part
+        if current.is_symlink():
+            raise ModelProvisioningError(
+                f"symlinked model artifact paths are forbidden: {relative_path}"
+            )
+
+
+def validate_artifact_set(
+    model: ApprovedModel,
+    model_root: Path,
+    *,
+    allow_receipt: bool,
+) -> None:
+    """Require the installed regular-file set to match the reviewed manifest exactly."""
+
+    expected = {artifact.path for artifact in model.artifacts}
+    if allow_receipt:
+        expected.add(RECEIPT_FILENAME)
+    actual: set[str] = set()
+    for path in model_root.rglob("*"):
+        if path.is_symlink():
+            relative = path.relative_to(model_root).as_posix()
+            raise ModelProvisioningError(
+                f"symlinked model content is forbidden: {relative}"
+            )
+        if path.is_file():
+            actual.add(path.relative_to(model_root).as_posix())
+    unexpected = sorted(actual - expected)
+    missing = sorted(expected - actual)
+    if unexpected:
+        raise ModelProvisioningError(
+            "unapproved files are present in model snapshot: " + ", ".join(unexpected)
+        )
+    if missing:
+        raise ModelProvisioningError(
+            "approved files are missing from model snapshot: " + ", ".join(missing)
+        )
 
 
 def validate_artifacts(
     model: ApprovedModel,
     model_root: Path,
+    *,
+    allow_receipt: bool = False,
 ) -> dict[str, dict[str, Any]]:
-    """Verify every approved file stays under the model root and matches integrity metadata."""
+    """Verify exact artifact membership, confinement, size, and SHA-256."""
 
+    validate_artifact_set(model, model_root, allow_receipt=allow_receipt)
     evidence: dict[str, dict[str, Any]] = {}
     root_resolved = model_root.resolve()
     for artifact in model.artifacts:
-        path = (model_root / artifact.path).resolve()
+        _assert_no_symlink_components(model_root, artifact.path)
+        candidate = model_root / artifact.path
+        path = candidate.resolve()
         try:
             path.relative_to(root_resolved)
         except ValueError as exc:
@@ -312,13 +360,14 @@ def write_provision_receipt(
     model: ApprovedModel,
     model_root: Path,
 ) -> Path:
-    artifacts = validate_artifacts(model, model_root)
+    artifacts = validate_artifacts(model, model_root, allow_receipt=False)
     payload = build_provision_receipt(manifest, model, artifacts)
     path = receipt_path(model_root)
     path.write_text(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
         encoding="utf-8",
     )
+    validate_artifact_set(model, model_root, allow_receipt=True)
     return path
 
 
@@ -379,7 +428,7 @@ class RuntimeModelResolver:
                     f"model receipt mismatch for {model.model_id}: {key} is not approved"
                 )
         try:
-            validate_artifacts(model, target_resolved)
+            validate_artifacts(model, target_resolved, allow_receipt=True)
         except ModelProvisioningError as exc:
             raise ModelResolutionError(str(exc)) from exc
 
