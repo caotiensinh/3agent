@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
 import re
-import shutil
-import tempfile
-import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Mapping
 
 
 MANIFEST_SCHEMA = "workspace.model-manifest/v1"
@@ -20,6 +16,7 @@ _HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _REPO_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
 _MODEL_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:/")
 
 
 class ModelArtifactError(RuntimeError):
@@ -41,8 +38,15 @@ class ModelResolutionError(ModelArtifactError):
 def _safe_relative_path(value: str, *, field: str) -> str:
     raw = str(value).strip().replace("\\", "/")
     path = Path(raw)
-    if not raw or path.is_absolute() or raw.startswith("/"):
-        raise ModelManifestError(f"{field} must be a non-empty relative path")
+    if (
+        not raw
+        or "\x00" in raw
+        or raw.startswith(("/", "~"))
+        or _WINDOWS_DRIVE_RE.match(raw)
+        or ":" in raw
+        or path.is_absolute()
+    ):
+        raise ModelManifestError(f"{field} must be a safe non-empty relative path")
     parts = path.parts
     if any(part in {"", ".", ".."} for part in parts):
         raise ModelManifestError(f"{field} contains an unsafe path segment")
@@ -52,7 +56,7 @@ def _safe_relative_path(value: str, *, field: str) -> str:
     return normalized
 
 
-def _sha256_file(path: Path, *, chunk_size: int = 4 * 1024 * 1024) -> str:
+def sha256_file(path: Path, *, chunk_size: int = 4 * 1024 * 1024) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         while True:
@@ -76,7 +80,7 @@ def _canonical_digest(payload: Mapping[str, Any]) -> str:
 def apply_runtime_offline_environment(environment: dict[str, str] | None = None) -> dict[str, str]:
     """Force Hugging Face/Transformers runtime into local-only mode.
 
-    Deployment-time provisioning is a separate explicit command. Runtime code
+    Deployment-time provisioning is a separate explicit script. Runtime code
     must never interpret a missing model as permission to reach the Internet.
     """
 
@@ -153,7 +157,9 @@ class ApprovedModel:
         capabilities_raw = raw.get("capabilities", [])
         if not isinstance(capabilities_raw, list) or not capabilities_raw:
             raise ModelManifestError(f"model {model_id} requires at least one capability")
-        capabilities = tuple(sorted({str(item).strip() for item in capabilities_raw if str(item).strip()}))
+        capabilities = tuple(
+            sorted({str(item).strip() for item in capabilities_raw if str(item).strip()})
+        )
         if not capabilities:
             raise ModelManifestError(f"model {model_id} requires at least one capability")
 
@@ -164,7 +170,11 @@ class ApprovedModel:
         artifacts_raw = raw.get("artifacts", [])
         if not isinstance(artifacts_raw, list) or not artifacts_raw:
             raise ModelManifestError(f"model {model_id} requires an integrity artifact set")
-        artifacts = tuple(ApprovedArtifact.from_raw(item) for item in artifacts_raw if isinstance(item, Mapping))
+        artifacts = tuple(
+            ApprovedArtifact.from_raw(item)
+            for item in artifacts_raw
+            if isinstance(item, Mapping)
+        )
         if len(artifacts) != len(artifacts_raw):
             raise ModelManifestError(f"model {model_id} contains an invalid artifact entry")
         paths = [item.path for item in artifacts]
@@ -195,7 +205,9 @@ class ApprovedModelManifest:
         try:
             raw = json.loads(source.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise ModelManifestError(f"cannot read approved model manifest: {source}: {exc}") from exc
+            raise ModelManifestError(
+                f"cannot read approved model manifest: {source}: {exc}"
+            ) from exc
         if not isinstance(raw, dict):
             raise ModelManifestError("approved model manifest must be a JSON object")
         if raw.get("schema") != MANIFEST_SCHEMA:
@@ -206,7 +218,11 @@ class ApprovedModelManifest:
         models_raw = raw.get("models")
         if not isinstance(models_raw, list):
             raise ModelManifestError("manifest models must be a list")
-        models = tuple(ApprovedModel.from_raw(item) for item in models_raw if isinstance(item, Mapping))
+        models = tuple(
+            ApprovedModel.from_raw(item)
+            for item in models_raw
+            if isinstance(item, Mapping)
+        )
         if len(models) != len(models_raw):
             raise ModelManifestError("manifest contains an invalid model entry")
         model_ids = [item.model_id for item in models]
@@ -215,25 +231,36 @@ class ApprovedModelManifest:
         local_subdirs = [item.local_subdir for item in models]
         if len(local_subdirs) != len(set(local_subdirs)):
             raise ModelManifestError("manifest contains duplicate local_subdir targets")
-        return cls(source_path=source, models=models, manifest_digest=_canonical_digest(raw))
+        return cls(
+            source_path=source,
+            models=models,
+            manifest_digest=_canonical_digest(raw),
+        )
 
     def require(self, model_id: str) -> ApprovedModel:
         requested = str(model_id).strip()
         for model in self.models:
             if model.model_id == requested:
                 return model
-        raise ModelManifestError(f"model is not approved by manifest: {requested or '<empty>'}")
+        raise ModelManifestError(
+            f"model is not approved by manifest: {requested or '<empty>'}"
+        )
 
     def for_capability(self, capability: str) -> tuple[ApprovedModel, ...]:
         target = str(capability).strip()
         return tuple(model for model in self.models if target in model.capabilities)
 
 
-def _receipt_path(model_root: Path) -> Path:
+def receipt_path(model_root: Path) -> Path:
     return model_root / ".workspace-model-receipt.json"
 
 
-def _validate_artifacts(model: ApprovedModel, model_root: Path) -> dict[str, dict[str, Any]]:
+def validate_artifacts(
+    model: ApprovedModel,
+    model_root: Path,
+) -> dict[str, dict[str, Any]]:
+    """Verify every approved file stays under the model root and matches integrity metadata."""
+
     evidence: dict[str, dict[str, Any]] = {}
     root_resolved = model_root.resolve()
     for artifact in model.artifacts:
@@ -241,24 +268,28 @@ def _validate_artifacts(model: ApprovedModel, model_root: Path) -> dict[str, dic
         try:
             path.relative_to(root_resolved)
         except ValueError as exc:
-            raise ModelProvisioningError(f"artifact escaped model root: {artifact.path}") from exc
+            raise ModelProvisioningError(
+                f"artifact escaped model root: {artifact.path}"
+            ) from exc
         if not path.is_file():
             raise ModelProvisioningError(f"required artifact is missing: {artifact.path}")
         size = path.stat().st_size
         if artifact.size_bytes is not None and size != artifact.size_bytes:
             raise ModelProvisioningError(
-                f"artifact size mismatch for {artifact.path}: expected {artifact.size_bytes}, got {size}"
+                f"artifact size mismatch for {artifact.path}: "
+                f"expected {artifact.size_bytes}, got {size}"
             )
-        digest = _sha256_file(path)
+        digest = sha256_file(path)
         if digest != artifact.sha256:
             raise ModelProvisioningError(
-                f"artifact SHA-256 mismatch for {artifact.path}: expected {artifact.sha256}, got {digest}"
+                f"artifact SHA-256 mismatch for {artifact.path}: "
+                f"expected {artifact.sha256}, got {digest}"
             )
         evidence[artifact.path] = {"sha256": digest, "size_bytes": size}
     return evidence
 
 
-def _receipt_payload(
+def build_provision_receipt(
     manifest: ApprovedModelManifest,
     model: ApprovedModel,
     artifacts: Mapping[str, Mapping[str, Any]],
@@ -276,100 +307,27 @@ def _receipt_payload(
     }
 
 
-SnapshotDownloader = Callable[..., str]
-
-
-class HuggingFaceModelProvisioner:
-    """Explicit deployment-only provisioner for approved HF snapshots.
-
-    The network-capable dependency is imported only inside ``provision``. Runtime
-    resolution below has no downloader and always forces HF offline mode.
-    """
-
-    def __init__(
-        self,
-        manifest: ApprovedModelManifest,
-        store_root: str | Path,
-        *,
-        snapshot_downloader: SnapshotDownloader | None = None,
-    ):
-        self.manifest = manifest
-        self.store_root = Path(store_root)
-        self._snapshot_downloader = snapshot_downloader
-
-    def _downloader(self) -> SnapshotDownloader:
-        if self._snapshot_downloader is not None:
-            return self._snapshot_downloader
-        try:
-            from huggingface_hub import snapshot_download
-        except ImportError as exc:
-            raise ModelProvisioningError(
-                "deployment provisioning requires the optional huggingface_hub package"
-            ) from exc
-        return snapshot_download
-
-    def provision(self, model_id: str, *, token: str | None = None) -> Path:
-        model = self.manifest.require(model_id)
-        self.store_root.mkdir(parents=True, exist_ok=True)
-        staging_parent = self.store_root / ".staging"
-        backup_parent = self.store_root / ".backup"
-        staging_parent.mkdir(parents=True, exist_ok=True)
-        backup_parent.mkdir(parents=True, exist_ok=True)
-        staging = staging_parent / f"{model.model_id}-{uuid.uuid4().hex}"
-        staging.mkdir(mode=0o700)
-        target = self.store_root / model.local_subdir
-        backup: Path | None = None
-
-        try:
-            downloader = self._downloader()
-            result = downloader(
-                repo_id=model.repo_id,
-                revision=model.revision,
-                local_dir=str(staging),
-                allow_patterns=[artifact.path for artifact in model.artifacts],
-                token=token,
-            )
-            if result:
-                resolved = Path(result).resolve()
-                if resolved != staging.resolve():
-                    raise ModelProvisioningError(
-                        "snapshot downloader returned a path outside the controlled staging directory"
-                    )
-
-            artifact_evidence = _validate_artifacts(model, staging)
-            receipt = _receipt_payload(self.manifest, model, artifact_evidence)
-            _receipt_path(staging).write_text(
-                json.dumps(receipt, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
-                encoding="utf-8",
-            )
-
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                backup = backup_parent / f"{model.model_id}-{uuid.uuid4().hex}"
-                os.replace(target, backup)
-            try:
-                os.replace(staging, target)
-            except Exception:
-                if backup is not None and backup.exists() and not target.exists():
-                    os.replace(backup, target)
-                raise
-            if backup is not None and backup.exists():
-                shutil.rmtree(backup)
-            return target
-        except ModelArtifactError:
-            raise
-        except Exception as exc:
-            raise ModelProvisioningError(f"failed to provision {model.model_id}: {exc}") from exc
-        finally:
-            if staging.exists():
-                shutil.rmtree(staging, ignore_errors=True)
-
-    def verify_installed(self, model_id: str) -> Path:
-        return RuntimeModelResolver(self.manifest, self.store_root).resolve(model_id)
+def write_provision_receipt(
+    manifest: ApprovedModelManifest,
+    model: ApprovedModel,
+    model_root: Path,
+) -> Path:
+    artifacts = validate_artifacts(model, model_root)
+    payload = build_provision_receipt(manifest, model, artifacts)
+    path = receipt_path(model_root)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 class RuntimeModelResolver:
-    """Resolve only manifest-approved, integrity-verified local model snapshots."""
+    """Resolve only manifest-approved, integrity-verified local model snapshots.
+
+    This runtime class contains no downloader and no network-capable dependency.
+    A missing local model is an authoritative provisioning failure.
+    """
 
     def __init__(self, manifest: ApprovedModelManifest, store_root: str | Path):
         self.manifest = manifest
@@ -386,15 +344,27 @@ class RuntimeModelResolver:
         target = self.store_root / model.local_subdir
         if not target.is_dir():
             raise ModelResolutionError(
-                f"approved model is not provisioned locally: {model.model_id}; runtime download is forbidden"
+                f"approved model is not provisioned locally: {model.model_id}; "
+                "runtime download is forbidden"
             )
-        receipt_file = _receipt_path(target)
+
+        target_resolved = target.resolve()
+        store_resolved = self.store_root.resolve()
+        try:
+            target_resolved.relative_to(store_resolved)
+        except ValueError as exc:
+            raise ModelResolutionError(
+                "resolved model escaped configured model store"
+            ) from exc
+
+        receipt_file = receipt_path(target_resolved)
         try:
             receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise ModelResolutionError(
                 f"model receipt is missing or invalid for {model.model_id}"
             ) from exc
+
         expected_identity = {
             "schema": RECEIPT_SCHEMA,
             "model_id": model.model_id,
@@ -409,64 +379,9 @@ class RuntimeModelResolver:
                     f"model receipt mismatch for {model.model_id}: {key} is not approved"
                 )
         try:
-            _validate_artifacts(model, target)
+            validate_artifacts(model, target_resolved)
         except ModelProvisioningError as exc:
             raise ModelResolutionError(str(exc)) from exc
-        resolved = target.resolve()
-        store = self.store_root.resolve()
-        try:
-            resolved.relative_to(store)
-        except ValueError as exc:
-            raise ModelResolutionError("resolved model escaped configured model store") from exc
-        self._verified[model.model_id] = resolved
-        return resolved
 
-
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Provision approved local model artifacts")
-    parser.add_argument("--manifest", required=True, help="Approved model manifest JSON")
-    parser.add_argument("--store", required=True, help="Local model store root")
-    parser.add_argument("--model", action="append", default=[], help="Approved model id to operate on")
-    parser.add_argument("--validate-only", action="store_true", help="Validate manifest without network access")
-    parser.add_argument("--verify-installed", action="store_true", help="Verify local receipt and artifact integrity")
-    parser.add_argument("--token-env", default="HF_TOKEN", help="Environment variable containing deployment token")
-    return parser
-
-
-def main(argv: Iterable[str] | None = None) -> int:
-    args = _build_parser().parse_args(list(argv) if argv is not None else None)
-    manifest = ApprovedModelManifest.load(args.manifest)
-    if args.validate_only:
-        print(
-            json.dumps(
-                {
-                    "status": "valid",
-                    "schema": MANIFEST_SCHEMA,
-                    "models": len(manifest.models),
-                    "manifest_sha256": manifest.manifest_digest,
-                    "runtime_download": False,
-                },
-                sort_keys=True,
-            )
-        )
-        return 0
-
-    model_ids = args.model or [model.model_id for model in manifest.models]
-    if not model_ids:
-        raise ModelManifestError("manifest contains no approved models to operate on")
-
-    if args.verify_installed:
-        resolver = RuntimeModelResolver(manifest, args.store)
-        for model_id in model_ids:
-            print(f"VERIFIED {model_id} {resolver.resolve(model_id)}")
-        return 0
-
-    token = os.getenv(args.token_env) if args.token_env else None
-    provisioner = HuggingFaceModelProvisioner(manifest, args.store)
-    for model_id in model_ids:
-        print(f"PROVISIONED {model_id} {provisioner.provision(model_id, token=token)}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        self._verified[model.model_id] = target_resolved
+        return target_resolved
