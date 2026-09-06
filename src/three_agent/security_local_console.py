@@ -68,6 +68,7 @@ _PAGE = r'''<!doctype html>
   <nav class="tabs">
     <button class="tab active" data-panel="overview">Overview</button>
     <button class="tab" data-panel="analyst">Analyst Workspace</button>
+    <button class="tab" data-panel="capability-center">Capability Center</button>
     <button class="tab" data-panel="operations">Operations</button>
     <button class="tab" data-panel="readiness-panel">Readiness</button>
   </nav>
@@ -128,6 +129,24 @@ _PAGE = r'''<!doctype html>
     <section class="card" style="margin-top:14px"><h2>Admin / Safety Status</h2><pre id="admin-status">読込中...</pre></section>
   </section>
 
+  <section id="capability-center" class="panel">
+    <section class="card">
+      <h2>Capability Center — Safe Activation Status</h2>
+      <p class="muted">Backend capability の状態を表示するだけです。ACTIVE / READY はブラウザに新しい実行権限を与えません。Packet Capture、Remediation、Shell、任意Target Scan、Credential入力は無効のままです。</p>
+      <div class="grid">
+        <section class="card"><div class="label">ACTIVE</div><div id="cap-active" class="value">-</div></section>
+        <section class="card"><div class="label">READY</div><div id="cap-ready" class="value">-</div></section>
+        <section class="card"><div class="label">GATED</div><div id="cap-gated" class="value">-</div></section>
+        <section class="card"><div class="label">DISABLED / NOT CONFIGURED</div><div id="cap-disabled" class="value">-</div></section>
+      </div>
+    </section>
+    <section class="card" style="margin-top:14px"><h2>Read Surfaces</h2><div class="table-wrap"><table id="cap-read-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Local Operations</h2><p class="muted">READY でも実行時には既存の CSRF / readiness / policy / explicit confirmation gate が必要です。</p><div class="table-wrap"><table id="cap-operations-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Collector Capabilities</h2><div class="table-wrap"><table id="cap-collectors-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Restricted Surfaces</h2><div class="table-wrap"><table id="cap-restricted-table"></table></div></section>
+    <section class="card" style="margin-top:14px"><h2>Matrix Authority</h2><pre id="cap-authority">読込中...</pre></section>
+  </section>
+
   <section id="operations" class="panel">
     <section class="card">
       <h2>Local setup</h2>
@@ -175,6 +194,23 @@ function activatePanel(name) {
   document.querySelectorAll(".panel").forEach(el => el.classList.toggle("active", el.id===name));
   document.querySelectorAll(".tab").forEach(el => el.classList.toggle("active", el.dataset.panel===name));
 }
+function renderCapabilityCenter(matrix) {
+  const readSurfaces=matrix.read_surfaces||[];
+  const operations=matrix.local_operations||[];
+  const collectors=matrix.collector_capabilities||[];
+  const restricted=matrix.restricted_surfaces||[];
+  const all=[...readSurfaces,...operations,...collectors,...restricted];
+  const count=(state)=>all.filter(item=>item && item.state===state).length;
+  byId("cap-active").textContent=text(count("active"));
+  byId("cap-ready").textContent=text(count("ready"));
+  byId("cap-gated").textContent=text(count("gated"));
+  byId("cap-disabled").textContent=text(count("disabled")+count("not_configured"));
+  renderTable("cap-read-table",[["name","Capability"],["state","State"],["reason_code","Reason"]],readSurfaces);
+  renderTable("cap-operations-table",[["name","Operation"],["state","State"],["reason_code","Reason"],["user_confirmation_required","Confirmation"]],operations);
+  renderTable("cap-collectors-table",[["name","Collector"],["state","State"],["reason_code","Reason"],["configured_asset_count","Approved assets"],["user_confirmation_required","Confirmation"]],collectors);
+  renderTable("cap-restricted-table",[["name","Restricted surface"],["state","State"],["reason_code","Reason"]],restricted);
+  byId("cap-authority").textContent=JSON.stringify(matrix.authority||{},null,2);
+}
 document.querySelectorAll(".tab").forEach(el => el.addEventListener("click", () => activatePanel(el.dataset.panel)));
 
 async function jsonGet(path) {
@@ -215,7 +251,10 @@ async function refresh() {
     renderTable("events-table",[["source_type","Source"],["stage","Stage"],["severity","Severity"],["recency","Recency"],["has_evidence","Evidence"]],analyst.events);
     renderTable("findings-table",[["severity","Severity"],["status","Status"],["asset_link_count","Assets"],["evidence_link_count","Evidence"],["recency","Recency"]],analyst.findings);
     renderTable("reports-table",[["period_kind","Period"],["status","Status"],["recency","Recency"]],analyst.reports);
-    byId("admin-status").textContent=JSON.stringify({admin:analyst.admin,authority:analyst.authority},null,2);
+    const admin=analyst.admin||{};
+    const matrix=admin.capability_matrix||{};
+    renderCapabilityCenter(matrix);
+    byId("admin-status").textContent=JSON.stringify({admin:admin,authority:analyst.authority},null,2);
 
     const list=byId("issues"); list.replaceChildren();
     for (const issue of ready.issues||[]) { const li=document.createElement("li"); li.textContent=(issue.code||"UNKNOWN")+": "+(issue.message||""); list.appendChild(li); }
