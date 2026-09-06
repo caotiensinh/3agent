@@ -191,6 +191,10 @@ class SecurityConsoleUXTests(unittest.TestCase):
                 self.assertIn('for (const id of ["cap-active","cap-ready","cap-gated","cap-disabled"]) { byId(id).className="value"; }', page)
                 self.assertIn('renderTable("assets-table",[["alias","Asset"]', page)
                 self.assertIn('byId("run").disabled=true;', page)
+                self.assertIn("async function postExact(path,payload,target)", page)
+                self.assertIn('target.textContent="Backend operation unavailable";', page)
+                self.assertIn("  } catch {\n    target.textContent=\"Backend operation unavailable\";\n  }\n  await refresh();", page)
+                self.assertNotIn('const data=await response.json(); target.textContent=JSON.stringify(data,null,2); await refresh();', page)
 
                 status, analyst = request("GET", "/api/v1/security/monitoring/analyst-snapshot?asset_id=secret&limit=9999")
                 self.assertEqual(status, 200)
