@@ -502,8 +502,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, self.server.service.analyst_snapshot())
                 return
             self._json(404, {"status": "not_found", "reason_code": "ENDPOINT_NOT_FOUND"})
-        except Exception as exc:
-            self._json(500, {"status": "error", "reason_code": type(exc).__name__})
+        except Exception:
+            self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
 
     def do_POST(self) -> None:
         if not self._host_ok() or not self._csrf_ok():
