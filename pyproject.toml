@@ -23,6 +23,9 @@ dependencies = [
 monitoring-snmp = [
   "pysnmp>=7.1.29,<7.2",
 ]
+model-provisioning = [
+  "huggingface-hub>=0.34,<2",
+]
 
 [project.scripts]
 workspace = "three_agent.cli:main"
@@ -43,6 +46,7 @@ workspace-eval-profile = "three_agent.evaluation_profiles:main"
 workspace-identity-broker = "three_agent.workspace_identity_broker:main"
 workspace-knowledge = "three_agent.knowledge_cli:main"
 workspace-learning-admin = "three_agent.adaptive_learning_lifecycle:main"
+workspace-model-provision = "three_agent.model_artifacts:main"
 workspace-network-data = "three_agent.network_dataset_cli:main"
 workspace-network-fetch = "three_agent.network_public_corpus_acquisition:main"
 workspace-promotion = "three_agent.promotion_gate:main"
