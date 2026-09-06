@@ -76,7 +76,7 @@ class SecurityDependencyImpactConsoleV001Tests(unittest.TestCase):
                     "assessment_id",
                     "seed_asset_ids",
                     "potentially_affected_asset_ids",
-                    "dependency_ids",
+                    '"dependency_ids":',
                     "depth_by_asset",
                     "declaration_sha256",
                     "192.0.2.",
