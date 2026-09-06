@@ -373,6 +373,12 @@ def _request_host_is_loopback(value: str | None) -> bool:
     return host in _LOCAL_HOSTS
 
 
+def _browser_safe_payload(payload: dict[str, object]) -> dict[str, object]:
+    safe = dict(payload)
+    safe.pop("database_parent", None)
+    return safe
+
+
 class _Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -475,7 +481,7 @@ class _Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/v1/security/monitoring/summary":
-                self._json(200, self.server.service.summary())
+                self._json(200, _browser_safe_payload(self.server.service.summary()))
                 return
             if path == "/api/v1/security/monitoring/readiness":
                 self._json(200, self.server.service.readiness())
@@ -550,7 +556,7 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:
             self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
             return
-        self._json(200, result)
+        self._json(200, _browser_safe_payload(result))
 
 
 def build_server(
