@@ -182,10 +182,16 @@ function renderTable(id, columns, rows) {
   for (const [key,label] of columns) { const th=document.createElement("th"); th.textContent=label; trh.appendChild(th); }
   thead.appendChild(trh); table.appendChild(thead);
   const tbody=document.createElement("tbody");
-  for (const row of rows || []) {
-    const tr=document.createElement("tr");
-    for (const [key] of columns) { const td=document.createElement("td"); const v=row[key]; td.textContent=Array.isArray(v)?v.join(", "):text(v); tr.appendChild(td); }
-    tbody.appendChild(tr);
+  const safeRows=Array.isArray(rows)?rows:[];
+  if (!safeRows.length) {
+    const tr=document.createElement("tr"); const td=document.createElement("td");
+    td.colSpan=columns.length; td.textContent="No data"; tr.appendChild(td); tbody.appendChild(tr);
+  } else {
+    for (const row of safeRows) {
+      const tr=document.createElement("tr");
+      for (const [key] of columns) { const td=document.createElement("td"); const v=row[key]; td.textContent=Array.isArray(v)?v.join(", "):text(v); tr.appendChild(td); }
+      tbody.appendChild(tr);
+    }
   }
   table.appendChild(tbody);
 }
@@ -262,7 +268,15 @@ async function refresh() {
     byId("result").textContent=demoMode ? "DEMO MODE: 実ネットワーク監視は無効です。Analyst Workspace で合成データを確認してください。" : (ready.ready?"実行可能":"Readiness BLOCKED");
     byId("demo-banner").hidden=!demoMode;
   } catch (error) {
-    byId("result").textContent="Backend connection error: "+error;
+    readiness=null;
+    const message="Backend connection error: "+error;
+    for (const id of ["enabled","network","ready","assets","evidence-open","evidence-high","operator-graphs","operator-flows","operator-timeline","analyst-state","analyst-assets-count","analyst-network-count","analyst-events-count","analyst-findings-count","cap-active","cap-ready","cap-gated","cap-disabled"]) {
+      byId(id).textContent="ERROR"; byId(id).className="value bad";
+    }
+    for (const id of ["asset-intelligence","evidence-summary","incident-posture","operator-posture","readiness-json","admin-status","cap-authority","result"]) {
+      byId(id).textContent=message;
+    }
+    byId("run").disabled=true;
   }
 }
 async function postExact(path,payload,target) {
