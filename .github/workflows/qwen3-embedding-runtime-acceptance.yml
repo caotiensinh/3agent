@@ -12,8 +12,6 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: '1'
-  HF_HOME: ${{ runner.temp }}/workspace-hf-home
-  SENTENCE_TRANSFORMERS_HOME: ${{ runner.temp }}/workspace-sentence-transformers
   HF_HUB_DISABLE_TELEMETRY: '1'
 
 jobs:
@@ -84,6 +82,8 @@ jobs:
       - name: Download once and retain only the audited snapshot
         shell: bash
         run: |
+          export HF_HOME="$RUNNER_TEMP/workspace-hf-home"
+          export SENTENCE_TRANSFORMERS_HOME="$RUNNER_TEMP/workspace-sentence-transformers"
           python scripts/audit_hf_model_candidate.py \
             --repo-id '${{ steps.candidate.outputs.repo_id }}' \
             --revision '${{ steps.candidate.outputs.revision }}' \
@@ -144,6 +144,8 @@ jobs:
           TRANSFORMERS_OFFLINE: '1'
           HF_HUB_DISABLE_TELEMETRY: '1'
         run: |
+          export HF_HOME="$RUNNER_TEMP/workspace-hf-home"
+          export SENTENCE_TRANSFORMERS_HOME="$RUNNER_TEMP/workspace-sentence-transformers"
           PYTHON_BIN="$(command -v python)"
           sudo --preserve-env=HF_HUB_OFFLINE,TRANSFORMERS_OFFLINE,HF_HUB_DISABLE_TELEMETRY,HF_HOME,SENTENCE_TRANSFORMERS_HOME \
             unshare --net -- \
@@ -205,8 +207,8 @@ jobs:
         run: |
           rm -rf \
             "$RUNNER_TEMP/qwen3-embedding-verified-snapshot" \
-            "$HF_HOME" \
-            "$SENTENCE_TRANSFORMERS_HOME"
+            "$RUNNER_TEMP/workspace-hf-home" \
+            "$RUNNER_TEMP/workspace-sentence-transformers"
 
       - name: Upload evidence receipts only
         if: always()
