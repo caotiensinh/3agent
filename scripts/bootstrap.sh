@@ -164,14 +164,23 @@ path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding=
 PY
 }
 
+migrate_generated_default_config() {
+  local migrator="${INSTALL_DIR}/scripts/migrate_default_web_search_config.py"
+  [[ -f "$CONFIG_PATH" ]] || return 0
+  [[ -f "$migrator" ]] || die "Missing config migration helper: ${migrator}"
+  log "Checking whether the legacy generated config needs secure Web Search migration"
+  "${INSTALL_DIR}/.venv/bin/python" "$migrator" --config "$CONFIG_PATH"
+}
+
 write_config() {
   if [[ -f "$CONFIG_PATH" ]]; then
     log "Preserving existing configuration: ${CONFIG_PATH}"
   else
     mkdir -p "$(dirname "$CONFIG_PATH")"
-    cp "${INSTALL_DIR}/config/test.example.json" "$CONFIG_PATH"
-    log "Created configuration: ${CONFIG_PATH}"
+    cp "${INSTALL_DIR}/config/local.public-research.example.json" "$CONFIG_PATH"
+    log "Created secure public-research configuration: ${CONFIG_PATH}"
   fi
+  migrate_generated_default_config
   set_model_in_config
 }
 
