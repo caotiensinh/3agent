@@ -530,6 +530,9 @@ class _Handler(BaseHTTPRequestHandler):
             except RuntimeError as exc:
                 self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
                 return
+            except Exception:
+                self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
+                return
             self._json(200, result)
             return
 
@@ -543,6 +546,9 @@ class _Handler(BaseHTTPRequestHandler):
             result = self.server.service.initialize()
         except RuntimeError as exc:
             self._json(409, {"status": "blocked", "reason_code": str(exc)[:256]})
+            return
+        except Exception:
+            self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
             return
         self._json(200, result)
 
