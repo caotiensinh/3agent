@@ -8,6 +8,7 @@ from pathlib import Path
 
 from three_agent.chat_gateway import workspace_ui_capabilities
 from three_agent.config import load_config
+from three_agent.orchestrator import Orchestrator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
 
         self.assertTrue(capability["enabled"])
         self.assertEqual(capability["state_label"], "Ready")
+        self.assertEqual(config.environment, "public-research-zone")
         self.assertEqual(config.confidentiality_mode, "public-research")
         self.assertFalse(config.test_mode_full_access)
         self.assertEqual(config.internet_gateway.mode, "strict")
@@ -42,6 +44,9 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
             config.internet_gateway.allowed_search_hosts,
             ("html.duckduckgo.com", "lite.duckduckgo.com", "www.bing.com"),
         )
+        validator_mode, validator_public_web = Orchestrator._runtime_validator_policy(config)
+        self.assertEqual(validator_mode, "public-research")
+        self.assertTrue(validator_public_web)
 
     def test_legacy_generated_default_migrates_without_changing_model_or_paths(self):
         migrator = load_migrator()
@@ -59,7 +64,7 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
             self.assertTrue(backup.is_file())
 
             migrated = json.loads(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(migrated["environment"], "local")
+            self.assertEqual(migrated["environment"], "public-research-zone")
             self.assertEqual(migrated["confidentiality_mode"], "public-research")
             self.assertFalse(migrated["test_mode_full_access"])
             self.assertEqual(migrated["internet_gateway"]["mode"], "strict")
@@ -73,6 +78,9 @@ class DefaultWebSearchPolicyTests(unittest.TestCase):
 
             config = load_config(str(config_path))
             self.assertTrue(workspace_ui_capabilities(config)["features"]["web_search"]["enabled"])
+            validator_mode, validator_public_web = Orchestrator._runtime_validator_policy(config)
+            self.assertEqual(validator_mode, "public-research")
+            self.assertTrue(validator_public_web)
 
     def test_migration_is_idempotent(self):
         migrator = load_migrator()
