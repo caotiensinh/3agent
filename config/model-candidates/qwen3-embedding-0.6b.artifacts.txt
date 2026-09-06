@@ -1,0 +1,12 @@
+# Candidate-only runtime artifact allowlist for Qwen/Qwen3-Embedding-0.6B
+# This file is NOT model approval and does not grant runtime authority.
+1_Pooling/config.json
+config.json
+config_sentence_transformers.json
+generation_config.json
+merges.txt
+model.safetensors
+modules.json
+tokenizer.json
+tokenizer_config.json
+vocab.json
