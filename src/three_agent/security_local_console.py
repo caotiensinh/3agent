@@ -93,6 +93,20 @@ _PAGE = """<!doctype html>
   </section>
 
   <section class="card" style="margin-top:14px">
+    <strong>Operator Posture</strong>
+    <p class="muted">Risk・Asset Health・Correlation・Flow・Timeline を固定集計値で統合します。Event/Graph/Entity/Evidence/Rule/Asset ID、IP、RAW値、正確な時刻は表示しません。</p>
+    <div class="grid">
+      <section class="card"><div class="label">Data state</div><div id="operator-data-state" class="value">-</div></section>
+      <section class="card"><div class="label">Today High/Critical</div><div id="operator-risk" class="value">-</div></section>
+      <section class="card"><div class="label">Healthy assets</div><div id="operator-healthy" class="value">-</div></section>
+      <section class="card"><div class="label">Correlation graphs</div><div id="operator-graphs" class="value">-</div></section>
+      <section class="card"><div class="label">Flow events</div><div id="operator-flows" class="value">-</div></section>
+      <section class="card"><div class="label">Timeline entries</div><div id="operator-timeline" class="value">-</div></section>
+    </div>
+    <pre id="operator-posture">Operator posture を読み込んでいます...</pre>
+  </section>
+
+  <section class="card" style="margin-top:14px">
     <strong>Read-only monitoring</strong>
     <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
     <button id="run" disabled>読み取り専用監視を実行</button>
@@ -112,6 +126,7 @@ let readiness = null;
 let assetIntelligence = null;
 let evidenceSummary = null;
 let incidentPosture = null;
+let operatorPosture = null;
 
 function stateText(value) { return value ? "有効" : "無効"; }
 function setState(el, value) {
@@ -121,19 +136,21 @@ function setState(el, value) {
 
 async function refresh() {
   try {
-    const [summaryResp, readinessResp, assetResp, evidenceResp, incidentResp] = await Promise.all([
+    const [summaryResp, readinessResp, assetResp, evidenceResp, incidentResp, operatorResp] = await Promise.all([
       fetch("/api/v1/security/monitoring/summary", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/evidence-summary", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/incident-posture", {cache:"no-store"})
+      fetch("/api/v1/security/monitoring/incident-posture", {cache:"no-store"}),
+      fetch("/api/v1/security/monitoring/operator-posture", {cache:"no-store"})
     ]);
     summary = await summaryResp.json();
     readiness = await readinessResp.json();
     assetIntelligence = await assetResp.json();
     evidenceSummary = await evidenceResp.json();
     incidentPosture = await incidentResp.json();
-    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok || !incidentResp.ok) throw new Error("backend status unavailable");
+    operatorPosture = await operatorResp.json();
+    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok || !incidentResp.ok || !operatorResp.ok) throw new Error("backend status unavailable");
 
     setState(byId("enabled"), summary.enabled === true);
     setState(byId("network"), summary.allow_real_network === true);
@@ -184,6 +201,27 @@ async function refresh() {
       authority: incidentPosture.authority || {}
     }, null, 2);
 
+    const operatorHealth = operatorPosture.asset_health || {};
+    const operatorHealthCounts = operatorHealth.state_counts || {};
+    const operatorCorrelation = operatorPosture.correlation || {};
+    const operatorFlow = operatorPosture.flow || {};
+    const operatorTimeline = operatorPosture.timeline || {};
+    const operatorRisk = operatorPosture.risk || {};
+    byId("operator-data-state").textContent = String(operatorPosture.data_state ?? "unknown");
+    byId("operator-risk").textContent = String(operatorRisk.today_open_high_critical ?? 0);
+    byId("operator-healthy").textContent = String(operatorHealthCounts.healthy ?? 0);
+    byId("operator-graphs").textContent = String(operatorCorrelation.incident_graph_count ?? 0);
+    byId("operator-flows").textContent = String(operatorFlow.flow_event_count ?? 0);
+    byId("operator-timeline").textContent = String(operatorTimeline.entry_count ?? 0);
+    byId("operator-posture").textContent = JSON.stringify({
+      risk: operatorRisk,
+      asset_health: operatorHealth,
+      correlation: operatorCorrelation,
+      flow: operatorFlow,
+      timeline: operatorTimeline,
+      authority: operatorPosture.authority || {}
+    }, null, 2);
+
     const list = byId("issues");
     list.replaceChildren();
     for (const item of [...(readiness.issues || []), ...(readiness.warnings || [])]) {
@@ -204,6 +242,7 @@ async function refresh() {
     byId("asset-intelligence").textContent = "Asset Intelligence を取得できません。";
     byId("evidence-summary").textContent = "Evidence summary を取得できません。";
     byId("incident-posture").textContent = "Incident posture を取得できません。";
+    byId("operator-posture").textContent = "Operator posture を取得できません。";
   }
 }
 
@@ -344,6 +383,9 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/v1/security/monitoring/incident-posture":
                 self._json(200, self.server.service.incident_posture())
+                return
+            if path == "/api/v1/security/monitoring/operator-posture":
+                self._json(200, self.server.service.operator_posture())
                 return
         except Exception:
             self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
