@@ -26,9 +26,15 @@ def test_runner_bootstrap_is_fail_closed_and_token_safe():
 def test_runner_download_is_official_and_digest_verified():
     text = _text()
 
+    # The bootstrap resolves the current official asset from GitHub's release API,
+    # then independently constrains browser_download_url to actions/runner before
+    # accepting the GitHub-published SHA-256 digest. Do not require a duplicated
+    # hard-coded download URL when the allowlist is already enforced by regex.
     assert "https://api.github.com/repos/actions/runner/releases/latest" in text
-    assert "https://github.com/actions/runner/releases/download/" in text
+    assert "browser_download_url" in text
+    assert r"https://github\.com/actions/runner/releases/download/" in text
     assert "digest" in text
+    assert r"sha256:[0-9a-f]{64}" in text
     assert "sha256sum -c -" in text
     assert "--proto '=https'" in text
     assert "--tlsv1.2" in text
