@@ -1,6 +1,6 @@
 {
   "product_name": "WorkSpace",
-  "environment": "local",
+  "environment": "public-research-zone",
   "confidentiality_mode": "public-research",
   "test_mode_full_access": false,
   "database_path": "data/tasks.db",
