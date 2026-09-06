@@ -13,6 +13,7 @@ class _FakeService:
         self.run_calls = 0
         self.asset_intelligence_calls = 0
         self.evidence_summary_calls = 0
+        self.incident_posture_calls = 0
 
     def summary(self) -> dict[str, object]:
         return {
@@ -99,6 +100,38 @@ class _FakeService:
                 "finding_ids_exposed": False,
                 "evidence_refs_exposed": False,
                 "bundle_refs_exposed": False,
+                "database_write": False,
+                "network_execution": False,
+                "collector_execution": False,
+                "packet_capture_execution": False,
+                "remediation_execution": False,
+            },
+        }
+
+    def incident_posture(self) -> dict[str, object]:
+        self.incident_posture_calls += 1
+        return {
+            "schema_version": "workspace-security-monitoring/incident-posture-v1",
+            "count_scope": "recent_bounded_findings",
+            "max_findings": 100,
+            "sample_count": 4,
+            "open_sample_count": 3,
+            "closed_sample_count": 1,
+            "severity_counts": {"critical": 1, "high": 1, "medium": 1, "other": 1},
+            "status_counts": {"investigating": 1, "open": 1, "other": 1, "resolved": 1},
+            "attention_level": "critical",
+            "contains_identifiers": False,
+            "contains_raw_evidence": False,
+            "contains_raw_credentials": False,
+            "authority": {
+                "aggregate_only": True,
+                "database_read_only": True,
+                "finding_ids_exposed": False,
+                "asset_refs_exposed": False,
+                "evidence_refs_exposed": False,
+                "rule_ids_exposed": False,
+                "category_values_exposed": False,
+                "browser_filters_exposed": False,
                 "database_write": False,
                 "network_execution": False,
                 "collector_execution": False,
@@ -280,6 +313,52 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertFalse(authority["packet_capture_execution"])
         self.assertFalse(authority["remediation_execution"])
 
+    def test_incident_posture_is_fixed_bucket_readonly_service_surface(self) -> None:
+        status, payload, headers = self.request(
+            "GET",
+            "/api/v1/security/monitoring/incident-posture?limit=9999&finding_id=secret",
+        )
+        self.assertEqual(status, 200)
+        assert isinstance(payload, dict)
+        self.assertEqual(
+            payload["schema_version"],
+            "workspace-security-monitoring/incident-posture-v1",
+        )
+        self.assertEqual(payload["count_scope"], "recent_bounded_findings")
+        self.assertEqual(payload["max_findings"], 100)
+        self.assertEqual(payload["sample_count"], 4)
+        self.assertEqual(payload["open_sample_count"], 3)
+        self.assertEqual(payload["closed_sample_count"], 1)
+        self.assertEqual(payload["attention_level"], "critical")
+        self.assertEqual(self.service.incident_posture_calls, 1)
+        self.assertEqual(self.service.run_calls, 0)
+        self.assertEqual(headers["cache-control"], "no-store")
+
+        serialized = json.dumps(payload, sort_keys=True)
+        for sensitive_value in (
+            "finding-secret-01",
+            "asset-secret-01",
+            "evidence://secret",
+            "rule-secret-01",
+            "category-secret-01",
+        ):
+            self.assertNotIn(sensitive_value, serialized)
+        authority = payload["authority"]
+        assert isinstance(authority, dict)
+        self.assertTrue(authority["aggregate_only"])
+        self.assertTrue(authority["database_read_only"])
+        self.assertFalse(authority["finding_ids_exposed"])
+        self.assertFalse(authority["asset_refs_exposed"])
+        self.assertFalse(authority["evidence_refs_exposed"])
+        self.assertFalse(authority["rule_ids_exposed"])
+        self.assertFalse(authority["category_values_exposed"])
+        self.assertFalse(authority["browser_filters_exposed"])
+        self.assertFalse(authority["database_write"])
+        self.assertFalse(authority["network_execution"])
+        self.assertFalse(authority["collector_execution"])
+        self.assertFalse(authority["packet_capture_execution"])
+        self.assertFalse(authority["remediation_execution"])
+
     def test_readonly_execution_requires_csrf_and_explicit_confirmation(self) -> None:
         status, payload, _ = self.request(
             "POST",
@@ -349,12 +428,18 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertIn("WorkSpace Security Console", payload)
         self.assertIn("Asset Intelligence", payload)
         self.assertIn("Evidence / Result History", payload)
+        self.assertIn("Incident Posture", payload)
         self.assertIn(
             "アセットID、ソースID、Finding ID、Evidence参照、Bundle参照、RAW値は表示しません",
             payload,
         )
+        self.assertIn(
+            "Finding ID、Asset参照、Evidence参照、Rule ID、Category値は表示しません",
+            payload,
+        )
         self.assertIn("/api/v1/security/monitoring/asset-intelligence", payload)
         self.assertIn("/api/v1/security/monitoring/evidence-summary", payload)
+        self.assertIn("/api/v1/security/monitoring/incident-posture", payload)
         self.assertIn("読み取り専用監視を実行", payload)
         self.assertNotIn("__CSRF_TOKEN__", payload)
         self.assertIn("content-security-policy", headers)
