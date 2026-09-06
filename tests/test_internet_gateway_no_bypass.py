@@ -9,6 +9,7 @@ SRC_ROOT = Path(__file__).resolve().parents[1] / "src" / "three_agent"
 PROTECTED_TOP_LEVEL = {"agents", "plugins", "connectors", "browser", "tools"}
 PROTECTED_FILES = {
     "knowledge_gateway.py",
+    "local_embedding.py",
     "privacy.py",
     "public_query_compiler.py",
     "task_contract.py",
