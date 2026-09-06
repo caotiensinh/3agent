@@ -11,6 +11,7 @@ from three_agent.security_local_console import build_server, validate_loopback_h
 class _FakeService:
     def __init__(self) -> None:
         self.run_calls = 0
+        self.asset_intelligence_calls = 0
 
     def summary(self) -> dict[str, object]:
         return {
@@ -29,6 +30,35 @@ class _FakeService:
             "secret_values_read": False,
             "packet_capture_executed": False,
             "remediation_executed": False,
+        }
+
+    def asset_intelligence(self) -> dict[str, object]:
+        self.asset_intelligence_calls += 1
+        return {
+            "schema_version": "workspace-security-monitoring/asset-intelligence-summary-v1",
+            "count_scope": "enabled_assets",
+            "asset_count": 3,
+            "enabled_asset_count": 2,
+            "disabled_asset_count": 1,
+            "unique_role_count": 2,
+            "capability_counts": {"icmp_echo": 1, "tcp_connect": 1},
+            "data_class_counts": {"confidential": 1, "restricted": 1},
+            "credential_ref_asset_count": 1,
+            "explicit_tcp_port_binding_count": 1,
+            "contains_raw_credentials": False,
+            "authority": {
+                "aggregate_only": True,
+                "config_is_authoritative": True,
+                "asset_ids_exposed": False,
+                "management_hosts_exposed": False,
+                "credential_refs_exposed": False,
+                "allowed_tcp_ports_exposed": False,
+                "database_write": False,
+                "network_execution": False,
+                "collector_execution": False,
+                "packet_capture_execution": False,
+                "remediation_execution": False,
+            },
         }
 
     def run_hourly(self, *, execute_readonly: bool) -> dict[str, object]:
@@ -117,6 +147,43 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertFalse(readiness["packet_capture_executed"])
         self.assertFalse(readiness["remediation_executed"])
 
+    def test_asset_intelligence_is_aggregate_only_readonly_service_surface(self) -> None:
+        status, payload, headers = self.request(
+            "GET", "/api/v1/security/monitoring/asset-intelligence"
+        )
+        self.assertEqual(status, 200)
+        assert isinstance(payload, dict)
+        self.assertEqual(
+            payload["schema_version"],
+            "workspace-security-monitoring/asset-intelligence-summary-v1",
+        )
+        self.assertEqual(payload["asset_count"], 3)
+        self.assertEqual(payload["enabled_asset_count"], 2)
+        self.assertEqual(payload["disabled_asset_count"], 1)
+        self.assertEqual(payload["unique_role_count"], 2)
+        self.assertEqual(payload["credential_ref_asset_count"], 1)
+        self.assertEqual(payload["explicit_tcp_port_binding_count"], 1)
+        self.assertEqual(self.service.asset_intelligence_calls, 1)
+        self.assertEqual(self.service.run_calls, 0)
+        self.assertEqual(headers["cache-control"], "no-store")
+
+        serialized = json.dumps(payload, sort_keys=True)
+        for sensitive_value in (
+            "router-core-01",
+            "192.0.2.10",
+            "secret-ref:router-core-01",
+            "443",
+        ):
+            self.assertNotIn(sensitive_value, serialized)
+        authority = payload["authority"]
+        assert isinstance(authority, dict)
+        self.assertTrue(authority["aggregate_only"])
+        self.assertFalse(authority["database_write"])
+        self.assertFalse(authority["network_execution"])
+        self.assertFalse(authority["collector_execution"])
+        self.assertFalse(authority["packet_capture_execution"])
+        self.assertFalse(authority["remediation_execution"])
+
     def test_readonly_execution_requires_csrf_and_explicit_confirmation(self) -> None:
         status, payload, _ = self.request(
             "POST",
@@ -170,12 +237,13 @@ class SecurityLocalConsoleTests(unittest.TestCase):
 
         status, payload, _ = self.request(
             "GET",
-            "/api/v1/health",
+            "/api/v1/security/monitoring/asset-intelligence",
             headers={"Host": "example.test"},
         )
         self.assertEqual(status, 421)
         assert isinstance(payload, dict)
         self.assertEqual(payload["reason_code"], "LOOPBACK_HOST_REQUIRED")
+        self.assertEqual(self.service.asset_intelligence_calls, 0)
 
     def test_root_serves_self_contained_japanese_console(self) -> None:
         status, payload, headers = self.request("GET", "/")
@@ -183,6 +251,9 @@ class SecurityLocalConsoleTests(unittest.TestCase):
         self.assertIsInstance(payload, str)
         assert isinstance(payload, str)
         self.assertIn("WorkSpace Security Console", payload)
+        self.assertIn("Asset Intelligence", payload)
+        self.assertIn("アセットID、管理ホスト、資格情報参照、TCPポート値は表示しません", payload)
+        self.assertIn("/api/v1/security/monitoring/asset-intelligence", payload)
         self.assertIn("読み取り専用監視を実行", payload)
         self.assertNotIn("__CSRF_TOKEN__", payload)
         self.assertIn("content-security-policy", headers)

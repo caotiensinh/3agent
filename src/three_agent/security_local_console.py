@@ -49,6 +49,19 @@ _PAGE = """<!doctype html>
   </div>
 
   <section class="card" style="margin-top:14px">
+    <strong>Asset Intelligence</strong>
+    <p class="muted">承認済み設定から集計値のみを表示します。アセットID、管理ホスト、資格情報参照、TCPポート値は表示しません。</p>
+    <div class="grid">
+      <section class="card"><div class="label">全アセット</div><div id="asset-total" class="value">-</div></section>
+      <section class="card"><div class="label">無効アセット</div><div id="asset-disabled" class="value">-</div></section>
+      <section class="card"><div class="label">有効ロール数</div><div id="asset-roles" class="value">-</div></section>
+      <section class="card"><div class="label">資格情報参照あり</div><div id="asset-credentials" class="value">-</div></section>
+      <section class="card"><div class="label">明示TCPポート割当数</div><div id="asset-port-bindings" class="value">-</div></section>
+    </div>
+    <pre id="asset-intelligence">Asset Intelligence を読み込んでいます...</pre>
+  </section>
+
+  <section class="card" style="margin-top:14px">
     <strong>Read-only monitoring</strong>
     <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
     <button id="run" disabled>読み取り専用監視を実行</button>
@@ -65,6 +78,7 @@ const csrf = "__CSRF_TOKEN__";
 const byId = (id) => document.getElementById(id);
 let summary = null;
 let readiness = null;
+let assetIntelligence = null;
 
 function stateText(value) { return value ? "有効" : "無効"; }
 function setState(el, value) {
@@ -74,19 +88,32 @@ function setState(el, value) {
 
 async function refresh() {
   try {
-    const [summaryResp, readinessResp] = await Promise.all([
+    const [summaryResp, readinessResp, assetResp] = await Promise.all([
       fetch("/api/v1/security/monitoring/summary", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"})
+      fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"}),
+      fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"})
     ]);
     summary = await summaryResp.json();
     readiness = await readinessResp.json();
-    if (!summaryResp.ok || !readinessResp.ok) throw new Error("backend status unavailable");
+    assetIntelligence = await assetResp.json();
+    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok) throw new Error("backend status unavailable");
 
     setState(byId("enabled"), summary.enabled === true);
     setState(byId("network"), summary.allow_real_network === true);
     byId("ready").textContent = readiness.ready ? "READY" : "BLOCKED";
     byId("ready").className = "value " + (readiness.ready ? "good" : "bad");
     byId("assets").textContent = String(summary.enabled_asset_count ?? 0);
+
+    byId("asset-total").textContent = String(assetIntelligence.asset_count ?? 0);
+    byId("asset-disabled").textContent = String(assetIntelligence.disabled_asset_count ?? 0);
+    byId("asset-roles").textContent = String(assetIntelligence.unique_role_count ?? 0);
+    byId("asset-credentials").textContent = String(assetIntelligence.credential_ref_asset_count ?? 0);
+    byId("asset-port-bindings").textContent = String(assetIntelligence.explicit_tcp_port_binding_count ?? 0);
+    byId("asset-intelligence").textContent = JSON.stringify({
+      capability_counts: assetIntelligence.capability_counts || {},
+      data_class_counts: assetIntelligence.data_class_counts || {},
+      authority: assetIntelligence.authority || {}
+    }, null, 2);
 
     const list = byId("issues");
     list.replaceChildren();
@@ -105,6 +132,7 @@ async function refresh() {
     byId("result").textContent = "Backend connected. User action is required before execution.";
   } catch (error) {
     byId("result").textContent = `接続エラー: ${error.message}`;
+    byId("asset-intelligence").textContent = "Asset Intelligence を取得できません。";
   }
 }
 
@@ -236,6 +264,9 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/v1/security/monitoring/readiness":
                 self._json(200, self.server.service.readiness())
+                return
+            if path == "/api/v1/security/monitoring/asset-intelligence":
+                self._json(200, self.server.service.asset_intelligence())
                 return
         except Exception:
             self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
