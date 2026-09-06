@@ -1,6 +1,8 @@
 import unittest
+from types import SimpleNamespace
 
 from three_agent.config import LLMConfig
+from three_agent.model_residency import ModelResidencyConfig, ModelResidencyManager
 from three_agent.resource_budget import (
     GPUResourceState,
     ResourceAdmissionError,
@@ -12,7 +14,15 @@ from three_agent.worker_pool import OllamaWorkerPool
 GIB = 1024**3
 
 
-def snapshot(index: int, *, used: int, util: float, temp: float = 50, power: float = 30):
+def snapshot(
+    index: int,
+    *,
+    used: int,
+    util: float,
+    temp: float = 50,
+    power: float = 30,
+    loaded=None,
+):
     gpu = GPUResourceState(
         index=index,
         uuid=f"GPU-{index}",
@@ -30,7 +40,7 @@ def snapshot(index: int, *, used: int, util: float, temp: float = 50, power: flo
         gpu_temp_c=temp,
         ram_total_bytes=32 * GIB,
         ram_used_bytes=6 * GIB,
-        loaded_models={},
+        loaded_models=loaded or {},
         gpus=(gpu,),
     )
 
@@ -52,6 +62,7 @@ class FakeClient:
         self.name = name
         self.failure = failure
         self.unloaded = False
+        self.config = SimpleNamespace(model="qwen-test")
 
     def generate(self, *args, **kwargs):
         if self.failure:
@@ -67,8 +78,22 @@ class FakeClient:
         self.unloaded = True
 
 
+class FakeResidencyBackend:
+    def __init__(self):
+        self.resident = set()
+        self.unloaded = []
+
+    def resident_models(self):
+        return set(self.resident)
+
+    def unload(self, model):
+        self.unloaded.append(model)
+        self.resident.discard(model)
+        return True
+
+
 class WorkerPoolTests(unittest.TestCase):
-    def make_pool(self, snaps, size=8 * GIB, failures=None):
+    def make_pool(self, snaps, size=8 * GIB, failures=None, residency=False):
         failures = failures or {}
         llm = LLMConfig(
             provider="ollama",
@@ -100,12 +125,28 @@ class WorkerPoolTests(unittest.TestCase):
         def client_factory(worker, manager):
             return FakeClient(worker.name, failures.get(worker.name))
 
-        return OllamaWorkerPool(
+        backends = {}
+
+        def residency_factory(worker):
+            backend = FakeResidencyBackend()
+            backends[worker.name] = backend
+            return ModelResidencyManager(
+                backend,
+                ModelResidencyConfig(idle_ttl_seconds=120),
+            )
+
+        pool = OllamaWorkerPool(
             llm,
             budget,
             manager_factory=manager_factory,
             client_factory=client_factory,
+            residency_config=(
+                ModelResidencyConfig(idle_ttl_seconds=120) if residency else None
+            ),
+            residency_factory=residency_factory if residency else None,
         )
+        pool._test_residency_backends = backends
+        return pool
 
     def test_routes_to_less_loaded_single_gpu(self):
         pool = self.make_pool(
@@ -137,6 +178,22 @@ class WorkerPoolTests(unittest.TestCase):
         names = [worker.name for worker in pool.route_order("qwen-test")]
         self.assertEqual(names, ["gpu1"])
 
+    def test_resident_model_is_reused_without_double_counting_worker_vram(self):
+        pool = self.make_pool(
+            {
+                "gpu0": snapshot(
+                    0,
+                    used=28,
+                    util=10,
+                    loaded={"qwen-test": 8 * GIB},
+                ),
+                "gpu1": snapshot(1, used=24, util=20),
+            },
+            size=8 * GIB,
+        )
+        names = [worker.name for worker in pool.route_order("qwen-test")]
+        self.assertIn("gpu0", names)
+
     def test_large_model_uses_dual_worker_when_no_single_gpu_can_fit(self):
         pool = self.make_pool(
             {
@@ -157,6 +214,22 @@ class WorkerPoolTests(unittest.TestCase):
             failures={"gpu0": ResourceAdmissionError("became busy")},
         )
         self.assertEqual(pool.generate("sys", "user"), "gpu1")
+
+    def test_residency_is_scoped_to_each_worker_and_does_not_preload(self):
+        pool = self.make_pool(
+            {
+                "gpu0": snapshot(0, used=4, util=10),
+                "gpu1": snapshot(1, used=6, util=20),
+            },
+            residency=True,
+        )
+        self.assertEqual(set(pool._residency), {"gpu0", "gpu1", "dual"})
+        self.assertEqual(
+            {name: backend.resident for name, backend in pool._test_residency_backends.items()},
+            {"gpu0": set(), "gpu1": set(), "dual": set()},
+        )
+        self.assertEqual(pool.generate("sys", "user"), "gpu0")
+        self.assertTrue(all(not backend.unloaded for backend in pool._test_residency_backends.values()))
 
 
 if __name__ == "__main__":
