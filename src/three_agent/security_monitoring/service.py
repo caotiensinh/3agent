@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from .analyst_console import safe_analyst_snapshot
 from .contracts import APPROVED_DATA_CLASSES, COLLECTOR_CAPABILITIES
 from .dispatch import DefaultCollectorDispatcher
 from .hourly import HourlyMonitoringRunner
@@ -254,6 +255,12 @@ class SecurityMonitoringService:
 
     def operator_posture(self) -> dict[str, object]:
         return safe_operator_posture_summary(self.load_config())
+
+    def analyst_snapshot(self) -> dict[str, object]:
+        return safe_analyst_snapshot(
+            self.load_config(),
+            config_saved=self.config_path.is_file(),
+        )
 
     def readiness(self) -> dict[str, object]:
         config = self.load_config()
