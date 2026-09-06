@@ -13,9 +13,12 @@ from .readiness import evaluate_monitoring_readiness
 from .runtime_config import MonitoringRuntimeConfig, load_runtime_config
 from .snmp_backend import FileSecretResolver, PySnmpV3Backend
 from .storage import MonitoringStore
+from .ui_read_model import SecurityMonitoringUIReadModel
 
 TOKYO = ZoneInfo("Asia/Tokyo")
 ASSET_INTELLIGENCE_SUMMARY_SCHEMA = "workspace-security-monitoring/asset-intelligence-summary-v1"
+RECENT_EVIDENCE_SUMMARY_SCHEMA = "workspace-security-monitoring/recent-evidence-summary-v1"
+RECENT_EVIDENCE_SAMPLE_LIMIT = 100
 
 
 def sync_inventory(config: MonitoringRuntimeConfig, store: MonitoringStore) -> None:
@@ -108,6 +111,109 @@ def safe_asset_intelligence_summary(config: MonitoringRuntimeConfig) -> dict[str
     }
 
 
+def _read_model_items(payload: dict[str, object]) -> list[dict[str, object]]:
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)][
+        :RECENT_EVIDENCE_SAMPLE_LIMIT
+    ]
+
+
+def safe_recent_evidence_summary(config: MonitoringRuntimeConfig) -> dict[str, object]:
+    """Return a bounded privacy-safe projection of recent monitoring evidence.
+
+    Detailed UI read-model rows may contain internal identifiers and evidence references.
+    This service projection deliberately reduces those rows to counts before returning to
+    user-facing adapters. It never writes the monitoring database and never triggers
+    network, collector, packet-capture, credential, or remediation execution.
+    """
+
+    read_model = SecurityMonitoringUIReadModel(config, config_state="configured")
+    overview = read_model.summary()
+    admin = read_model.admin_status()
+    observations = _read_model_items(
+        read_model.network(limit=RECENT_EVIDENCE_SAMPLE_LIMIT, offset=0)
+    )
+    events = _read_model_items(
+        read_model.events(limit=RECENT_EVIDENCE_SAMPLE_LIMIT, offset=0)
+    )
+    findings = _read_model_items(
+        read_model.findings(limit=RECENT_EVIDENCE_SAMPLE_LIMIT, offset=0)
+    )
+    reports = _read_model_items(
+        read_model.reports(limit=RECENT_EVIDENCE_SAMPLE_LIMIT, offset=0)
+    )
+
+    raw_latest = overview.get("latest_hourly")
+    latest_hourly = None
+    if isinstance(raw_latest, dict):
+        latest_hourly = {
+            key: raw_latest.get(key)
+            for key in (
+                "status",
+                "coverage_pct",
+                "expected_assets",
+                "observed_assets",
+                "observed_at",
+                "age_seconds",
+            )
+        }
+
+    raw_reasons = overview.get("reason_codes")
+    reason_codes = (
+        [str(item)[:96] for item in raw_reasons[:16]]
+        if isinstance(raw_reasons, list)
+        else []
+    )
+    health = overview.get("health")
+
+    return {
+        "schema_version": RECENT_EVIDENCE_SUMMARY_SCHEMA,
+        "count_scope": "recent_bounded_records",
+        "max_records_per_stream": RECENT_EVIDENCE_SAMPLE_LIMIT,
+        "database_available": admin.get("database_available") is True,
+        "health": str(health)[:64] if health is not None else "unknown",
+        "reason_codes": reason_codes,
+        "observation_sample_count": len(observations),
+        "observation_evidence_linked_count": sum(
+            1 for item in observations if bool(item.get("evidence_ref"))
+        ),
+        "event_sample_count": len(events),
+        "event_evidence_linked_count": sum(
+            1 for item in events if bool(item.get("evidence_ref"))
+        ),
+        "finding_sample_count": len(findings),
+        "finding_evidence_linked_count": sum(
+            1
+            for item in findings
+            if isinstance(item.get("evidence_refs"), list)
+            and bool(item.get("evidence_refs"))
+        ),
+        "report_sample_count": len(reports),
+        "open_finding_count": int(overview.get("open_finding_count") or 0),
+        "high_critical_count": int(overview.get("high_critical_count") or 0),
+        "latest_hourly": latest_hourly,
+        "contains_raw_evidence": False,
+        "contains_raw_credentials": False,
+        "authority": {
+            "aggregate_only": True,
+            "database_read_only": True,
+            "raw_evidence_exposed": False,
+            "asset_ids_exposed": False,
+            "source_ids_exposed": False,
+            "finding_ids_exposed": False,
+            "evidence_refs_exposed": False,
+            "bundle_refs_exposed": False,
+            "database_write": False,
+            "network_execution": False,
+            "collector_execution": False,
+            "packet_capture_execution": False,
+            "remediation_execution": False,
+        },
+    }
+
+
 def build_snmp_backend(config: MonitoringRuntimeConfig):
     has_snmp_assets = any(
         asset.enabled and "snmpv3_read" in asset.collector_capabilities
@@ -137,6 +243,9 @@ class SecurityMonitoringService:
 
     def asset_intelligence(self) -> dict[str, object]:
         return safe_asset_intelligence_summary(self.load_config())
+
+    def evidence_summary(self) -> dict[str, object]:
+        return safe_recent_evidence_summary(self.load_config())
 
     def readiness(self) -> dict[str, object]:
         config = self.load_config()

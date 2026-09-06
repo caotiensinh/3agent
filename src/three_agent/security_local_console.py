@@ -62,6 +62,25 @@ _PAGE = """<!doctype html>
   </section>
 
   <section class="card" style="margin-top:14px">
+    <strong>Evidence / Result History</strong>
+    <p class="muted">監視DBの直近最大100件/ストリームを集計値だけで表示します。アセットID、ソースID、Finding ID、Evidence参照、Bundle参照、RAW値は表示しません。</p>
+    <div class="grid">
+      <section class="card"><div class="label">監視DB</div><div id="evidence-db" class="value">-</div></section>
+      <section class="card"><div class="label">監視状態</div><div id="evidence-health" class="value">-</div></section>
+      <section class="card"><div class="label">Observation sample</div><div id="evidence-observations" class="value">-</div></section>
+      <section class="card"><div class="label">Evidence-linked observations</div><div id="evidence-observation-links" class="value">-</div></section>
+      <section class="card"><div class="label">Event sample</div><div id="evidence-events" class="value">-</div></section>
+      <section class="card"><div class="label">Evidence-linked events</div><div id="evidence-event-links" class="value">-</div></section>
+      <section class="card"><div class="label">Finding sample</div><div id="evidence-findings" class="value">-</div></section>
+      <section class="card"><div class="label">Evidence-linked findings</div><div id="evidence-finding-links" class="value">-</div></section>
+      <section class="card"><div class="label">Report sample</div><div id="evidence-reports" class="value">-</div></section>
+      <section class="card"><div class="label">Open findings</div><div id="evidence-open" class="value">-</div></section>
+      <section class="card"><div class="label">High / Critical</div><div id="evidence-high" class="value">-</div></section>
+    </div>
+    <pre id="evidence-summary">Evidence summary を読み込んでいます...</pre>
+  </section>
+
+  <section class="card" style="margin-top:14px">
     <strong>Read-only monitoring</strong>
     <p class="muted">設定ファイルは起動時に固定されます。ブラウザから path / target / credential / shell を指定することはできません。</p>
     <button id="run" disabled>読み取り専用監視を実行</button>
@@ -79,6 +98,7 @@ const byId = (id) => document.getElementById(id);
 let summary = null;
 let readiness = null;
 let assetIntelligence = null;
+let evidenceSummary = null;
 
 function stateText(value) { return value ? "有効" : "無効"; }
 function setState(el, value) {
@@ -88,15 +108,17 @@ function setState(el, value) {
 
 async function refresh() {
   try {
-    const [summaryResp, readinessResp, assetResp] = await Promise.all([
+    const [summaryResp, readinessResp, assetResp, evidenceResp] = await Promise.all([
       fetch("/api/v1/security/monitoring/summary", {cache:"no-store"}),
       fetch("/api/v1/security/monitoring/readiness", {cache:"no-store"}),
-      fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"})
+      fetch("/api/v1/security/monitoring/asset-intelligence", {cache:"no-store"}),
+      fetch("/api/v1/security/monitoring/evidence-summary", {cache:"no-store"})
     ]);
     summary = await summaryResp.json();
     readiness = await readinessResp.json();
     assetIntelligence = await assetResp.json();
-    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok) throw new Error("backend status unavailable");
+    evidenceSummary = await evidenceResp.json();
+    if (!summaryResp.ok || !readinessResp.ok || !assetResp.ok || !evidenceResp.ok) throw new Error("backend status unavailable");
 
     setState(byId("enabled"), summary.enabled === true);
     setState(byId("network"), summary.allow_real_network === true);
@@ -113,6 +135,26 @@ async function refresh() {
       capability_counts: assetIntelligence.capability_counts || {},
       data_class_counts: assetIntelligence.data_class_counts || {},
       authority: assetIntelligence.authority || {}
+    }, null, 2);
+
+    byId("evidence-db").textContent = evidenceSummary.database_available ? "利用可能" : "利用不可";
+    byId("evidence-db").className = "value " + (evidenceSummary.database_available ? "good" : "warn");
+    byId("evidence-health").textContent = String(evidenceSummary.health ?? "unknown");
+    byId("evidence-observations").textContent = String(evidenceSummary.observation_sample_count ?? 0);
+    byId("evidence-observation-links").textContent = String(evidenceSummary.observation_evidence_linked_count ?? 0);
+    byId("evidence-events").textContent = String(evidenceSummary.event_sample_count ?? 0);
+    byId("evidence-event-links").textContent = String(evidenceSummary.event_evidence_linked_count ?? 0);
+    byId("evidence-findings").textContent = String(evidenceSummary.finding_sample_count ?? 0);
+    byId("evidence-finding-links").textContent = String(evidenceSummary.finding_evidence_linked_count ?? 0);
+    byId("evidence-reports").textContent = String(evidenceSummary.report_sample_count ?? 0);
+    byId("evidence-open").textContent = String(evidenceSummary.open_finding_count ?? 0);
+    byId("evidence-high").textContent = String(evidenceSummary.high_critical_count ?? 0);
+    byId("evidence-summary").textContent = JSON.stringify({
+      count_scope: evidenceSummary.count_scope,
+      max_records_per_stream: evidenceSummary.max_records_per_stream,
+      reason_codes: evidenceSummary.reason_codes || [],
+      latest_hourly: evidenceSummary.latest_hourly,
+      authority: evidenceSummary.authority || {}
     }, null, 2);
 
     const list = byId("issues");
@@ -133,6 +175,7 @@ async function refresh() {
   } catch (error) {
     byId("result").textContent = `接続エラー: ${error.message}`;
     byId("asset-intelligence").textContent = "Asset Intelligence を取得できません。";
+    byId("evidence-summary").textContent = "Evidence summary を取得できません。";
   }
 }
 
@@ -267,6 +310,9 @@ class SecurityConsoleHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/v1/security/monitoring/asset-intelligence":
                 self._json(200, self.server.service.asset_intelligence())
+                return
+            if path == "/api/v1/security/monitoring/evidence-summary":
+                self._json(200, self.server.service.evidence_summary())
                 return
         except Exception:
             self._json(500, {"status": "error", "reason_code": "CONSOLE_BACKEND_ERROR"})
