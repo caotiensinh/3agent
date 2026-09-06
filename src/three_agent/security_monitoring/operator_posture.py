@@ -13,6 +13,7 @@ from .correlation_graph import (
 )
 from .flow_analysis import analyze_flow_evidence
 from .incident_timeline import build_incident_timeline
+from .network_triage import DeterministicNetworkIncidentTriage, TRIAGE_KINDS
 
 OPERATOR_POSTURE_SCHEMA = "workspace-security-monitoring/operator-posture-v1"
 OPERATOR_POSTURE_EVENT_LIMIT = 100
@@ -24,6 +25,9 @@ _SEVERITIES = ("info", "low", "medium", "high", "critical")
 _HEALTH_BUCKETS = ("healthy", "degraded", "unreachable", "unknown")
 _PRIORITY_BUCKETS = ("normal", "high", "other")
 _RECENCY_BUCKETS = ("last_15m", "15m_to_1h", "1h_to_24h", "older", "future")
+_TRIAGE_CONFIDENCE_BUCKETS = ("low", "medium", "high")
+_TRIAGE_PRIORITY_BUCKETS = ("normal", "elevated", "high")
+_TRIAGE_KIND_BUCKETS = tuple(sorted(TRIAGE_KINDS))
 
 
 def _mapping(value: object) -> Mapping[str, object]:
@@ -95,6 +99,44 @@ def _recency_bucket(observed_at: str, *, now: datetime) -> str:
     return "older"
 
 
+def _network_triage_posture(graphs: object) -> dict[str, object]:
+    records = DeterministicNetworkIncidentTriage().triage(graphs)  # type: ignore[arg-type]
+    severity_counts = {severity: 0 for severity in _SEVERITIES}
+    confidence_counts = {confidence: 0 for confidence in _TRIAGE_CONFIDENCE_BUCKETS}
+    priority_counts = {priority: 0 for priority in _TRIAGE_PRIORITY_BUCKETS}
+    triage_kind_counts = {kind: 0 for kind in _TRIAGE_KIND_BUCKETS}
+    for record in records:
+        severity_counts[record.severity] += 1
+        confidence_counts[record.confidence] += 1
+        priority_counts[record.investigation_priority] += 1
+        triage_kind_counts[record.triage_kind] += 1
+    return {
+        "available": bool(records),
+        "data_state": "available" if records else "empty",
+        "triage_count": len(records),
+        "high_priority_count": priority_counts["high"],
+        "severity_counts": severity_counts,
+        "confidence_counts": confidence_counts,
+        "priority_counts": priority_counts,
+        "triage_kind_counts": triage_kind_counts,
+        "authority": {
+            "advisory_only": True,
+            "aggregate_only": True,
+            "raw_triage_records_exposed": False,
+            "event_ids_exposed": False,
+            "graph_ids_exposed": False,
+            "entity_refs_exposed": False,
+            "evidence_refs_exposed": False,
+            "rule_ids_exposed": False,
+            "exact_timestamps_exposed": False,
+            "network_execution": False,
+            "packet_capture_execution": False,
+            "command_execution": False,
+            "remediation_execution": False,
+        },
+    }
+
+
 def reduce_operator_posture(
     *,
     soc: Mapping[str, object],
@@ -158,6 +200,7 @@ def reduce_operator_posture(
         "stage_graph_counts": graph_stage_counts,
         "exact_correlation_observed": bool(graphs),
     }
+    network_triage = _network_triage_posture(graphs)
 
     evidence_events = tuple(
         item for item in events if item.stage is not None and item.event.evidence_ref is not None
@@ -217,6 +260,7 @@ def reduce_operator_posture(
         "risk": risk,
         "asset_health": _asset_health(assets),
         "correlation": correlation,
+        "network_triage": network_triage,
         "flow": flow,
         "timeline": timeline,
         "contains_raw_evidence": False,
