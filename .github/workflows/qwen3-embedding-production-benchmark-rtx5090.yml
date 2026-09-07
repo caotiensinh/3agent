@@ -10,6 +10,7 @@ on:
       - '.github/workflows/qwen3-embedding-production-benchmark-rtx5090.yml'
       - 'scripts/run_qwen3_production_benchmark.sh'
       - 'scripts/run_qwen3_production_benchmark.py'
+      - 'scripts/run_with_network_seccomp.py'
 
 permissions:
   contents: read
@@ -124,7 +125,7 @@ jobs:
           assert receipt.get('security', {}).get('local_files_only') is True
           assert receipt.get('security', {}).get('trust_remote_code') is False
           assert receipt.get('security', {}).get('network_isolation_mode') in {
-              'sudo-net', 'userns-net', 'firejail-net', 'systemd-user-net', 'docker-none'
+              'sudo-net', 'userns-net', 'firejail-net', 'seccomp-no-network', 'docker-none'
           }
           print(json.dumps({
               'status': receipt['status'],
