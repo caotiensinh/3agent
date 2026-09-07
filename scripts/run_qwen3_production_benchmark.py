@@ -10,18 +10,23 @@ import os
 import re
 import resource
 import statistics
-import subprocess
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from accept_hf_model_candidate import CandidateEvidenceResolver, load_candidate_evidence
 from three_agent.model_artifacts import apply_runtime_offline_environment
 
 SCHEMA = "workspace.embedding-production-benchmark/v1"
 FIXTURE_SCHEMA = "workspace.embedding-retrieval-benchmark/v1"
+ALLOWED_ISOLATION_MODES = {
+    "sudo-net",
+    "userns-net",
+    "firejail-net",
+    "seccomp-no-network",
+    "docker-none",
+}
 
 
 def canonical_sha256(payload: Mapping[str, Any]) -> str:
@@ -60,7 +65,10 @@ def lexical_rank(query: str, documents: Sequence[Mapping[str, Any]]) -> list[str
     return [doc_id for _, doc_id in sorted(scored, key=lambda row: (-row[0], row[1]))]
 
 
-def cosine_rank(query_vector: Sequence[float], document_vectors: Mapping[str, Sequence[float]]) -> list[str]:
+def cosine_rank(
+    query_vector: Sequence[float],
+    document_vectors: Mapping[str, Sequence[float]],
+) -> list[str]:
     scored: list[tuple[float, str]] = []
     for doc_id, vector in document_vectors.items():
         score = sum(float(a) * float(b) for a, b in zip(query_vector, vector))
@@ -91,7 +99,10 @@ def ndcg_at_k(ranking: Sequence[str], relevant: set[str], k: int) -> float:
     return dcg / idcg if idcg else 0.0
 
 
-def aggregate_metrics(rankings: Mapping[str, Sequence[str]], queries: Sequence[Mapping[str, Any]]) -> dict[str, float]:
+def aggregate_metrics(
+    rankings: Mapping[str, Sequence[str]],
+    queries: Sequence[Mapping[str, Any]],
+) -> dict[str, float]:
     recall1: list[float] = []
     recall3: list[float] = []
     recall5: list[float] = []
@@ -150,7 +161,13 @@ def torch_snapshot(device: int) -> dict[str, Any]:
     }
 
 
-def encode_to_rows(model: Any, texts: Sequence[str], *, prompt_name: str | None, batch_size: int) -> list[list[float]]:
+def encode_to_rows(
+    model: Any,
+    texts: Sequence[str],
+    *,
+    prompt_name: str | None,
+    batch_size: int,
+) -> list[list[float]]:
     kwargs: dict[str, Any] = {
         "batch_size": batch_size,
         "normalize_embeddings": True,
@@ -202,7 +219,12 @@ def run_device(
     document_ids = [str(item["id"]) for item in documents]
 
     doc_start = time.perf_counter()
-    document_rows = encode_to_rows(model, document_texts, prompt_name=None, batch_size=batch_size)
+    document_rows = encode_to_rows(
+        model,
+        document_texts,
+        prompt_name=None,
+        batch_size=batch_size,
+    )
     torch.cuda.synchronize(device)
     document_ms = (time.perf_counter() - doc_start) * 1000.0
     doc_vectors = dict(zip(document_ids, document_rows, strict=True))
@@ -211,7 +233,12 @@ def run_device(
     query_rows: list[list[float]] = []
     for _ in range(repeats):
         started = time.perf_counter()
-        query_rows = encode_to_rows(model, query_texts, prompt_name="query", batch_size=batch_size)
+        query_rows = encode_to_rows(
+            model,
+            query_texts,
+            prompt_name="query",
+            batch_size=batch_size,
+        )
         torch.cuda.synchronize(device)
         latencies.append((time.perf_counter() - started) * 1000.0)
 
@@ -249,14 +276,19 @@ def run_device(
                 "unloaded": unloaded,
                 "residual_reserved_bytes_after_unload": residual,
             },
-            "inference_proven": len(query_rows) == len(query_texts) and len(document_rows) == len(document_texts),
+            "inference_proven": (
+                len(query_rows) == len(query_texts)
+                and len(document_rows) == len(document_texts)
+            ),
         },
         rankings,
     )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run non-authoritative Qwen3 production benchmark on two CUDA GPUs.")
+    parser = argparse.ArgumentParser(
+        description="Run non-authoritative Qwen3 production benchmark on two CUDA GPUs."
+    )
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--snapshot", required=True)
     parser.add_argument("--benchmark", required=True)
@@ -271,25 +303,36 @@ def main() -> int:
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
         raise SystemExit("offline model environment is required")
     isolation_mode = os.environ.get("NETWORK_ISOLATION_MODE")
-    if isolation_mode not in {"sudo-net", "userns-net", "firejail-net", "docker-none"}:
-        raise SystemExit(f"verified OS-level network isolation mode is required, got {isolation_mode!r}")
+    if isolation_mode not in ALLOWED_ISOLATION_MODES:
+        raise SystemExit(
+            f"verified OS-level network isolation mode is required, got {isolation_mode!r}"
+        )
 
     fixture_path = Path(args.benchmark)
     fixture_raw = json.loads(fixture_path.read_text(encoding="utf-8"))
     validate_fixture(fixture_raw)
     evidence = load_candidate_evidence(args.evidence)
-    resolver = CandidateEvidenceResolver("qwen3-embedding-0.6b", evidence, args.snapshot)
+    resolver = CandidateEvidenceResolver(
+        "qwen3-embedding-0.6b",
+        evidence,
+        args.snapshot,
+    )
 
     import torch
 
     if not torch.cuda.is_available():
         raise SystemExit("representative hardware gate requires CUDA")
     if torch.cuda.device_count() < 2:
-        raise SystemExit(f"representative hardware gate requires >=2 CUDA GPUs; found {torch.cuda.device_count()}")
+        raise SystemExit(
+            f"representative hardware gate requires >=2 CUDA GPUs; found {torch.cuda.device_count()}"
+        )
 
     documents = fixture_raw["documents"]
     queries = fixture_raw["queries"]
-    lexical_rankings = {str(item["id"]): lexical_rank(str(item["text"]), documents) for item in queries}
+    lexical_rankings = {
+        str(item["id"]): lexical_rank(str(item["text"]), documents)
+        for item in queries
+    }
     lexical_metrics = aggregate_metrics(lexical_rankings, queries)
 
     devices: list[dict[str, Any]] = []
@@ -311,12 +354,22 @@ def main() -> int:
 
     thresholds = fixture_raw["thresholds"]
     checks = {
-        "dual_gpu_inference": all(item["inference_proven"] for item in devices) and len(devices) == 2,
-        "recall_at_1": semantic_metrics["recall_at_1"] >= float(thresholds["recall_at_1"]),
-        "recall_at_3": semantic_metrics["recall_at_3"] >= float(thresholds["recall_at_3"]),
-        "recall_at_5": semantic_metrics["recall_at_5"] >= float(thresholds["recall_at_5"]),
+        "dual_gpu_inference": (
+            all(item["inference_proven"] for item in devices) and len(devices) == 2
+        ),
+        "recall_at_1": (
+            semantic_metrics["recall_at_1"] >= float(thresholds["recall_at_1"])
+        ),
+        "recall_at_3": (
+            semantic_metrics["recall_at_3"] >= float(thresholds["recall_at_3"])
+        ),
+        "recall_at_5": (
+            semantic_metrics["recall_at_5"] >= float(thresholds["recall_at_5"])
+        ),
         "mrr_at_10": semantic_metrics["mrr_at_10"] >= float(thresholds["mrr_at_10"]),
-        "ndcg_at_10": semantic_metrics["ndcg_at_10"] >= float(thresholds["ndcg_at_10"]),
+        "ndcg_at_10": (
+            semantic_metrics["ndcg_at_10"] >= float(thresholds["ndcg_at_10"])
+        ),
         "mrr_non_regression_vs_lexical": (
             semantic_metrics["mrr_at_10"] >= lexical_metrics["mrr_at_10"]
             if thresholds.get("require_mrr_non_regression_vs_lexical") is True
@@ -324,7 +377,8 @@ def main() -> int:
         ),
         "integrity_revalidated_per_gpu": resolver.resolve_calls >= 2,
         "gpu_memory_released": all(
-            item["memory"]["residual_reserved_bytes_after_unload"] <= 256 * 1024 * 1024 for item in devices
+            item["memory"]["residual_reserved_bytes_after_unload"] <= 256 * 1024 * 1024
+            for item in devices
         ),
     }
     status = "production_benchmark_pass" if all(checks.values()) else "production_benchmark_fail"
@@ -364,12 +418,18 @@ def main() -> int:
         "admission": {
             "production_approval": False,
             "runtime_authority": False,
-            "reason": "Benchmark evidence is non-authoritative until license review and explicit human production admission complete.",
+            "reason": (
+                "Benchmark evidence is non-authoritative until license review and "
+                "explicit human production admission complete."
+            ),
         },
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     print(json.dumps({"status": status, "checks": checks}, ensure_ascii=False, indent=2))
     return 0 if status == "production_benchmark_pass" else 1
 
