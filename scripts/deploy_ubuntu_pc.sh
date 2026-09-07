@@ -122,10 +122,13 @@ run_bootstrap() {
 
 verify_result() {
   local command_path="${BIN_DIR}/3agent"
+  local security_ui_path="${BIN_DIR}/workspace-security-ui"
   [[ -x "$command_path" ]] || die "Installed command is missing: ${command_path}"
+  [[ -x "$security_ui_path" ]] || die "Installed security UI launcher is missing: ${security_ui_path}"
   [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
 
   "$command_path" smoke >/dev/null
+  "$security_ui_path" --help >/dev/null
 
   if [[ -d "${INSTALL_DIR}/.git" ]] && command -v git >/dev/null 2>&1; then
     log "Installed commit: $(git -C "$INSTALL_DIR" rev-parse HEAD)"
@@ -134,6 +137,7 @@ verify_result() {
   log "FINAL PASS: WorkSpace is deployed on this Ubuntu PC"
   log "Install directory: ${INSTALL_DIR}"
   log "Command: ${command_path}"
+  log "Security UI: ${security_ui_path}"
   log "Update: ${BIN_DIR}/3agent-update"
   if [[ -z "$MODEL" ]]; then
     warn "No local LLM model was selected. Core CLI/smoke is ready; live AI agents require a configured model."

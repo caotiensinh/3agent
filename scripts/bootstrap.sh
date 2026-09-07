@@ -207,6 +207,13 @@ exec $(printf '%q' "${INSTALL_DIR}/.venv/bin/three-agent") "\$@"
 EOF
   chmod 0755 "${BIN_DIR}/3agent"
 
+  cat >"${BIN_DIR}/workspace-security-ui" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec $(printf '%q' "${INSTALL_DIR}/.venv/bin/workspace-security-ui") "\$@"
+EOF
+  chmod 0755 "${BIN_DIR}/workspace-security-ui"
+
   cat >"${BIN_DIR}/3agent-update" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -246,11 +253,13 @@ verify_install() {
 
   log "Running application smoke check"
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${INSTALL_DIR}/.venv/bin/three-agent" smoke >/dev/null
+  "${BIN_DIR}/workspace-security-ui" --help >/dev/null
 
   log "FINAL PASS: portable 3Agent deployment is ready"
   log "Commit: $(git -C "$INSTALL_DIR" rev-parse HEAD)"
   log "Install: ${INSTALL_DIR}"
   log "Command: ${BIN_DIR}/3agent"
+  log "Security UI: ${BIN_DIR}/workspace-security-ui"
   log "Update: ${BIN_DIR}/3agent-update"
   if [[ -z "$MODEL" ]]; then
     warn "No local LLM model was configured. Smoke/CLI works; live agents require Ollama plus a configured model."
