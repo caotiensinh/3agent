@@ -5,7 +5,7 @@
   "candidate_id": "qwen3-embedding-0.6b",
   "repo_id": "Qwen/Qwen3-Embedding-0.6B",
   "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
-  "benchmark_id": "qwen3-embedding-retrieval-v1",
+  "benchmark_id": "qwen3-embedding-retrieval-v1.1",
   "required_runner_labels": ["self-hosted"],
   "hardware_identity_policy": "record_actual_devices_and_require_two_cuda_devices",
   "minimum_cuda_devices": 2,
