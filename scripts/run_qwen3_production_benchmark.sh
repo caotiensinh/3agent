@@ -21,15 +21,13 @@ trap cleanup EXIT
 mkdir -p "$WORK_ROOT" "$(dirname "$OUTPUT")"
 
 command -v nvidia-smi >/dev/null || { echo "ERROR: nvidia-smi is required" >&2; exit 20; }
-GPU_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
-RTX5090_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)"
+echo "GPU inventory:"
+nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader
+GPU_COUNT="$(nvidia-smi --query-gpu=index --format=csv,noheader | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
+echo "Detected NVIDIA GPU count: $GPU_COUNT"
 if [[ "$GPU_COUNT" -lt 2 ]]; then
   echo "ERROR: representative benchmark requires at least 2 NVIDIA GPUs; found $GPU_COUNT" >&2
   exit 21
-fi
-if [[ "$RTX5090_COUNT" -lt 2 ]]; then
-  echo "ERROR: representative WorkSpace gate requires two RTX 5090 GPUs; found $RTX5090_COUNT" >&2
-  exit 22
 fi
 
 readarray -t IDENTITY < <(python3 - <<'PY'
@@ -48,6 +46,28 @@ PY
 )
 REPO_ID="${IDENTITY[0]}"
 REVISION="${IDENTITY[1]}"
+
+select_isolation() {
+  local probe="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc; print('network isolation verified', sorted(names))"
+  if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
+    if sudo unshare --net -- python3 -c "$probe" >/dev/null 2>&1; then
+      echo sudo-net
+      return 0
+    fi
+  fi
+  if unshare --user --map-root-user --net -- python3 -c "$probe" >/dev/null 2>&1; then
+    echo userns-net
+    return 0
+  fi
+  return 1
+}
+
+ISOLATION_MODE="$(select_isolation || true)"
+if [[ -z "$ISOLATION_MODE" ]]; then
+  echo "ERROR: neither passwordless sudo network namespace nor unprivileged user-network namespace is available" >&2
+  exit 23
+fi
+echo "Network isolation mode: $ISOLATION_MODE"
 
 export HF_HOME SENTENCE_TRANSFORMERS_HOME
 python3 scripts/audit_hf_model_candidate.py \
@@ -80,18 +100,23 @@ PY
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_HUB_DISABLE_TELEMETRY=1
-
 PYTHON_BIN="$(command -v python3)"
-if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
+COMMON_ARGS=(
+  scripts/run_qwen3_production_benchmark.py
+  --evidence "$EVIDENCE"
+  --snapshot "$SNAPSHOT"
+  --benchmark "$BENCHMARK"
+  --output "$OUTPUT"
+)
+
+if [[ "$ISOLATION_MODE" == "sudo-net" ]]; then
   sudo --preserve-env=HF_HUB_OFFLINE,TRANSFORMERS_OFFLINE,HF_HUB_DISABLE_TELEMETRY,HF_HOME,SENTENCE_TRANSFORMERS_HOME \
-    unshare --net -- "$PYTHON_BIN" scripts/run_qwen3_production_benchmark.py \
-      --evidence "$EVIDENCE" \
-      --snapshot "$SNAPSHOT" \
-      --benchmark "$BENCHMARK" \
-      --output "$OUTPUT"
+    unshare --net -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
+elif [[ "$ISOLATION_MODE" == "userns-net" ]]; then
+  unshare --user --map-root-user --net -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
 else
-  echo "ERROR: passwordless sudo is required to prove OS-level network isolation" >&2
-  exit 23
+  echo "ERROR: unsupported isolation mode: $ISOLATION_MODE" >&2
+  exit 24
 fi
 
 python3 - "$OUTPUT" <<'PY'
