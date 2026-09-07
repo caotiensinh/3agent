@@ -142,6 +142,44 @@ class RuntimeInvocationTests(unittest.TestCase):
                 },
             )
 
+    def test_non_string_keys_and_url_shaped_refs_are_denied(self):
+        _, compiled = self._compiled_plan()
+        with self.assertRaisesRegex(
+            RuntimeInvocationError,
+            "TYPED_INVOCATION_ARGUMENT_KEY_TYPE_INVALID",
+        ):
+            TypedCapabilityInvocation.compile(
+                compiled_plan=compiled,
+                node_id="web",
+                operation="search",
+                arguments={1: "not-a-string-key"},
+            )
+
+        with self.assertRaisesRegex(
+            RuntimeInvocationError,
+            "patch_ref must be a compact non-URL identifier",
+        ):
+            TypedCapabilityInvocation.compile(
+                compiled_plan=compiled,
+                node_id="patch",
+                operation="apply",
+                arguments={
+                    "patch_ref": "https://example.com/patch.diff",
+                    "patch_sha256": "sha256:" + "c" * 64,
+                },
+            )
+
+        with self.assertRaisesRegex(
+            RuntimeInvocationError,
+            "TYPED_INVOCATION_ARGUMENT_KEY_COLLISION",
+        ):
+            TypedCapabilityInvocation.compile(
+                compiled_plan=compiled,
+                node_id="web",
+                operation="search",
+                arguments={"query": "one", " query ": "two"},
+            )
+
     def test_bundle_rejects_missing_duplicate_or_forged_node_binding(self):
         _, compiled = self._compiled_plan()
         tests = TypedCapabilityInvocation.compile(
