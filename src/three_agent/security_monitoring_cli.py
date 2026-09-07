@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .security_monitoring.diagnostic_service import AutonomousDiagnosticService
 from .security_monitoring.locking import MonitoringRunAlreadyLocked
 from .security_monitoring.service import (
     TOKYO,
@@ -58,6 +59,15 @@ def cmd_run_hourly(config_path: Path, *, execute_readonly: bool) -> int:
     return 0
 
 
+def cmd_diagnose(config_path: Path, request: str, *, execute_readonly: bool) -> int:
+    payload = AutonomousDiagnosticService(config_path).diagnose(
+        request,
+        execute_readonly=execute_readonly,
+    )
+    print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workspace-security-monitor")
     parser.add_argument("--config", required=True, type=Path)
@@ -67,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init-db")
     hourly = sub.add_parser("run-hourly")
     hourly.add_argument("--execute-readonly", action="store_true")
+    diagnose = sub.add_parser("diagnose")
+    diagnose.add_argument("request", help="Short natural-language diagnostic request naming one approved asset or management host")
+    diagnose.add_argument("--execute-readonly", action="store_true")
     return parser
 
 
@@ -80,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_init(args.config)
     if args.command == "run-hourly":
         return cmd_run_hourly(args.config, execute_readonly=args.execute_readonly)
+    if args.command == "diagnose":
+        return cmd_diagnose(
+            args.config,
+            args.request,
+            execute_readonly=args.execute_readonly,
+        )
     raise RuntimeError("unsupported command")
 
 
