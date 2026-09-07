@@ -17,6 +17,11 @@ from .runtime_invocation_binding import (
     RuntimeInvocationBindingStore,
 )
 from .runtime_plan_compiler import CompiledRuntimePlan
+from .runtime_readonly_query import RuntimeReadonlyQueryBundle, RuntimeReadonlyQueryError
+from .runtime_readonly_query_binding_store import (
+    RuntimeQueryBindingStore,
+    RuntimeQueryBindingStoreError,
+)
 from .runtime_scheduler import (
     CapabilityAdapterRegistry,
     CapabilityInvocation,
@@ -53,7 +58,7 @@ class ProductionNodeExecutionResult(NodeExecutionResult):
 
 
 class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
-    """Audited scheduler where capability boundaries own tool-call accounting.
+    """Audited scheduler where reviewed boundaries own tool-call accounting.
 
     The legacy scheduler charges one tool call per node for compatibility. The
     production path cannot do that because one typed node may invoke a reviewed
@@ -62,10 +67,11 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
     only the scheduler step and requires a registry explicitly marked as
     boundary-accounted.
 
-    Production execution additionally requires immutable durable invocation
-    semantics. Source-scoped adapters also require a second create-only recovery
-    binding so the same DAG/invocation cannot resume against a different trusted
-    source root or source class. Both are bound before RUNNING checkpoints.
+    Production execution requires immutable durable invocation semantics. Source-
+    scoped adapters bind reviewed source semantics separately, and DB query nodes
+    additionally bind reviewed SQL/parameter semantics. All create-only recovery
+    bindings are committed before any RUNNING checkpoint or external I/O so resume
+    cannot silently reinterpret the same DAG against different runtime authority.
     """
 
     schema_version = RUNTIME_PRODUCTION_SCHEDULER_SCHEMA
@@ -76,6 +82,7 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         adapters: CapabilityAdapterRegistry,
         invocation_binding_store: RuntimeInvocationBindingStore,
         source_binding_store: RuntimeSourceBindingStore | None = None,
+        query_binding_store: RuntimeQueryBindingStore | None = None,
         **kwargs,
     ):
         if not bool(getattr(adapters, "boundary_accounted", False)):
@@ -97,10 +104,21 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
             ):
                 raise RuntimeSchedulerError("DURABLE_SOURCE_BINDING_STORE_REQUIRED")
 
+        query_bundle = getattr(adapters, "readonly_query_bundle", None)
+        if query_bundle is not None:
+            if not isinstance(query_bundle, RuntimeReadonlyQueryBundle):
+                raise RuntimeSchedulerError("PRODUCTION_QUERY_BUNDLE_INVALID")
+            if query_binding_store is None or not bool(
+                getattr(query_binding_store, "durable", False)
+            ):
+                raise RuntimeSchedulerError("DURABLE_QUERY_BINDING_STORE_REQUIRED")
+
         self.invocation_binding_store = invocation_binding_store
         self.invocation_bundle = invocation_bundle
         self.source_binding_store = source_binding_store
         self.source_binding_bundle = source_bundle
+        self.query_binding_store = query_binding_store
+        self.readonly_query_bundle = query_bundle
         super().__init__(adapters=adapters, **kwargs)
 
     @staticmethod
@@ -146,6 +164,24 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         except (RuntimeSourceBindingStoreError, RuntimeSourceAuthorityDenied) as exc:
             raise RuntimeSchedulerError(str(exc)) from exc
 
+    def _bind_queries(self, compiled_plan: CompiledRuntimePlan) -> None:
+        if self.readonly_query_bundle is None:
+            return
+        if self.query_binding_store is None:
+            raise RuntimeSchedulerError("DURABLE_QUERY_BINDING_STORE_REQUIRED")
+        try:
+            self.readonly_query_bundle.validate(
+                compiled_plan=compiled_plan,
+                invocation_bundle=self.invocation_bundle,
+            )
+            self.query_binding_store.bind(
+                compiled_plan=compiled_plan,
+                invocation_bundle=self.invocation_bundle,
+                query_bundle=self.readonly_query_bundle,
+            )
+        except (RuntimeQueryBindingStoreError, RuntimeReadonlyQueryError) as exc:
+            raise RuntimeSchedulerError(str(exc)) from exc
+
     def run(
         self,
         *,
@@ -156,12 +192,13 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         checkpoint: RuntimeCheckpoint | None = None,
     ) -> RuntimeSchedulerResult:
         compiled_plan.validate_current(task_contract=task_contract, registry=self.registry)
-        # Bind all semantic inputs before any RUNNING checkpoint or external I/O.
+        # Bind every semantic input before any RUNNING checkpoint or external I/O.
         self._bind_invocations(compiled_plan)
         self._bind_sources(
             compiled_plan=compiled_plan,
             task_contract=task_contract,
         )
+        self._bind_queries(compiled_plan)
         return super().run(
             compiled_plan=compiled_plan,
             task_contract=task_contract,

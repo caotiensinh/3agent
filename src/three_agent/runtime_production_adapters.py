@@ -13,6 +13,8 @@ from .runtime_invocation import RuntimeInvocationBundle
 from .runtime_node_authority import RuntimeNodeAuthority
 from .runtime_plan_compiler import CompiledRuntimePlan
 from .runtime_production_scheduler import ProductionNodeExecutionResult
+from .runtime_readonly_query import RuntimeReadonlyQueryBundle
+from .runtime_reviewed_db_query import ReviewedReadonlyDatabaseQueryBoundary
 from .runtime_reviewed_execution import ReviewedExecutionBoundary
 from .runtime_reviewed_knowledge_search import ReviewedKnowledgeSearchBoundary
 from .runtime_reviewed_read import ReviewedReadBoundary
@@ -31,6 +33,7 @@ _IMPLEMENTED = {
     "read_file",
     "search_repo",
     "search_docs",
+    "query_db_readonly",
     "run_tests",
     "run_linter",
     "web_gateway",
@@ -81,7 +84,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
 
     Planner output never provides argv, cwd, HTTP endpoint, callable, raw SQL,
     trusted source class, or trusted local root. Runtime-owned reviewed boundaries
-    interpret only typed selectors and immutable source bindings. Unimplemented
+    interpret only typed selectors and immutable source/query bindings. Unimplemented
     capabilities fail at construction rather than falling back to a weaker path.
     """
 
@@ -99,6 +102,8 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         read_boundary: ReviewedReadBoundary | None = None,
         repo_search_boundary: ReviewedRepoSearchBoundary | None = None,
         knowledge_search_boundary: ReviewedKnowledgeSearchBoundary | None = None,
+        db_query_boundary: ReviewedReadonlyDatabaseQueryBoundary | None = None,
+        readonly_query_bundle: RuntimeReadonlyQueryBundle | None = None,
         source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
@@ -123,7 +128,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             )
         if capabilities & {"run_tests", "run_linter"} and execution_boundary is None:
             raise RuntimeProductionAdapterError("REVIEWED_EXECUTION_BOUNDARY_REQUIRED")
-        if capabilities & {"read_file", "search_repo", "search_docs"}:
+        if capabilities & {"read_file", "search_repo", "search_docs", "query_db_readonly"}:
             if source_binding_bundle is None:
                 raise RuntimeProductionAdapterError("SOURCE_BINDING_BUNDLE_REQUIRED")
             source_binding_bundle.validate(
@@ -161,6 +166,26 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 raise RuntimeProductionAdapterError(
                     "KNOWLEDGE_SEARCH_BOUNDARY_SOURCE_BINDING_MISMATCH"
                 )
+        if "query_db_readonly" in capabilities:
+            if readonly_query_bundle is None:
+                raise RuntimeProductionAdapterError("REVIEWED_QUERY_BUNDLE_REQUIRED")
+            readonly_query_bundle.validate(
+                compiled_plan=compiled_plan,
+                invocation_bundle=invocation_bundle,
+            )
+            if db_query_boundary is None:
+                raise RuntimeProductionAdapterError("REVIEWED_DB_QUERY_BOUNDARY_REQUIRED")
+            if (
+                db_query_boundary.source_binding_bundle.fingerprint
+                != source_binding_bundle.fingerprint
+            ):
+                raise RuntimeProductionAdapterError(
+                    "DB_QUERY_BOUNDARY_SOURCE_BINDING_MISMATCH"
+                )
+            if db_query_boundary.query_bundle.fingerprint != readonly_query_bundle.fingerprint:
+                raise RuntimeProductionAdapterError("DB_QUERY_BOUNDARY_QUERY_BUNDLE_MISMATCH")
+        elif readonly_query_bundle is not None or db_query_boundary is not None:
+            raise RuntimeProductionAdapterError("REVIEWED_DB_QUERY_RUNTIME_UNEXPECTED")
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -178,6 +203,8 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.read_boundary = read_boundary
         self.repo_search_boundary = repo_search_boundary
         self.knowledge_search_boundary = knowledge_search_boundary
+        self.db_query_boundary = db_query_boundary
+        self.readonly_query_bundle = readonly_query_bundle
         self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
@@ -206,6 +233,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._search_docs_handler,
+                    timeout_mode="cooperative",
+                )
+            elif capability == "query_db_readonly":
+                self.register(
+                    capability,
+                    self._query_db_readonly_handler,
                     timeout_mode="cooperative",
                 )
             elif capability == "web_gateway":
@@ -374,6 +407,56 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             },
             evidence_refs=_safe_evidence_refs(result.evidence_refs),
             reason_code="SEARCH_DOCS_OK",
+            succeeded=True,
+        )
+
+    def _query_db_readonly_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if (
+            self.db_query_boundary is None
+            or self.readonly_query_bundle is None
+            or self.source_binding_bundle is None
+        ):
+            raise RuntimeProductionAdapterError("REVIEWED_DB_QUERY_RUNTIME_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "query_db_readonly" or spec.operation != "query":
+            raise RuntimeProductionAdapterError("PRODUCTION_DB_QUERY_INVOCATION_INVALID")
+        arguments = spec.argument_map()
+        query_ref = str(arguments["query_ref"])
+        raw_parameters_ref = arguments.get("parameters_ref")
+        parameters_ref = None if raw_parameters_ref is None else str(raw_parameters_ref)
+        remaining = invocation.remaining_seconds()
+        if remaining <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        source_binding = self.source_binding_bundle.for_node(invocation.node.node_id)
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.db_query_boundary.query(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                query_ref=query_ref,
+                parameters_ref=parameters_ref,
+                timeout_seconds=remaining,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "query_ref": result.query_ref,
+                "sql_sha256": result.sql_sha256,
+                "parameters_sha256": result.parameters_sha256,
+                "result_sha256": result.result_sha256,
+                "result_bytes": result.result_bytes,
+                "row_count": result.row_count,
+                "column_count": result.column_count,
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+                "source_binding_fingerprint": source_binding.fingerprint,
+                "source_binding_bundle_fingerprint": self.source_binding_bundle.fingerprint,
+                "query_bundle_fingerprint": self.readonly_query_bundle.fingerprint,
+            },
+            evidence_refs=_safe_evidence_refs(result.evidence_refs),
+            reason_code="DB_QUERY_READONLY_OK",
             succeeded=True,
         )
 
