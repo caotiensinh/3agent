@@ -99,7 +99,7 @@ class RuntimeSourceAuthorityTests(unittest.TestCase):
                 "read",
                 "read_file",
                 "path",
-                "../secret.txt",
+                "safe/../../secret.txt",
                 "read",
             )
             _, _, compiled = self._compile(
