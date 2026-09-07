@@ -127,8 +127,8 @@ migrate_config() {
     return 0
   fi
   [[ -x "${release}/.venv/bin/python" ]] || die "Candidate Python environment is unavailable for config migration"
-  log "Checking bounded configuration migration/repair before verification"
-  "${release}/.venv/bin/python" "$migration_script" --config "$CONFIG_PATH"
+  log "Checking bounded configuration repair before verification"
+  "${release}/.venv/bin/python" "$migration_script" --config "$CONFIG_PATH" --repair-only
 }
 
 verify_release() {
