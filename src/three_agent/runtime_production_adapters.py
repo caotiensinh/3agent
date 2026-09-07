@@ -267,7 +267,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._write_staging_handler,
-                    timeout_mode="cooperative",
+                    timeout_mode="hard",
                 )
             elif capability == "web_gateway":
                 self.register(
