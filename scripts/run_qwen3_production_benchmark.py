@@ -270,6 +270,9 @@ def main() -> int:
     apply_runtime_offline_environment()
     if os.environ.get("HF_HUB_OFFLINE") != "1" or os.environ.get("TRANSFORMERS_OFFLINE") != "1":
         raise SystemExit("offline model environment is required")
+    isolation_mode = os.environ.get("NETWORK_ISOLATION_MODE")
+    if isolation_mode not in {"sudo-net", "userns-net", "firejail-net", "docker-none"}:
+        raise SystemExit(f"verified OS-level network isolation mode is required, got {isolation_mode!r}")
 
     fixture_path = Path(args.benchmark)
     fixture_raw = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -356,6 +359,7 @@ def main() -> int:
             "trust_remote_code": False,
             "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"),
             "TRANSFORMERS_OFFLINE": os.environ.get("TRANSFORMERS_OFFLINE"),
+            "network_isolation_mode": isolation_mode,
         },
         "admission": {
             "production_approval": False,
