@@ -79,8 +79,13 @@ def _sha(payload: Any) -> str:
 
 def _compact(value: Any, field: str, *, max_len: int = 256) -> str:
     text = str(value or "").strip()
-    if not text or len(text) > max_len or not _COMPACT_RE.fullmatch(text):
-        raise RuntimeInvocationError(f"{field} must be a compact identifier")
+    if (
+        not text
+        or len(text) > max_len
+        or not _COMPACT_RE.fullmatch(text)
+        or "://" in text
+    ):
+        raise RuntimeInvocationError(f"{field} must be a compact non-URL identifier")
     return text
 
 
@@ -106,18 +111,34 @@ def _digest(value: Any, field: str) -> str:
     return text
 
 
-def _validate_arguments(capability: str, operation: str, arguments: Mapping[str, Any]) -> tuple[tuple[str, str | int | bool], ...]:
+def _validate_arguments(
+    capability: str,
+    operation: str,
+    arguments: Mapping[str, Any],
+) -> tuple[tuple[str, str | int | bool], ...]:
     try:
         schema = _SCHEMAS[capability]
     except KeyError as exc:
-        raise RuntimeInvocationError(f"TYPED_INVOCATION_CAPABILITY_UNSUPPORTED:{capability}") from exc
+        raise RuntimeInvocationError(
+            f"TYPED_INVOCATION_CAPABILITY_UNSUPPORTED:{capability}"
+        ) from exc
     if operation != schema.operation:
         raise RuntimeInvocationError(f"TYPED_INVOCATION_OPERATION_INVALID:{capability}")
     if not isinstance(arguments, Mapping):
         raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENTS_MUST_BE_MAPPING")
-    keys = {str(key).strip() for key in arguments}
-    if any(not key for key in keys):
-        raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_KEY_INVALID")
+
+    normalized_keys: dict[str, str] = {}
+    for raw_key in arguments:
+        if not isinstance(raw_key, str):
+            raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_KEY_TYPE_INVALID")
+        key = raw_key.strip()
+        if not key:
+            raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_KEY_INVALID")
+        if key in normalized_keys:
+            raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_KEY_COLLISION")
+        normalized_keys[key] = raw_key
+    keys = set(normalized_keys)
+
     forbidden = keys & _FORBIDDEN_KEYS
     if forbidden:
         raise RuntimeInvocationError(
@@ -126,28 +147,46 @@ def _validate_arguments(capability: str, operation: str, arguments: Mapping[str,
     allowed = schema.required | schema.optional
     if not schema.required.issubset(keys):
         missing = sorted(schema.required - keys)
-        raise RuntimeInvocationError("TYPED_INVOCATION_REQUIRED_ARGUMENT_MISSING:" + ",".join(missing))
+        raise RuntimeInvocationError(
+            "TYPED_INVOCATION_REQUIRED_ARGUMENT_MISSING:" + ",".join(missing)
+        )
     if not keys.issubset(allowed):
         extra = sorted(keys - allowed)
-        raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_NOT_ALLOWED:" + ",".join(extra))
+        raise RuntimeInvocationError(
+            "TYPED_INVOCATION_ARGUMENT_NOT_ALLOWED:" + ",".join(extra)
+        )
 
     normalized: dict[str, str | int | bool] = {}
     for key in sorted(keys):
-        value = arguments[key]
+        value = arguments[normalized_keys[key]]
         if key == "max_bytes":
-            normalized[key] = _bounded_int(value, key, minimum=1, maximum=16 * 1024 * 1024)
+            normalized[key] = _bounded_int(
+                value,
+                key,
+                minimum=1,
+                maximum=16 * 1024 * 1024,
+            )
         elif key == "max_results":
             normalized[key] = _bounded_int(value, key, minimum=1, maximum=100)
         elif key == "count":
             normalized[key] = _bounded_int(value, key, minimum=1, maximum=20)
         elif key in {"query", "expression"}:
             normalized[key] = _bounded_text(value, key)
-        elif key in {"query_ref", "parameters_ref", "profile", "suite", "content_ref", "patch_ref"}:
+        elif key in {
+            "query_ref",
+            "parameters_ref",
+            "profile",
+            "suite",
+            "content_ref",
+            "patch_ref",
+        }:
             normalized[key] = _compact(value, key)
         elif key in {"content_sha256", "patch_sha256"}:
             normalized[key] = _digest(value, key)
         else:
-            raise RuntimeInvocationError(f"TYPED_INVOCATION_ARGUMENT_VALIDATOR_MISSING:{key}")
+            raise RuntimeInvocationError(
+                f"TYPED_INVOCATION_ARGUMENT_VALIDATOR_MISSING:{key}"
+            )
     return tuple((key, normalized[key]) for key in sorted(normalized))
 
 
@@ -207,11 +246,20 @@ class TypedCapabilityInvocation:
     def validate(self, compiled_plan: CompiledRuntimePlan) -> "TypedCapabilityInvocation":
         plan = compiled_plan.plan
         checks = (
-            (self.schema_version == RUNTIME_INVOCATION_SCHEMA, "TYPED_INVOCATION_SCHEMA_UNSUPPORTED"),
+            (
+                self.schema_version == RUNTIME_INVOCATION_SCHEMA,
+                "TYPED_INVOCATION_SCHEMA_UNSUPPORTED",
+            ),
             (self.task_id == plan.task_id, "TYPED_INVOCATION_TASK_MISMATCH"),
             (self.plan_id == plan.plan_id, "TYPED_INVOCATION_PLAN_ID_MISMATCH"),
-            (self.plan_fingerprint == plan.fingerprint, "TYPED_INVOCATION_PLAN_CHANGED"),
-            (self.compiled_plan_fingerprint == compiled_plan.fingerprint, "TYPED_INVOCATION_COMPILED_PLAN_CHANGED"),
+            (
+                self.plan_fingerprint == plan.fingerprint,
+                "TYPED_INVOCATION_PLAN_CHANGED",
+            ),
+            (
+                self.compiled_plan_fingerprint == compiled_plan.fingerprint,
+                "TYPED_INVOCATION_COMPILED_PLAN_CHANGED",
+            ),
         )
         for valid, code in checks:
             if not valid:
@@ -228,9 +276,15 @@ class TypedCapabilityInvocation:
             or self.effect != node.effect
         ):
             raise RuntimeInvocationError("TYPED_INVOCATION_NODE_BINDING_MISMATCH")
-        normalized = _validate_arguments(self.capability, self.operation, self.argument_map())
+        normalized = _validate_arguments(
+            self.capability,
+            self.operation,
+            self.argument_map(),
+        )
         if normalized != self.arguments:
-            raise RuntimeInvocationError("TYPED_INVOCATION_ARGUMENT_NORMALIZATION_DRIFT")
+            raise RuntimeInvocationError(
+                "TYPED_INVOCATION_ARGUMENT_NORMALIZATION_DRIFT"
+            )
         return self
 
     def to_dict(self) -> dict[str, Any]:
@@ -289,11 +343,23 @@ class RuntimeInvocationBundle:
     def validate(self, compiled_plan: CompiledRuntimePlan) -> "RuntimeInvocationBundle":
         plan = compiled_plan.plan
         checks = (
-            (self.schema_version == RUNTIME_INVOCATION_BUNDLE_SCHEMA, "TYPED_INVOCATION_BUNDLE_SCHEMA_UNSUPPORTED"),
+            (
+                self.schema_version == RUNTIME_INVOCATION_BUNDLE_SCHEMA,
+                "TYPED_INVOCATION_BUNDLE_SCHEMA_UNSUPPORTED",
+            ),
             (self.task_id == plan.task_id, "TYPED_INVOCATION_BUNDLE_TASK_MISMATCH"),
-            (self.plan_id == plan.plan_id, "TYPED_INVOCATION_BUNDLE_PLAN_ID_MISMATCH"),
-            (self.plan_fingerprint == plan.fingerprint, "TYPED_INVOCATION_BUNDLE_PLAN_CHANGED"),
-            (self.compiled_plan_fingerprint == compiled_plan.fingerprint, "TYPED_INVOCATION_BUNDLE_COMPILED_PLAN_CHANGED"),
+            (
+                self.plan_id == plan.plan_id,
+                "TYPED_INVOCATION_BUNDLE_PLAN_ID_MISMATCH",
+            ),
+            (
+                self.plan_fingerprint == plan.fingerprint,
+                "TYPED_INVOCATION_BUNDLE_PLAN_CHANGED",
+            ),
+            (
+                self.compiled_plan_fingerprint == compiled_plan.fingerprint,
+                "TYPED_INVOCATION_BUNDLE_COMPILED_PLAN_CHANGED",
+            ),
         )
         for valid, code in checks:
             if not valid:
@@ -303,7 +369,9 @@ class RuntimeInvocationBundle:
         if len(actual) != len(set(actual)):
             raise RuntimeInvocationError("TYPED_INVOCATION_BUNDLE_DUPLICATE_NODE")
         if set(actual) != expected:
-            raise RuntimeInvocationError("TYPED_INVOCATION_BUNDLE_NODE_COVERAGE_MISMATCH")
+            raise RuntimeInvocationError(
+                "TYPED_INVOCATION_BUNDLE_NODE_COVERAGE_MISMATCH"
+            )
         for invocation in self.invocations:
             invocation.validate(compiled_plan)
         return self
@@ -317,6 +385,9 @@ class RuntimeInvocationBundle:
             "compiled_plan_fingerprint": self.compiled_plan_fingerprint,
             "invocations": [
                 invocation.to_dict()
-                for invocation in sorted(self.invocations, key=lambda item: item.node_id)
+                for invocation in sorted(
+                    self.invocations,
+                    key=lambda item: item.node_id,
+                )
             ],
         }
