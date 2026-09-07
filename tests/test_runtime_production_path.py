@@ -10,6 +10,10 @@ from three_agent.resource_events import ResourceEventRecorder
 from three_agent.runtime_checkpoint import RuntimeCheckpointStore
 from three_agent.runtime_execution_plan import ExecutionNode
 from three_agent.runtime_invocation import RuntimeInvocationBundle, TypedCapabilityInvocation
+from three_agent.runtime_invocation_binding import (
+    RuntimeInvocationBindingError,
+    RuntimeInvocationBindingStore,
+)
 from three_agent.runtime_observation_ledger import RuntimeObservationLedger
 from three_agent.runtime_production_adapters import ProductionCapabilityAdapterRegistry
 from three_agent.runtime_production_scheduler import ProductionAuditedRuntimeDAGScheduler
@@ -88,7 +92,7 @@ class RuntimeProductionPathTests(unittest.TestCase):
         return store, contract, budget
 
     @staticmethod
-    def _execution_plan(contract):
+    def _execution_plan(contract, *, suite="default"):
         registry = CapabilityRegistry.default()
         compiled = RuntimePlanCompiler(registry).compile(
             plan_id="production_tests",
@@ -107,7 +111,7 @@ class RuntimeProductionPathTests(unittest.TestCase):
             compiled_plan=compiled,
             node_id="tests",
             operation="run",
-            arguments={"suite": "default"},
+            arguments={"suite": suite},
         )
         bundle = RuntimeInvocationBundle.compile(
             compiled_plan=compiled,
@@ -119,6 +123,9 @@ class RuntimeProductionPathTests(unittest.TestCase):
     def _scheduler(tmp, store, adapters):
         return ProductionAuditedRuntimeDAGScheduler(
             adapters=adapters,
+            invocation_binding_store=RuntimeInvocationBindingStore(
+                Path(tmp) / "invocation_bindings"
+            ),
             observation_ledger=RuntimeObservationLedger(store),
             checkpoint_store=RuntimeCheckpointStore(Path(tmp) / "checkpoints"),
             registry=adapters.capability_registry,
@@ -304,6 +311,29 @@ class RuntimeProductionPathTests(unittest.TestCase):
             self.assertEqual(len(inner.calls), 1)
             self.assertEqual(len(sink.calls), 1)
 
+    def test_invocation_binding_is_idempotent_and_rejects_parameter_drift(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, contract, budget = self._task(
+                tmp,
+                task_type="code_review",
+                allowed_tools=("run_tests",),
+            )
+            _, compiled, original = self._execution_plan(contract, suite="default")
+            _, same_compiled, changed = self._execution_plan(contract, suite="alternate")
+            self.assertEqual(compiled.fingerprint, same_compiled.fingerprint)
+            self.assertNotEqual(original.fingerprint, changed.fingerprint)
+            store = RuntimeInvocationBindingStore(Path(tmp) / "invocation_bindings")
+            first = store.bind(compiled_plan=compiled, invocation_bundle=original)
+            second = store.bind(compiled_plan=compiled, invocation_bundle=original)
+            self.assertEqual(first.binding_id, second.binding_id)
+            with self.assertRaisesRegex(
+                RuntimeInvocationBindingError,
+                "INVOCATION_BINDING_BUNDLE_CHANGED",
+            ):
+                store.bind(compiled_plan=compiled, invocation_bundle=changed)
+            self.assertEqual(budget.snapshot()["steps_used"], 0)
+            self.assertEqual(budget.snapshot()["tool_calls_used"], 0)
+
     def test_production_scheduler_rejects_legacy_unmetered_registry(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = TaskStore(Path(tmp) / "tasks.db")
@@ -314,6 +344,9 @@ class RuntimeProductionPathTests(unittest.TestCase):
             ):
                 ProductionAuditedRuntimeDAGScheduler(
                     adapters=CapabilityAdapterRegistry(),
+                    invocation_binding_store=RuntimeInvocationBindingStore(
+                        Path(tmp) / "invocation_bindings"
+                    ),
                     observation_ledger=RuntimeObservationLedger(store),
                     checkpoint_store=RuntimeCheckpointStore(Path(tmp) / "checkpoints"),
                 )
