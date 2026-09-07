@@ -392,6 +392,55 @@ def _browser_safe_run_receipt(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+_PUBLIC_READINESS_MESSAGES = {
+    "CONFIG_NOT_SAVED": "Save configuration before monitoring can run.",
+    "REAL_NETWORK_NOT_ALLOWED": "Enable approved real-network reads before running the collector.",
+    "SECRET_DIRECTORY_REQUIRED": "SNMPv3 requires a secret directory.",
+    "CREDENTIAL_REF_REQUIRED": "SNMPv3 requires an opaque credential reference.",
+    "SECRET_REF_UNRESOLVED": "Credential reference is not present in the local secret boundary.",
+    "MONITORING_DISABLED": "Monitoring is currently disabled.",
+    "NO_ASSETS": "No approved monitoring assets are configured.",
+}
+
+
+def _browser_safe_readiness_entries(value: object, *, warning: bool) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    safe: list[dict[str, str]] = []
+    fallback_code = "READINESS_WARNING_REDACTED" if warning else "READINESS_DETAIL_REDACTED"
+    fallback_message = (
+        "Additional readiness warning details are unavailable."
+        if warning
+        else "Additional readiness issue details are unavailable."
+    )
+    for item in value[:100]:
+        code = item.get("code") if isinstance(item, dict) else None
+        if not isinstance(code, str) or code not in _PUBLIC_READINESS_MESSAGES:
+            safe.append({"code": fallback_code, "message": fallback_message})
+            continue
+        safe.append({"code": code, "message": _PUBLIC_READINESS_MESSAGES[code]})
+    return safe
+
+
+def _browser_safe_readiness(payload: dict[str, object]) -> dict[str, object]:
+    raw_count = payload.get("enabled_asset_count")
+    enabled_asset_count = raw_count if isinstance(raw_count, int) and raw_count >= 0 else 0
+    schema_version = payload.get("schema_version")
+    return {
+        "schema_version": schema_version if isinstance(schema_version, str) else None,
+        "ready": payload.get("ready") is True,
+        "status": "ready" if payload.get("ready") is True else "blocked",
+        "config_saved": payload.get("config_saved") is True,
+        "enabled_asset_count": enabled_asset_count,
+        "issues": _browser_safe_readiness_entries(payload.get("issues"), warning=False),
+        "warnings": _browser_safe_readiness_entries(payload.get("warnings"), warning=True),
+        "network_test_executed": payload.get("network_test_executed") is True,
+        "secret_values_read": payload.get("secret_values_read") is True,
+        "packet_capture_executed": payload.get("packet_capture_executed") is True,
+        "remediation_executed": payload.get("remediation_executed") is True,
+    }
+
+
 _PUBLIC_RUNTIME_BLOCK_REASONS = frozenset(
     {
         "MONITORING_DISABLED",
@@ -530,7 +579,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, _browser_safe_payload(self.server.service.summary()))
                 return
             if path == "/api/v1/security/monitoring/readiness":
-                self._json(200, self.server.service.readiness())
+                self._json(200, _browser_safe_readiness(self.server.service.readiness()))
                 return
             if path == "/api/v1/security/monitoring/asset-intelligence":
                 self._json(200, self.server.service.asset_intelligence())
