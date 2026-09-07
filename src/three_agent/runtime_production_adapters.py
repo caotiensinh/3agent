@@ -18,6 +18,7 @@ from .runtime_reviewed_calculator import ReviewedCalculatorBoundary
 from .runtime_reviewed_db_query import ReviewedReadonlyDatabaseQueryBoundary
 from .runtime_reviewed_execution import ReviewedExecutionBoundary
 from .runtime_reviewed_knowledge_search import ReviewedKnowledgeSearchBoundary
+from .runtime_reviewed_patch import ReviewedPatchBoundary
 from .runtime_reviewed_read import ReviewedReadBoundary
 from .runtime_reviewed_search import ReviewedRepoSearchBoundary
 from .runtime_reviewed_staging import ReviewedStagingBoundary
@@ -38,6 +39,7 @@ _IMPLEMENTED = {
     "query_db_readonly",
     "calculator",
     "write_staging",
+    "apply_patch",
     "run_tests",
     "run_linter",
     "web_gateway",
@@ -110,6 +112,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         readonly_query_bundle: RuntimeReadonlyQueryBundle | None = None,
         calculator_boundary: ReviewedCalculatorBoundary | None = None,
         staging_boundary: ReviewedStagingBoundary | None = None,
+        patch_boundary: ReviewedPatchBoundary | None = None,
         source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
@@ -200,6 +203,10 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             raise RuntimeProductionAdapterError("REVIEWED_STAGING_BOUNDARY_REQUIRED")
         if "write_staging" not in capabilities and staging_boundary is not None:
             raise RuntimeProductionAdapterError("REVIEWED_STAGING_RUNTIME_UNEXPECTED")
+        if "apply_patch" in capabilities and patch_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_PATCH_BOUNDARY_REQUIRED")
+        if "apply_patch" not in capabilities and patch_boundary is not None:
+            raise RuntimeProductionAdapterError("REVIEWED_PATCH_RUNTIME_UNEXPECTED")
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -221,6 +228,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.readonly_query_bundle = readonly_query_bundle
         self.calculator_boundary = calculator_boundary
         self.staging_boundary = staging_boundary
+        self.patch_boundary = patch_boundary
         self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
@@ -267,6 +275,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._write_staging_handler,
+                    timeout_mode="hard",
+                )
+            elif capability == "apply_patch":
+                self.register(
+                    capability,
+                    self._apply_patch_handler,
                     timeout_mode="hard",
                 )
             elif capability == "web_gateway":
@@ -555,6 +569,45 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             },
             evidence_refs=_safe_evidence_refs(result.evidence_refs),
             reason_code="STAGING_MATERIALIZE_OK",
+            succeeded=True,
+        )
+
+    def _apply_patch_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if self.patch_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_PATCH_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "apply_patch" or spec.operation != "apply":
+            raise RuntimeProductionAdapterError("PRODUCTION_PATCH_INVOCATION_INVALID")
+        arguments = spec.argument_map()
+        patch_ref = str(arguments["patch_ref"])
+        patch_sha256 = str(arguments["patch_sha256"])
+        if invocation.remaining_seconds() <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.patch_boundary.apply(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                patch_ref=patch_ref,
+                patch_sha256=patch_sha256,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "resource_sha256": result.resource_sha256,
+                "patch_ref_sha256": result.patch_ref_sha256,
+                "patch_sha256": result.patch_sha256,
+                "before_sha256": result.before_sha256,
+                "after_sha256": result.after_sha256,
+                "bytes_written": result.bytes_written,
+                "hunk_count": result.hunk_count,
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+            },
+            evidence_refs=_safe_evidence_refs(result.evidence_refs),
+            reason_code="PATCH_APPLY_OK",
             succeeded=True,
         )
 
