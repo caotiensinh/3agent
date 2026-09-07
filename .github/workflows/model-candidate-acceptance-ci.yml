@@ -3,20 +3,30 @@ name: model-candidate-acceptance-ci
 on:
   pull_request:
     paths:
+      - 'config/model-candidates/qwen3-embedding-0.6b.acceptance-request.json'
       - 'scripts/accept_hf_model_candidate.py'
+      - 'scripts/audit_hf_model_candidate.py'
       - 'tests/test_model_candidate_acceptance.py'
+      - 'tests/test_hf_model_candidate_snapshot.py'
+      - 'tests/test_qwen3_embedding_runtime_acceptance_workflow.py'
       - 'src/three_agent/local_embedding.py'
       - 'src/three_agent/model_artifacts.py'
       - 'src/three_agent/model_residency.py'
       - '.github/workflows/model-candidate-acceptance-ci.yml'
+      - '.github/workflows/qwen3-embedding-runtime-acceptance.yml'
   push:
     paths:
+      - 'config/model-candidates/qwen3-embedding-0.6b.acceptance-request.json'
       - 'scripts/accept_hf_model_candidate.py'
+      - 'scripts/audit_hf_model_candidate.py'
       - 'tests/test_model_candidate_acceptance.py'
+      - 'tests/test_hf_model_candidate_snapshot.py'
+      - 'tests/test_qwen3_embedding_runtime_acceptance_workflow.py'
       - 'src/three_agent/local_embedding.py'
       - 'src/three_agent/model_artifacts.py'
       - 'src/three_agent/model_residency.py'
       - '.github/workflows/model-candidate-acceptance-ci.yml'
+      - '.github/workflows/qwen3-embedding-runtime-acceptance.yml'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +58,16 @@ jobs:
         run: python -m pip install -e .
 
       - name: Run candidate acceptance regression suite
-        run: python -m unittest discover -s tests -p 'test_model_candidate_acceptance.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_model_candidate_acceptance.py' -v
+          python -m unittest discover -s tests -p 'test_hf_model_candidate_snapshot.py' -v
+          python -m unittest discover -s tests -p 'test_qwen3_embedding_runtime_acceptance_workflow.py' -v
 
       - name: Compile acceptance boundary
-        run: python -m py_compile scripts/accept_hf_model_candidate.py tests/test_model_candidate_acceptance.py
+        run: |
+          python -m py_compile \
+            scripts/accept_hf_model_candidate.py \
+            scripts/audit_hf_model_candidate.py \
+            tests/test_model_candidate_acceptance.py \
+            tests/test_hf_model_candidate_snapshot.py \
+            tests/test_qwen3_embedding_runtime_acceptance_workflow.py

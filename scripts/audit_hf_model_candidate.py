@@ -102,6 +102,60 @@ def _assert_exact_regular_file_set(root: Path, expected: set[str]) -> None:
         )
 
 
+def _assert_snapshot_matches_evidence(
+    root: Path,
+    evidence: Sequence[dict[str, Any]],
+) -> None:
+    expected = {str(item["path"]) for item in evidence}
+    _assert_exact_regular_file_set(root, expected)
+    for item in evidence:
+        relative = str(item["path"])
+        path = root / relative
+        expected_size = int(item["size_bytes"])
+        actual_size = path.stat().st_size
+        if actual_size != expected_size:
+            raise CandidateAuditError(
+                f"retained candidate size mismatch for {relative}: "
+                f"expected {expected_size}, got {actual_size}"
+            )
+        expected_sha = str(item["sha256"])
+        actual_sha = _sha256(path)
+        if actual_sha != expected_sha:
+            raise CandidateAuditError(
+                f"retained candidate SHA-256 mismatch for {relative}: "
+                f"expected {expected_sha}, got {actual_sha}"
+            )
+
+
+def _retain_verified_snapshot(
+    staging: Path,
+    destination: str | Path,
+    evidence: Sequence[dict[str, Any]],
+) -> Path:
+    """Copy a fully audited staging tree for a later local-only acceptance step.
+
+    Retention is explicit and fail-closed. The destination must not pre-exist,
+    preventing accidental overwrite or reuse of stale model content. The copied
+    tree is revalidated against the just-produced evidence before it is returned.
+    """
+
+    target = Path(destination)
+    if target.exists() or target.is_symlink():
+        raise CandidateAuditError(
+            f"snapshot output must not already exist: {target}"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copytree(staging, target, symlinks=False)
+        _assert_snapshot_matches_evidence(target, evidence)
+    except Exception as exc:
+        shutil.rmtree(target, ignore_errors=True)
+        if isinstance(exc, CandidateAuditError):
+            raise
+        raise CandidateAuditError(f"cannot retain verified candidate snapshot: {exc}") from exc
+    return target.resolve()
+
+
 def _default_downloader() -> SnapshotDownloader:
     try:
         from huggingface_hub import snapshot_download
@@ -120,11 +174,14 @@ def audit_candidate(
     token: str | None = None,
     downloader: SnapshotDownloader | None = None,
     staging_parent: str | Path | None = None,
+    snapshot_output: str | Path | None = None,
 ) -> dict[str, Any]:
     """Download an explicit immutable candidate set and return hash evidence.
 
     This function produces evidence only. It never edits the approved manifest,
-    installs a runtime model, or grants model authority.
+    installs a runtime model, or grants model authority. When snapshot_output is
+    supplied, the already-audited bytes are retained for a separate local-only
+    acceptance runner; the retained copy is revalidated before return.
     """
 
     repo, rev = _validate_source(repo_id, revision)
@@ -175,6 +232,9 @@ def audit_candidate(
                 }
             )
 
+        if snapshot_output is not None:
+            _retain_verified_snapshot(staging, snapshot_output, evidence)
+
     return {
         "schema": CANDIDATE_SCHEMA,
         "status": "candidate_only",
@@ -222,6 +282,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Environment variable holding a deployment/review-only Hugging Face token",
     )
     parser.add_argument("--output", help="Optional JSON evidence output path")
+    parser.add_argument(
+        "--snapshot-output",
+        help=(
+            "Optional non-existing directory that receives the fully audited local snapshot "
+            "for a separate offline acceptance step"
+        ),
+    )
     return parser
 
 
@@ -236,6 +303,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         revision=args.revision,
         artifacts=artifacts,
         token=token,
+        snapshot_output=args.snapshot_output,
     )
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     if args.output:
