@@ -25,6 +25,14 @@ from .runtime_scheduler import (
     RuntimeSchedulerError,
     RuntimeSchedulerResult,
 )
+from .runtime_source_authority import (
+    RuntimeSourceAuthorityDenied,
+    RuntimeSourceBindingBundle,
+)
+from .runtime_source_binding_store import (
+    RuntimeSourceBindingStore,
+    RuntimeSourceBindingStoreError,
+)
 from .task_contract import TaskContract
 
 RUNTIME_PRODUCTION_SCHEDULER_SCHEMA = "workspace-runtime-production-scheduler/v2"
@@ -33,6 +41,7 @@ _DENIAL_ERRORS = (
     CapabilityAuthorityDenied,
     ExecutionBudgetExceeded,
     RuntimeCapabilityBoundaryError,
+    RuntimeSourceAuthorityDenied,
 )
 
 
@@ -53,10 +62,10 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
     only the scheduler step and requires a registry explicitly marked as
     boundary-accounted.
 
-    Production execution additionally requires an immutable durable invocation
-    binding. The typed invocation bundle is bound before the first RUNNING
-    checkpoint, preventing restart/resume with changed tool parameters under the
-    same DAG fingerprint.
+    Production execution additionally requires immutable durable invocation
+    semantics. Source-scoped adapters also require a second create-only recovery
+    binding so the same DAG/invocation cannot resume against a different trusted
+    source root or source class. Both are bound before RUNNING checkpoints.
     """
 
     schema_version = RUNTIME_PRODUCTION_SCHEDULER_SCHEMA
@@ -66,6 +75,7 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         *,
         adapters: CapabilityAdapterRegistry,
         invocation_binding_store: RuntimeInvocationBindingStore,
+        source_binding_store: RuntimeSourceBindingStore | None = None,
         **kwargs,
     ):
         if not bool(getattr(adapters, "boundary_accounted", False)):
@@ -77,8 +87,20 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         invocation_bundle = getattr(adapters, "invocation_bundle", None)
         if not isinstance(invocation_bundle, RuntimeInvocationBundle):
             raise RuntimeSchedulerError("PRODUCTION_INVOCATION_BUNDLE_REQUIRED")
+
+        source_bundle = getattr(adapters, "source_binding_bundle", None)
+        if source_bundle is not None:
+            if not isinstance(source_bundle, RuntimeSourceBindingBundle):
+                raise RuntimeSchedulerError("PRODUCTION_SOURCE_BINDING_BUNDLE_INVALID")
+            if source_binding_store is None or not bool(
+                getattr(source_binding_store, "durable", False)
+            ):
+                raise RuntimeSchedulerError("DURABLE_SOURCE_BINDING_STORE_REQUIRED")
+
         self.invocation_binding_store = invocation_binding_store
         self.invocation_bundle = invocation_bundle
+        self.source_binding_store = source_binding_store
+        self.source_binding_bundle = source_bundle
         super().__init__(adapters=adapters, **kwargs)
 
     @staticmethod
@@ -99,6 +121,31 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         except RuntimeInvocationBindingError as exc:
             raise RuntimeSchedulerError(str(exc)) from exc
 
+    def _bind_sources(
+        self,
+        *,
+        compiled_plan: CompiledRuntimePlan,
+        task_contract: TaskContract,
+    ) -> None:
+        if self.source_binding_bundle is None:
+            return
+        if self.source_binding_store is None:
+            raise RuntimeSchedulerError("DURABLE_SOURCE_BINDING_STORE_REQUIRED")
+        try:
+            self.source_binding_bundle.validate(
+                compiled_plan=compiled_plan,
+                task_contract=task_contract,
+                registry=self.registry,
+            )
+            self.source_binding_store.bind(
+                compiled_plan=compiled_plan,
+                task_contract=task_contract,
+                source_binding_bundle=self.source_binding_bundle,
+                registry=self.registry,
+            )
+        except (RuntimeSourceBindingStoreError, RuntimeSourceAuthorityDenied) as exc:
+            raise RuntimeSchedulerError(str(exc)) from exc
+
     def run(
         self,
         *,
@@ -109,8 +156,12 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
         checkpoint: RuntimeCheckpoint | None = None,
     ) -> RuntimeSchedulerResult:
         compiled_plan.validate_current(task_contract=task_contract, registry=self.registry)
-        # Bind invocation semantics before any RUNNING checkpoint or side effect.
+        # Bind all semantic inputs before any RUNNING checkpoint or external I/O.
         self._bind_invocations(compiled_plan)
+        self._bind_sources(
+            compiled_plan=compiled_plan,
+            task_contract=task_contract,
+        )
         return super().run(
             compiled_plan=compiled_plan,
             task_contract=task_contract,

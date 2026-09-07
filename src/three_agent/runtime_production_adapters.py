@@ -14,16 +14,18 @@ from .runtime_node_authority import RuntimeNodeAuthority
 from .runtime_plan_compiler import CompiledRuntimePlan
 from .runtime_production_scheduler import ProductionNodeExecutionResult
 from .runtime_reviewed_execution import ReviewedExecutionBoundary
+from .runtime_reviewed_read import ReviewedReadBoundary
 from .runtime_scheduler import (
     CapabilityAdapterRegistry,
     CapabilityInvocation,
     RuntimeSchedulerError,
 )
+from .runtime_source_authority import RuntimeSourceBindingBundle
 from .task_contract import TaskContract
 
 RUNTIME_PRODUCTION_ADAPTER_SCHEMA = "workspace-runtime-production-adapter/v1"
 _EVIDENCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+\-=]{0,255}$")
-_IMPLEMENTED = {"run_tests", "run_linter", "web_gateway"}
+_IMPLEMENTED = {"read_file", "run_tests", "run_linter", "web_gateway"}
 
 
 class RuntimeProductionAdapterError(RuntimeError):
@@ -68,10 +70,10 @@ def _safe_evidence_refs(values: tuple[str, ...]) -> tuple[str, ...]:
 class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
     """Typed, boundary-accounted adapters for the production audited scheduler.
 
-    Planner output never provides argv, cwd, HTTP endpoint, callable, or raw SQL.
-    Execution profile IDs and public search data are interpreted only through the
-    reviewed runtime-owned boundaries below. Unimplemented capabilities fail at
-    construction rather than falling back to a weaker path.
+    Planner output never provides argv, cwd, HTTP endpoint, callable, raw SQL,
+    trusted source class, or trusted local root. Runtime-owned reviewed boundaries
+    interpret only typed selectors and immutable source bindings. Unimplemented
+    capabilities fail at construction rather than falling back to a weaker path.
     """
 
     boundary_accounted = True
@@ -85,6 +87,8 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         invocation_bundle: RuntimeInvocationBundle,
         budget: TaskExecutionBudgetState,
         execution_boundary: ReviewedExecutionBoundary | None = None,
+        read_boundary: ReviewedReadBoundary | None = None,
+        source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
         search_endpoint: str | None = None,
@@ -108,6 +112,23 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             )
         if capabilities & {"run_tests", "run_linter"} and execution_boundary is None:
             raise RuntimeProductionAdapterError("REVIEWED_EXECUTION_BOUNDARY_REQUIRED")
+        if "read_file" in capabilities:
+            if source_binding_bundle is None:
+                raise RuntimeProductionAdapterError("SOURCE_BINDING_BUNDLE_REQUIRED")
+            source_binding_bundle.validate(
+                compiled_plan=compiled_plan,
+                task_contract=task_contract,
+                registry=active_registry,
+            )
+            if read_boundary is None:
+                raise RuntimeProductionAdapterError("REVIEWED_READ_BOUNDARY_REQUIRED")
+            if (
+                read_boundary.source_binding_bundle.fingerprint
+                != source_binding_bundle.fingerprint
+            ):
+                raise RuntimeProductionAdapterError(
+                    "READ_BOUNDARY_SOURCE_BINDING_MISMATCH"
+                )
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -122,6 +143,8 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.invocation_bundle = invocation_bundle
         self.budget = budget
         self.execution_boundary = execution_boundary
+        self.read_boundary = read_boundary
+        self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
         self.search_endpoint = str(search_endpoint or "")
@@ -132,6 +155,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                     capability,
                     self._execution_handler,
                     timeout_mode="hard",
+                )
+            elif capability == "read_file":
+                self.register(
+                    capability,
+                    self._read_file_handler,
+                    timeout_mode="cooperative",
                 )
             elif capability == "web_gateway":
                 self.register(
@@ -181,6 +210,41 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             evidence_refs=_safe_evidence_refs(result.evidence_refs),
             reason_code="EXECUTION_OK" if succeeded else "COMMAND_EXIT_NONZERO",
             succeeded=succeeded,
+        )
+
+    def _read_file_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if self.read_boundary is None or self.source_binding_bundle is None:
+            raise RuntimeProductionAdapterError("REVIEWED_READ_RUNTIME_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "read_file" or spec.operation != "read":
+            raise RuntimeProductionAdapterError("PRODUCTION_READ_INVOCATION_INVALID")
+        source_binding = self.source_binding_bundle.for_node(invocation.node.node_id)
+        arguments = spec.argument_map()
+        max_bytes = int(arguments.get("max_bytes", 1024 * 1024))
+        if invocation.remaining_seconds() <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.read_boundary.read_file(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                max_bytes=max_bytes,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "content_sha256": result.content_sha256,
+                "content_bytes": result.content_bytes,
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+                "source_binding_fingerprint": source_binding.fingerprint,
+                "source_binding_bundle_fingerprint": self.source_binding_bundle.fingerprint,
+            },
+            evidence_refs=_safe_evidence_refs(result.evidence_refs),
+            reason_code="READ_FILE_OK",
+            succeeded=True,
         )
 
     def _web_handler(
