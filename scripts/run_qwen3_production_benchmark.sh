@@ -4,6 +4,12 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+PROBE_ONLY=false
+if [[ "${1:-}" == "--probe-isolation" ]]; then
+  PROBE_ONLY=true
+  shift
+fi
+
 SOURCE="config/model-candidates/qwen3-embedding-0.6b.source.json"
 ARTIFACTS="config/model-candidates/qwen3-embedding-0.6b.artifacts.txt"
 BENCHMARK="config/benchmarks/qwen3-embedding-retrieval-v1.json"
@@ -15,9 +21,76 @@ HF_HOME="$WORK_ROOT/hf-home"
 SENTENCE_TRANSFORMERS_HOME="$WORK_ROOT/sentence-transformers"
 DOCKER_IMAGE=""
 
+rootless_docker_host() {
+  local candidate="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/docker.sock"
+  if [[ -S "$candidate" ]]; then
+    printf 'unix://%s\n' "$candidate"
+    return 0
+  fi
+  return 1
+}
+
+docker_group_member() {
+  command -v getent >/dev/null || return 1
+  local entry user docker_gid members
+  entry="$(getent group docker 2>/dev/null || true)"
+  [[ -n "$entry" ]] || return 1
+  user="$(id -un)"
+  IFS=: read -r _ _ docker_gid members <<< "$entry"
+  if [[ "$(id -g)" == "$docker_gid" ]]; then
+    return 0
+  fi
+  [[ ",${members}," == *",${user},"* ]]
+}
+
+docker_access_mode() {
+  command -v docker >/dev/null || return 1
+  if docker info >/dev/null 2>&1; then
+    echo direct
+    return 0
+  fi
+  local rootless_host
+  rootless_host="$(rootless_docker_host || true)"
+  if [[ -n "$rootless_host" ]] && DOCKER_HOST="$rootless_host" docker info >/dev/null 2>&1; then
+    echo rootless
+    return 0
+  fi
+  if command -v sg >/dev/null && docker_group_member && sg docker -c 'docker info >/dev/null 2>&1'; then
+    echo group
+    return 0
+  fi
+  return 1
+}
+
+run_docker() {
+  local mode="${DOCKER_ACCESS_MODE:-}"
+  if [[ -z "$mode" ]]; then
+    mode="$(docker_access_mode || true)"
+  fi
+  case "$mode" in
+    direct)
+      docker "$@"
+      ;;
+    rootless)
+      local rootless_host
+      rootless_host="$(rootless_docker_host)"
+      DOCKER_HOST="$rootless_host" docker "$@"
+      ;;
+    group)
+      local quoted
+      printf -v quoted '%q ' docker "$@"
+      sg docker -c "$quoted"
+      ;;
+    *)
+      echo "ERROR: Docker daemon access is unavailable" >&2
+      return 1
+      ;;
+  esac
+}
+
 cleanup() {
   if [[ -n "$DOCKER_IMAGE" ]] && command -v docker >/dev/null; then
-    docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
+    run_docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
   fi
   rm -rf "$SNAPSHOT" "$HF_HOME" "$SENTENCE_TRANSFORMERS_HOME" "$WORK_ROOT/container-runtime"
   rm -f "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/qwen3-empty-${GITHUB_RUN_ID:-$$}.tar"
@@ -56,7 +129,7 @@ make_empty_docker_image() {
   local image="$1"
   local tarball="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/qwen3-empty-${GITHUB_RUN_ID:-$$}.tar"
   tar -cf "$tarball" --files-from /dev/null
-  docker import "$tarball" "$image" >/dev/null
+  run_docker import "$tarball" "$image" >/dev/null
 }
 
 docker_base_mounts() {
@@ -67,37 +140,77 @@ docker_base_mounts() {
 }
 
 probe_docker_isolation() {
-  command -v docker >/dev/null || return 1
-  docker info >/dev/null 2>&1 || return 1
+  local access_mode
+  access_mode="$(docker_access_mode || true)"
+  [[ -n "$access_mode" ]] || return 1
+  DOCKER_ACCESS_MODE="$access_mode"
+  export DOCKER_ACCESS_MODE
   local image="workspace-qwen3-netprobe:${GITHUB_RUN_ID:-$$}"
   local probe="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc; print('network isolation verified', sorted(names))"
   local -a mounts=()
   while IFS= read -r item; do mounts+=("$item"); done < <(docker_base_mounts)
   make_empty_docker_image "$image"
-  if ! docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  if ! run_docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
       "${mounts[@]}" --entrypoint /usr/bin/python3 "$image" -c "$probe" >/dev/null; then
-    docker image rm -f "$image" >/dev/null 2>&1 || true
+    run_docker image rm -f "$image" >/dev/null 2>&1 || true
     return 1
   fi
-  if ! docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  if ! run_docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
       --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
       "${mounts[@]}" --entrypoint /usr/bin/nvidia-smi "$image" \
       --query-gpu=index,name --format=csv,noheader >/dev/null; then
-    docker image rm -f "$image" >/dev/null 2>&1 || true
+    run_docker image rm -f "$image" >/dev/null 2>&1 || true
     return 1
   fi
-  docker image rm -f "$image" >/dev/null 2>&1 || true
+  run_docker image rm -f "$image" >/dev/null 2>&1 || true
   return 0
+}
+
+probe_systemd_user_isolation() {
+  command -v systemd-run >/dev/null || return 1
+  local probe="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc"
+  systemd-run --user --quiet --pipe --wait --collect -p PrivateNetwork=yes \
+    /usr/bin/python3 -c "$probe" >/dev/null 2>&1
+}
+
+print_isolation_diagnostics() {
+  echo '=== Runner identity ==='
+  id || true
+  echo '=== Docker socket/group evidence ==='
+  getent group docker 2>/dev/null || echo 'docker-group=missing'
+  if [[ -e /var/run/docker.sock ]]; then
+    stat -Lc 'docker-socket owner=%U group=%G mode=%a path=%n' /var/run/docker.sock 2>/dev/null || ls -l /var/run/docker.sock || true
+  else
+    echo 'docker-socket=missing'
+  fi
+  if command -v docker >/dev/null; then
+    echo 'docker-cli=yes'
+    docker info --format 'docker-direct-server={{.ServerVersion}}' 2>&1 || true
+    local rootless_host
+    rootless_host="$(rootless_docker_host || true)"
+    if [[ -n "$rootless_host" ]]; then
+      DOCKER_HOST="$rootless_host" docker info --format 'docker-rootless-server={{.ServerVersion}}' 2>&1 || true
+    else
+      echo 'docker-rootless-socket=missing'
+    fi
+    if command -v sg >/dev/null && docker_group_member; then
+      sg docker -c "docker info --format 'docker-group-server={{.ServerVersion}}'" 2>&1 || true
+    else
+      echo 'docker-sg-eligible=no'
+    fi
+    echo "DOCKER_ACCESS_MODE=$(docker_access_mode || echo unavailable)"
+  else
+    echo 'docker-cli=no'
+  fi
+  if command -v systemd-run >/dev/null; then
+    echo 'systemd-run=yes'
+  else
+    echo 'systemd-run=no'
+  fi
 }
 
 select_isolation() {
   local probe="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc; print('network isolation verified', sorted(names))"
-  if [[ -n "${NETWORK_ISOLATION_MODE:-}" ]]; then
-    case "$NETWORK_ISOLATION_MODE" in
-      sudo-net|userns-net|firejail-net|docker-none) echo "$NETWORK_ISOLATION_MODE"; return 0 ;;
-      *) echo "ERROR: invalid requested NETWORK_ISOLATION_MODE=$NETWORK_ISOLATION_MODE" >&2; return 1 ;;
-    esac
-  fi
   if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
     if sudo unshare --net -- python3 -c "$probe" >/dev/null 2>&1; then
       echo sudo-net
@@ -112,6 +225,10 @@ select_isolation() {
     echo firejail-net
     return 0
   fi
+  if probe_systemd_user_isolation; then
+    echo systemd-user-net
+    return 0
+  fi
   if probe_docker_isolation; then
     echo docker-none
     return 0
@@ -119,12 +236,22 @@ select_isolation() {
   return 1
 }
 
+print_isolation_diagnostics
 ISOLATION_MODE="$(select_isolation || true)"
 if [[ -z "$ISOLATION_MODE" ]]; then
   echo "ERROR: no verified OS-level network isolation path is available" >&2
   exit 23
 fi
-echo "Network isolation mode: $ISOLATION_MODE"
+echo "NETWORK_ISOLATION_MODE=$ISOLATION_MODE"
+if [[ "$ISOLATION_MODE" == "docker-none" ]]; then
+  DOCKER_ACCESS_MODE="$(docker_access_mode)"
+  export DOCKER_ACCESS_MODE
+  echo "DOCKER_ACCESS_MODE=$DOCKER_ACCESS_MODE"
+fi
+
+if [[ "$PROBE_ONLY" == true ]]; then
+  exit 0
+fi
 
 export HF_HOME SENTENCE_TRANSFORMERS_HOME
 python3 scripts/audit_hf_model_candidate.py \
@@ -158,6 +285,7 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_HUB_DISABLE_TELEMETRY=1
 export PYTHONDONTWRITEBYTECODE=1
+export NETWORK_ISOLATION_MODE="$ISOLATION_MODE"
 PYTHON_BIN="$(command -v python3)"
 COMMON_ARGS=(
   scripts/run_qwen3_production_benchmark.py
@@ -174,9 +302,19 @@ elif [[ "$ISOLATION_MODE" == "userns-net" ]]; then
   unshare --user --map-root-user --net -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
 elif [[ "$ISOLATION_MODE" == "firejail-net" ]]; then
   firejail --quiet --net=none -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
+elif [[ "$ISOLATION_MODE" == "systemd-user-net" ]]; then
+  systemd-run --user --quiet --pipe --wait --collect -p PrivateNetwork=yes \
+    --setenv=HF_HUB_OFFLINE=1 \
+    --setenv=TRANSFORMERS_OFFLINE=1 \
+    --setenv=HF_HUB_DISABLE_TELEMETRY=1 \
+    --setenv=PYTHONDONTWRITEBYTECODE=1 \
+    --setenv=NETWORK_ISOLATION_MODE=systemd-user-net \
+    --setenv="HF_HOME=$HF_HOME" \
+    --setenv="SENTENCE_TRANSFORMERS_HOME=$SENTENCE_TRANSFORMERS_HOME" \
+    "$PYTHON_BIN" "${COMMON_ARGS[@]}"
 elif [[ "$ISOLATION_MODE" == "docker-none" ]]; then
-  command -v docker >/dev/null || { echo 'ERROR: Docker selected but CLI is unavailable' >&2; exit 24; }
-  docker info >/dev/null 2>&1 || { echo 'ERROR: Docker selected but daemon access is unavailable' >&2; exit 24; }
+  DOCKER_ACCESS_MODE="${DOCKER_ACCESS_MODE:-$(docker_access_mode)}"
+  export DOCKER_ACCESS_MODE
   DOCKER_IMAGE="workspace-qwen3-offline:${GITHUB_RUN_ID:-$$}"
   make_empty_docker_image "$DOCKER_IMAGE"
   VENV_ROOT="$(cd "$(dirname "$PYTHON_BIN")/.." && pwd)"
@@ -192,7 +330,7 @@ elif [[ "$ISOLATION_MODE" == "docker-none" ]]; then
     --mount "type=bind,src=$CONTAINER_RUNTIME,dst=$CONTAINER_RUNTIME"
   )
   if [[ -d /lib64 ]]; then local_mounts+=(--mount "type=bind,src=/lib64,dst=/lib64,readonly"); fi
-  docker run --rm \
+  run_docker run --rm \
     --network none \
     --gpus all \
     --read-only \
@@ -224,11 +362,12 @@ else
   exit 24
 fi
 
-python3 - "$OUTPUT" "$ISOLATION_MODE" <<'PY'
+python3 - "$OUTPUT" "$ISOLATION_MODE" "${DOCKER_ACCESS_MODE:-}" <<'PY'
 import json, sys
 from pathlib import Path
 path = Path(sys.argv[1])
 mode = sys.argv[2]
+docker_access = sys.argv[3] or None
 receipt = json.loads(path.read_text(encoding='utf-8'))
 if receipt.get('schema') != 'workspace.embedding-production-benchmark/v1':
     raise SystemExit('unexpected benchmark receipt schema')
@@ -240,6 +379,8 @@ if receipt.get('admission', {}).get('runtime_authority') is not False:
     raise SystemExit('benchmark must not grant runtime authority')
 security = receipt.setdefault('security', {})
 security['network_isolation_mode'] = mode
+if docker_access is not None:
+    security['docker_access_mode'] = docker_access
 path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 print(f"PASS: {path}")
 PY
