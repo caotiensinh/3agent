@@ -3,12 +3,19 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from typing import Iterable
 
 from .capability_authority import CapabilityAuthorityDenied
 from .execution_budget import ExecutionBudgetExceeded
 from .runtime_audited_scheduler import AuditedRuntimeDAGScheduler
 from .runtime_capability_boundary import RuntimeCapabilityBoundaryError
+from .runtime_checkpoint import RuntimeCheckpoint
 from .runtime_execution_plan import ExecutionNode, ExecutionObservation, RuntimeExecutionPlanError
+from .runtime_invocation import RuntimeInvocationBundle
+from .runtime_invocation_binding import (
+    RuntimeInvocationBindingError,
+    RuntimeInvocationBindingStore,
+)
 from .runtime_plan_compiler import CompiledRuntimePlan
 from .runtime_scheduler import (
     CapabilityAdapterRegistry,
@@ -16,9 +23,11 @@ from .runtime_scheduler import (
     ExecutionBudgetLike,
     NodeExecutionResult,
     RuntimeSchedulerError,
+    RuntimeSchedulerResult,
 )
+from .task_contract import TaskContract
 
-RUNTIME_PRODUCTION_SCHEDULER_SCHEMA = "workspace-runtime-production-scheduler/v1"
+RUNTIME_PRODUCTION_SCHEDULER_SCHEMA = "workspace-runtime-production-scheduler/v2"
 _REASON_RE = re.compile(r"^[A-Z0-9][A-Z0-9_.:-]{0,127}$")
 _DENIAL_ERRORS = (
     CapabilityAuthorityDenied,
@@ -43,13 +52,33 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
     revocation, and charge the real tool call. This subclass therefore charges
     only the scheduler step and requires a registry explicitly marked as
     boundary-accounted.
+
+    Production execution additionally requires an immutable durable invocation
+    binding. The typed invocation bundle is bound before the first RUNNING
+    checkpoint, preventing restart/resume with changed tool parameters under the
+    same DAG fingerprint.
     """
 
     schema_version = RUNTIME_PRODUCTION_SCHEDULER_SCHEMA
 
-    def __init__(self, *, adapters: CapabilityAdapterRegistry, **kwargs):
+    def __init__(
+        self,
+        *,
+        adapters: CapabilityAdapterRegistry,
+        invocation_binding_store: RuntimeInvocationBindingStore,
+        **kwargs,
+    ):
         if not bool(getattr(adapters, "boundary_accounted", False)):
             raise RuntimeSchedulerError("PRODUCTION_ADAPTERS_MUST_BE_BOUNDARY_ACCOUNTED")
+        if invocation_binding_store is None or not bool(
+            getattr(invocation_binding_store, "durable", False)
+        ):
+            raise RuntimeSchedulerError("DURABLE_INVOCATION_BINDING_STORE_REQUIRED")
+        invocation_bundle = getattr(adapters, "invocation_bundle", None)
+        if not isinstance(invocation_bundle, RuntimeInvocationBundle):
+            raise RuntimeSchedulerError("PRODUCTION_INVOCATION_BUNDLE_REQUIRED")
+        self.invocation_binding_store = invocation_binding_store
+        self.invocation_bundle = invocation_bundle
         super().__init__(adapters=adapters, **kwargs)
 
     @staticmethod
@@ -59,6 +88,36 @@ class ProductionAuditedRuntimeDAGScheduler(AuditedRuntimeDAGScheduler):
             candidate = str(exc).strip().upper()
             code = candidate if _REASON_RE.fullmatch(candidate) else fallback
         return code if _REASON_RE.fullmatch(code) else fallback
+
+    def _bind_invocations(self, compiled_plan: CompiledRuntimePlan) -> None:
+        try:
+            self.invocation_bundle.validate(compiled_plan)
+            self.invocation_binding_store.bind(
+                compiled_plan=compiled_plan,
+                invocation_bundle=self.invocation_bundle,
+            )
+        except RuntimeInvocationBindingError as exc:
+            raise RuntimeSchedulerError(str(exc)) from exc
+
+    def run(
+        self,
+        *,
+        compiled_plan: CompiledRuntimePlan,
+        task_contract: TaskContract,
+        budget: ExecutionBudgetLike,
+        approved_node_ids: Iterable[str] = (),
+        checkpoint: RuntimeCheckpoint | None = None,
+    ) -> RuntimeSchedulerResult:
+        compiled_plan.validate_current(task_contract=task_contract, registry=self.registry)
+        # Bind invocation semantics before any RUNNING checkpoint or side effect.
+        self._bind_invocations(compiled_plan)
+        return super().run(
+            compiled_plan=compiled_plan,
+            task_contract=task_contract,
+            budget=budget,
+            approved_node_ids=approved_node_ids,
+            checkpoint=checkpoint,
+        )
 
     def _failed_observation(
         self,
