@@ -166,11 +166,20 @@ probe_docker_isolation() {
   return 0
 }
 
-probe_systemd_user_isolation() {
-  command -v systemd-run >/dev/null || return 1
-  local probe="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc"
-  systemd-run --user --quiet --pipe --wait --collect -p PrivateNetwork=yes \
-    /usr/bin/python3 -c "$probe" >/dev/null 2>&1
+probe_seccomp_isolation() {
+  local wrapper="$ROOT/scripts/run_with_network_seccomp.py"
+  [[ -f "$wrapper" ]] || return 1
+  python3 "$wrapper" python3 - <<'PY' >/dev/null 2>&1
+import errno
+import socket
+try:
+    socket.socket()
+except PermissionError as exc:
+    if exc.errno != errno.EPERM:
+        raise
+else:
+    raise SystemExit('seccomp unexpectedly allowed AF_INET socket creation')
+PY
 }
 
 print_isolation_diagnostics() {
@@ -202,11 +211,10 @@ print_isolation_diagnostics() {
   else
     echo 'docker-cli=no'
   fi
-  if command -v systemd-run >/dev/null; then
-    echo 'systemd-run=yes'
-  else
-    echo 'systemd-run=no'
-  fi
+  python3 - <<'PY' || true
+import ctypes.util
+print('libseccomp=', ctypes.util.find_library('seccomp'))
+PY
 }
 
 select_isolation() {
@@ -225,8 +233,8 @@ select_isolation() {
     echo firejail-net
     return 0
   fi
-  if probe_systemd_user_isolation; then
-    echo systemd-user-net
+  if probe_seccomp_isolation; then
+    echo seccomp-no-network
     return 0
   fi
   if probe_docker_isolation; then
@@ -288,10 +296,10 @@ export PYTHONDONTWRITEBYTECODE=1
 export NETWORK_ISOLATION_MODE="$ISOLATION_MODE"
 PYTHON_BIN="$(command -v python3)"
 COMMON_ARGS=(
-  scripts/run_qwen3_production_benchmark.py
+  "$ROOT/scripts/run_qwen3_production_benchmark.py"
   --evidence "$EVIDENCE"
   --snapshot "$SNAPSHOT"
-  --benchmark "$BENCHMARK"
+  --benchmark "$ROOT/$BENCHMARK"
   --output "$OUTPUT"
 )
 
@@ -302,15 +310,8 @@ elif [[ "$ISOLATION_MODE" == "userns-net" ]]; then
   unshare --user --map-root-user --net -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
 elif [[ "$ISOLATION_MODE" == "firejail-net" ]]; then
   firejail --quiet --net=none -- "$PYTHON_BIN" "${COMMON_ARGS[@]}"
-elif [[ "$ISOLATION_MODE" == "systemd-user-net" ]]; then
-  systemd-run --user --quiet --pipe --wait --collect -p PrivateNetwork=yes \
-    --setenv=HF_HUB_OFFLINE=1 \
-    --setenv=TRANSFORMERS_OFFLINE=1 \
-    --setenv=HF_HUB_DISABLE_TELEMETRY=1 \
-    --setenv=PYTHONDONTWRITEBYTECODE=1 \
-    --setenv=NETWORK_ISOLATION_MODE=systemd-user-net \
-    --setenv="HF_HOME=$HF_HOME" \
-    --setenv="SENTENCE_TRANSFORMERS_HOME=$SENTENCE_TRANSFORMERS_HOME" \
+elif [[ "$ISOLATION_MODE" == "seccomp-no-network" ]]; then
+  "$PYTHON_BIN" "$ROOT/scripts/run_with_network_seccomp.py" \
     "$PYTHON_BIN" "${COMMON_ARGS[@]}"
 elif [[ "$ISOLATION_MODE" == "docker-none" ]]; then
   DOCKER_ACCESS_MODE="${DOCKER_ACCESS_MODE:-$(docker_access_mode)}"
@@ -351,10 +352,10 @@ elif [[ "$ISOLATION_MODE" == "docker-none" ]]; then
     "${local_mounts[@]}" \
     --entrypoint "$PYTHON_BIN" \
     "$DOCKER_IMAGE" \
-    scripts/run_qwen3_production_benchmark.py \
+    "$ROOT/scripts/run_qwen3_production_benchmark.py" \
       --evidence "$EVIDENCE" \
       --snapshot "$SNAPSHOT" \
-      --benchmark "$BENCHMARK" \
+      --benchmark "$ROOT/$BENCHMARK" \
       --output "$CONTAINER_OUTPUT"
   cp "$CONTAINER_OUTPUT" "$OUTPUT"
 else
