@@ -20,6 +20,7 @@ from .runtime_reviewed_execution import ReviewedExecutionBoundary
 from .runtime_reviewed_knowledge_search import ReviewedKnowledgeSearchBoundary
 from .runtime_reviewed_read import ReviewedReadBoundary
 from .runtime_reviewed_search import ReviewedRepoSearchBoundary
+from .runtime_reviewed_staging import ReviewedStagingBoundary
 from .runtime_scheduler import (
     CapabilityAdapterRegistry,
     CapabilityInvocation,
@@ -36,6 +37,7 @@ _IMPLEMENTED = {
     "search_docs",
     "query_db_readonly",
     "calculator",
+    "write_staging",
     "run_tests",
     "run_linter",
     "web_gateway",
@@ -107,6 +109,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         db_query_boundary: ReviewedReadonlyDatabaseQueryBoundary | None = None,
         readonly_query_bundle: RuntimeReadonlyQueryBundle | None = None,
         calculator_boundary: ReviewedCalculatorBoundary | None = None,
+        staging_boundary: ReviewedStagingBoundary | None = None,
         source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
@@ -193,6 +196,10 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             raise RuntimeProductionAdapterError("REVIEWED_CALCULATOR_BOUNDARY_REQUIRED")
         if "calculator" not in capabilities and calculator_boundary is not None:
             raise RuntimeProductionAdapterError("REVIEWED_CALCULATOR_RUNTIME_UNEXPECTED")
+        if "write_staging" in capabilities and staging_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_STAGING_BOUNDARY_REQUIRED")
+        if "write_staging" not in capabilities and staging_boundary is not None:
+            raise RuntimeProductionAdapterError("REVIEWED_STAGING_RUNTIME_UNEXPECTED")
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -213,6 +220,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.db_query_boundary = db_query_boundary
         self.readonly_query_bundle = readonly_query_bundle
         self.calculator_boundary = calculator_boundary
+        self.staging_boundary = staging_boundary
         self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
@@ -253,6 +261,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._calculator_handler,
+                    timeout_mode="cooperative",
+                )
+            elif capability == "write_staging":
+                self.register(
+                    capability,
+                    self._write_staging_handler,
                     timeout_mode="cooperative",
                 )
             elif capability == "web_gateway":
@@ -504,6 +518,43 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             },
             evidence_refs=tuple(result.evidence_refs),
             reason_code="CALCULATOR_OK",
+            succeeded=True,
+        )
+
+    def _write_staging_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if self.staging_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_STAGING_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "write_staging" or spec.operation != "materialize":
+            raise RuntimeProductionAdapterError("PRODUCTION_STAGING_INVOCATION_INVALID")
+        arguments = spec.argument_map()
+        content_ref = str(arguments["content_ref"])
+        content_sha256 = str(arguments["content_sha256"])
+        if invocation.remaining_seconds() <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.staging_boundary.materialize(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                content_ref=content_ref,
+                content_sha256=content_sha256,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "resource_sha256": result.resource_sha256,
+                "content_ref_sha256": result.content_ref_sha256,
+                "content_sha256": result.content_sha256,
+                "bytes_written": result.bytes_written,
+                "created": result.created,
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+            },
+            evidence_refs=_safe_evidence_refs(result.evidence_refs),
+            reason_code="STAGING_MATERIALIZE_OK",
             succeeded=True,
         )
 
