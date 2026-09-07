@@ -134,8 +134,13 @@ class RuntimeProductionCalculatorTests(unittest.TestCase):
             self.assertEqual(budget.snapshot()["steps_used"], 1)
             self.assertEqual(budget.snapshot()["tool_calls_used"], 1)
             self.assertTrue(observation.result_sha256.startswith("sha256:"))
-            self.assertNotIn("14", str(observation.metadata()))
-            self.assertNotIn("2 + 3 * 4", str(observation.metadata()))
+            metadata = observation.metadata()
+            self.assertNotIn("result", metadata)
+            self.assertNotIn("expression", metadata)
+            self.assertFalse(
+                any(value == 14 or value == "14" for value in metadata.values())
+            )
+            self.assertNotIn("2 + 3 * 4", metadata.values())
 
     def test_evidence_required_task_uses_calculator_sink(self):
         with tempfile.TemporaryDirectory() as tmp:
