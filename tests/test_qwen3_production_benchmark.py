@@ -90,17 +90,28 @@ def test_runner_script_docker_fallback_is_narrow_and_offline() -> None:
     assert "rootless_docker_host" in script
 
 
-def test_seccomp_executor_is_kernel_enforced_and_exec_inherited() -> None:
+def test_seccomp_executor_blocks_external_socket_families_but_keeps_local_ipc() -> None:
     wrapper = (SCRIPTS / "run_with_network_seccomp.py").read_text(encoding="utf-8")
     assert "PR_SET_NO_NEW_PRIVS" in wrapper
     assert "seccomp_load" in wrapper
-    assert '"socket"' in wrapper
-    assert '"connect"' in wrapper
-    assert '"sendto"' in wrapper
-    assert '"sendmsg"' in wrapper
+    assert "seccomp_rule_add_array" in wrapper
+    assert "DENIED_SOCKET_FAMILIES" in wrapper
+    assert '"AF_INET"' in wrapper
+    assert '"AF_INET6"' in wrapper
+    assert '"AF_PACKET"' in wrapper
+    assert '"AF_VSOCK"' in wrapper
     assert '"io_uring_setup"' in wrapper
+    assert "socketpair" not in wrapper
+    assert "cudaGetDeviceCount" in wrapper
     assert "os.execvpe" in wrapper
     assert "close_inherited_fds" in wrapper
+
+
+def test_seccomp_probe_still_proves_af_inet_socket_creation_is_denied() -> None:
+    script = (SCRIPTS / "run_qwen3_production_benchmark.sh").read_text(encoding="utf-8")
+    assert "seccomp unexpectedly allowed AF_INET socket creation" in script
+    assert "PermissionError" in script
+    assert "errno.EPERM" in script
 
 
 def test_python_receipt_requires_verified_isolation_mode() -> None:
