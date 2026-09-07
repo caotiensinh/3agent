@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from .capability_authority import TaskCapabilityAuthority
 from .execution_budget import TaskExecutionBudgetState
@@ -105,3 +105,67 @@ def inference_scope(
         yield scope
     finally:
         _CURRENT_SCOPE.reset(token)
+
+
+@contextmanager
+def delegated_inference_scope(
+    *,
+    agent_id: str,
+    stage: str,
+    sensitivity: str | None = None,
+    risk_level: str | None = None,
+    allowed_sources: Iterable[str] | None = None,
+    allowed_tools: Iterable[str] | None = None,
+    write_scope: str | Iterable[str] | None = None,
+    network_scope: str | None = None,
+    initial_model_tier: str | None = None,
+    max_model_tier: str | None = None,
+    escalation_allowed: bool | None = None,
+) -> Iterator[InferenceScope]:
+    """Create a bounded child/subagent scope from the current trusted scope.
+
+    The child shares the parent's execution budget; it does not receive a fresh
+    quota. Model and capability authority are independently narrowed, then their
+    capability fingerprints are cross-checked before the child scope becomes
+    visible. Nested delegation therefore remains monotonic and fail closed.
+    """
+    parent = current_inference_scope()
+    if parent is None or parent.model_authority is None:
+        raise RuntimeError("DELEGATED_SCOPE_PARENT_MODEL_AUTHORITY_REQUIRED")
+    parent_capability = current_capability_authority()
+    if parent_capability is None:
+        raise RuntimeError("DELEGATED_SCOPE_PARENT_CAPABILITY_AUTHORITY_REQUIRED")
+
+    child_model = parent.model_authority.delegate(
+        task_id=parent.task_id,
+        sensitivity=sensitivity,
+        risk_level=risk_level,
+        allowed_sources=allowed_sources,
+        allowed_tools=allowed_tools,
+        write_scope=write_scope,
+        network_scope=network_scope,
+        initial_model_tier=initial_model_tier,
+        max_model_tier=max_model_tier,
+        escalation_allowed=escalation_allowed,
+    )
+    child_capability = parent_capability.delegate(
+        task_id=parent.task_id,
+        sensitivity=child_model.sensitivity,
+        allowed_sources=child_model.allowed_sources,
+        allowed_tools=child_model.allowed_tools,
+        write_scope=child_model.write_scope,
+        network_scope=child_model.network_scope,
+    )
+    model_capability = TaskCapabilityAuthority.from_model_authority(child_model)
+    if child_capability.fingerprint != model_capability.fingerprint:
+        raise RuntimeError("DELEGATED_SCOPE_AUTHORITY_BINDING_MISMATCH")
+
+    with inference_scope(
+        parent.task_id,
+        agent_id=agent_id,
+        stage=stage,
+        execution_budget=parent.execution_budget,
+        model_authority=child_model,
+        capability_authority=child_capability,
+    ) as child_scope:
+        yield child_scope
