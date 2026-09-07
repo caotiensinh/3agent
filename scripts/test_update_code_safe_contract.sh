@@ -32,6 +32,7 @@ grep -Fq '>> "$ACTIVATION_LOG"' "$UPDATER" || fail "activation must append inste
 grep -Fq 'mktemp -d "${RELEASES_DIR}/release-' "$UPDATER" || fail "immutable release directory creation missing"
 grep -Fq 'git clone --filter=blob:none --no-checkout' "$UPDATER" || fail "isolated release checkout missing"
 grep -Fq 'backup_launcher' "$UPDATER" || fail "launcher backup missing"
+grep -Fq 'workspace-security-ui' "$UPDATER" || fail "stable security UI launcher missing"
 grep -Fq 'Previous installation preserved' "$UPDATER" || fail "preservation audit message missing"
 grep -Fq 'THREE_AGENT_UPDATE_VERIFY' "$UPDATER" || fail "verification policy missing"
 # shellcheck disable=SC2016
@@ -51,6 +52,7 @@ bin_dir="${TMP_DIR}/bin"
 state_dir="${TMP_DIR}/state"
 config_dir="${TMP_DIR}/config"
 python_log="${TMP_DIR}/python.log"
+ui_log="${TMP_DIR}/ui.log"
 
 mkdir -p "${release}/.venv/bin" "${release}/src" "${release}/tests" "$bin_dir" "$state_dir" "$config_dir"
 
@@ -78,10 +80,20 @@ exit 0
 EOF_AGENT
 chmod 0755 "${release}/.venv/bin/three-agent"
 
+cat >"${release}/.venv/bin/workspace-security-ui" <<'EOF_UI'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == "--help" ]] || exit 2
+printf 'active-security-ui\n' >>"${FAKE_UI_LOG:?}"
+exit 0
+EOF_UI
+chmod 0755 "${release}/.venv/bin/workspace-security-ui"
+
 printf '{}\n' >"${config_dir}/local.json"
 printf '2026-01-01T00:00:00Z\t%s\t%s\n' "$target_sha" "$release" >"${state_dir}/active-releases.log"
 
 FAKE_PYTHON_LOG="$python_log" \
+FAKE_UI_LOG="$ui_log" \
 THREE_AGENT_REPO_URL="https://github.com/caotiensinh/3agent.git" \
 THREE_AGENT_REPO_REF="$target_sha" \
 THREE_AGENT_INSTALL_DIR="${TMP_DIR}/legacy" \
@@ -96,5 +108,11 @@ bash "$UPDATER" >/dev/null
 [[ -f "$python_log" ]] || fail "full verification did not invoke the active release Python"
 grep -Fq -- '-m unittest discover -s tests -v' "$python_log" \
   || fail "full verification skipped unit tests for an already-current release"
+[[ -x "${bin_dir}/workspace-security-ui" ]] || fail "stable security UI launcher was not installed"
+FAKE_UI_LOG="$ui_log" "${bin_dir}/workspace-security-ui" --help >/dev/null \
+  || fail "stable security UI launcher did not execute the active release"
+[[ "$(wc -l <"$ui_log")" -ge 2 ]] || fail "active security UI verification was not exercised"
+grep -Fq 'active-releases.log' "${bin_dir}/workspace-security-ui" \
+  || fail "security UI launcher is not bound to active release history"
 
-pass "append-only non-destructive updater contract including already-current full verification"
+pass "append-only non-destructive updater contract including active security UI launcher"
