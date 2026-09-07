@@ -379,6 +379,19 @@ def _browser_safe_payload(payload: dict[str, object]) -> dict[str, object]:
     return safe
 
 
+def _browser_safe_run_receipt(payload: dict[str, object]) -> dict[str, object]:
+    failure_codes = payload.get("failure_codes")
+    failure_count = len(failure_codes) if isinstance(failure_codes, (list, tuple)) else 0
+    return {
+        "status": payload.get("status"),
+        "attempt": payload.get("attempt"),
+        "expected_assets": payload.get("expected_assets"),
+        "observed_assets": payload.get("observed_assets"),
+        "coverage_pct": payload.get("coverage_pct"),
+        "failure_count": failure_count,
+    }
+
+
 _PUBLIC_RUNTIME_BLOCK_REASONS = frozenset(
     {
         "MONITORING_DISABLED",
@@ -576,7 +589,7 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._json(500, {"status": "error", "reason_code": "INTERNAL_ERROR"})
                 return
-            self._json(200, result)
+            self._json(200, _browser_safe_run_receipt(result))
             return
 
         if set(payload) != {"confirm_initialize"}:
