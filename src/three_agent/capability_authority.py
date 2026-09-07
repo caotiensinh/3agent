@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Iterable
 
 from .task_contract import TOOLS, TaskContract
 
@@ -24,6 +24,8 @@ _EFFECTS = {
     "web_gateway": "network_read",
 }
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
+_NETWORK_RANK = {"deny": 0, "internal_only": 1, "allowlisted_egress": 2}
+_SENSITIVITY_RANK = {"public": 0, "internal": 1, "confidential": 2, "restricted": 3, "secret": 4}
 
 
 class CapabilityAuthorityDenied(PermissionError):
@@ -53,6 +55,34 @@ def _safe_path(value: str, field: str) -> str:
     if not normalized or normalized == ".":
         raise ValueError(f"{field} must identify a bounded path")
     return normalized
+
+
+def _unique(values: Iterable[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+
+def _scope_tuple(scope: str | tuple[str, ...]) -> tuple[str, ...]:
+    if scope == "none":
+        return ()
+    return scope if isinstance(scope, tuple) else (scope,)
+
+
+def _scope_is_subset(child: str | tuple[str, ...], parent: str | tuple[str, ...]) -> bool:
+    child_scopes = _scope_tuple(child)
+    parent_scopes = _scope_tuple(parent)
+    if not child_scopes:
+        return True
+    if not parent_scopes:
+        return False
+    try:
+        normalized_parent = tuple(_safe_path(item, "write_scope") for item in parent_scopes)
+        normalized_child = tuple(_safe_path(item, "write_scope") for item in child_scopes)
+    except ValueError:
+        return False
+    return all(
+        any(candidate == boundary or candidate.startswith(boundary + "/") for boundary in normalized_parent)
+        for candidate in normalized_child
+    )
 
 
 def _fingerprint_payload(
@@ -111,7 +141,11 @@ class CapabilityDecision:
 
 @dataclass(frozen=True)
 class TaskCapabilityAuthority:
-    """Deny-by-default capability envelope projected from immutable task authority."""
+    """Deny-by-default capability envelope projected from immutable task authority.
+
+    Delegated envelopes may keep or reduce authority, but never widen tools, data
+    sources, write paths, network reach, or lower effective data sensitivity.
+    """
 
     task_id: str
     sensitivity: str
@@ -120,6 +154,7 @@ class TaskCapabilityAuthority:
     write_scope: str | tuple[str, ...]
     network_scope: str
     fingerprint: str
+    delegated_from: str | None = None
 
     @classmethod
     def _build(
@@ -131,22 +166,35 @@ class TaskCapabilityAuthority:
         allowed_tools: tuple[str, ...],
         write_scope: str | tuple[str, ...],
         network_scope: str,
+        delegated_from: str | None = None,
     ) -> "TaskCapabilityAuthority":
+        normalized_task_id = _compact(task_id, "task_id", max_len=128)
+        normalized_sensitivity = str(sensitivity).strip().lower()
+        normalized_network_scope = str(network_scope).strip().lower()
+        normalized_sources = _unique(allowed_sources)
+        normalized_tools = _unique(allowed_tools)
+        if normalized_sensitivity not in _SENSITIVITY_RANK:
+            raise ValueError("unsupported sensitivity")
+        if normalized_network_scope not in _NETWORK_RANK:
+            raise ValueError("unsupported network_scope")
+        if normalized_sensitivity == "secret" and normalized_network_scope != "deny":
+            raise ValueError("secret delegated authority requires network_scope=deny")
         return cls(
-            task_id=task_id,
-            sensitivity=sensitivity,
-            allowed_sources=allowed_sources,
-            allowed_tools=allowed_tools,
+            task_id=normalized_task_id,
+            sensitivity=normalized_sensitivity,
+            allowed_sources=normalized_sources,
+            allowed_tools=normalized_tools,
             write_scope=write_scope,
-            network_scope=network_scope,
+            network_scope=normalized_network_scope,
             fingerprint=_fingerprint_payload(
-                task_id=task_id,
-                sensitivity=sensitivity,
-                allowed_sources=allowed_sources,
-                allowed_tools=allowed_tools,
+                task_id=normalized_task_id,
+                sensitivity=normalized_sensitivity,
+                allowed_sources=normalized_sources,
+                allowed_tools=normalized_tools,
                 write_scope=write_scope,
-                network_scope=network_scope,
+                network_scope=normalized_network_scope,
             ),
+            delegated_from=delegated_from,
         )
 
     @classmethod
@@ -182,6 +230,52 @@ class TaskCapabilityAuthority:
             write_scope=write_scope,
             network_scope=str(authority.network_scope),
         )
+
+    def is_subset_of(self, parent: "TaskCapabilityAuthority") -> bool:
+        """Return True only when this envelope is no broader than ``parent``."""
+        if _SENSITIVITY_RANK[self.sensitivity] < _SENSITIVITY_RANK[parent.sensitivity]:
+            return False
+        if not set(self.allowed_sources).issubset(parent.allowed_sources):
+            return False
+        if not set(self.allowed_tools).issubset(parent.allowed_tools):
+            return False
+        if _NETWORK_RANK[self.network_scope] > _NETWORK_RANK[parent.network_scope]:
+            return False
+        if not _scope_is_subset(self.write_scope, parent.write_scope):
+            return False
+        return True
+
+    def delegate(
+        self,
+        *,
+        task_id: str | None = None,
+        sensitivity: str | None = None,
+        allowed_sources: Iterable[str] | None = None,
+        allowed_tools: Iterable[str] | None = None,
+        write_scope: str | Iterable[str] | None = None,
+        network_scope: str | None = None,
+    ) -> "TaskCapabilityAuthority":
+        """Create a child envelope and fail closed if any authority would widen."""
+        if write_scope is None:
+            child_write: str | tuple[str, ...] = self.write_scope
+        elif isinstance(write_scope, str):
+            child_write = write_scope
+        else:
+            child_write = _unique(write_scope)
+        child = self._build(
+            task_id=task_id or self.task_id,
+            sensitivity=str(sensitivity or self.sensitivity),
+            allowed_sources=(
+                self.allowed_sources if allowed_sources is None else _unique(allowed_sources)
+            ),
+            allowed_tools=self.allowed_tools if allowed_tools is None else _unique(allowed_tools),
+            write_scope=child_write,
+            network_scope=str(network_scope or self.network_scope),
+            delegated_from=self.fingerprint,
+        )
+        if not child.is_subset_of(self):
+            raise CapabilityAuthorityDenied("DELEGATED_AUTHORITY_WIDENED")
+        return child
 
     def _decision(
         self,
@@ -243,7 +337,9 @@ class TaskCapabilityAuthority:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_EFFECT_NOT_ALLOWED")
 
         if cap == "web_gateway":
-            if self.sensitivity != "public" or self.network_scope != "allowlisted_egress":
+            # Sanitization and destination policy remain enforced by the Internet
+            # Gateway. This layer only verifies immutable allowlisted read egress.
+            if self.sensitivity == "secret" or self.network_scope != "allowlisted_egress":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
         elif eff.startswith("network"):
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_CAPABILITY_NOT_AUTHORIZED")
@@ -272,8 +368,11 @@ class TaskCapabilityAuthority:
         return decision
 
     def metadata(self) -> dict[str, str]:
-        return {
+        payload = {
             "schema_version": CAPABILITY_AUTHORITY_SCHEMA,
             "task_id": self.task_id,
             "authority_fingerprint": self.fingerprint,
         }
+        if self.delegated_from is not None:
+            payload["delegated_from"] = self.delegated_from
+        return payload
