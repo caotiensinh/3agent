@@ -14,6 +14,7 @@ from .runtime_node_authority import RuntimeNodeAuthority
 from .runtime_plan_compiler import CompiledRuntimePlan
 from .runtime_production_scheduler import ProductionNodeExecutionResult
 from .runtime_reviewed_execution import ReviewedExecutionBoundary
+from .runtime_reviewed_knowledge_search import ReviewedKnowledgeSearchBoundary
 from .runtime_reviewed_read import ReviewedReadBoundary
 from .runtime_reviewed_search import ReviewedRepoSearchBoundary
 from .runtime_scheduler import (
@@ -26,7 +27,14 @@ from .task_contract import TaskContract
 
 RUNTIME_PRODUCTION_ADAPTER_SCHEMA = "workspace-runtime-production-adapter/v1"
 _EVIDENCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@+\-=]{0,255}$")
-_IMPLEMENTED = {"read_file", "search_repo", "run_tests", "run_linter", "web_gateway"}
+_IMPLEMENTED = {
+    "read_file",
+    "search_repo",
+    "search_docs",
+    "run_tests",
+    "run_linter",
+    "web_gateway",
+}
 
 
 class RuntimeProductionAdapterError(RuntimeError):
@@ -90,6 +98,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         execution_boundary: ReviewedExecutionBoundary | None = None,
         read_boundary: ReviewedReadBoundary | None = None,
         repo_search_boundary: ReviewedRepoSearchBoundary | None = None,
+        knowledge_search_boundary: ReviewedKnowledgeSearchBoundary | None = None,
         source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
@@ -114,7 +123,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             )
         if capabilities & {"run_tests", "run_linter"} and execution_boundary is None:
             raise RuntimeProductionAdapterError("REVIEWED_EXECUTION_BOUNDARY_REQUIRED")
-        if capabilities & {"read_file", "search_repo"}:
+        if capabilities & {"read_file", "search_repo", "search_docs"}:
             if source_binding_bundle is None:
                 raise RuntimeProductionAdapterError("SOURCE_BINDING_BUNDLE_REQUIRED")
             source_binding_bundle.validate(
@@ -142,6 +151,16 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 raise RuntimeProductionAdapterError(
                     "REPO_SEARCH_BOUNDARY_SOURCE_BINDING_MISMATCH"
                 )
+        if "search_docs" in capabilities:
+            if knowledge_search_boundary is None:
+                raise RuntimeProductionAdapterError("REVIEWED_KNOWLEDGE_SEARCH_BOUNDARY_REQUIRED")
+            if (
+                knowledge_search_boundary.source_binding_bundle.fingerprint
+                != source_binding_bundle.fingerprint
+            ):
+                raise RuntimeProductionAdapterError(
+                    "KNOWLEDGE_SEARCH_BOUNDARY_SOURCE_BINDING_MISMATCH"
+                )
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -158,6 +177,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.execution_boundary = execution_boundary
         self.read_boundary = read_boundary
         self.repo_search_boundary = repo_search_boundary
+        self.knowledge_search_boundary = knowledge_search_boundary
         self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
@@ -180,6 +200,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._search_repo_handler,
+                    timeout_mode="cooperative",
+                )
+            elif capability == "search_docs":
+                self.register(
+                    capability,
+                    self._search_docs_handler,
                     timeout_mode="cooperative",
                 )
             elif capability == "web_gateway":
@@ -307,6 +333,47 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             },
             evidence_refs=_safe_evidence_refs(result.evidence_refs),
             reason_code="SEARCH_REPO_OK",
+            succeeded=True,
+        )
+
+    def _search_docs_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if self.knowledge_search_boundary is None or self.source_binding_bundle is None:
+            raise RuntimeProductionAdapterError("REVIEWED_KNOWLEDGE_SEARCH_RUNTIME_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "search_docs" or spec.operation != "search":
+            raise RuntimeProductionAdapterError("PRODUCTION_KNOWLEDGE_SEARCH_INVOCATION_INVALID")
+        arguments = spec.argument_map()
+        query = str(arguments["query"])
+        max_results = int(arguments.get("max_results", 5))
+        remaining = invocation.remaining_seconds()
+        if remaining <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        source_binding = self.source_binding_bundle.for_node(invocation.node.node_id)
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.knowledge_search_boundary.search_docs(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                query=query,
+                max_results=max_results,
+                timeout_seconds=remaining,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "query_sha256": result.query_sha256,
+                "result_sha256": result.result_sha256,
+                "result_bytes": result.result_bytes,
+                "hit_count": result.hit_count,
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+                "source_binding_fingerprint": source_binding.fingerprint,
+                "source_binding_bundle_fingerprint": self.source_binding_bundle.fingerprint,
+            },
+            evidence_refs=_safe_evidence_refs(result.evidence_refs),
+            reason_code="SEARCH_DOCS_OK",
             succeeded=True,
         )
 
