@@ -63,18 +63,15 @@ def test_percentile_interpolates_without_external_dependencies() -> None:
     assert benchmark.percentile([10.0, 20.0], 0.5) == 15.0
 
 
-def test_dual_gpu_workflow_keeps_fail_closed_network_isolation() -> None:
+def test_dual_gpu_workflow_delegates_fail_closed_isolation_probe() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "qwen3-embedding-production-benchmark-rtx5090.yml"
     ).read_text(encoding="utf-8")
-    assert "NETWORK_ISOLATION_MODE=docker-none" in workflow
-    assert "docker run --rm --network none" in workflow
-    assert "--gpus all" in workflow
-    assert "--cap-drop ALL" in workflow
-    assert "--security-opt no-new-privileges" in workflow
-    assert "no verified OS-level network isolation path is available" in workflow
+    assert "run_qwen3_production_benchmark.sh --probe-isolation" in workflow
+    assert "seccomp-no-network" in workflow
     assert "runtime_authority') is False" in workflow
     assert "production_approval') is False" in workflow
+    assert "scripts/run_with_network_seccomp.py" in workflow
 
 
 def test_runner_script_docker_fallback_is_narrow_and_offline() -> None:
@@ -88,9 +85,26 @@ def test_runner_script_docker_fallback_is_narrow_and_offline() -> None:
     assert "--cap-drop ALL" in script
     assert "--security-opt no-new-privileges" in script
     assert "/var/run/docker.sock" not in script
+    assert "sg docker -c" in script
+    assert "docker_access_mode" in script
+    assert "rootless_docker_host" in script
+
+
+def test_seccomp_executor_is_kernel_enforced_and_exec_inherited() -> None:
+    wrapper = (SCRIPTS / "run_with_network_seccomp.py").read_text(encoding="utf-8")
+    assert "PR_SET_NO_NEW_PRIVS" in wrapper
+    assert "seccomp_load" in wrapper
+    assert '"socket"' in wrapper
+    assert '"connect"' in wrapper
+    assert '"sendto"' in wrapper
+    assert '"sendmsg"' in wrapper
+    assert '"io_uring_setup"' in wrapper
+    assert "os.execvpe" in wrapper
+    assert "close_inherited_fds" in wrapper
 
 
 def test_python_receipt_requires_verified_isolation_mode() -> None:
+    assert "seccomp-no-network" in benchmark.ALLOWED_ISOLATION_MODES
+    assert "docker-none" in benchmark.ALLOWED_ISOLATION_MODES
     script = (SCRIPTS / "run_qwen3_production_benchmark.py").read_text(encoding="utf-8")
     assert '"network_isolation_mode": isolation_mode' in script
-    assert '{"sudo-net", "userns-net", "firejail-net", "docker-none"}' in script
