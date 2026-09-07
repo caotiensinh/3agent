@@ -125,6 +125,7 @@ verify_release() {
   log "Verifying release with policy: ${VERIFY_MODE}"
   "${release}/.venv/bin/python" -m compileall -q "${release}/src" "${release}/tests"
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${release}/.venv/bin/three-agent" smoke >/dev/null
+  "${release}/.venv/bin/workspace-security-ui" --help >/dev/null
 
   if [[ "$VERIFY_MODE" == "full" ]]; then
     (cd "$release" && "${release}/.venv/bin/python" -m unittest discover -s tests -v)
@@ -154,6 +155,7 @@ install_launchers() {
   mkdir -p "$BIN_DIR" "$STATE_DIR"
   resolve_update_script_url
   backup_launcher "${BIN_DIR}/3agent"
+  backup_launcher "${BIN_DIR}/workspace-security-ui"
   backup_launcher "${BIN_DIR}/3agent-update"
 
   cat >"${BIN_DIR}/3agent" <<EOF_LAUNCHER
@@ -168,6 +170,17 @@ export THREE_AGENT_CONFIG="\$config_path"
 exec "\$release/.venv/bin/three-agent" "\$@"
 EOF_LAUNCHER
   chmod 0755 "${BIN_DIR}/3agent"
+
+  cat >"${BIN_DIR}/workspace-security-ui" <<EOF_SECURITY_UI
+#!/usr/bin/env bash
+set -euo pipefail
+activation_log=$(printf '%q' "$ACTIVATION_LOG")
+[[ -f "\$activation_log" ]] || { echo '[WorkSpace][ERROR] No active release' >&2; exit 1; }
+release="\$(tail -n 1 "\$activation_log" | awk -F '\\t' 'NF >= 3 {print \$3}')"
+[[ -n "\$release" && -x "\$release/.venv/bin/workspace-security-ui" ]] || { echo '[WorkSpace][ERROR] Active security UI release is invalid' >&2; exit 1; }
+exec "\$release/.venv/bin/workspace-security-ui" "\$@"
+EOF_SECURITY_UI
+  chmod 0755 "${BIN_DIR}/workspace-security-ui"
 
   cat >"${BIN_DIR}/3agent-update" <<EOF_UPDATER
 #!/usr/bin/env bash
@@ -212,6 +225,7 @@ main() {
     verify_release "$active"
     install_launchers
     THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
+    "${BIN_DIR}/workspace-security-ui" --help >/dev/null
     log "Already current at ${target_sha}; verification policy '${VERIFY_MODE}' completed; no release files changed"
     exit 0
   fi
@@ -224,11 +238,13 @@ main() {
   install_launchers
   activate_release "$release" "$target_sha"
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
+  "${BIN_DIR}/workspace-security-ui" --help >/dev/null
 
   log "FINAL PASS: code updated without deleting prior installation or releases"
   log "Previous installation preserved: ${LEGACY_INSTALL_DIR}"
   log "New release: ${release}"
   log "Commit: ${target_sha}"
+  log "Security UI: ${BIN_DIR}/workspace-security-ui"
   log "Activation history: ${ACTIVATION_LOG}"
 }
 
