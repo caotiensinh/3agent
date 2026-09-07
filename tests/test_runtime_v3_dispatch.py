@@ -1,6 +1,6 @@
 import unittest
 
-from three_agent.runtime_v3_dispatch import (
+from three_agent.runtime_dispatch import (
     RUNTIME_V3_DISPATCH_DESCRIPTOR_SCHEMA,
     RuntimeV3DispatchDescriptor,
     RuntimeV3DispatchError,
