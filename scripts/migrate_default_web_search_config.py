@@ -185,7 +185,9 @@ def _repair_prior_adaptive_migration(
     return repaired, True, "repaired-adaptive-public-research-conflict"
 
 
-def migrate_file(path: Path) -> tuple[bool, str, Path | None]:
+def migrate_file(
+    path: Path, *, repair_only: bool = False
+) -> tuple[bool, str, Path | None]:
     if not path.is_file():
         return False, "config-missing", None
 
@@ -205,6 +207,8 @@ def migrate_file(path: Path) -> tuple[bool, str, Path | None]:
         return True, repaired_reason, repair_backup
     if repaired_reason.startswith("adaptive-repair-provenance-"):
         return False, repaired_reason, None
+    if repair_only:
+        return False, "repair-not-required", None
 
     migrated, changed, reason = migrate_payload(data)
     if not changed:
@@ -225,10 +229,17 @@ def main() -> int:
         )
     )
     parser.add_argument("--config", required=True, help="Path to the active WorkSpace JSON config")
+    parser.add_argument(
+        "--repair-only",
+        action="store_true",
+        help="Repair only a provenance-backed prior migration conflict; do not migrate other configs",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config).expanduser().resolve()
-    changed, reason, backup = migrate_file(config_path)
+    changed, reason, backup = migrate_file(
+        config_path, repair_only=args.repair_only
+    )
     if changed:
         print(f"CONFIG_MIGRATION=changed reason={reason}")
         print(f"CONFIG_BACKUP={backup}")
