@@ -392,6 +392,57 @@ def _browser_safe_run_receipt(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+_BROWSER_SAFE_READINESS_MESSAGES = {
+    "CONFIG_NOT_SAVED": "Save configuration before monitoring can run.",
+    "MONITORING_DISABLED": "Monitoring is currently disabled.",
+    "REAL_NETWORK_NOT_ALLOWED": "Enable approved real-network reads before running the collector.",
+    "NO_ASSETS": "No approved monitoring assets are configured.",
+    "SECRET_DIRECTORY_REQUIRED": "SNMPv3 requires a configured local secret directory.",
+    "CREDENTIAL_REF_REQUIRED": "SNMPv3 requires an opaque credential reference.",
+    "SECRET_REF_UNRESOLVED": "An approved SNMPv3 credential reference is unavailable in the local secret boundary.",
+}
+
+
+def _browser_safe_readiness(payload: dict[str, object]) -> dict[str, object]:
+    def project(value: object, *, fallback_code: str) -> list[dict[str, str]]:
+        if not isinstance(value, list):
+            return []
+        projected: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            raw_code = str(item.get("code") or "")
+            code = raw_code if raw_code in _BROWSER_SAFE_READINESS_MESSAGES else fallback_code
+            if code in seen:
+                continue
+            seen.add(code)
+            projected.append(
+                {
+                    "code": code,
+                    "message": _BROWSER_SAFE_READINESS_MESSAGES.get(
+                        code,
+                        "Monitoring readiness requires local operator attention.",
+                    ),
+                }
+            )
+        return projected
+
+    return {
+        "schema_version": payload.get("schema_version"),
+        "ready": payload.get("ready") is True,
+        "status": payload.get("status"),
+        "config_saved": payload.get("config_saved") is True,
+        "enabled_asset_count": payload.get("enabled_asset_count"),
+        "issues": project(payload.get("issues"), fallback_code="READINESS_BLOCKED"),
+        "warnings": project(payload.get("warnings"), fallback_code="READINESS_WARNING"),
+        "network_test_executed": payload.get("network_test_executed") is True,
+        "secret_values_read": payload.get("secret_values_read") is True,
+        "packet_capture_executed": payload.get("packet_capture_executed") is True,
+        "remediation_executed": payload.get("remediation_executed") is True,
+    }
+
+
 _PUBLIC_RUNTIME_BLOCK_REASONS = frozenset(
     {
         "MONITORING_DISABLED",
@@ -530,7 +581,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, _browser_safe_payload(self.server.service.summary()))
                 return
             if path == "/api/v1/security/monitoring/readiness":
-                self._json(200, self.server.service.readiness())
+                self._json(200, _browser_safe_readiness(self.server.service.readiness()))
                 return
             if path == "/api/v1/security/monitoring/asset-intelligence":
                 self._json(200, self.server.service.asset_intelligence())
