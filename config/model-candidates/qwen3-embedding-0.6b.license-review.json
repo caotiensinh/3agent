@@ -1,0 +1,47 @@
+{
+  "schema": "workspace.model-license-review/v1",
+  "status": "license_review_pass",
+  "review_type": "engineering_license_compliance_review",
+  "candidate_id": "qwen3-embedding-0.6b",
+  "repo_id": "Qwen/Qwen3-Embedding-0.6B",
+  "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+  "license_id": "apache-2.0",
+  "upstream_evidence": [
+    {
+      "kind": "huggingface_model_card_metadata_at_exact_revision",
+      "source": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/commit/97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "observed_revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "observed_license_id": "apache-2.0"
+    },
+    {
+      "kind": "license_terms_reference",
+      "source": "https://www.apache.org/licenses/LICENSE-2.0.html",
+      "observed_license_id": "Apache-2.0"
+    }
+  ],
+  "intended_deployment_scope": {
+    "model_weight_source": "fetch_exact_upstream_revision_during_approved_provisioning",
+    "storage": "local_model_store_only",
+    "github_model_weights": false,
+    "workspace_release_bundle_model_weights": false,
+    "modified_model_weight_distribution": false
+  },
+  "review_conclusion": {
+    "current_scope": "acceptable_for_local_upstream_provisioning_subject_to_apache_2_0_terms",
+    "conditions": [
+      "Do not add model weights to the WorkSpace GitHub repository or GitHub release artifacts.",
+      "Keep the exact upstream repository and immutable revision in the approved model manifest and provisioning receipt.",
+      "If WorkSpace later redistributes the model or derivative model files, provide recipients a copy of Apache-2.0 and retain applicable copyright, patent, trademark, and attribution notices.",
+      "If redistributed files are modified, carry prominent notices describing those modifications.",
+      "If the upstream work includes NOTICE attribution applicable to redistributed content, preserve the required NOTICE attribution in the redistribution.",
+      "Any change from upstream-fetch/local-store deployment to bundled or modified-weight redistribution requires a new license review before release."
+    ],
+    "legal_opinion": false,
+    "scope_limit": "This is an engineering compliance review for the declared WorkSpace deployment model, not legal advice."
+  },
+  "admission": {
+    "production_approval": false,
+    "runtime_authority": false,
+    "reason": "License review does not grant production admission; benchmark evidence and explicit human approval remain separate gates."
+  }
+}
