@@ -9,6 +9,7 @@ on:
       - 'config/model-candidates/qwen3-embedding-0.6b.production-benchmark-request.json'
       - '.github/workflows/qwen3-embedding-production-benchmark-rtx5090.yml'
       - 'scripts/run_qwen3_production_benchmark.sh'
+      - 'scripts/run_qwen3_production_benchmark.py'
 
 permissions:
   contents: read
@@ -35,7 +36,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
-      - name: Verify trusted source and print hardware evidence
+      - name: Verify trusted source and representative hardware
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -46,22 +47,7 @@ jobs:
           echo '=== GPU inventory ==='
           nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader
           GPU_COUNT="$(nvidia-smi --query-gpu=index --format=csv,noheader | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')"
-          echo "GPU_COUNT=$GPU_COUNT"
-          if [[ "$GPU_COUNT" -lt 2 ]]; then
-            echo "ERROR: representative dual-GPU gate requires >=2 NVIDIA GPUs; found $GPU_COUNT" >&2
-            exit 21
-          fi
-          echo '=== Network isolation capabilities ==='
-          if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then echo 'PASSWORDLESS_SUDO=yes'; else echo 'PASSWORDLESS_SUDO=no'; fi
-          if unshare --user --map-root-user --net -- true >/dev/null 2>&1; then echo 'UNPRIVILEGED_USER_NETNS=yes'; else echo 'UNPRIVILEGED_USER_NETNS=no'; fi
-          if command -v firejail >/dev/null; then echo 'FIREJAIL=yes'; else echo 'FIREJAIL=no'; fi
-          if command -v docker >/dev/null; then
-            echo 'DOCKER_CLI=yes'
-            if docker info >/dev/null 2>&1; then echo 'DOCKER_DAEMON_ACCESS=yes'; else echo 'DOCKER_DAEMON_ACCESS=no'; fi
-          else
-            echo 'DOCKER_CLI=no'
-            echo 'DOCKER_DAEMON_ACCESS=no'
-          fi
+          test "$GPU_COUNT" -ge 2 || { echo "ERROR: representative dual-GPU gate requires >=2 NVIDIA GPUs; found $GPU_COUNT" >&2; exit 21; }
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -82,43 +68,11 @@ jobs:
           print('trusted production benchmark request validated')
           PY
 
-      - name: Prove one OS-level network isolation path
+      - name: Prove recoverable OS-level network isolation before model download
         shell: bash
         run: |
           set -Eeuo pipefail
-          PROBE="import socket; names={n for _,n in socket.if_nameindex()}; assert names <= {'lo'}, names; s=socket.socket(); s.settimeout(0.5); rc=s.connect_ex(('1.1.1.1',443)); s.close(); assert rc != 0, rc; print('isolated interfaces', sorted(names))"
-          if command -v sudo >/dev/null && sudo -n true 2>/dev/null && sudo unshare --net -- python3 -c "$PROBE"; then
-            echo 'NETWORK_ISOLATION_MODE=sudo-net' >> "$GITHUB_ENV"
-            echo 'Selected sudo network namespace isolation'
-          elif unshare --user --map-root-user --net -- python3 -c "$PROBE"; then
-            echo 'NETWORK_ISOLATION_MODE=userns-net' >> "$GITHUB_ENV"
-            echo 'Selected unprivileged user-network namespace isolation'
-          elif command -v firejail >/dev/null && firejail --quiet --net=none -- python3 -c "$PROBE"; then
-            echo 'NETWORK_ISOLATION_MODE=firejail-net' >> "$GITHUB_ENV"
-            echo 'Selected firejail network-none isolation'
-          elif command -v docker >/dev/null && docker info >/dev/null 2>&1; then
-            IMAGE="workspace-netns-probe:$GITHUB_RUN_ID"
-            EMPTY_TAR="$RUNNER_TEMP/workspace-netns-probe-$GITHUB_RUN_ID.tar"
-            tar -cf "$EMPTY_TAR" --files-from /dev/null
-            docker import "$EMPTY_TAR" "$IMAGE" >/dev/null
-            MOUNTS=(
-              --mount type=bind,src=/usr,dst=/usr,readonly
-              --mount type=bind,src=/lib,dst=/lib,readonly
-            )
-            if [[ -d /lib64 ]]; then MOUNTS+=(--mount type=bind,src=/lib64,dst=/lib64,readonly); fi
-            trap 'docker image rm -f "$IMAGE" >/dev/null 2>&1 || true; rm -f "$EMPTY_TAR"' EXIT
-            docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
-              "${MOUNTS[@]}" --entrypoint /usr/bin/python3 "$IMAGE" -c "$PROBE"
-            docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
-              --gpus all -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-              "${MOUNTS[@]}" --entrypoint /usr/bin/nvidia-smi "$IMAGE" \
-              --query-gpu=index,name,memory.total --format=csv,noheader
-            echo 'NETWORK_ISOLATION_MODE=docker-none' >> "$GITHUB_ENV"
-            echo 'Selected Docker --network none isolation with NVIDIA GPU passthrough'
-          else
-            echo 'ERROR: no verified OS-level network isolation path is available' >&2
-            exit 23
-          fi
+          bash scripts/run_qwen3_production_benchmark.sh --probe-isolation
 
       - name: Create isolated benchmark environment
         shell: bash
@@ -144,7 +98,7 @@ jobs:
           assert torch.cuda.device_count() >= 2, torch.cuda.device_count()
           PY
 
-      - name: Run one-command audited offline dual-GPU benchmark
+      - name: Run audited offline dual-GPU production benchmark
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -169,15 +123,21 @@ jobs:
           assert receipt.get('security', {}).get('runtime_download') is False
           assert receipt.get('security', {}).get('local_files_only') is True
           assert receipt.get('security', {}).get('trust_remote_code') is False
-          assert receipt.get('security', {}).get('network_isolation_mode') in {'sudo-net', 'userns-net', 'firejail-net', 'docker-none'}
-          print(json.dumps({'status': receipt['status'], 'checks': receipt['checks'], 'hardware': receipt['hardware']}, sort_keys=True))
+          assert receipt.get('security', {}).get('network_isolation_mode') in {
+              'sudo-net', 'userns-net', 'firejail-net', 'systemd-user-net', 'docker-none'
+          }
+          print(json.dumps({
+              'status': receipt['status'],
+              'checks': receipt['checks'],
+              'hardware': receipt['hardware'],
+              'security': receipt['security'],
+          }, sort_keys=True))
           PY
 
-      - name: Delete model bytes, caches, venv and temporary Docker image
+      - name: Delete model bytes, caches and benchmark environment
         if: always()
         shell: bash
         run: |
-          if [[ -n "${QWEN_DOCKER_IMAGE:-}" ]] && command -v docker >/dev/null; then docker image rm -f "$QWEN_DOCKER_IMAGE" >/dev/null 2>&1 || true; fi
           rm -rf \
             "$RUNNER_TEMP/workspace-qwen3-production-$GITHUB_RUN_ID" \
             "${QWEN_BENCH_VENV:-}"
