@@ -9,7 +9,7 @@ UPDATER = ROOT / "scripts" / "update_code_safe.sh"
 
 
 class UpdateConfigMigrationContractTests(unittest.TestCase):
-    def test_candidate_config_migration_runs_before_smoke_verification(self):
+    def test_candidate_config_repair_runs_before_smoke_verification(self):
         text = UPDATER.read_text(encoding="utf-8")
         main = text.split("main() {", 1)[1]
 
@@ -22,7 +22,7 @@ class UpdateConfigMigrationContractTests(unittest.TestCase):
             main,
         )
 
-    def test_migration_uses_candidate_script_and_candidate_python(self):
+    def test_updater_uses_candidate_repair_only_script(self):
         text = UPDATER.read_text(encoding="utf-8")
 
         self.assertIn(
@@ -30,7 +30,7 @@ class UpdateConfigMigrationContractTests(unittest.TestCase):
             text,
         )
         self.assertIn(
-            '"${release}/.venv/bin/python" "$migration_script" --config "$CONFIG_PATH"',
+            '"${release}/.venv/bin/python" "$migration_script" --config "$CONFIG_PATH" --repair-only',
             text,
         )
 
