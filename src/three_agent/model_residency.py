@@ -47,6 +47,28 @@ class _ModelState:
     last_used_at: float = 0.0
 
 
+def _default_runtime_dir() -> Path:
+    """Resolve a user-scoped runtime root unless an operator explicitly overrides it.
+
+    A process-global /tmp directory is unsafe here because stale lock files created
+    by another UID (for example a previous sudo run) can make later unprivileged
+    processes fail with EACCES. XDG_RUNTIME_DIR is already per-user on Linux; the
+    home-cache fallback preserves the same ownership boundary when XDG is absent.
+    """
+
+    override = str(os.getenv("THREE_AGENT_RUNTIME_DIR") or "").strip()
+    if override:
+        return Path(override)
+
+    xdg_runtime = str(os.getenv("XDG_RUNTIME_DIR") or "").strip()
+    if xdg_runtime:
+        candidate = Path(xdg_runtime)
+        if candidate.is_absolute():
+            return candidate
+
+    return Path.home() / ".cache" / "workspace" / "runtime"
+
+
 class OllamaResidencyBackend:
     """Observe and unload already-installed Ollama models using localhost only.
 
@@ -129,7 +151,7 @@ class ModelResidencyManager:
         self._acquisitions = 0
         self._reuse_hits = 0
         self._evictions = 0
-        runtime_dir = Path(os.getenv("THREE_AGENT_RUNTIME_DIR", "/tmp"))
+        runtime_dir = _default_runtime_dir()
         self._lock_root = lock_root or runtime_dir / "workspace-model-residency"
         backend_scope = str(getattr(backend, "scope", backend.__class__.__name__))
         self._scope_hash = hashlib.sha256(backend_scope.encode("utf-8")).hexdigest()[:16]
