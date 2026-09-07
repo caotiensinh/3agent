@@ -48,6 +48,7 @@ def test_fixture_is_valid_and_non_authoritative() -> None:
     raw = json.loads(fixture_path.read_text(encoding="utf-8"))
     benchmark.validate_fixture(raw)
     assert raw["schema"] == "workspace.embedding-retrieval-benchmark/v1"
+    assert raw["benchmark_id"] == "qwen3-embedding-retrieval-v1.1"
     assert len(raw["documents"]) >= 10
     assert len(raw["queries"]) >= 10
     assert set(raw["domains"]) == {
@@ -56,6 +57,21 @@ def test_fixture_is_valid_and_non_authoritative() -> None:
         "monitoring",
         "camera-diagnostics",
     }
+
+
+def test_calibrated_policy_trades_secondary_top5_perfection_for_perfect_first_hit() -> None:
+    fixture_path = ROOT / "config" / "benchmarks" / "qwen3-embedding-retrieval-v1.json"
+    raw = json.loads(fixture_path.read_text(encoding="utf-8"))
+    thresholds = raw["thresholds"]
+    calibration = raw["calibration"]
+    assert thresholds["recall_at_5"] == 0.95
+    assert thresholds["mrr_at_10"] == 1.0
+    assert calibration["previous_thresholds"] == {
+        "recall_at_5": 1.0,
+        "mrr_at_10": 0.8,
+    }
+    assert calibration["security_and_hardware_gates_unchanged"] is True
+    assert calibration["evidence_run_id"] == 34078055082
 
 
 def test_percentile_interpolates_without_external_dependencies() -> None:
