@@ -14,6 +14,7 @@ from .runtime_node_authority import RuntimeNodeAuthority
 from .runtime_plan_compiler import CompiledRuntimePlan
 from .runtime_production_scheduler import ProductionNodeExecutionResult
 from .runtime_readonly_query import RuntimeReadonlyQueryBundle
+from .runtime_reviewed_calculator import ReviewedCalculatorBoundary
 from .runtime_reviewed_db_query import ReviewedReadonlyDatabaseQueryBoundary
 from .runtime_reviewed_execution import ReviewedExecutionBoundary
 from .runtime_reviewed_knowledge_search import ReviewedKnowledgeSearchBoundary
@@ -34,6 +35,7 @@ _IMPLEMENTED = {
     "search_repo",
     "search_docs",
     "query_db_readonly",
+    "calculator",
     "run_tests",
     "run_linter",
     "web_gateway",
@@ -104,6 +106,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         knowledge_search_boundary: ReviewedKnowledgeSearchBoundary | None = None,
         db_query_boundary: ReviewedReadonlyDatabaseQueryBoundary | None = None,
         readonly_query_bundle: RuntimeReadonlyQueryBundle | None = None,
+        calculator_boundary: ReviewedCalculatorBoundary | None = None,
         source_binding_bundle: RuntimeSourceBindingBundle | None = None,
         internet_gateway: MeteredInternetGateway | None = None,
         web_evidence_sink: WebEvidenceSink | None = None,
@@ -186,6 +189,10 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 raise RuntimeProductionAdapterError("DB_QUERY_BOUNDARY_QUERY_BUNDLE_MISMATCH")
         elif readonly_query_bundle is not None or db_query_boundary is not None:
             raise RuntimeProductionAdapterError("REVIEWED_DB_QUERY_RUNTIME_UNEXPECTED")
+        if "calculator" in capabilities and calculator_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_CALCULATOR_BOUNDARY_REQUIRED")
+        if "calculator" not in capabilities and calculator_boundary is not None:
+            raise RuntimeProductionAdapterError("REVIEWED_CALCULATOR_RUNTIME_UNEXPECTED")
         if "web_gateway" in capabilities:
             if internet_gateway is None:
                 raise RuntimeProductionAdapterError("METERED_INTERNET_GATEWAY_REQUIRED")
@@ -205,6 +212,7 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
         self.knowledge_search_boundary = knowledge_search_boundary
         self.db_query_boundary = db_query_boundary
         self.readonly_query_bundle = readonly_query_bundle
+        self.calculator_boundary = calculator_boundary
         self.source_binding_bundle = source_binding_bundle
         self.internet_gateway = internet_gateway
         self.web_evidence_sink = web_evidence_sink
@@ -239,6 +247,12 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
                 self.register(
                     capability,
                     self._query_db_readonly_handler,
+                    timeout_mode="cooperative",
+                )
+            elif capability == "calculator":
+                self.register(
+                    capability,
+                    self._calculator_handler,
                     timeout_mode="cooperative",
                 )
             elif capability == "web_gateway":
@@ -457,6 +471,39 @@ class ProductionCapabilityAdapterRegistry(CapabilityAdapterRegistry):
             },
             evidence_refs=_safe_evidence_refs(result.evidence_refs),
             reason_code="DB_QUERY_READONLY_OK",
+            succeeded=True,
+        )
+
+    def _calculator_handler(
+        self,
+        invocation: CapabilityInvocation,
+    ) -> ProductionNodeExecutionResult:
+        if self.calculator_boundary is None:
+            raise RuntimeProductionAdapterError("REVIEWED_CALCULATOR_BOUNDARY_REQUIRED")
+        spec = self.invocation_bundle.for_node(invocation.node.node_id)
+        if spec.capability != "calculator" or spec.operation != "evaluate":
+            raise RuntimeProductionAdapterError("PRODUCTION_CALCULATOR_INVOCATION_INVALID")
+        arguments = spec.argument_map()
+        expression = str(arguments["expression"])
+        if invocation.remaining_seconds() <= 0:
+            raise TimeoutError("CAPABILITY_INVOCATION_DEADLINE_EXCEEDED")
+        authority = self._node_authority(invocation.node.node_id)
+        with authority.scope(self.budget):
+            result = self.calculator_boundary.evaluate(
+                task_id=self.task_contract.task_id,
+                node=invocation.node,
+                expression=expression,
+            )
+        return ProductionNodeExecutionResult(
+            result={
+                "expression_sha256": result.expression_sha256,
+                "result_sha256": result.result_sha256,
+                "result_type": "integer" if isinstance(result.result, int) else "float",
+                "invocation_fingerprint": spec.fingerprint,
+                "node_authority_fingerprint": authority.fingerprint,
+            },
+            evidence_refs=tuple(result.evidence_refs),
+            reason_code="CALCULATOR_OK",
             succeeded=True,
         )
 
