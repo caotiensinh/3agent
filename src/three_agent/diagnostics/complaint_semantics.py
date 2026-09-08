@@ -57,9 +57,9 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
         "ram is broken", "ramが壊れ", "ramが故障", "ram 故障",
     ),
     "storage_failure": (
-        "ssd hong", "ssd sap hong", "o cung hong", "disk hong", "ssd broken", "disk failure",
-        "ssd is broken", "ssd may be failing", "ssdが壊れ", "ssdが故障", "disk is failing",
-        "ディスクが故障",
+        "ssd hong", "ssd sap hong", "ssd co ve sap hong", "o cung hong", "disk hong",
+        "ssd broken", "disk failure", "ssd is broken", "ssd may be failing",
+        "ssdが壊れ", "ssdが故障", "disk is failing", "ディスクが故障",
     ),
     "power_supply_failure": (
         "nguon hong", "nguon may tinh co the bi loi", "psu hong", "power supply broken",
