@@ -41,6 +41,7 @@ _EFFECTS = {
     "service.status.read": "read",
     "windows.group_policy.result": "read",
     "identity.session.snapshot": "read",
+    "audio.devices.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
 }
