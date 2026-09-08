@@ -40,6 +40,7 @@ _EFFECTS = {
     "time.sync.status": "read",
     "service.status.read": "read",
     "windows.group_policy.result": "read",
+    "identity.session.snapshot": "read",
     "network.reachability.internal": "network_read",
 }
 _UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
