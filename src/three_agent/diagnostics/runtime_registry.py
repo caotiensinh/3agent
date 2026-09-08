@@ -5,6 +5,7 @@ from typing import Iterable
 
 from ..micro_tool_registry import MicroToolRegistry, ToolMetadata
 from ..office_it_tools import iter_specs
+from .audio_tools import AUDIO_DEVICES_TOOL_ID, AUDIO_TOOL_METADATA
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .common_tools import common_tool_metadata
 from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
@@ -31,6 +32,7 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + NETWORK_TOOL_METADATA
         + GROUP_POLICY_TOOL_METADATA
         + IDENTITY_TOOL_METADATA
+        + AUDIO_TOOL_METADATA
     )
     ids = tuple(item.id for item in items)
     if len(ids) != len(set(ids)):
@@ -68,6 +70,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("service.status", ("service.status.read",)),
             CapabilityBinding("group_policy", (GROUP_POLICY_TOOL_ID,)),
             CapabilityBinding("identity.session", (IDENTITY_SESSION_TOOL_ID,)),
+            CapabilityBinding("audio.devices", (AUDIO_DEVICES_TOOL_ID,)),
         )
     )
     seen: set[str] = set()
