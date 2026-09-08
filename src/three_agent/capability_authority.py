@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
@@ -57,7 +58,45 @@ if _UNKNOWN_EFFECT_TOOLS or _STALE_EFFECT_TOOLS:
     )
 
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
+_SERVICE_RESOURCE_RE = re.compile(r"^local:service:[A-Za-z0-9_.@-]{1,128}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
+
+# These are authorization policy bindings, not a second runtime registry. Every entry
+# mirrors a resource identifier emitted by reviewed bounded tool implementation code.
+_EXACT_RESOURCE_POLICIES = {
+    "windows.event.system": ("event_channel", "windows:event:System"),
+    "windows.event.application": ("event_channel", "windows:event:Application"),
+    "windows.event.security": ("event_channel", "windows:event:Security"),
+    "windows.printer.queue": ("print_queue", "windows:printer:queue"),
+    "system.platform.identify": ("system_inventory", "local:platform"),
+    "system.resource.snapshot": ("performance_snapshot", "local:resources"),
+    "system.storage.capacity": ("filesystem_capacity", "local:storage:default"),
+    "network.interface.snapshot": ("network_config", "local:interfaces"),
+    "network.ipconfig.snapshot": ("network_config", "local:ipconfig"),
+    "network.route.snapshot": ("network_config", "local:routes"),
+    "network.dns.snapshot": ("network_config", "local:dns"),
+    "time.sync.status": ("time_config", "local:time-sync"),
+    "identity.session.snapshot": ("identity_session", "local:identity:current"),
+    "audio.devices.snapshot": ("audio_devices", "local:audio:devices"),
+    "process.top.snapshot": ("process_inventory", "local:processes:top"),
+    "hardware.usb.snapshot": ("usb_devices", "local:usb:devices"),
+    "camera.devices.snapshot": ("camera_devices", "local:camera:devices"),
+}
+_GROUP_POLICY_REFS = frozenset(
+    {
+        "local:gpresult:user",
+        "local:gpresult:computer",
+        "local:gpresult:all",
+    }
+)
+_NETWORK_RESOURCE_SUFFIXES = {
+    "network.ssh.probe": ":22",
+    "network.smb.probe": ":445",
+    "network.printer.ipp_probe": ":631",
+    "network.printer.raw_probe": ":9100",
+    "network.reachability.internal": ":icmp",
+    "network.quality.internal": ":icmp-quality",
+}
 
 
 class CapabilityAuthorityDenied(PermissionError):
@@ -117,6 +156,67 @@ def _write_scope_is_subset(
         any(scope == parent_scope or scope.startswith(parent_scope + "/") for parent_scope in parent_scopes)
         for scope in child_scopes
     )
+
+
+def _is_internal_ip_literal(value: str) -> bool:
+    try:
+        address = ipaddress.ip_address(str(value).strip())
+    except ValueError:
+        return False
+    if address.is_loopback or address.is_link_local:
+        return True
+    if isinstance(address, ipaddress.IPv4Address):
+        return any(
+            address in network
+            for network in (
+                ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"),
+                ipaddress.ip_network("192.168.0.0/16"),
+            )
+        )
+    return address in ipaddress.ip_network("fc00::/7")
+
+
+def _resource_policy_denial(
+    capability: str,
+    resource_kind: str,
+    resource_ref: str,
+) -> str | None:
+    exact = _EXACT_RESOURCE_POLICIES.get(capability)
+    if exact is not None:
+        expected_kind, expected_ref = exact
+        if resource_kind != expected_kind:
+            return "RESOURCE_KIND_NOT_AUTHORIZED"
+        if resource_ref != expected_ref:
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        return None
+
+    if capability == "service.status.read":
+        if resource_kind != "service":
+            return "RESOURCE_KIND_NOT_AUTHORIZED"
+        if not _SERVICE_RESOURCE_RE.fullmatch(resource_ref):
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        return None
+
+    if capability == "windows.group_policy.result":
+        if resource_kind != "group_policy":
+            return "RESOURCE_KIND_NOT_AUTHORIZED"
+        if resource_ref not in _GROUP_POLICY_REFS:
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        return None
+
+    suffix = _NETWORK_RESOURCE_SUFFIXES.get(capability)
+    if suffix is not None:
+        if resource_kind != "network_endpoint":
+            return "RESOURCE_KIND_NOT_AUTHORIZED"
+        if not resource_ref.endswith(suffix):
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        host = resource_ref[: -len(suffix)]
+        if not host or not _is_internal_ip_literal(host):
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        return None
+
+    return None
 
 
 def _fingerprint_payload(
@@ -372,6 +472,10 @@ class TaskCapabilityAuthority:
         expected_effect = _EFFECTS.get(cap)
         if expected_effect != eff:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_EFFECT_NOT_ALLOWED")
+
+        resource_denial = _resource_policy_denial(cap, kind, ref)
+        if resource_denial is not None:
+            return self._decision(cap, kind, ref, eff, allowed=False, reason_code=resource_denial)
 
         if cap == "web_gateway":
             if self.sensitivity != "public" or self.network_scope != "allowlisted_egress":
