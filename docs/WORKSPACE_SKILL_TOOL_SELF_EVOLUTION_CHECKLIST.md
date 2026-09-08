@@ -2,16 +2,16 @@
 
 Status: active implementation checklist.
 
-Baseline branch: `feat/skill-tool-self-evolution-v1-20260908`
+Current branch: `feat/skill-reviewed-references-v1-20260908`
 
-Baseline `main`: `1a2206eed88b05b645e1231b106f13648f75aaf1`
+Current base `main`: `aaeeb424bf2ea0b0c26030e7631fea6e177c2807`
 
 Architecture: `docs/WORKSPACE_SKILL_TOOL_SELF_EVOLUTION_ARCHITECTURE.md`
 
 Legend:
 
 - `[x]` complete in current branch or already satisfied by canonical source
-- `[~]` in progress
+- `[~]` in progress and not yet merged/fully verified
 - `[ ]` not started
 - `[!]` blocked / requires an explicit dependency or policy decision
 
@@ -28,8 +28,8 @@ Legend:
 
 ## B. Skill progressive disclosure
 
-- [~] **S-01** Add a compact approved skill catalog for one agent (`list_for_agent`) with no skill body in the index.
-- [~] **S-02** Add explicit single-skill on-demand view (`view_for_agent`) that reuses full existing admission/integrity checks.
+- [x] **S-01** Add a compact approved skill catalog for one agent (`list_for_agent`) with no skill body in the index. Merged via PR #371 at `aaeeb424bf2ea0b0c26030e7631fea6e177c2807`.
+- [x] **S-02** Add explicit single-skill on-demand view (`view_for_agent`) that reuses full existing admission/integrity checks. Merged via PR #371.
 - [ ] **S-03** Add bounded metadata search/filter by name, description, category/tag, risk/domain where reviewed metadata exists.
 - [ ] **S-04** Integrate the catalog into agent/runtime selection so default prompt injection stays minimal.
 - [ ] **S-05** Add telemetry for list/view/selected counts without raw prompt/content logging.
@@ -45,14 +45,24 @@ Acceptance for S-01/S-02:
 
 ## C. Reviewed supporting references
 
-- [ ] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class).
-- [ ] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited.
-- [ ] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes.
-- [ ] **S-13** Add per-reference and total-reference size limits.
-- [ ] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces.
-- [ ] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references.
-- [ ] **S-16** Add reference provenance and version/vendor applicability metadata.
-- [ ] **S-17** Add tests proving an altered reference fails SHA/integrity validation.
+- [~] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class).
+- [~] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited.
+- [~] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes.
+- [~] **S-13** Add per-reference and total-reference size limits.
+- [~] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces.
+- [~] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references.
+- [~] **S-16** Add reference provenance and version/vendor applicability metadata.
+- [~] **S-17** Add tests proving an altered reference fails SHA/integrity validation.
+
+Current E2 reference policy in this branch:
+
+- maximum 8 references per production skill;
+- maximum 16 KiB canonical UTF-8 per reference;
+- maximum 64 KiB total canonical UTF-8 reference content per skill;
+- only registered `references/*.md` regular files are admitted;
+- every reference is pinned by canonical SHA-256, canonical size, provenance and content class;
+- optional vendor family/version applicability is model-visible metadata;
+- `scripts/`, symlinks, traversal, extra files, unregistered directories and executable authority remain denied.
 
 ## D. Automatic CandidateSkill creation
 
@@ -224,8 +234,8 @@ These should be implemented as small capabilities, not one giant diagnostic work
 
 ## O. CI / security gates
 
-- [ ] **C-01** Skill catalog progressive-disclosure regression tests.
-- [ ] **C-02** Reference pack integrity/path/symlink tests.
+- [x] **C-01** Skill catalog progressive-disclosure regression tests. Exact-head Python 3.11/3.12 unit/regression/EV gates passed before PR #371 merge.
+- [~] **C-02** Reference pack integrity/path/symlink tests.
 - [ ] **C-03** Candidate create/patch/supersede contract tests.
 - [ ] **C-04** Replay/self-reinforcement resistance tests.
 - [ ] **C-05** Held-out evaluation tests.
@@ -236,18 +246,21 @@ These should be implemented as small capabilities, not one giant diagnostic work
 - [ ] **C-10** MCP schema drift/quarantine tests.
 - [ ] **C-11** Tool-result bounding/error-redaction tests.
 - [ ] **C-12** Observation/evidence lineage tests.
-- [ ] **C-13** Python 3.11 and 3.12 full regression.
-- [ ] **C-14** Installer/deployment regression.
-- [ ] **C-15** Windows/Linux platform-specific smoke where a runner is available.
+- [ ] **C-13** Python 3.11 and 3.12 full regression for the final integrated milestone.
+- [ ] **C-14** Installer/deployment regression for the final integrated milestone.
+- [ ] **C-15** Windows/Linux platform-specific smoke for the final integrated milestone where a runner is available.
 
 ## Current execution slice
 
-This branch starts with the smallest safe runtime change that unlocks Hermes-style progressive disclosure without relaxing production trust:
+Reference-pack slice `S-10..S-17`:
 
-1. [~] S-01 compact approved skill catalog.
-2. [~] S-02 on-demand approved skill view.
-3. [~] C-01 focused regression tests.
-4. [ ] exact-head PR CI.
-5. [ ] merge only after exact-head verification.
+1. [~] registry schema and strict E2 resource admission;
+2. [~] path/symlink/traversal/extra-file/integrity checks;
+3. [~] per-file/aggregate size bounds and security scanning;
+4. [~] compact reference list + one-reference view;
+5. [~] vendor/version/provenance metadata;
+6. [~] focused regression tests;
+7. [ ] exact-head PR CI;
+8. [ ] merge only after exact-head verification.
 
-After that slice is merged, continue with `S-10..S-17` (reviewed references), then `L-10..L-16` (automatic CandidateSkill creation), then the improvement/promotion loop, before starting the generic Tool Registry. This ordering keeps self-learning useful while avoiding a second parallel authority system.
+After this slice is merged, continue with `L-10..L-16`: canonical CandidateSkill projection and agent-facing automatic candidate creation backed by the existing verified admission/reflection/staging path. Then implement patch/supersede self-improvement and controlled promotion before starting the generic Tool Registry.
