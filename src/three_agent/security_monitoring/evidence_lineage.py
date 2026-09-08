@@ -108,6 +108,11 @@ class EvidenceLineageReceipt:
         self.validate()
         return {"schema_version": self.schema_version, "task_ref_sha256": self.task_ref_sha256, "policy_fingerprint": self.policy_fingerprint, "evidence_batch_fingerprint": self.evidence_batch_fingerprint, "evidence_ids": list(self.evidence_ids), "evidence_count": self.evidence_count, "status": self.status, "reason_code": self.reason_code, "authority": self.authority, "automatic_action_allowed": self.automatic_action_allowed}
 
+    @property
+    def fingerprint(self) -> str:
+        """Return a deterministic fingerprint of the validated public receipt."""
+        return sha256_fingerprint(self.public_dict())
+
 
 class EvidenceLineageGate:
     """Fail-closed gate between normalized evidence and correlation/analysis."""
