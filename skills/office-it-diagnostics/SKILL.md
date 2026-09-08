@@ -1,41 +1,41 @@
 ---
 name: office-it-diagnostics
-description: Guide bounded read-only Windows and office-network diagnosis using the minimum sufficient evidence and evidence-driven escalation.
+description: Diagnose Windows, Linux and office IT faults with layperson normalization, streaming evidence, adaptive questions, bounded micro-tools and evidence-driven escalation.
 license: Project-internal
 ---
 
 # Office IT Diagnostics
 
-Use for bounded Windows and office-network troubleshooting: Event Viewer evidence, SSH or SMB reachability, and printer reachability or queue state.
+Use for bounded endpoint and office-IT diagnosis. This skill defines reasoning only; it grants no execution, credential, repair or control authority.
 
-## Doctrine
+## Streaming doctrine
 
-Start with the cheapest micro-tools that directly test the current hypothesis. Stop when evidence is sufficient. Add tools only when a result leaves a concrete uncertainty. Do not run broad collection merely because it exists.
+Treat customer answers, logs/events, telemetry, inventory and tool results as one stream:
 
-Full or deep acquisition is allowed only when the user explicitly requests it or when bounded evidence documents why wider collection is necessary.
+`OBSERVE -> NORMALIZE -> CORRELATE -> UPDATE -> DISCRIMINATE -> ACT -> VERIFY`
 
-## Approved v0.1 micro-tools
+Do not finish a fixed questionnaire before analysis. After each meaningful input, update active hypotheses and choose the smallest high-value next action. Cancel questions already answered by machine evidence. Normally ask 1 question and never more than 3 per turn.
 
-Local Windows reads:
-- `windows.event.system`
-- `windows.event.application`
-- `windows.event.security`
-- `windows.printer.queue`
+## Customer-language boundary
 
-Internal network probes:
-- `network.ssh.probe` — TCP/22
-- `network.smb.probe` — TCP/445
-- `network.printer.ipp_probe` — TCP/631
-- `network.printer.raw_probe` — TCP/9100
+Preserve exact customer wording separately from technical interpretation. Terms such as "máy đơ", "mất mạng", "GPU hỏng", "RAM hỏng", "Windows Update làm hỏng máy" or "bị virus" must be normalized before routing. Causal claims remain `customer_hypotheses`; never promote them to facts without corroborating evidence.
 
-Network probes accept one explicit private or internal IP literal only. No DNS expansion, public targets, ranges, scanning, authentication, brute force, or credential use. Raw printer probing is connect-only; never send print data. SSH may passively read a bounded server banner.
+Ask about behavior the customer can observe: screen, sound, keyboard/mouse, restart pattern, error text, whether others are affected, or recent changes. Do not require unexplained IT terminology.
 
-## Evidence and safety
+## Evidence and differential diagnosis
 
-Treat output as evidence, not diagnosis. Preserve the tool id, observed result, bounded target or channel, time window, and error type. Security Event Log output is sensitive and may require administrative access; keep it local or confidential by default.
+Keep a small ranked differential, normally 3-7 hypotheses, with evidence for/against, exclusions, contradictions and the next discriminator. A single generic event is never a root cause. Correlate the incident window across independent sources. Keep `unknown` when evidence is insufficient.
 
-For Windows Event Log, use fixed channels and bounded time and event counts. Never clear logs, enable disabled channels, restart services, change registry or firewall settings, install software, kill processes, modify permissions, or perform remediation.
+Prefer the canonical diagnostic runtime and cheapest bounded read-only tools. Reuse shared platform, resource, network, service and approved Windows Event evidence before adding capabilities. Deep collection is fallback only when explicit intent or bounded evidence justifies it.
 
-For an unreachable SSH server, start with `network.ssh.probe`. For a printer that does not print, inspect `windows.printer.queue` and only the relevant printer protocol at the known IP. For an unexpected Windows reboot, start with `windows.event.system` and add other channels only when evidence requires them.
+## Safety
 
-Any future repair or control capability must be a separate tool with explicit authority and approval.
+Evidence is advisory and does not grant authority. Respect `TaskCapabilityAuthority`, output bounds, redaction and the diagnostic observation envelope. Never clear logs, hide evidence, disable controls, install software, change registry/firewall, kill processes, reset networking, modify permissions or remediate merely because diagnosis is uncertain.
+
+State-changing repair requires a separately admitted capability and explicit approval. Driver Verifier, forced crashes, firmware flashing and destructive disk work are never automatic.
+
+Authorized internal network probes remain bounded to the exact approved target/protocol; no scanning, brute force, credential use or public-target expansion.
+
+## Completion
+
+Stop asking when evidence is sufficient, the next discriminator is machine-based, or physical inspection/escalation is required. Repair is incomplete until the original symptom or equivalent verification condition is retested.
