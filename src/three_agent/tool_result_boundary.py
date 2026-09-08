@@ -44,21 +44,24 @@ def _strip_unsafe_controls(value: str) -> str:
 def _redact_common_secret_literals(value: str) -> tuple[str, int]:
     redactions = 0
 
-    def _assignment(match: re.Match[str]) -> str:
-        nonlocal redactions
-        redactions += 1
-        return f"{match.group(1)}{match.group(2)}[REDACTED]"
-
-    text = _SECRET_ASSIGNMENT_RE.sub(_assignment, value)
-
     def _simple(match: re.Match[str]) -> str:
         nonlocal redactions
         redactions += 1
         prefix = match.group(0).split(None, 1)[0]
         return f"{prefix} [REDACTED]"
 
-    text = _BEARER_RE.sub(_simple, text)
+    # Scheme credentials must be removed before assignment redaction. Otherwise an
+    # Authorization assignment can consume only the word "Bearer"/"Basic" and leave
+    # the credential token behind as an apparently unrelated suffix.
+    text = _BEARER_RE.sub(_simple, value)
     text = _BASIC_RE.sub(_simple, text)
+
+    def _assignment(match: re.Match[str]) -> str:
+        nonlocal redactions
+        redactions += 1
+        return f"{match.group(1)}{match.group(2)}[REDACTED]"
+
+    text = _SECRET_ASSIGNMENT_RE.sub(_assignment, text)
 
     def _private_key(_: re.Match[str]) -> str:
         nonlocal redactions
