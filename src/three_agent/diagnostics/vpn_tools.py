@@ -45,9 +45,10 @@ _WINDOWS_QUERY = (
     "ConvertTo-Json -Depth 3 -Compress"
 )
 _LINUX_LINK_RE = re.compile(
-    r"^\d+:\s+([^:@\s]+)(?:@[^:]+)?:\s+<([^>]*)>.*?(?:\sstate\s+(\S+))?",
+    r"^\d+:\s+([^:@\s]+)(?:@[^:]+)?:\s+<([^>]*)>",
     re.IGNORECASE,
 )
+_LINUX_STATE_RE = re.compile(r"\bstate\s+(\S+)", re.IGNORECASE)
 _LINUX_VPN_PREFIXES = ("tun", "tap", "wg", "ppp", "tailscale", "zt")
 
 
@@ -116,25 +117,49 @@ def _looks_like_vpn_interface(name: str) -> bool:
 
 def _parse_linux_interfaces(stdout: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in str(stdout or "").splitlines():
-        match = _LINUX_LINK_RE.match(line.strip())
+    for raw_line in str(stdout or "").splitlines():
+        line = raw_line.strip()
+        match = _LINUX_LINK_RE.match(line)
         if match is None:
             continue
-        name, flags, state = match.groups()
+        name, flags = match.groups()
         if not _looks_like_vpn_interface(name):
             continue
+        state_match = _LINUX_STATE_RE.search(line)
+        state = state_match.group(1) if state_match is not None else ""
         flag_set = {item.strip().upper() for item in flags.split(",") if item.strip()}
         rows.append(
             {
                 "interface_name": _bounded_text(name),
                 "admin_up_observed": "UP" in flag_set,
-                "oper_state": _bounded_text(state, limit=32).lower() if state else "",
+                "oper_state": _bounded_text(state, limit=32).lower(),
                 "classification": "vpn_candidate_by_interface_name",
             }
         )
         if len(rows) >= VPN_PROFILE_LIMIT:
             break
     return rows
+
+
+def _unavailable_result(*, target_platform: str) -> dict[str, Any]:
+    return {
+        "tool_id": VPN_STATUS_TOOL_ID,
+        "platform": target_platform,
+        "scope": "local_vpn_status_evidence",
+        "requested_limit": VPN_PROFILE_LIMIT,
+        "observed_count": 0,
+        "observations": [],
+        "collector_available": False,
+        "collection_succeeded": False,
+        "returncode": None,
+        "stderr": "",
+        "stderr_boundary": bound_text_result("", max_bytes=8 * 1024).metadata(),
+        "observation_semantics": "collector_unavailable",
+        "vpn_health_claimed": False,
+        "connectivity_claimed": False,
+        "root_cause_claimed": False,
+        "interpretation": "evidence_only",
+    }
 
 
 def read_vpn_status(
@@ -149,7 +174,8 @@ def read_vpn_status(
     only tunnel-like local interfaces visible to `ip link`. Missing rows never prove
     that VPN is unconfigured, disconnected, unavailable, or the root cause of a user
     complaint. No credentials, tokens, routes, DNS data, packet contents, remote hosts,
-    or public-network probes are collected.
+    or public-network probes are collected. A missing local collector is returned as
+    structured evidence and is never interpreted as VPN failure.
     """
     target_platform = _platform_key(platform_name)
     authority.require(
@@ -158,14 +184,18 @@ def read_vpn_status(
         resource_ref="local:vpn:status",
         effect="read",
     )
-    completed = subprocess.run(
-        build_vpn_status_plan(platform_name=target_platform),
-        capture_output=True,
-        text=True,
-        timeout=max(1.0, min(float(timeout), 20.0)),
-        check=False,
-        shell=False,
-    )
+    try:
+        completed = subprocess.run(
+            build_vpn_status_plan(platform_name=target_platform),
+            capture_output=True,
+            text=True,
+            timeout=max(1.0, min(float(timeout), 20.0)),
+            check=False,
+            shell=False,
+        )
+    except FileNotFoundError:
+        return _unavailable_result(target_platform=target_platform)
+
     if target_platform == "windows":
         observations = _parse_windows_profiles(completed.stdout)
         semantics = "current_user_vpn_profiles_only"
@@ -180,6 +210,7 @@ def read_vpn_status(
         "requested_limit": VPN_PROFILE_LIMIT,
         "observed_count": len(observations),
         "observations": observations,
+        "collector_available": True,
         "collection_succeeded": completed.returncode == 0,
         "returncode": completed.returncode,
         "stderr": stderr.text,
