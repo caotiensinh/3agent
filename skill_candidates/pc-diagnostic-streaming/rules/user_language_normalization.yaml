@@ -1,0 +1,107 @@
+version: 1
+mode: layperson_to_technical_normalization
+
+principles:
+  - preserve_raw_user_wording
+  - normalize_observation_before_diagnosis
+  - user_diagnosis_is_hypothesis_not_fact
+  - never_require_customer_jargon
+  - normalize_meaning_not_grammar
+  - preserve_multiple_interpretations_when_ambiguous
+  - revise_interpretation_without_rewriting_raw_fact
+  - prefer_observable_questions
+  - use_machine_evidence_to_resolve_semantic_ambiguity
+
+representation:
+  required_layers:
+    - raw_statement
+    - normalized_observation
+    - interpretation_candidates
+
+ambiguity_classes:
+  A0:
+    meaning: direct_observation
+    examples: [visible_stop_code, ethernet_led_off, burning_smell]
+  A1:
+    meaning: mostly_observable
+    examples: [black_screen_audio_continues, one_app_unresponsive]
+  A2:
+    meaning: common_user_shorthand
+    examples: [pc_freeze, no_internet, pc_slow]
+  A3:
+    meaning: user_causal_claim_or_diagnosis
+    examples: [bad_ram, dead_gpu, windows_update_caused_it, virus]
+    handling: hypothesis_only_until_corroborated
+
+forbidden_direct_mappings:
+  - from: pc_freeze
+    to_root_cause: kernel_lock
+  - from: no_internet
+    to_root_cause: nic_failure
+  - from: pc_powered_off
+    to_root_cause: psu_failure
+  - from: gpu_not_working
+    to_root_cause: gpu_hardware_failure
+  - from: ram_full
+    to_root_cause: memory_leak
+  - from: virus
+    to_root_cause: malware_confirmed
+
+question_style:
+  prefer:
+    - visible_behavior
+    - yes_no
+    - simple_choice
+    - physical_state
+    - compare_with_other_device
+  avoid:
+    - unexplained_jargon
+    - protocol_layer_questions
+    - asking_user_to_interpret_logs
+    - asking_for_facts_machine_can_read_directly
+
+on_user_statement:
+  - store_raw
+  - extract_observable_facts
+  - classify_ambiguity
+  - generate_canonical_concepts
+  - generate_interpretation_candidates
+  - correlate_machine_evidence
+  - ask_discriminator_only_if_still_needed
+  - update_hypotheses
+
+semantic_reconciliation:
+  before_declaring_contradiction:
+    - check_if_terms_have_multiple_everyday_meanings
+    - separate_visible_experience_from_machine_state
+    - separate_link_connectivity_from_internet_service
+    - separate_display_failure_from_system_failure
+    - separate_restart_from_power_loss
+
+examples:
+  may_bi_do:
+    raw_statement: "máy bị đơ"
+    normalized_observation: perceived_unresponsiveness
+    ambiguity: A2
+    candidates:
+      - application_hang
+      - user_session_hang
+      - gpu_display_stall
+      - storage_io_stall
+      - kernel_hard_lock
+      - hardware_stall
+
+  mat_mang:
+    raw_statement: "mất mạng"
+    normalized_observation: expected_network_access_unavailable
+    ambiguity: A2
+    candidates:
+      - physical_link_down
+      - wifi_disconnected
+      - dhcp_failure
+      - gateway_unreachable
+      - dns_failure
+      - vpn_failure
+      - proxy_failure
+      - upstream_failure
+      - application_specific_failure

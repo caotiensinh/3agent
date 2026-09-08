@@ -1,0 +1,26 @@
+version: 1
+principles:
+  - evidence_over_event_name
+  - timeline_correlation
+  - prefer_discriminating_tests
+  - negative_evidence_matters
+  - cross_os_reproduction_raises_hardware_probability
+  - recent_change_raises_related_subsystem_probability
+  - never_force_a_root_cause_when_evidence_is_insufficient
+signals:
+  remote_access_alive_during_gui_freeze:
+    increase: [GPU_DISPLAY_STACK, USER_SESSION, COMPOSITOR]
+    decrease: [FULL_KERNEL_LOCK, TOTAL_POWER_LOSS]
+  unexpected_reboot_with_bugcheck_dump:
+    increase: [KERNEL_DRIVER, HARDWARE_WHEA]
+    decrease: [PLANNED_RESTART]
+  event_41_without_bugcheck:
+    note: "unclean shutdown only; retain power, hard hang, reset and firmware hypotheses"
+  whea_or_mce_present:
+    increase: [CPU, RAM, PCIE, HARDWARE, THERMAL, POWER]
+  storage_timeout_reset:
+    increase: [STORAGE_PATH, STORAGE_MEDIA, CONTROLLER_DRIVER]
+  issue_on_multiple_operating_systems:
+    increase: [HARDWARE, FIRMWARE, POWER, THERMAL]
+  issue_only_after_driver_or_kernel_change:
+    increase: [DRIVER_REGRESSION, KERNEL_REGRESSION]
