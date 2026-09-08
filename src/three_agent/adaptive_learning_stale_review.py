@@ -15,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -197,7 +197,7 @@ class StaleSkillReviewRecommendation:
         review_id = "stale-review:" + hashlib.sha256(
             _canonical(draft._base_payload()).encode("utf-8")
         ).hexdigest()
-        return cls(review_id=review_id, **{k: v for k, v in asdict(draft).items() if k != "review_id"}).validate()
+        return replace(draft, review_id=review_id).validate()
 
     def validate(self) -> "StaleSkillReviewRecommendation":
         if self.schema_version != STALE_SKILL_REVIEW_SCHEMA:
@@ -311,8 +311,13 @@ class StaleSkillReviewReceipt:
             STATUS_REUSE_RECEIPT_LIMIT_EXCEEDED,
         }:
             raise StaleSkillReviewError("STALE_SKILL_RECEIPT_STATUS_INVALID")
+        if (
+            not isinstance(self.stale_after_days, int)
+            or isinstance(self.stale_after_days, bool)
+            or not 1 <= self.stale_after_days <= _MAX_STALE_DAYS
+        ):
+            raise StaleSkillReviewError("STALE_SKILL_RECEIPT_STALE_AFTER_DAYS_INVALID")
         for value, field in (
-            (self.stale_after_days, "stale_after_days"),
             (self.scanned_active_skills, "scanned_active_skills"),
             (self.scanned_reuse_receipts, "scanned_reuse_receipts"),
             (self.emitted_reviews, "emitted_reviews"),
@@ -517,6 +522,7 @@ class DeterministicStaleSkillReviewAdvisor:
                 {
                     "status": STATUS_ACTIVE_SKILL_LIMIT_EXCEEDED,
                     "active_skill_count": active_count,
+                    "max_active_skills": self.config.max_active_skills,
                     "ledger_head_sha256": ledger_verification.get("head_sha256"),
                     "as_of": canonical_as_of,
                 }
@@ -537,6 +543,7 @@ class DeterministicStaleSkillReviewAdvisor:
                     "status": STATUS_REUSE_RECEIPT_LIMIT_EXCEEDED,
                     "active_skill_count": active_count,
                     "reuse_receipt_count": reuse_count,
+                    "max_reuse_receipts": self.config.max_reuse_receipts,
                     "ledger_head_sha256": ledger_verification.get("head_sha256"),
                     "as_of": canonical_as_of,
                 }
@@ -578,9 +585,15 @@ class DeterministicStaleSkillReviewAdvisor:
             if last_reuse_at is None:
                 anchor_at, anchor_dt = activated_at, activated_dt
             else:
-                anchor_at, anchor_dt = _utc(last_reuse_at, "last_reuse_at")
-                if anchor_dt < activated_dt:
-                    raise StaleSkillReviewError("STALE_SKILL_REUSE_PRECEDES_ACTIVATION")
+                normalized_reuse, last_reuse_dt = _utc(last_reuse_at, "last_reuse_at")
+                # A rollback/reactivation starts a new active tenure. Reuse from an
+                # older tenure of the same immutable version must not refresh it.
+                if last_reuse_dt < activated_dt:
+                    last_reuse_at = None
+                    anchor_at, anchor_dt = activated_at, activated_dt
+                else:
+                    last_reuse_at = normalized_reuse
+                    anchor_at, anchor_dt = normalized_reuse, last_reuse_dt
             if as_of_dt < anchor_dt:
                 raise StaleSkillReviewError("STALE_SKILL_AS_OF_PRECEDES_FRESHNESS")
             age_seconds = int((as_of_dt - anchor_dt).total_seconds())
@@ -619,6 +632,8 @@ class DeterministicStaleSkillReviewAdvisor:
                 "schema_version": STALE_SKILL_REVIEW_RECEIPT_SCHEMA,
                 "as_of": canonical_as_of,
                 "stale_after_days": self.config.stale_after_days,
+                "max_active_skills": self.config.max_active_skills,
+                "max_reuse_receipts": self.config.max_reuse_receipts,
                 "ledger_head_sha256": ledger_verification.get("head_sha256"),
                 "reuse_receipt_count": reuse_count,
                 "active_skills": source_rows,
