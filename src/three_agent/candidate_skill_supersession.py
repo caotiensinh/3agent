@@ -42,7 +42,6 @@ _REVIEW_FILE = "approval-review.md"
 _REVIEW_ID = "approval-review"
 _LOCK_FILE = ".candidate-skill-materialization.lock"
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
-_PLAIN_SHA = re.compile(r"^[0-9a-f]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _PROMOTION_FIELDS = {
     "schema_version",
@@ -83,10 +82,6 @@ def _canonical(payload: Any) -> bytes:
 
 def _plain_sha(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
-
-
-def _sha(raw: bytes) -> str:
-    return "sha256:" + _plain_sha(raw)
 
 
 def _require_sha(value: Any, code: str) -> str:
@@ -144,7 +139,7 @@ def _revision_document(candidate: KnowledgeCandidate) -> tuple[str, bytes, str]:
     """Reuse canonical production rendering without widening create-only CandidateSkill."""
 
     candidate.validate()
-    if candidate.kind != "skill" or candidate.action not in {"patch", "supersede"}:
+    if candidate.kind != "skill" or candidate.action != "patch":
         raise CandidateSkillSupersessionError("SUPERSESSION_SKILL_PATCH_REQUIRED")
     try:
         _validate_domain_policy(candidate)
@@ -374,6 +369,8 @@ class CandidateSkillSupersessionManager:
         package.validate()
         if package.result != "PASS" or package.kind != "skill":
             raise CandidateSkillSupersessionError("SUPERSESSION_PHASE4K_SKILL_PASS_REQUIRED")
+        if package.next_transition != str(promotion["target_level"]):
+            raise CandidateSkillSupersessionError("SUPERSESSION_PHASE4K_TRANSITION_MISMATCH")
         if str(promotion["candidate_id"]) != package.candidate_id:
             raise CandidateSkillSupersessionError("SUPERSESSION_PROMOTION_CANDIDATE_MISMATCH")
         if str(promotion["candidate_sha256"]) != package.candidate_sha256:
@@ -402,27 +399,54 @@ class CandidateSkillSupersessionManager:
             candidate.candidate_id != package.candidate_id
             or candidate.sha256 != package.candidate_sha256
             or candidate.kind != "skill"
-            or candidate.action not in {"patch", "supersede"}
+            or candidate.action != "patch"
             or candidate.target_item_id != package.item_id
             or candidate.base_item_sha256 != package.base_knowledge_sha256
         ):
             raise CandidateSkillSupersessionError("SUPERSESSION_ACTIVE_CANDIDATE_BINDING_INVALID")
 
-        events = [
+        ledger = self._store.ledger()
+        validations = [
             row
-            for row in self._store.ledger()
+            for row in ledger
+            if str(row.get("item_id")) == package.item_id
+            and str(row.get("candidate_id") or "") == package.candidate_id
+            and str(row.get("event_type")) == "validate"
+            and str(row.get("actor_id")) == "operator:phase4k-validator"
+            and str(row.get("reason_code")) == "REVISION_EVALUATION_PASSED"
+        ]
+        if len(validations) != 1:
+            raise CandidateSkillSupersessionError("SUPERSESSION_PHASE4K_VALIDATION_LEDGER_INVALID")
+        validation_event = validations[0]
+        if (
+            str(validation_event.get("candidate_sha256") or "") != package.candidate_sha256
+            or str(validation_event.get("knowledge_sha256") or "") != package.candidate_knowledge_sha256
+            or str(validation_event.get("before_sha256") or "") != package.base_knowledge_sha256
+            or validation_event.get("after_sha256") is not None
+        ):
+            raise CandidateSkillSupersessionError("SUPERSESSION_PHASE4K_VALIDATION_LEDGER_MISMATCH")
+        _require_sha(
+            validation_event.get("validation_receipt_sha256"),
+            "SUPERSESSION_PHASE4K_VALIDATION_RECEIPT_INVALID",
+        )
+
+        activations = [
+            row
+            for row in ledger
             if str(row.get("item_id")) == package.item_id
             and str(row.get("event_type")) in {"activate", "enterprise"}
         ]
-        if not events:
+        if not activations:
             raise CandidateSkillSupersessionError("SUPERSESSION_ACTIVATION_LEDGER_MISSING")
-        event = events[-1]
+        event = activations[-1]
         if (
             str(event.get("candidate_id") or "") != package.candidate_id
             or str(event.get("candidate_sha256") or "") != package.candidate_sha256
             or str(event.get("before_sha256") or "") != package.base_knowledge_sha256
             or str(event.get("after_sha256") or "") != package.candidate_knowledge_sha256
             or str(event.get("actor_id") or "") != str(promotion["actor_id"])
+            or str(event.get("validation_receipt_sha256") or "")
+            != str(promotion["validation_receipt_sha256"])
         ):
             raise CandidateSkillSupersessionError("SUPERSESSION_ACTIVATION_LEDGER_MISMATCH")
         return checkpoint, candidate
