@@ -217,9 +217,11 @@ class AdaptiveLearningSkillReuseTests(unittest.TestCase):
                 context=_context(candidate, knowledge_sha256),
             )
 
+            expected_name = CandidateSkill.from_candidate(candidate).proposed_skill_name
             self.assertEqual(len(prepared.reuse_context.items), 1)
             self.assertEqual(prepared.reference_context.items, ())
             self.assertEqual(len(prepared.materialized_skill_blocks), 1)
+            self.assertEqual(prepared.materialized_skill_names, (expected_name,))
             self.assertIn("## Approved local skill:", prepared.materialized_skill_blocks[0])
             self.assertIn("Correlate verified gateway evidence", prepared.materialized_skill_blocks[0])
 
@@ -250,6 +252,7 @@ class AdaptiveLearningSkillReuseTests(unittest.TestCase):
             self.assertEqual(prepared.reuse_context.items, ())
             self.assertEqual(prepared.reference_context.items, ())
             self.assertEqual(prepared.materialized_skill_blocks, ())
+            self.assertEqual(prepared.materialized_skill_names, ())
 
     def test_changed_active_version_fails_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
