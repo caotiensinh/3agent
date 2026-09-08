@@ -4,6 +4,7 @@ import platform
 from functools import lru_cache
 from typing import Any
 
+from .diagnostics.complaint_semantics import normalize_complaint_semantics
 from .micro_tool_registry import MicroToolRegistry, ToolSelectionRequest, ToolSelectionResult
 from .office_it_tools import TOOL_SPECS, OfficeITToolSpec, iter_specs
 
@@ -25,8 +26,8 @@ def select_office_it_tools(
 ) -> tuple[OfficeITToolSpec, ...]:
     """Select Office IT capabilities through the generic V0.2 registry.
 
-    This adapter keeps the V0.1 tool implementations and exact execution authority
-    unchanged. It only centralizes metadata validation and minimum-evidence routing.
+    Customer wording is normalized before selection, while customer causal claims
+    remain hypotheses. This adapter keeps tool execution authority unchanged.
     """
     result = select_office_it_tool_metadata(
         query,
@@ -49,8 +50,9 @@ def select_office_it_tool_metadata(
     admin_available: bool | None = None,
 ) -> ToolSelectionResult:
     """Return the audit-friendly V0.2 selection result without executing any tool."""
+    semantics = normalize_complaint_semantics(query)
     request = ToolSelectionRequest(
-        query=query,
+        query=semantics.routing_query(),
         platform=platform_name or platform.system(),
         mode=mode,
         max_tools=max_tools,
