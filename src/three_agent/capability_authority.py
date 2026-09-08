@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from .task_contract import OFFICE_IT_NETWORK_TOOLS, TOOLS, TaskContract
+from .task_contract import INTERNAL_NETWORK_TOOLS, TOOLS, TaskContract
 
 CAPABILITY_DECISION_SCHEMA = "workspace-capability-decision/v1"
 CAPABILITY_AUTHORITY_SCHEMA = "workspace-task-capability-authority/v1"
@@ -30,7 +30,26 @@ _EFFECTS = {
     "network.smb.probe": "network_read",
     "network.printer.ipp_probe": "network_read",
     "network.printer.raw_probe": "network_read",
+    "system.platform.identify": "read",
+    "system.resource.snapshot": "read",
+    "system.storage.capacity": "read",
+    "network.interface.snapshot": "read",
+    "network.ipconfig.snapshot": "read",
+    "network.route.snapshot": "read",
+    "network.dns.snapshot": "read",
+    "time.sync.status": "read",
+    "service.status.read": "read",
+    "windows.group_policy.result": "read",
+    "network.reachability.internal": "network_read",
 }
+_UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
+_STALE_EFFECT_TOOLS = set(_EFFECTS) - TOOLS
+if _UNKNOWN_EFFECT_TOOLS or _STALE_EFFECT_TOOLS:
+    raise RuntimeError(
+        "capability effect vocabulary mismatch: "
+        f"missing={sorted(_UNKNOWN_EFFECT_TOOLS)} stale={sorted(_STALE_EFFECT_TOOLS)}"
+    )
+
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
 
@@ -351,7 +370,7 @@ class TaskCapabilityAuthority:
         if cap == "web_gateway":
             if self.sensitivity != "public" or self.network_scope != "allowlisted_egress":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
-        elif cap in OFFICE_IT_NETWORK_TOOLS:
+        elif cap in INTERNAL_NETWORK_TOOLS:
             if self.network_scope != "internal_only":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
             if kind != "network_endpoint":
