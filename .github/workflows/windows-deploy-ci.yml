@@ -254,8 +254,16 @@ jobs:
           if (-not (Test-Path $trustedUpdater)) { throw 'trusted 3agent-update.ps1 missing' }
           if (-not (Test-Path (Join-Path $install 'config\local.json'))) { throw 'config/local.json missing' }
           $launcher = Get-Content -Raw -Path $updateCmd
-          if ($launcher -match '(?i)https?://|\birm\b|Invoke-RestMethod|Invoke-WebRequest|\biwr\b|\biex\b|Invoke-Expression') { throw 'installed updater entrypoint contains remote execution primitives' }
-          if ($launcher -notmatch '(?i)-File\s+"[^"]*3agent-update\.ps1"') { throw 'installed updater does not invoke trusted local updater with -File' }
+          $launcherLines = @(
+            $launcher -split '\r?\n' |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          )
+          $executionLines = @($launcherLines | Where-Object { $_ -match '(?i)^powershell(?:\.exe)?\b' })
+          if ($executionLines.Count -ne 1) { throw "installed updater must contain exactly one direct PowerShell execution line; found $($executionLines.Count)" }
+          $executionLine = $executionLines[0]
+          if ($executionLine -match '(?i)https?://|\birm\b|Invoke-RestMethod|Invoke-WebRequest|\biwr\b|\biex\b|Invoke-Expression') { throw 'installed updater PowerShell execution line contains remote execution primitives' }
+          if ($executionLine -notmatch '(?i)^powershell\.exe\s+-NoProfile\s+-ExecutionPolicy\s+Bypass\s+-File\s+"[^"]*3agent-update\.ps1"$') { throw 'installed updater does not directly invoke trusted local updater with expected PowerShell -File command' }
           $trustedHash = (Get-FileHash -Algorithm SHA256 $trustedUpdater).Hash
           $sourceHash = (Get-FileHash -Algorithm SHA256 $sourceBootstrap).Hash
           if ($trustedHash -ne $sourceHash) { throw 'trusted updater payload is not identical to exact installed bootstrap' }
