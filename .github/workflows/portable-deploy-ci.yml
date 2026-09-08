@@ -146,41 +146,58 @@ jobs:
           THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: curl -fsSL "$DEPLOY_ENTRYPOINT_URL" | bash
-      - name: Verify installed command and source lineage
+      - name: Verify installed command, exact lineage, and trusted updater entrypoint
         shell: bash
         run: |
-          "${{ runner.temp }}/three-agent-bin/3agent" smoke
-          test -x "${{ runner.temp }}/three-agent-bin/3agent-update"
-          test -f "${{ runner.temp }}/three-agent-install/config/local.json"
-          test "$(git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD)" = "${{ steps.deploy_ref.outputs.expected_head }}" || {
+          install_dir="${{ runner.temp }}/three-agent-install"
+          bin_dir="${{ runner.temp }}/three-agent-bin"
+          launcher="$bin_dir/3agent-update"
+          trusted="$bin_dir/3agent-update.sh"
+
+          "$bin_dir/3agent" smoke
+          test -x "$launcher"
+          test -f "$trusted"
+          test -f "$install_dir/config/local.json"
+          test "$(git -C "$install_dir" rev-parse HEAD)" = "${{ steps.deploy_ref.outputs.expected_head }}" || {
             echo "Installed commit does not match expected source head" >&2
             exit 1
           }
-          grep -Fq "https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.ref }}/scripts/update_code_safe.sh" "${{ runner.temp }}/three-agent-bin/3agent-update" || {
-            echo "Generated updater is not bound to the non-destructive updater on the configured repository ref" >&2
+          cmp -s "$install_dir/scripts/update_workspace_ubuntu.sh" "$trusted" || {
+            echo "Trusted installed updater is not identical to exact installed checkout" >&2
             exit 1
           }
-          if grep -Fq '/scripts/bootstrap.sh' "${{ runner.temp }}/three-agent-bin/3agent-update"; then
-            echo "Generated updater must not re-run bootstrap.sh" >&2
+          grep -Fq '3agent-update.sh' "$launcher" || {
+            echo "Installed updater does not invoke the trusted local payload" >&2
+            exit 1
+          }
+          grep -Fq 'THREE_AGENT_REPO_REF=${{ steps.deploy_ref.outputs.ref }}' "$launcher" || {
+            echo "Installed updater did not preserve the configured tracking ref" >&2
+            exit 1
+          }
+          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh' "$launcher"; then
+            echo "Installed updater launcher contains a mutable remote execution primitive" >&2
             exit 1
           fi
-      - name: One-command real Ubuntu updater from exact GitHub source
+      - name: Re-run installed trusted Ubuntu updater and preserve configuration
         shell: bash
-        env:
-          UPDATE_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/update_workspace_ubuntu.sh
-          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
-          THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.expected_head }}
-          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
-          THREE_AGENT_BIN_DIR: ${{ runner.temp }}/three-agent-bin
-          THREE_AGENT_RELEASES_DIR: ${{ runner.temp }}/three-agent-releases
-          THREE_AGENT_STATE_DIR: ${{ runner.temp }}/three-agent-state
         run: |
-          before="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
-          curl -fsSL "$UPDATE_ENTRYPOINT_URL" | bash
-          after="$(sha256sum "${{ runner.temp }}/three-agent-install/config/local.json" | awk '{print $1}')"
+          install_dir="${{ runner.temp }}/three-agent-install"
+          bin_dir="${{ runner.temp }}/three-agent-bin"
+          state_dir="${{ runner.temp }}/three-agent-state"
+          config_path="$install_dir/config/local.json"
+          before="$(sha256sum "$config_path" | awk '{print $1}')"
+
+          "$bin_dir/3agent-update"
+
+          after="$(sha256sum "$config_path" | awk '{print $1}')"
           test "$before" = "$after"
-          test "$(tail -n 1 "${{ runner.temp }}/three-agent-state/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
-          "${{ runner.temp }}/three-agent-bin/3agent" smoke
+          test "$(tail -n 1 "$state_dir/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
+          "$bin_dir/3agent" smoke
+          test -f "$bin_dir/3agent-update.sh"
+          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "$bin_dir/3agent-update"; then
+            echo "Trusted updater re-run restored a remote execution primitive" >&2
+            exit 1
+          fi
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
@@ -222,3 +239,8 @@ jobs:
           test "$backup_before" = "$(sha256sum "$backup_path" | awk '{print $1}')"
           test "$before_before" = "$(sha256sum "$before_path" | awk '{print $1}')"
           test "$operator_before" = "$(sha256sum "$operator_state" | awk '{print $1}')"
+          test -f "${{ runner.temp }}/three-agent-bin/3agent-update.sh"
+          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "${{ runner.temp }}/three-agent-bin/3agent-update"; then
+            echo "Idempotent deployment restored an untrusted updater entrypoint" >&2
+            exit 1
+          fi
