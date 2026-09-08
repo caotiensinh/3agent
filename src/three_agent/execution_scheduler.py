@@ -309,7 +309,18 @@ class ExecutionScheduler:
         )
         ticket_id = "dispatch:" + _digest(provisional._identity_dict()).split(":", 1)[1][:24]
         ticket = DispatchTicket(
-            **{**provisional.__dict__, "ticket_id": ticket_id}
+            ticket_id=ticket_id,
+            task_id=provisional.task_id,
+            plan_fingerprint=provisional.plan_fingerprint,
+            node_id=provisional.node_id,
+            node_fingerprint=provisional.node_fingerprint,
+            authority_fingerprint=provisional.authority_fingerprint,
+            dependency_observation_fingerprints=(
+                provisional.dependency_observation_fingerprints
+            ),
+            dispatch_sequence=provisional.dispatch_sequence,
+            execution_level=provisional.execution_level,
+            schema_version=provisional.schema_version,
         ).validate()
         self._in_flight[node.node_id] = ticket
         return ticket
