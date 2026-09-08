@@ -1,18 +1,54 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import unittest
 from dataclasses import FrozenInstanceError, replace
 
 from three_agent.capability_descriptor import project_tool_metadata
 from three_agent.capability_registry_snapshot import (
     BUILTIN_TOOL_NAMESPACE,
+    CAPABILITY_NAMESPACE_POLICY_SCHEMA,
     CapabilityRegistrySnapshotValidationError,
+    ReviewedCapabilityNamespace,
     build_capability_registry_snapshot,
-    reviewed_namespace,
     snapshot_micro_tool_registry,
 )
 from three_agent.micro_tool_registry import MicroToolRegistry, ToolMetadata
 from three_agent.office_it_tools import iter_specs
+
+
+def _sha(payload: dict[str, object]) -> str:
+    canonical = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _namespace_policy(
+    *,
+    namespace: str,
+    kind: str,
+    provenance_source: str,
+    external: bool = False,
+) -> ReviewedCapabilityNamespace:
+    identity = {
+        "schema_version": CAPABILITY_NAMESPACE_POLICY_SCHEMA,
+        "namespace": namespace,
+        "kind": kind,
+        "provenance_source": provenance_source,
+        "external": external,
+    }
+    return ReviewedCapabilityNamespace(
+        namespace=namespace,
+        kind=kind,
+        provenance_source=provenance_source,
+        external=external,
+        fingerprint=_sha(identity),
+    )
 
 
 def _tool(
@@ -70,7 +106,10 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
             all(item.namespace == "builtin.tool" for item in snapshot.descriptors)
         )
         self.assertTrue(
-            all(item.provenance_source == "micro_tool_registry" for item in snapshot.descriptors)
+            all(
+                item.provenance_source == "micro_tool_registry"
+                for item in snapshot.descriptors
+            )
         )
 
     def test_descriptor_change_changes_registry_fingerprint(self) -> None:
@@ -95,43 +134,40 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
         )
         self.assertNotEqual(baseline.fingerprint, changed.fingerprint)
 
-    def test_namespace_policy_change_changes_registry_fingerprint(self) -> None:
+    def test_structurally_valid_unreviewed_policy_cannot_mint_review(self) -> None:
         descriptor = project_tool_metadata(
             _tool("windows.event.system", keyword="system")
         )
-        baseline = build_capability_registry_snapshot((descriptor,))
-        alternate = reviewed_namespace(
+        alternate = _namespace_policy(
             namespace="builtin.tool",
             kind="tool",
             provenance_source="micro_tool_registry.v2",
         )
+        self.assertEqual(alternate, alternate.validate())
 
         with self.assertRaisesRegex(
             CapabilityRegistrySnapshotValidationError,
-            "namespace provenance mismatch",
+            "namespace policy is not source-reviewed",
         ):
             build_capability_registry_snapshot(
                 (descriptor,),
                 namespaces=(alternate,),
             )
-        self.assertNotEqual(
-            BUILTIN_TOOL_NAMESPACE.fingerprint,
-            alternate.fingerprint,
-        )
 
-    def test_unreviewed_namespace_fails_closed(self) -> None:
+    def test_unreviewed_namespace_policy_fails_closed(self) -> None:
         descriptor = project_tool_metadata(
             _tool("windows.event.system", keyword="system")
         )
-        unrelated = reviewed_namespace(
+        unrelated = _namespace_policy(
             namespace="builtin.adapter",
             kind="adapter",
             provenance_source="reviewed_adapter_registry",
         )
+        self.assertEqual(unrelated, unrelated.validate())
 
         with self.assertRaisesRegex(
             CapabilityRegistrySnapshotValidationError,
-            "unreviewed capability namespace",
+            "namespace policy is not source-reviewed",
         ):
             build_capability_registry_snapshot(
                 (descriptor,),
@@ -142,20 +178,33 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
         descriptor = project_tool_metadata(
             _tool("windows.event.system", keyword="system")
         )
-        wrong_kind = reviewed_namespace(
-            namespace="builtin.tool",
-            kind="adapter",
-            provenance_source="micro_tool_registry",
-        )
+        forged = replace(descriptor, kind="adapter", fingerprint=descriptor.fingerprint)
+        forged = replace(forged, fingerprint=_sha(forged._identity_payload()))
+        self.assertEqual(forged, forged.validate())
 
         with self.assertRaisesRegex(
             CapabilityRegistrySnapshotValidationError,
             "namespace kind mismatch",
         ):
-            build_capability_registry_snapshot(
-                (descriptor,),
-                namespaces=(wrong_kind,),
-            )
+            build_capability_registry_snapshot((forged,))
+
+    def test_namespace_provenance_mismatch_fails_closed(self) -> None:
+        descriptor = project_tool_metadata(
+            _tool("windows.event.system", keyword="system")
+        )
+        forged = replace(
+            descriptor,
+            provenance_source="other_reviewed_source",
+            fingerprint=descriptor.fingerprint,
+        )
+        forged = replace(forged, fingerprint=_sha(forged._identity_payload()))
+        self.assertEqual(forged, forged.validate())
+
+        with self.assertRaisesRegex(
+            CapabilityRegistrySnapshotValidationError,
+            "namespace provenance mismatch",
+        ):
+            build_capability_registry_snapshot((forged,))
 
     def test_duplicate_capability_ids_fail_closed(self) -> None:
         first = project_tool_metadata(
@@ -172,15 +221,23 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
             build_capability_registry_snapshot((first, second))
 
     def test_external_namespace_is_not_reviewed_in_v0_1(self) -> None:
+        external = _namespace_policy(
+            namespace="external.provider",
+            kind="provider",
+            provenance_source="plugin_discovery",
+            external=True,
+        )
         with self.assertRaisesRegex(
             CapabilityRegistrySnapshotValidationError,
             "external namespaces are not reviewed",
         ):
-            reviewed_namespace(
-                namespace="external.provider",
-                kind="provider",
-                provenance_source="plugin_discovery",
-                external=True,
+            build_capability_registry_snapshot(
+                (
+                    project_tool_metadata(
+                        _tool("windows.event.system", keyword="system")
+                    ),
+                ),
+                namespaces=(external,),
             )
 
     def test_registry_fingerprint_tamper_is_detected(self) -> None:
@@ -199,17 +256,24 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
         ):
             tampered.validate()
 
-    def test_snapshot_rejects_noncanonical_input_types(self) -> None:
+    def test_snapshot_rejects_empty_and_noncanonical_inputs(self) -> None:
         descriptor = project_tool_metadata(
             _tool("windows.event.system", keyword="system")
         )
 
+        with self.assertRaises(CapabilityRegistrySnapshotValidationError):
+            build_capability_registry_snapshot(())
         with self.assertRaises(CapabilityRegistrySnapshotValidationError):
             build_capability_registry_snapshot("not-a-descriptor")  # type: ignore[arg-type]
         with self.assertRaises(CapabilityRegistrySnapshotValidationError):
             build_capability_registry_snapshot(
                 (descriptor,),
                 namespaces="builtin.tool",  # type: ignore[arg-type]
+            )
+        with self.assertRaises(CapabilityRegistrySnapshotValidationError):
+            build_capability_registry_snapshot(
+                (descriptor,),
+                namespaces=("builtin.tool",),  # type: ignore[arg-type]
             )
 
 
