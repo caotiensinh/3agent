@@ -37,11 +37,17 @@ class AdaptiveLearningSkillReuseError(RuntimeError):
 
 @dataclass(frozen=True)
 class PreparedLearningReuse:
-    """Synthesis-safe projection of one already-selected adaptive context."""
+    """Synthesis-safe projection of one already-selected adaptive context.
+
+    ``materialized_skill_names`` carries only canonical production identifiers so
+    the caller can emit metadata-only view/selection telemetry without parsing or
+    re-deriving names from reviewed instruction bodies.
+    """
 
     reuse_context: LearningContext
     reference_context: LearningContext
     materialized_skill_blocks: tuple[str, ...]
+    materialized_skill_names: tuple[str, ...] = ()
 
     def validate(self) -> "PreparedLearningReuse":
         self.reuse_context.validate()
@@ -60,6 +66,13 @@ class PreparedLearningReuse:
             raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_RAW_SKILL_REFERENCE_FORBIDDEN")
         if len(self.materialized_skill_blocks) > _MAX_MATERIALIZED_LEARNED_SKILLS:
             raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_SKILL_LIMIT_EXCEEDED")
+        if len(self.materialized_skill_names) != len(self.materialized_skill_blocks):
+            raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_SKILL_IDENTITY_MISMATCH")
+        if len(set(self.materialized_skill_names)) != len(self.materialized_skill_names):
+            raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_SKILL_IDENTITY_DUPLICATE")
+        for name in self.materialized_skill_names:
+            if not _ID_RE.fullmatch(str(name or "")):
+                raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_SKILL_IDENTITY_INVALID")
         return self
 
 
@@ -172,6 +185,7 @@ def prepare_learning_reuse(
     reused: list[LearningContextItem] = []
     references: list[LearningContextItem] = []
     skill_blocks: list[str] = []
+    skill_names: list[str] = []
 
     for item in context.items:
         if item.kind != "skill":
@@ -195,6 +209,7 @@ def prepare_learning_reuse(
             raise AdaptiveLearningSkillReuseError("LEARNING_REUSE_PRODUCTION_SKILL_EMPTY")
         reused.append(item)
         skill_blocks.append(block)
+        skill_names.append(skill_name)
 
     reuse_context = LearningContext(
         query_sha256=context.query_sha256,
@@ -212,4 +227,5 @@ def prepare_learning_reuse(
         reuse_context=reuse_context,
         reference_context=reference_context,
         materialized_skill_blocks=tuple(skill_blocks),
+        materialized_skill_names=tuple(skill_names),
     ).validate()
