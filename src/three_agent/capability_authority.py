@@ -24,6 +24,7 @@ _EFFECTS = {
     "web_gateway": "network_read",
 }
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
+_NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
 
 
 class CapabilityAuthorityDenied(PermissionError):
@@ -53,6 +54,36 @@ def _safe_path(value: str, field: str) -> str:
     if not normalized or normalized == ".":
         raise ValueError(f"{field} must identify a bounded path")
     return normalized
+
+
+def _normalize_write_scope(
+    value: str | tuple[str, ...],
+    field: str,
+) -> str | tuple[str, ...]:
+    if isinstance(value, str):
+        if value == "none":
+            return "none"
+        return _safe_path(value, field)
+    if not value:
+        raise ValueError(f"{field} must not be empty; use 'none' to deny writes")
+    normalized = tuple(dict.fromkeys(_safe_path(str(item), field) for item in value))
+    return normalized
+
+
+def _write_scope_is_subset(
+    child: str | tuple[str, ...],
+    parent: str | tuple[str, ...],
+) -> bool:
+    if child == "none":
+        return True
+    if parent == "none":
+        return False
+    child_scopes = child if isinstance(child, tuple) else (child,)
+    parent_scopes = parent if isinstance(parent, tuple) else (parent,)
+    return all(
+        any(scope == parent_scope or scope.startswith(parent_scope + "/") for parent_scope in parent_scopes)
+        for scope in child_scopes
+    )
 
 
 def _fingerprint_payload(
@@ -181,6 +212,73 @@ class TaskCapabilityAuthority:
             allowed_tools=tuple(authority.allowed_tools),
             write_scope=write_scope,
             network_scope=str(authority.network_scope),
+        )
+
+    def derive_child(
+        self,
+        *,
+        task_id: str,
+        allowed_sources: tuple[str, ...] | None = None,
+        allowed_tools: tuple[str, ...] | None = None,
+        write_scope: str | tuple[str, ...] | None = None,
+        network_scope: str | None = None,
+    ) -> "TaskCapabilityAuthority":
+        """Create a fail-closed child authority that cannot exceed this authority.
+
+        Delegation may only preserve or reduce the parent's sources, tools, write
+        paths and network authority. Sensitivity is inherited exactly so a child
+        cannot declassify data. Cross-network-scope conversion is rejected; the
+        only universally narrower network scope is ``deny``.
+        """
+        child_task_id = _compact(task_id, "child_task_id", max_len=128)
+
+        if allowed_sources is None:
+            child_sources = self.allowed_sources
+        else:
+            child_sources = tuple(
+                dict.fromkeys(
+                    _compact(str(source), "child_allowed_source", max_len=128)
+                    for source in allowed_sources
+                )
+            )
+            if not set(child_sources).issubset(self.allowed_sources):
+                raise CapabilityAuthorityDenied("CHILD_SOURCE_SCOPE_ESCALATION")
+
+        if allowed_tools is None:
+            child_tools = self.allowed_tools
+        else:
+            child_tools = tuple(
+                dict.fromkeys(
+                    _compact(str(tool), "child_allowed_tool", max_len=64)
+                    for tool in allowed_tools
+                )
+            )
+            if not set(child_tools).issubset(self.allowed_tools):
+                raise CapabilityAuthorityDenied("CHILD_CAPABILITY_ESCALATION")
+
+        parent_write_scope = _normalize_write_scope(self.write_scope, "parent_write_scope")
+        requested_write_scope = self.write_scope if write_scope is None else write_scope
+        child_write_scope = _normalize_write_scope(requested_write_scope, "child_write_scope")
+        if not _write_scope_is_subset(child_write_scope, parent_write_scope):
+            raise CapabilityAuthorityDenied("CHILD_WRITE_SCOPE_ESCALATION")
+
+        child_network_scope = (
+            self.network_scope
+            if network_scope is None
+            else _compact(network_scope, "child_network_scope", max_len=64)
+        )
+        if child_network_scope not in _NETWORK_SCOPES:
+            raise ValueError(f"unsupported child_network_scope: {child_network_scope}")
+        if child_network_scope != self.network_scope and child_network_scope != "deny":
+            raise CapabilityAuthorityDenied("CHILD_NETWORK_SCOPE_ESCALATION")
+
+        return self._build(
+            task_id=child_task_id,
+            sensitivity=self.sensitivity,
+            allowed_sources=child_sources,
+            allowed_tools=child_tools,
+            write_scope=child_write_scope,
+            network_scope=child_network_scope,
         )
 
     def _decision(
