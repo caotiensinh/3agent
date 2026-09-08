@@ -25,6 +25,7 @@ NETWORK_TOOL_METADATA = (
             "host unreachable",
             "device unreachable",
             "server unreachable",
+            "server is unreachable",
             "khong ket noi duoc",
             "khong ping duoc",
             "到達できない",
