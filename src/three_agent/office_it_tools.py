@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Iterable
 
 from .capability_authority import TaskCapabilityAuthority
+from .tool_result_boundary import bound_process_output
 
 OFFICE_IT_TOOL_REGISTRY_SCHEMA = "workspace-office-it-tool-registry/v1"
 _COST_ORDER = {"C0": 0, "C1": 1, "C2": 2, "C3": 3, "C4": 4, "C5": 5}
@@ -337,11 +338,11 @@ def execute_local_read(
         check=False,
         shell=False,
     )
+    bounded_output = bound_process_output(completed.stdout, completed.stderr)
     return {
         "tool_id": tool_id,
         "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
+        **bounded_output,
     }
 
 
