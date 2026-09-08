@@ -94,9 +94,10 @@ class SkillCatalogTelemetry:
     """TaskStore-backed telemetry around one canonical ``ApprovedSkillCatalog``.
 
     List/search/view helpers delegate first and record only successful disclosures.
-    Runtime selection can resolve exact production identities before an effectiveness
-    receipt, then record selection after that receipt succeeds. No raw query,
-    description, prompt, reference text, or skill body is accepted by this API.
+    Runtime selection resolves exact audited production identities before an
+    effectiveness receipt, then records selection after that receipt succeeds. No
+    raw query, description, prompt, reference text, or skill body is accepted by
+    this API.
     """
 
     __slots__ = ("catalog", "store")
@@ -131,6 +132,12 @@ class SkillCatalogTelemetry:
         agent_id: str,
         names: Iterable[str],
     ) -> tuple[SkillCatalogIdentity, ...]:
+        """Resolve names against audited production registry bytes only.
+
+        This intentionally avoids category/tag/description projection so telemetry
+        cannot widen or narrow the canonical runtime selection policy.
+        """
+
         agent = _agent_id(agent_id)
         if isinstance(names, (str, bytes)):
             raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_NAMES_INVALID")
@@ -141,14 +148,28 @@ class SkillCatalogTelemetry:
             if not _ID.fullmatch(name):
                 raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_NAME_INVALID")
 
-        rows = self.catalog.list_for_agent(agent)
-        by_name = {row.name: row for row in rows}
-        missing = tuple(name for name in requested if name not in by_name)
-        if missing:
-            raise SkillSecurityError(
-                "Skill telemetry identity is not approved for this agent: " + ",".join(missing)
+        audited = set(self.catalog.loader.audit_registry())
+        registry = self.catalog.loader._registry()
+        skills = registry.get("skills")
+        if not isinstance(skills, dict):
+            raise SkillSecurityError("Unsupported or invalid skill registry")
+
+        identities: list[SkillCatalogIdentity] = []
+        for name in requested:
+            if name not in audited:
+                raise SkillSecurityError(f"Skill telemetry identity is not approved: {name}")
+            entry = skills.get(name)
+            if not isinstance(entry, dict) or agent not in entry.get("agent_ids", []):
+                raise SkillSecurityError(
+                    f"Skill telemetry identity is not approved for this agent: {name}"
+                )
+            identities.append(
+                SkillCatalogIdentity(
+                    name=name,
+                    production_sha256=str(entry.get("sha256") or "").strip().lower(),
+                ).validate()
             )
-        return self._identities(by_name[name] for name in requested)
+        return tuple(identities)
 
     def _record(
         self,
