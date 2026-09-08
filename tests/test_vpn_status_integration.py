@@ -117,7 +117,7 @@ def test_canonical_invocation_uses_exact_authority_and_bounded_parameters(monkey
     result = invoke_runtime_tool(request, authority=authority)
 
     assert result.tool_id == VPN_STATUS_TOOL_ID
-    assert result.decision_receipt.decision_allowed is True
+    assert result.decision_receipt.allowed is True
     assert calls == [{"authority": authority, "timeout": 4.0}]
     assert "evidence_only" in result.bounded_payload.text
 
