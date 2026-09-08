@@ -250,6 +250,22 @@ class RuntimeSchedulerTests(unittest.TestCase):
                 parent_authority=authority,
             )
 
+    def test_approval_observation_without_explicit_approval_fails_closed(self):
+        context, authority, plan = self._runtime()
+        start = self._observation(plan, authority, "start", "SUCCEEDED", 0)
+        research = self._observation(plan, authority, "research", "SUCCEEDED", 1)
+        approve = self._observation(plan, authority, "approve", "SUCCEEDED", 2)
+        with self.assertRaisesRegex(
+            RuntimeSchedulerError,
+            "SCHEDULER_APPROVAL_REQUIRED_FOR_OBSERVATION:approve",
+        ):
+            RuntimeScheduler.evaluate(
+                task_context=context,
+                plan=plan,
+                parent_authority=authority,
+                observations=(start, research, approve),
+            )
+
     def test_all_success_is_complete_and_observation_order_is_deterministic(self):
         context, authority, plan = self._runtime()
         observations = tuple(
