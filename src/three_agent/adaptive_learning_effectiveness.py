@@ -21,6 +21,7 @@ from .validator_ledger import TaskVerificationState, ValidatorLedger
 
 REUSE_RECEIPT_SCHEMA = "workspace-learning-reuse-receipt/v1"
 EFFECTIVENESS_SNAPSHOT_SCHEMA = "workspace-learning-effectiveness/v1"
+EFFECTIVENESS_RATE_SCHEMA = "workspace-learning-effectiveness-rates/v1"
 REUSE_ACTIVITY_AGENT = "learning_effectiveness"
 REUSE_ACTIVITY_ACTION = "learning_reuse_observed"
 INTERPRETATION = "observational_non_causal"
@@ -39,6 +40,7 @@ SIGNAL_DOMAIN_REVIEW = "DOMAIN_REVIEW_RECOMMENDED"
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
 _RECEIPT_ID = re.compile(r"^reuse:[0-9a-f]{64}$")
 _MAX_ITEMS = 8
+_BASIS_POINT_SCALE = 10_000
 
 
 class LearningEffectivenessError(ValueError):
@@ -250,6 +252,158 @@ def record_learning_reuse(
 
 
 @dataclass(frozen=True)
+class NormalizedEffectivenessRate:
+    """Exact ratio plus integer basis-point projection; never a binary float."""
+
+    numerator: int
+    denominator: int
+    basis_points: int | None
+
+    @classmethod
+    def from_counts(cls, numerator: int, denominator: int) -> "NormalizedEffectivenessRate":
+        if (
+            not isinstance(numerator, int)
+            or isinstance(numerator, bool)
+            or not isinstance(denominator, int)
+            or isinstance(denominator, bool)
+            or numerator < 0
+            or denominator < 0
+            or numerator > denominator
+        ):
+            raise LearningEffectivenessError("invalid normalized effectiveness rate counts")
+        basis_points = (
+            None
+            if denominator == 0
+            else (numerator * _BASIS_POINT_SCALE + denominator // 2) // denominator
+        )
+        return cls(
+            numerator=numerator,
+            denominator=denominator,
+            basis_points=basis_points,
+        ).validate()
+
+    def validate(self) -> "NormalizedEffectivenessRate":
+        if (
+            not isinstance(self.numerator, int)
+            or isinstance(self.numerator, bool)
+            or not isinstance(self.denominator, int)
+            or isinstance(self.denominator, bool)
+            or self.numerator < 0
+            or self.denominator < 0
+            or self.numerator > self.denominator
+        ):
+            raise LearningEffectivenessError("invalid normalized effectiveness rate")
+        expected = (
+            None
+            if self.denominator == 0
+            else (
+                self.numerator * _BASIS_POINT_SCALE + self.denominator // 2
+            )
+            // self.denominator
+        )
+        if self.basis_points != expected:
+            raise LearningEffectivenessError("normalized effectiveness basis points mismatch")
+        return self
+
+    def to_payload(self) -> dict[str, int | None]:
+        self.validate()
+        return {
+            "numerator": self.numerator,
+            "denominator": self.denominator,
+            "basis_points": self.basis_points,
+        }
+
+
+@dataclass(frozen=True)
+class KnowledgeEffectivenessRateProjection:
+    item_id: str
+    knowledge_sha256: str
+    domain: str
+    finalized_task_observations: int
+    isolated_finalized_task_observations: int
+    resolved_validator_observations: int
+    isolated_resolved_validator_observations: int
+    verified_success_rate: NormalizedEffectivenessRate
+    failure_rate: NormalizedEffectivenessRate
+    validator_pass_rate: NormalizedEffectivenessRate
+    isolated_verified_success_rate: NormalizedEffectivenessRate
+    isolated_failure_rate: NormalizedEffectivenessRate
+    isolated_validator_pass_rate: NormalizedEffectivenessRate
+    interpretation: str = INTERPRETATION
+    schema_version: str = EFFECTIVENESS_RATE_SCHEMA
+
+    def _base_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "interpretation": self.interpretation,
+            "item_id": self.item_id,
+            "knowledge_sha256": self.knowledge_sha256,
+            "domain": self.domain,
+            "finalized_task_observations": self.finalized_task_observations,
+            "isolated_finalized_task_observations": self.isolated_finalized_task_observations,
+            "resolved_validator_observations": self.resolved_validator_observations,
+            "isolated_resolved_validator_observations": self.isolated_resolved_validator_observations,
+            "verified_success_rate": self.verified_success_rate.to_payload(),
+            "failure_rate": self.failure_rate.to_payload(),
+            "validator_pass_rate": self.validator_pass_rate.to_payload(),
+            "isolated_verified_success_rate": self.isolated_verified_success_rate.to_payload(),
+            "isolated_failure_rate": self.isolated_failure_rate.to_payload(),
+            "isolated_validator_pass_rate": self.isolated_validator_pass_rate.to_payload(),
+        }
+
+    def validate(self) -> "KnowledgeEffectivenessRateProjection":
+        if self.schema_version != EFFECTIVENESS_RATE_SCHEMA or self.interpretation != INTERPRETATION:
+            raise LearningEffectivenessError("effectiveness rate projection header mismatch")
+        _require_identifier(self.item_id, field="item_id")
+        if not _SHA.fullmatch(self.knowledge_sha256):
+            raise LearningEffectivenessError("invalid knowledge_sha256")
+        if self.domain not in DOMAINS:
+            raise LearningEffectivenessError("invalid rate projection domain")
+        for value in (
+            self.finalized_task_observations,
+            self.isolated_finalized_task_observations,
+            self.resolved_validator_observations,
+            self.isolated_resolved_validator_observations,
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise LearningEffectivenessError("invalid rate projection observation count")
+        if self.isolated_finalized_task_observations > self.finalized_task_observations:
+            raise LearningEffectivenessError("isolated finalized observations exceed total")
+        if self.isolated_resolved_validator_observations > self.resolved_validator_observations:
+            raise LearningEffectivenessError("isolated validator observations exceed total")
+        for rate in (
+            self.verified_success_rate,
+            self.failure_rate,
+            self.validator_pass_rate,
+            self.isolated_verified_success_rate,
+            self.isolated_failure_rate,
+            self.isolated_validator_pass_rate,
+        ):
+            rate.validate()
+        if self.verified_success_rate.denominator != self.finalized_task_observations:
+            raise LearningEffectivenessError("success rate denominator mismatch")
+        if self.failure_rate.denominator != self.finalized_task_observations:
+            raise LearningEffectivenessError("failure rate denominator mismatch")
+        if self.validator_pass_rate.denominator != self.resolved_validator_observations:
+            raise LearningEffectivenessError("validator pass denominator mismatch")
+        if self.isolated_verified_success_rate.denominator != self.isolated_finalized_task_observations:
+            raise LearningEffectivenessError("isolated success denominator mismatch")
+        if self.isolated_failure_rate.denominator != self.isolated_finalized_task_observations:
+            raise LearningEffectivenessError("isolated failure denominator mismatch")
+        if self.isolated_validator_pass_rate.denominator != self.isolated_resolved_validator_observations:
+            raise LearningEffectivenessError("isolated validator denominator mismatch")
+        return self
+
+    @property
+    def projection_sha256(self) -> str:
+        self.validate()
+        return _sha_payload(self._base_payload())
+
+    def to_payload(self) -> dict[str, Any]:
+        return {**self._base_payload(), "projection_sha256": self.projection_sha256}
+
+
+@dataclass(frozen=True)
 class KnowledgeEffectivenessSignal:
     item_id: str
     knowledge_sha256: str
@@ -269,8 +423,15 @@ class KnowledgeEffectivenessSignal:
     isolated_done_unverified: int
     advisory_signal: str
     interpretation: str = INTERPRETATION
+    validator_resolved_after_reuse: int = 0
+    validator_passed_after_reuse: int = 0
+    isolated_validator_resolved: int = 0
+    isolated_validator_passed: int = 0
 
     def to_payload(self) -> dict[str, Any]:
+        # Preserve the established v1 snapshot payload and hash. Validator counters
+        # are intentionally exposed only through the separately versioned rate
+        # projection below, so existing Phase 4H/4I consumers remain byte-stable.
         return {
             "item_id": self.item_id,
             "knowledge_sha256": self.knowledge_sha256,
@@ -291,6 +452,51 @@ class KnowledgeEffectivenessSignal:
             "advisory_signal": self.advisory_signal,
             "interpretation": self.interpretation,
         }
+
+    def rate_projection(self) -> KnowledgeEffectivenessRateProjection:
+        finalized = (
+            self.verified_success_after_reuse
+            + self.failed_after_reuse
+            + self.done_unverified_after_reuse
+        )
+        isolated_finalized = (
+            self.isolated_verified_success
+            + self.isolated_failed
+            + self.isolated_done_unverified
+        )
+        return KnowledgeEffectivenessRateProjection(
+            item_id=self.item_id,
+            knowledge_sha256=self.knowledge_sha256,
+            domain=self.domain,
+            finalized_task_observations=finalized,
+            isolated_finalized_task_observations=isolated_finalized,
+            resolved_validator_observations=self.validator_resolved_after_reuse,
+            isolated_resolved_validator_observations=self.isolated_validator_resolved,
+            verified_success_rate=NormalizedEffectivenessRate.from_counts(
+                self.verified_success_after_reuse,
+                finalized,
+            ),
+            failure_rate=NormalizedEffectivenessRate.from_counts(
+                self.failed_after_reuse,
+                finalized,
+            ),
+            validator_pass_rate=NormalizedEffectivenessRate.from_counts(
+                self.validator_passed_after_reuse,
+                self.validator_resolved_after_reuse,
+            ),
+            isolated_verified_success_rate=NormalizedEffectivenessRate.from_counts(
+                self.isolated_verified_success,
+                isolated_finalized,
+            ),
+            isolated_failure_rate=NormalizedEffectivenessRate.from_counts(
+                self.isolated_failed,
+                isolated_finalized,
+            ),
+            isolated_validator_pass_rate=NormalizedEffectivenessRate.from_counts(
+                self.isolated_validator_passed,
+                self.isolated_validator_resolved,
+            ),
+        ).validate()
 
 
 @dataclass(frozen=True)
@@ -317,11 +523,16 @@ class LearningEffectivenessSnapshot:
     def to_payload(self) -> dict[str, Any]:
         return {**self._base_payload(), "snapshot_sha256": self.snapshot_sha256}
 
+    def rate_projections(self) -> tuple[KnowledgeEffectivenessRateProjection, ...]:
+        return tuple(signal.rate_projection() for signal in self.signals)
+
 
 @dataclass(frozen=True)
 class _TaskOutcome:
     code: str
     verification_sha256: str
+    resolved_validator_count: int
+    passed_validator_count: int
 
 
 class DeterministicLearningEffectivenessAnalyzer:
@@ -377,7 +588,16 @@ class DeterministicLearningEffectivenessAnalyzer:
             code = OUTCOME_WAITING_HUMAN
         else:
             code = OUTCOME_PENDING
-        return _TaskOutcome(code=code, verification_sha256=verification_sha)
+        resolved = len(verification.passed_validators) + len(verification.failed_validators)
+        passed = len(verification.passed_validators)
+        if passed > resolved:
+            raise LearningEffectivenessError("VALIDATOR_RATE_COUNTER_INVALID")
+        return _TaskOutcome(
+            code=code,
+            verification_sha256=verification_sha,
+            resolved_validator_count=resolved,
+            passed_validator_count=passed,
+        )
 
     @staticmethod
     def _signal(
@@ -451,6 +671,10 @@ class DeterministicLearningEffectivenessAnalyzer:
                             OUTCOME_PENDING: 0,
                             OUTCOME_DONE_UNVERIFIED: 0,
                         },
+                        "validator_resolved": 0,
+                        "validator_passed": 0,
+                        "isolated_validator_resolved": 0,
+                        "isolated_validator_passed": 0,
                         "verification": set(),
                     },
                 )
@@ -458,11 +682,15 @@ class DeterministicLearningEffectivenessAnalyzer:
                 bucket["receipts"].update(receipt_counts[key])
                 bucket["verification"].add(outcome.verification_sha256)
                 bucket["outcomes"][outcome.code] += 1
+                bucket["validator_resolved"] += outcome.resolved_validator_count
+                bucket["validator_passed"] += outcome.passed_validator_count
                 if confounded:
                     bucket["confounded"] += 1
                 else:
                     bucket["isolated"] += 1
                     bucket["isolated_outcomes"][outcome.code] += 1
+                    bucket["isolated_validator_resolved"] += outcome.resolved_validator_count
+                    bucket["isolated_validator_passed"] += outcome.passed_validator_count
 
         signals: list[KnowledgeEffectivenessSignal] = []
         for (item_id, knowledge_sha, domain), bucket in sorted(per_item.items()):
@@ -494,6 +722,10 @@ class DeterministicLearningEffectivenessAnalyzer:
                     isolated_waiting_human=isolated[OUTCOME_WAITING_HUMAN],
                     isolated_done_unverified=isolated[OUTCOME_DONE_UNVERIFIED],
                     advisory_signal=advisory,
+                    validator_resolved_after_reuse=int(bucket["validator_resolved"]),
+                    validator_passed_after_reuse=int(bucket["validator_passed"]),
+                    isolated_validator_resolved=int(bucket["isolated_validator_resolved"]),
+                    isolated_validator_passed=int(bucket["isolated_validator_passed"]),
                 )
             )
 
