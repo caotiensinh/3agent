@@ -11,25 +11,30 @@ COMPLAINT_SEMANTICS_SCHEMA = "workspace-complaint-semantics/v1"
 _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
     "perceived_unresponsiveness": (
         "may bi do", "may do", "bi do", "treo", "freeze", "freezes", "frozen",
-        "not responding", "unresponsive", "フリーズ",
+        "not responding", "unresponsive", "dung hinh", "フリーズ", "固まる",
+        "パソコンが固まる",
     ),
     "unexpected_restart": (
-        "tu khoi dong lai", "tu reset", "khoi dong lai", "random restart",
-        "random reboot", "restart", "reboot", "勝手に再起動", "再起動",
+        "tu khoi dong lai", "tu reset", "khoi dong lai", "tu bat lai tu dau",
+        "bat lai tu dau", "random restart", "random reboot", "restart", "reboot",
+        "勝手に再起動", "再起動",
     ),
     "display_blackout": (
-        "man hinh den", "black screen", "screen black", "no display", "画面 真っ暗",
+        "man hinh den", "man hinh khong len", "black screen", "screen black",
+        "no display", "画面 真っ暗", "画面が真っ暗", "真っ暗",
     ),
     "blue_screen_observed": (
-        "man hinh xanh", "blue screen", "bsod", "ブルースクリーン",
+        "man hinh xanh", "xanh man hinh", "blue screen", "bsod", "ブルースクリーン",
     ),
     "expected_network_access_unavailable": (
-        "mat mang", "khong vao mang", "khong co mang", "no internet", "no network",
-        "internet broken", "ネット 繋がらない",
+        "mat mang", "khong vao mang", "khong vao duoc mang", "khong co mang",
+        "internet tu nhien bi mat", "no internet", "no network", "internet broken",
+        "ネット 繋がらない", "ネットが繋がらない",
     ),
     "application_unresponsive": (
-        "app bi do", "phan mem bi do", "app not responding", "application not responding",
-        "アプリ 応答なし",
+        "app bi do", "app bi treo", "phan mem bi do", "phan mem bi treo",
+        "excel bi do", "app not responding", "application not responding",
+        "chrome is not responding", "アプリ 応答なし", "アプリが応答しない",
     ),
 }
 
