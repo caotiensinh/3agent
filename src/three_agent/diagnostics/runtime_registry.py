@@ -7,6 +7,7 @@ from ..micro_tool_registry import MicroToolRegistry, ToolMetadata
 from ..office_it_tools import iter_specs
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .common_tools import common_tool_metadata
+from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
 from .network_tools import NETWORK_TOOL_METADATA, NETWORK_REACHABILITY_TOOL_ID
 from .windows_policy_tools import GROUP_POLICY_TOOL_ID, GROUP_POLICY_TOOL_METADATA
 
@@ -25,6 +26,7 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + common_tool_metadata()
         + NETWORK_TOOL_METADATA
         + GROUP_POLICY_TOOL_METADATA
+        + IDENTITY_TOOL_METADATA
     )
     ids = tuple(item.id for item in items)
     if len(ids) != len(set(ids)):
@@ -60,6 +62,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("time.sync", ("time.sync.status",)),
             CapabilityBinding("service.status", ("service.status.read",)),
             CapabilityBinding("group_policy", (GROUP_POLICY_TOOL_ID,)),
+            CapabilityBinding("identity.session", (IDENTITY_SESSION_TOOL_ID,)),
         )
     )
     seen: set[str] = set()
