@@ -1,3 +1,0 @@
-Supersession branch started at c23f8c6dde8dba1915e31dc924e8713c5cc176c9.
-PR base advanced independently to 8970f3fc5211ea2af2c0620c82a10a9a1be3d26d via test-only PR #384.
-No force update is used; pull-request mergeability and CI are the reconciliation gate.
