@@ -19,12 +19,20 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
         )
         self.assertNotIn("system.resource.snapshot", contract.allowed_tools)
         self.assertNotIn("network.reachability.internal", contract.allowed_tools)
+        self.assertNotIn("identity.session.snapshot", contract.allowed_tools)
         authority = TaskCapabilityAuthority.from_contract(contract)
         with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
             authority.require(
                 "system.resource.snapshot",
                 resource_kind="performance_snapshot",
                 resource_ref="local:resources",
+                effect="read",
+            )
+        with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
+            authority.require(
+                "identity.session.snapshot",
+                resource_kind="identity_session",
+                resource_ref="local:identity:current",
                 effect="read",
             )
 
@@ -45,6 +53,44 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
             effect="read",
         )
         self.assertTrue(decision.allowed)
+
+    def test_explicit_identity_session_read_can_be_authorized_without_write_or_egress(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-IDENTITY",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("identity.session.snapshot",),
+        )
+        self.assertEqual(contract.allowed_tools, ("identity.session.snapshot",))
+        self.assertEqual(contract.write_scope, "none")
+        self.assertNotEqual(contract.network_scope, "allowlisted_egress")
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        decision = authority.require(
+            "identity.session.snapshot",
+            resource_kind="identity_session",
+            resource_ref="local:identity:current",
+            effect="read",
+        )
+        self.assertTrue(decision.allowed)
+
+    def test_identity_session_rejects_effect_widening(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-IDENTITY-EFFECT",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("identity.session.snapshot",),
+        )
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        with self.assertRaisesRegex(
+            CapabilityAuthorityDenied,
+            "CAPABILITY_EFFECT_NOT_ALLOWED",
+        ):
+            authority.require(
+                "identity.session.snapshot",
+                resource_kind="identity_session",
+                resource_ref="local:identity:current",
+                effect="network_read",
+            )
 
     def test_local_read_tool_rejects_effect_widening(self) -> None:
         contract = TaskContractCompiler().compile(
