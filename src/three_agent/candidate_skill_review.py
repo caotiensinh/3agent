@@ -27,7 +27,7 @@ from .adaptive_learning_promotion import (
     PromotionBoundCheckpointAuthority,
 )
 from .adaptive_learning_store import AdaptiveLearningStore
-from .candidate_skill import CandidateSkill, CandidateSkillSecurityReceipt
+from .candidate_skill import CandidateSkill, CandidateSkillError, CandidateSkillSecurityReceipt
 from .candidate_skill_validation import CandidateSkillValidationService
 from .workspace_auth import WorkspaceAuthStore
 
@@ -69,6 +69,13 @@ def _expected_sha(value: str, *, code: str) -> str:
     return text
 
 
+def _skill_view(candidate: KnowledgeCandidate) -> CandidateSkill:
+    try:
+        return CandidateSkill.from_candidate(candidate)
+    except CandidateSkillError as exc:
+        raise CandidateSkillReviewError(exc.reason_code) from exc
+
+
 @dataclass(frozen=True)
 class CandidateSkillReviewSummary:
     candidate_id: str
@@ -92,7 +99,10 @@ class CandidateSkillReviewSummary:
         if self.state != "pending_human_approval":
             raise CandidateSkillReviewError("CANDIDATE_SKILL_REVIEW_STATE_INVALID")
         _candidate_id(self.candidate_id)
-        _expected_sha(self.candidate_sha256, code="CANDIDATE_SKILL_REVIEW_CANDIDATE_SHA_INVALID")
+        _expected_sha(
+            self.candidate_sha256,
+            code="CANDIDATE_SKILL_REVIEW_CANDIDATE_SHA_INVALID",
+        )
         if not self.proposed_skill_name or not self.title or not self.domain or not self.scope:
             raise CandidateSkillReviewError("CANDIDATE_SKILL_REVIEW_SUMMARY_INCOMPLETE")
         if self.verified_experience_count < 1 or self.evidence_ref_count < 1:
@@ -144,7 +154,10 @@ class CandidateSkillReviewPacket:
             (self.proposed_skill_sha256, "CANDIDATE_SKILL_REVIEW_SKILL_SHA_INVALID"),
             (self.security_receipt_sha256, "CANDIDATE_SKILL_REVIEW_SECURITY_SHA_INVALID"),
             (self.validation_receipt_sha256, "CANDIDATE_SKILL_REVIEW_VALIDATION_SHA_INVALID"),
-            (self.expected_checkpoint_state_sha256, "CANDIDATE_SKILL_REVIEW_CHECKPOINT_SHA_INVALID"),
+            (
+                self.expected_checkpoint_state_sha256,
+                "CANDIDATE_SKILL_REVIEW_CHECKPOINT_SHA_INVALID",
+            ),
             (self.review_fingerprint, "CANDIDATE_SKILL_REVIEW_FINGERPRINT_INVALID"),
         ):
             _expected_sha(value, code=code)
@@ -217,9 +230,27 @@ class CandidateSkillReviewQueue:
         self._validation = CandidateSkillValidationService(store, authority)
         self._authority.verify(store)
 
-    def _latest_rows(self, *, limit: int) -> list[tuple[dict[str, Any], KnowledgeCandidate]]:
+    @staticmethod
+    def _is_pending(row: dict[str, Any], candidate: KnowledgeCandidate) -> bool:
+        return (
+            candidate.kind == "skill"
+            and str(row["level"]) == "validated"
+            and str(row["disposition"]) == "staged"
+        )
+
+    def list_pending(self, *, limit: int = 50) -> tuple[CandidateSkillReviewSummary, ...]:
+        """List pending skills without letting newer non-pending rows hide older work.
+
+        SQLite streams the result cursor. The query first removes non-pending
+        levels/dispositions at the database boundary; Python then validates each
+        immutable row and filters non-skill kinds before applying the human-facing
+        limit. This keeps memory bounded without truncating before the real filter.
+        """
+
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= _MAX_PENDING:
             raise CandidateSkillReviewError("CANDIDATE_SKILL_REVIEW_LIMIT_INVALID")
+        self._authority.verify(self._store)
+        pending: list[CandidateSkillReviewSummary] = []
         with self._store.connect() as conn:
             self._store._assert_ledger_integrity(conn)
             rows = conn.execute(
@@ -231,33 +262,19 @@ class CandidateSkillReviewQueue:
                     FROM learning_versions
                     GROUP BY candidate_id
                 ) AS latest ON latest.version_id = lv.version_id
+                WHERE lv.level='validated' AND lv.disposition='staged'
                 ORDER BY lv.version_id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
-            result: list[tuple[dict[str, Any], KnowledgeCandidate]] = []
+                """
+            )
             for row in rows:
                 candidate = self._store._candidate_from_row(row)
-                result.append((dict(row), candidate))
-            return result
-
-    @staticmethod
-    def _is_pending(row: dict[str, Any], candidate: KnowledgeCandidate) -> bool:
-        return (
-            candidate.kind == "skill"
-            and str(row["level"]) == "validated"
-            and str(row["disposition"]) == "staged"
-        )
-
-    def list_pending(self, *, limit: int = 50) -> tuple[CandidateSkillReviewSummary, ...]:
-        self._authority.verify(self._store)
-        pending: list[CandidateSkillReviewSummary] = []
-        for row, candidate in self._latest_rows(limit=limit):
-            if not self._is_pending(row, candidate):
-                continue
-            view = CandidateSkill.from_candidate(candidate)
-            pending.append(self._summary(candidate, view))
+                row_dict = dict(row)
+                if not self._is_pending(row_dict, candidate):
+                    continue
+                view = _skill_view(candidate)
+                pending.append(self._summary(candidate, view))
+                if len(pending) >= limit:
+                    break
         return tuple(pending)
 
     def _pending(self, candidate_id: str) -> tuple[dict[str, Any], KnowledgeCandidate]:
@@ -278,12 +295,11 @@ class CandidateSkillReviewQueue:
 
         row, candidate = self._pending(candidate_id)
         checkpoint = self._authority.verify(self._store)
-        view = CandidateSkill.from_candidate(candidate)
+        view = _skill_view(candidate)
         security = CandidateSkillSecurityReceipt.create(candidate)
         validation_receipt = self._validation.build_receipt(candidate.candidate_id)
         validation_sha = _digest(validation_receipt.to_payload())
-        stored_validation_sha = str(row["validation_receipt_sha256"] or "")
-        if validation_sha != stored_validation_sha:
+        if validation_sha != str(row["validation_receipt_sha256"] or ""):
             raise CandidateSkillReviewError("CANDIDATE_SKILL_REVIEW_VALIDATION_STATE_MISMATCH")
         markdown = CandidateSkill.render_proposed_document(candidate)
 
@@ -341,6 +357,7 @@ class CandidateSkillReviewQueue:
             "production_write_granted": False,
             "human_approval_required": True,
         }
+        purpose = self._purpose(candidate)
         fingerprint_payload = {
             "schema_version": "workspace-candidate-skill-review-fingerprint/v1",
             "candidate_id": candidate.candidate_id,
@@ -353,7 +370,7 @@ class CandidateSkillReviewQueue:
             "risk_level": candidate.risk_level,
             "sensitivity": candidate.sensitivity,
             "execution_mode": candidate.execution_mode,
-            "purpose": self._purpose(candidate),
+            "purpose": purpose,
             "workflow_steps": list(workflow_steps),
             "benefits": list(benefits),
             "input_contract": input_contract,
@@ -378,7 +395,7 @@ class CandidateSkillReviewQueue:
             risk_level=candidate.risk_level,
             sensitivity=candidate.sensitivity,
             execution_mode=candidate.execution_mode,
-            purpose=self._purpose(candidate),
+            purpose=purpose,
             workflow_steps=workflow_steps,
             benefits=benefits,
             input_contract=input_contract,
@@ -468,8 +485,8 @@ class CandidateSkillApprovalService:
             code="CANDIDATE_SKILL_APPROVAL_FINGERPRINT_INVALID",
         )
 
-        # Rebuild from canonical state immediately before authorization. Any
-        # candidate, receipt, or checkpoint change produces a different packet.
+        # Rebuild immediately before authorization. Any candidate, receipt, or
+        # checkpoint change produces a different packet and invalidates the click.
         packet = self._queue.get(candidate_id)
         if packet.candidate_sha256 != candidate_sha:
             raise CandidateSkillReviewError("CANDIDATE_SKILL_APPROVAL_CANDIDATE_CHANGED")
