@@ -42,6 +42,9 @@ _EFFECTS = {
     "windows.group_policy.result": "read",
     "identity.session.snapshot": "read",
     "audio.devices.snapshot": "read",
+    "process.top.snapshot": "read",
+    "hardware.usb.snapshot": "read",
+    "camera.devices.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
 }

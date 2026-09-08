@@ -17,11 +17,17 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
             task_type="analysis",
             sensitivity="internal",
         )
-        self.assertNotIn("system.resource.snapshot", contract.allowed_tools)
-        self.assertNotIn("network.reachability.internal", contract.allowed_tools)
-        self.assertNotIn("network.quality.internal", contract.allowed_tools)
-        self.assertNotIn("identity.session.snapshot", contract.allowed_tools)
-        self.assertNotIn("audio.devices.snapshot", contract.allowed_tools)
+        for tool_id in (
+            "system.resource.snapshot",
+            "network.reachability.internal",
+            "network.quality.internal",
+            "identity.session.snapshot",
+            "audio.devices.snapshot",
+            "process.top.snapshot",
+            "hardware.usb.snapshot",
+            "camera.devices.snapshot",
+        ):
+            self.assertNotIn(tool_id, contract.allowed_tools)
         authority = TaskCapabilityAuthority.from_contract(contract)
         with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
             authority.require(
@@ -107,6 +113,59 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
             effect="read",
         )
         self.assertTrue(decision.allowed)
+
+    def test_local_endpoint_evidence_tools_require_explicit_read_authority(self) -> None:
+        cases = (
+            ("process.top.snapshot", "process_inventory", "local:processes:top"),
+            ("hardware.usb.snapshot", "usb_devices", "local:usb:devices"),
+            ("camera.devices.snapshot", "camera_devices", "local:camera:devices"),
+        )
+        for tool_id, resource_kind, resource_ref in cases:
+            with self.subTest(tool_id=tool_id):
+                contract = TaskContractCompiler().compile(
+                    task_id=f"TASK-DIAG-{tool_id}",
+                    task_type="analysis",
+                    sensitivity="internal",
+                    allowed_tools=(tool_id,),
+                )
+                self.assertEqual(contract.allowed_tools, (tool_id,))
+                self.assertEqual(contract.write_scope, "none")
+                self.assertNotEqual(contract.network_scope, "allowlisted_egress")
+                authority = TaskCapabilityAuthority.from_contract(contract)
+                decision = authority.require(
+                    tool_id,
+                    resource_kind=resource_kind,
+                    resource_ref=resource_ref,
+                    effect="read",
+                )
+                self.assertTrue(decision.allowed)
+
+    def test_local_endpoint_evidence_tools_reject_effect_widening(self) -> None:
+        cases = (
+            ("process.top.snapshot", "process_inventory", "local:processes:top"),
+            ("hardware.usb.snapshot", "usb_devices", "local:usb:devices"),
+            ("camera.devices.snapshot", "camera_devices", "local:camera:devices"),
+        )
+        for tool_id, resource_kind, resource_ref in cases:
+            with self.subTest(tool_id=tool_id):
+                contract = TaskContractCompiler().compile(
+                    task_id=f"TASK-DIAG-EFFECT-{tool_id}",
+                    task_type="analysis",
+                    sensitivity="internal",
+                    allowed_tools=(tool_id,),
+                )
+                authority = TaskCapabilityAuthority.from_contract(contract)
+                for widened_effect in ("network_read", "execute"):
+                    with self.assertRaisesRegex(
+                        CapabilityAuthorityDenied,
+                        "CAPABILITY_EFFECT_NOT_ALLOWED",
+                    ):
+                        authority.require(
+                            tool_id,
+                            resource_kind=resource_kind,
+                            resource_ref=resource_ref,
+                            effect=widened_effect,
+                        )
 
     def test_identity_session_rejects_effect_widening(self) -> None:
         contract = TaskContractCompiler().compile(

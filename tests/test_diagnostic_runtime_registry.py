@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_twenty_two_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_twenty_five_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 22)
-        self.assertEqual(len({tool.id for tool in metadata}), 22)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 22)
+        self.assertEqual(len(metadata), 25)
+        self.assertEqual(len({tool.id for tool in metadata}), 25)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 25)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -52,7 +52,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertNotIn("camera.reachability", mapping)
         self.assertNotIn("isp.reachability", mapping)
 
-    def test_runtime_bindings_reuse_common_tools_across_domains(self) -> None:
+    def test_runtime_bindings_reuse_common_and_local_endpoint_tools(self) -> None:
         mapping = {
             binding.capability_tag: binding.tool_ids
             for binding in default_runtime_capability_bindings()
@@ -66,6 +66,9 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["group_policy"], ("windows.group_policy.result",))
         self.assertEqual(mapping["identity.session"], ("identity.session.snapshot",))
         self.assertEqual(mapping["audio.devices"], ("audio.devices.snapshot",))
+        self.assertEqual(mapping["process.top"], ("process.top.snapshot",))
+        self.assertEqual(mapping["hardware.usb"], ("hardware.usb.snapshot",))
+        self.assertEqual(mapping["camera.devices"], ("camera.devices.snapshot",))
 
     def test_650_route_coverage_report_is_explicitly_incomplete(self) -> None:
         report = build_coverage_report(
@@ -92,11 +95,17 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             bindings=default_runtime_capability_bindings(),
         )
         missing = dict(report.unresolved_capability_counts)
-        self.assertNotIn("network.reachability", missing)
-        self.assertNotIn("network.quality", missing)
-        self.assertNotIn("group_policy", missing)
-        self.assertNotIn("identity.session", missing)
-        self.assertNotIn("audio.devices", missing)
+        for capability in (
+            "network.reachability",
+            "network.quality",
+            "group_policy",
+            "identity.session",
+            "audio.devices",
+            "process.top",
+            "hardware.usb",
+            "camera.devices",
+        ):
+            self.assertNotIn(capability, missing)
         self.assertIn("service.health", missing)
         self.assertGreater(missing["service.health"], 0)
         backlog = unresolved_capability_backlog(report.unresolved_capability_counts, limit=10)
@@ -119,6 +128,9 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("identity.session.snapshot"), 35)
         self.assertEqual(selected.get("network.quality.internal"), 35)
         self.assertEqual(selected.get("audio.devices.snapshot"), 35)
+        self.assertEqual(selected.get("process.top.snapshot"), 20)
+        self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
+        self.assertEqual(selected.get("camera.devices.snapshot"), 20)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
