@@ -14,6 +14,7 @@ DOMAIN_COMPLETION_CASES = (
     ("windows.print.driver.snapshot", "printer_drivers", "local:printer:drivers"),
     ("windows.boot.snapshot", "boot_state", "local:windows:boot"),
     ("windows.update.history", "windows_update_history", "local:windows:update-history"),
+    ("meeting.client.snapshot", "meeting_clients", "local:meeting:clients"),
 )
 
 
@@ -134,7 +135,7 @@ class DomainCompletionCapabilityIntegrationTests(unittest.TestCase):
         ):
             authority.derive_child(
                 task_id="TASK-DOMAIN-COMPLETION-CHILD",
-                allowed_tools=("system.platform.identify", "storage.io.snapshot"),
+                allowed_tools=("system.platform.identify", "meeting.client.snapshot"),
             )
 
 

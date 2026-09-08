@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_twenty_nine_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_thirty_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 29)
-        self.assertEqual(len({tool.id for tool in metadata}), 29)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 29)
+        self.assertEqual(len(metadata), 30)
+        self.assertEqual(len({tool.id for tool in metadata}), 30)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 30)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -66,6 +66,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["group_policy"], ("windows.group_policy.result",))
         self.assertEqual(mapping["identity.session"], ("identity.session.snapshot",))
         self.assertEqual(mapping["audio.devices"], ("audio.devices.snapshot",))
+        self.assertEqual(mapping["meeting.client"], ("meeting.client.snapshot",))
         self.assertEqual(mapping["process.top"], ("process.top.snapshot",))
         self.assertEqual(mapping["hardware.usb"], ("hardware.usb.snapshot",))
         self.assertEqual(mapping["camera.devices"], ("camera.devices.snapshot",))
@@ -74,14 +75,14 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.boot"], ("windows.boot.snapshot",))
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
 
-    def test_650_route_coverage_report_reaches_eighty_five_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_five_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 85)
+        self.assertEqual(report.fully_promotable_routes, 105)
         self.assertEqual(
             report.fully_promotable_routes
             + report.partially_covered_routes
@@ -106,6 +107,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             "group_policy",
             "identity.session",
             "audio.devices",
+            "meeting.client",
             "process.top",
             "hardware.usb",
             "camera.devices",
@@ -137,6 +139,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("identity.session.snapshot"), 35)
         self.assertEqual(selected.get("network.quality.internal"), 35)
         self.assertEqual(selected.get("audio.devices.snapshot"), 35)
+        self.assertEqual(selected.get("meeting.client.snapshot"), 20)
         self.assertEqual(selected.get("process.top.snapshot"), 20)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
         self.assertEqual(selected.get("camera.devices.snapshot"), 20)
