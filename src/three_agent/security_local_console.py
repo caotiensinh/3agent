@@ -376,6 +376,8 @@ def _request_host_is_loopback(value: str | None) -> bool:
 def _browser_safe_payload(payload: dict[str, object]) -> dict[str, object]:
     safe = dict(payload)
     safe.pop("database_parent", None)
+    safe.pop("policy_fingerprint", None)
+    safe.pop("profile_id", None)
     return safe
 
 
