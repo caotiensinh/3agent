@@ -2,9 +2,9 @@
 
 ## Corpus status
 
-- Canonical issue/symptom signatures: **500** (`IT-0001` … `IT-0500`)
-- Domains: **26**
-- Public sources reviewed/retained: **44**
+- Canonical issue/symptom signatures: **650** (`IT-0001` … `IT-0650`)
+- Domains: **32**
+- Public sources reviewed/retained: **58**
 - Collection date: **2026-09-08**
 - Scope: public practitioner communities, public vendor communities, official vendor troubleshooting material, and public MSP/help-desk sources.
 - Limitation: community reports are anecdotal and environment-specific; this catalog is not a statistical prevalence study.
@@ -13,6 +13,7 @@
 
 1. [`OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_1.md`](./OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_1.md) — `IT-0001` … `IT-0380`; first 20 domains; sources S01 … S30.
 2. [`OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_2_EXPANSION.md`](./OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_2_EXPANSION.md) — `IT-0381` … `IT-0500`; 6 additional domains; sources S31 … S44.
+3. [`OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_3_EXPANSION.md`](./OFFICE_IT_SUPPORT_REAL_WORLD_ISSUE_CATALOG_V0_3_EXPANSION.md) — `IT-0501` … `IT-0650`; 6 additional domains; sources S45 … S58.
 
 ## Domain map
 
@@ -44,6 +45,12 @@
 | IT-0446–0470 | Conference-room A/V, projectors, wireless presentation and BYOD |
 | IT-0471–0485 | FIDO2/security keys, smart cards and VDI |
 | IT-0486–0500 | Warehouse, barcode, label, serial and specialized peripherals |
+| IT-0501–0525 | Active Directory, DNS, DHCP, Group Policy and hybrid identity core services |
+| IT-0526–0550 | Microsoft Office, Excel, Word, PowerPoint, OneNote and desktop productivity |
+| IT-0551–0575 | ERP, SQL, databases, ODBC and line-of-business systems |
+| IT-0576–0600 | CCTV, NVR/VMS, access control, badges and attendance systems |
+| IT-0601–0625 | Certificates, PKI, TLS, SMTP relays and machine/application identity |
+| IT-0626–0650 | Remote sites, WAN, ISP, SD-WAN and home-office edge cases |
 
 ## Diagnostic contract
 
