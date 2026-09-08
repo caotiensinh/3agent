@@ -2,7 +2,7 @@
 
 Status: active implementation checklist, reconciled against live `main` on 2026-09-08.
 
-Current verified `main`: `8e8615d305113b385afe2ceb45d2966edd7b5293`
+Current verified `main`: `0a4ff6201929619484480cf862e9b837e8213e2d`
 
 Architecture: `docs/WORKSPACE_SKILL_TOOL_SELF_EVOLUTION_ARCHITECTURE.md`
 
@@ -19,7 +19,10 @@ Merged lifecycle milestones used for this reconciliation:
 - PR #385 — approved learned-skill production materialization;
 - PR #388 — exact runtime reuse of materialized learned skills;
 - PR #389 — immutable production supersession and operator rollback mirror;
-- PR #390 — bounded recommendation-only maintenance advisor over Phase 4H/4I.
+- PR #390 — bounded recommendation-only maintenance advisor over Phase 4H/4I;
+- PR #391 — self-evolution checklist reconciliation against merged canonical state;
+- PR #392 — bounded metadata-only approved skill catalog search/filter;
+- PR #393 — metadata-only list/view/selected catalog telemetry on the existing activity ledger.
 
 Important interpretation rules:
 
@@ -43,9 +46,9 @@ Important interpretation rules:
 
 - [x] **S-01** Add a compact approved skill catalog for one agent (`list_for_agent`) with no skill body in the index. Merged via PR #371.
 - [x] **S-02** Add explicit single-skill on-demand view (`view_for_agent`) that reuses full existing admission/integrity checks. Merged via PR #371.
-- [ ] **S-03** Add bounded metadata search/filter by name, description, category/tag, risk/domain where reviewed metadata exists.
+- [x] **S-03** Add bounded metadata search/filter by name, description, category/tag, risk/domain where reviewed metadata exists. Merged via PR #392; search is metadata-only and canonical registry audit remains mandatory before filtering.
 - [x] **S-04** Integrate the catalog into agent/runtime selection so default prompt injection stays minimal. `adaptive_learning_skill_reuse.py` and `agents/research_compiled.py` use adaptive retrieval first and load at most the exact materialized production skill selected for synthesis.
-- [~] **S-05** Add telemetry for list/view/selected counts without raw prompt/content logging. Exact selected/associated-task reuse receipts and retrieval activity exist; dedicated catalog list/view counters are not yet complete.
+- [x] **S-05** Add telemetry for list/view/selected counts without raw prompt/content logging. Merged via PR #393; list/search record count plus deterministic identity-set digest, while view/selected record exact production name/SHA only.
 
 Acceptance preserved:
 
@@ -130,7 +133,7 @@ Required convergence work:
 
 ## G. Skill effectiveness and autonomous maintenance
 
-- [~] **M-01** Count skill listed/viewed/selected/associated task events. Exact selected/associated-task reuse is recorded; dedicated catalog list/view counters remain open.
+- [x] **M-01** Count skill listed/viewed/selected/associated task events. PR #393 records bounded list/search/view/selected catalog observations on `TaskStore.activities`; exact associated-task reuse remains bound by `LearningReuseReceipt`.
 - [x] **M-02** Bind verified outcomes to the exact skill version used. `LearningReuseReceipt` binds task + item + exact knowledge SHA before synthesis, and Phase 4H joins authoritative task/validator outcome.
 - [~] **M-03** Compute success/failure/validator-pass rates. Exact success/failure/waiting/unverified counts and advisory thresholds exist; explicit normalized rate projections remain open.
 - [ ] **M-04** Measure tool-call count, latency, and resource delta where telemetry already exists.
@@ -247,7 +250,7 @@ These should be implemented as small capabilities, not one giant diagnostic work
 
 ## O. CI / security gates
 
-- [x] **C-01** Skill catalog progressive-disclosure regression tests.
+- [x] **C-01** Skill catalog progressive-disclosure regression tests, including bounded metadata search and metadata-only catalog telemetry.
 - [x] **C-02** Reference pack integrity/path/symlink/tamper tests.
 - [x] **C-03** Candidate create/patch/supersede contract and production supersession tests.
 - [~] **C-04** Replay/self-reinforcement resistance tests. Replay/duplicate receipts and immutable identities are covered; dedicated independent re-grounding tests remain open.
@@ -271,13 +274,14 @@ The core chain is now implemented and merged:
 
 `verified evidence -> candidate -> validation -> human/domain approval -> production materialization -> runtime retrieval/reuse -> exact reuse receipt -> authoritative effectiveness signal -> bounded maintenance recommendation -> reviewed revision -> deterministic Phase 4K evaluation -> authenticated activation -> immutable production supersession -> operator rollback mirror`
 
+Progressive disclosure is also converged through approved catalog list/view, reviewed references, bounded metadata-only search, and metadata-only list/view/selected telemetry.
+
 This does **not** mean self-evolution is finished. Remaining Skill-side gaps are deliberately narrower:
 
-1. **S-03 / S-05** — bounded catalog search plus complete list/view telemetry;
-2. **E-03 / E-05** — contradiction-triggered and vendor/version-drift maintenance inputs;
-3. **E-07 / P-01 / P-03** — held-out benchmark and pre-publication regression comparison;
-4. **E-08 / E-09** — safer/narrower preference and explicit self-reinforcement resistance;
-5. **M-03..M-08** — rates, resource correlation, last-verified/vendor applicability, quarantine and stale-skill policy.
+1. **E-03 / E-05** — contradiction-triggered and vendor/version-drift maintenance inputs;
+2. **E-07 / P-01 / P-03** — held-out benchmark and pre-publication regression comparison;
+3. **E-08 / E-09** — safer/narrower preference and explicit self-reinforcement resistance;
+4. **M-03..M-08** — rates, resource correlation, last-verified/vendor applicability, quarantine and stale-skill policy.
 
 ### Tool lifecycle — next major convergence area
 
