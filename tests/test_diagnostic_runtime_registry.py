@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_nineteen_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_twenty_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 19)
-        self.assertEqual(len({tool.id for tool in metadata}), 19)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 19)
+        self.assertEqual(len(metadata), 20)
+        self.assertEqual(len({tool.id for tool in metadata}), 20)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 20)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -60,6 +60,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["network.dns"], ("network.dns.snapshot",))
         self.assertEqual(mapping["time.sync"], ("time.sync.status",))
         self.assertEqual(mapping["group_policy"], ("windows.group_policy.result",))
+        self.assertEqual(mapping["identity.session"], ("identity.session.snapshot",))
 
     def test_650_route_coverage_report_is_explicitly_incomplete(self) -> None:
         report = build_coverage_report(
@@ -79,7 +80,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertLess(report.fully_promotable_routes, 650)
         self.assertTrue(report.unresolved_capability_counts)
 
-    def test_reachability_and_group_policy_are_removed_from_missing_backlog(self) -> None:
+    def test_reachability_group_policy_and_identity_are_removed_from_missing_backlog(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
@@ -88,6 +89,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         missing = dict(report.unresolved_capability_counts)
         self.assertNotIn("network.reachability", missing)
         self.assertNotIn("group_policy", missing)
+        self.assertNotIn("identity.session", missing)
         self.assertIn("service.health", missing)
         self.assertGreater(missing["service.health"], 0)
         backlog = unresolved_capability_backlog(report.unresolved_capability_counts, limit=10)
@@ -107,6 +109,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertGreater(selected.get("windows.printer.queue", 0), 0)
         self.assertEqual(selected.get("network.reachability.internal"), 100)
         self.assertEqual(selected.get("windows.group_policy.result"), 45)
+        self.assertEqual(selected.get("identity.session.snapshot"), 35)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
