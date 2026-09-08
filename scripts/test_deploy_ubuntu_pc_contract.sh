@@ -37,9 +37,15 @@ grep -Fq 'export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"' "$ENTRYPOINT" || fail "
 grep -Fq 'export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"' "$ENTRYPOINT" || fail "configuration path delegation missing"
 # shellcheck disable=SC2016
 grep -Fq 'bash "$BOOTSTRAP_PATH"' "$ENTRYPOINT" || fail "bootstrap delegation missing"
+grep -Fq 'install_trusted_update_entrypoint' "$ENTRYPOINT" || fail "post-bootstrap trusted updater install missing"
+grep -Fq 'scripts/update_workspace_ubuntu.sh' "$ENTRYPOINT" || fail "trusted updater must originate from installed checkout"
+grep -Fq '3agent-update.sh' "$ENTRYPOINT" || fail "trusted local updater payload path missing"
+# shellcheck disable=SC2016
+grep -Fq 'exec bash $(printf' "$ENTRYPOINT" || fail "installed updater must execute local trusted payload"
+grep -Fq 'cmp -s "$source" "$trusted"' "$ENTRYPOINT" || fail "trusted updater identity check missing"
 
 if grep -Eq 'apt(-get)? .*nvidia|ubuntu-drivers|modprobe|update-grub|grub-install|reboot|shutdown|rm -rf /' "$ENTRYPOINT"; then
   fail "Ubuntu entrypoint must not mutate GPU drivers, bootloader, reboot policy, or destructively remove the host filesystem"
 fi
 
-pass "Ubuntu PC deployment entrypoint contract"
+pass "Ubuntu PC deployment entrypoint installs trusted local updater only after verified bootstrap"
