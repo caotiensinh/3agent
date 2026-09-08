@@ -35,6 +35,9 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "windows.group_policy.result",
     "identity.session.snapshot",
     "audio.devices.snapshot",
+    "process.top.snapshot",
+    "hardware.usb.snapshot",
+    "camera.devices.snapshot",
 }
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
