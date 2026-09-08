@@ -44,10 +44,10 @@ def _require_token(value: Any, *, field: str, pattern: re.Pattern[str]) -> str:
 
 @dataclass(frozen=True)
 class ReviewedCapabilityNamespace:
-    """Immutable review policy for one capability namespace.
+    """Immutable source-reviewed namespace policy.
 
-    A namespace policy classifies provenance and kind. It does not register,
-    authorize, approve, invoke, or grant access to a capability.
+    Instances are structurally validated here, but runtime admission is additionally
+    restricted to the closed source allowlist in REVIEWED_NAMESPACE_POLICIES.
     """
 
     namespace: str
@@ -101,13 +101,15 @@ class ReviewedCapabilityNamespace:
         return payload
 
 
-def reviewed_namespace(
+def _namespace_policy(
     *,
     namespace: str,
     kind: str,
     provenance_source: str,
     external: bool = False,
 ) -> ReviewedCapabilityNamespace:
+    """Build a policy constant for source review; not a runtime approval surface."""
+
     identity = {
         "schema_version": CAPABILITY_NAMESPACE_POLICY_SCHEMA,
         "namespace": namespace,
@@ -124,14 +126,56 @@ def reviewed_namespace(
     ).validate()
 
 
-BUILTIN_TOOL_NAMESPACE = reviewed_namespace(
+BUILTIN_TOOL_NAMESPACE = _namespace_policy(
     namespace="builtin.tool",
     kind="tool",
     provenance_source="micro_tool_registry",
     external=False,
 )
 
-DEFAULT_REVIEWED_NAMESPACES = (BUILTIN_TOOL_NAMESPACE,)
+# Closed source allowlist. Runtime callers cannot mint another reviewed namespace by
+# constructing a structurally valid policy object; new entries require a reviewed code
+# change that updates this tuple.
+REVIEWED_NAMESPACE_POLICIES = (BUILTIN_TOOL_NAMESPACE,)
+_REVIEWED_POLICY_BY_NAMESPACE = {
+    item.namespace: item for item in REVIEWED_NAMESPACE_POLICIES
+}
+
+
+def _validated_reviewed_namespaces(
+    namespaces: Iterable[ReviewedCapabilityNamespace],
+) -> tuple[ReviewedCapabilityNamespace, ...]:
+    if isinstance(namespaces, (str, bytes)):
+        raise CapabilityRegistrySnapshotValidationError(
+            "namespaces must be an iterable of reviewed namespace policies"
+        )
+    raw = tuple(namespaces)
+    if not raw:
+        raise CapabilityRegistrySnapshotValidationError(
+            "at least one reviewed namespace is required"
+        )
+
+    validated: list[ReviewedCapabilityNamespace] = []
+    seen: set[str] = set()
+    for item in raw:
+        if type(item) is not ReviewedCapabilityNamespace:
+            raise CapabilityRegistrySnapshotValidationError(
+                "namespaces must contain ReviewedCapabilityNamespace values only"
+            )
+        candidate = item.validate()
+        canonical = _REVIEWED_POLICY_BY_NAMESPACE.get(candidate.namespace)
+        if canonical is None or candidate != canonical:
+            raise CapabilityRegistrySnapshotValidationError(
+                f"namespace policy is not source-reviewed: {candidate.namespace}"
+            )
+        if candidate.namespace in seen:
+            raise CapabilityRegistrySnapshotValidationError(
+                "duplicate reviewed namespaces"
+            )
+        seen.add(candidate.namespace)
+        validated.append(candidate)
+
+    return tuple(sorted(validated, key=lambda item: (item.namespace, item.kind)))
 
 
 @dataclass(frozen=True)
@@ -174,32 +218,24 @@ class CapabilityRegistrySnapshot:
             raise CapabilityRegistrySnapshotValidationError(
                 "namespaces must use tuple canonical form"
             )
-        if not self.namespaces:
+        if not self.descriptors:
             raise CapabilityRegistrySnapshotValidationError(
-                "at least one reviewed namespace is required"
+                "at least one capability descriptor is required"
             )
 
-        validated_namespaces = tuple(item.validate() for item in self.namespaces)
-        namespace_names = tuple(item.namespace for item in validated_namespaces)
-        if len(set(namespace_names)) != len(namespace_names):
-            raise CapabilityRegistrySnapshotValidationError(
-                "duplicate reviewed namespaces"
-            )
-        canonical_namespaces = tuple(
-            sorted(validated_namespaces, key=lambda item: (item.namespace, item.kind))
-        )
+        canonical_namespaces = _validated_reviewed_namespaces(self.namespaces)
         if self.namespaces != canonical_namespaces:
             raise CapabilityRegistrySnapshotValidationError(
                 "namespaces must use deterministic canonical order"
             )
         policy_by_namespace = {
-            item.namespace: item for item in validated_namespaces
+            item.namespace: item for item in canonical_namespaces
         }
 
         validated_descriptors: list[CapabilityDescriptor] = []
         descriptor_ids: list[str] = []
         for descriptor in self.descriptors:
-            if not isinstance(descriptor, CapabilityDescriptor):
+            if type(descriptor) is not CapabilityDescriptor:
                 raise CapabilityRegistrySnapshotValidationError(
                     "descriptors must contain CapabilityDescriptor values only"
                 )
@@ -256,7 +292,7 @@ class CapabilityRegistrySnapshot:
 def build_capability_registry_snapshot(
     descriptors: Iterable[CapabilityDescriptor],
     *,
-    namespaces: Iterable[ReviewedCapabilityNamespace] = DEFAULT_REVIEWED_NAMESPACES,
+    namespaces: Iterable[ReviewedCapabilityNamespace] = REVIEWED_NAMESPACE_POLICIES,
 ) -> CapabilityRegistrySnapshot:
     """Build a deterministic non-authorizing snapshot from reviewed descriptors."""
 
@@ -264,22 +300,17 @@ def build_capability_registry_snapshot(
         raise CapabilityRegistrySnapshotValidationError(
             "descriptors must be an iterable of CapabilityDescriptor values"
         )
-    if isinstance(namespaces, (str, bytes)):
+    descriptor_tuple = tuple(descriptors)
+    if not descriptor_tuple:
         raise CapabilityRegistrySnapshotValidationError(
-            "namespaces must be an iterable of reviewed namespace policies"
+            "at least one capability descriptor is required"
         )
 
-    descriptor_tuple = tuple(descriptors)
-    namespace_tuple = tuple(namespaces)
-
-    validated_namespaces = tuple(item.validate() for item in namespace_tuple)
-    canonical_namespaces = tuple(
-        sorted(validated_namespaces, key=lambda item: (item.namespace, item.kind))
-    )
+    canonical_namespaces = _validated_reviewed_namespaces(namespaces)
 
     validated_descriptors: list[CapabilityDescriptor] = []
     for descriptor in descriptor_tuple:
-        if not isinstance(descriptor, CapabilityDescriptor):
+        if type(descriptor) is not CapabilityDescriptor:
             raise CapabilityRegistrySnapshotValidationError(
                 "descriptors must contain CapabilityDescriptor values only"
             )
