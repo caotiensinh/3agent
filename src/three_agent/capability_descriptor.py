@@ -23,7 +23,9 @@ MICRO_TOOL_PROVENANCE_SOURCE = "micro_tool_registry"
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
 _NAMESPACE_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
+_PLATFORM_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_PROVENANCE_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$")
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -46,9 +48,14 @@ def _normalize_env_names(names: Iterable[str]) -> tuple[str, ...]:
         raise CapabilityDescriptorValidationError(
             "required_env_names must be a sequence of environment variable names"
         )
-    normalized = tuple(sorted(str(name).strip() for name in names))
-    if len(normalized) > 32:
+    raw = tuple(names)
+    if len(raw) > 32:
         raise CapabilityDescriptorValidationError("required_env_names exceeds 32 entries")
+    if any(type(name) is not str for name in raw):
+        raise CapabilityDescriptorValidationError(
+            "required_env_names entries must be strings containing names only"
+        )
+    normalized = tuple(sorted(name.strip() for name in raw))
     if any(not _ENV_NAME_RE.fullmatch(name) for name in normalized):
         raise CapabilityDescriptorValidationError(
             "required_env_names may contain names only, never assignments or values"
@@ -56,6 +63,12 @@ def _normalize_env_names(names: Iterable[str]) -> tuple[str, ...]:
     if len(set(normalized)) != len(normalized):
         raise CapabilityDescriptorValidationError("required_env_names must not contain duplicates")
     return normalized
+
+
+def _require_token(value: Any, *, field: str, pattern: re.Pattern[str]) -> str:
+    if type(value) is not str or not pattern.fullmatch(value):
+        raise CapabilityDescriptorValidationError(f"invalid {field}: {value!r}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -110,17 +123,16 @@ class CapabilityDescriptor:
             raise CapabilityDescriptorValidationError(
                 f"unsupported descriptor schema: {self.schema_version}"
             )
-        if not _ID_RE.fullmatch(self.id):
-            raise CapabilityDescriptorValidationError(f"invalid capability id: {self.id!r}")
-        if self.kind not in CAPABILITY_KINDS:
+        _require_token(self.id, field="capability id", pattern=_ID_RE)
+        if type(self.kind) is not str or self.kind not in CAPABILITY_KINDS:
             raise CapabilityDescriptorValidationError(f"unsupported capability kind: {self.kind}")
-        if not _NAMESPACE_RE.fullmatch(self.namespace):
-            raise CapabilityDescriptorValidationError(f"invalid namespace: {self.namespace!r}")
-        if self.effect not in EFFECTS:
+        _require_token(self.namespace, field="namespace", pattern=_NAMESPACE_RE)
+        _require_token(self.platform, field="platform", pattern=_PLATFORM_RE)
+        if type(self.effect) is not str or self.effect not in EFFECTS:
             raise CapabilityDescriptorValidationError(f"unknown effect: {self.effect}")
-        if self.risk not in RISK_ORDER:
+        if type(self.risk) is not str or self.risk not in RISK_ORDER:
             raise CapabilityDescriptorValidationError(f"unknown risk: {self.risk}")
-        if self.network_access not in NETWORK_ACCESS:
+        if type(self.network_access) is not str or self.network_access not in NETWORK_ACCESS:
             raise CapabilityDescriptorValidationError(
                 f"unknown network access class: {self.network_access}"
             )
@@ -130,20 +142,34 @@ class CapabilityDescriptor:
             raise CapabilityDescriptorValidationError("sensitive_outputs must be boolean")
         if type(self.evidence_required) is not bool:
             raise CapabilityDescriptorValidationError("evidence_required must be boolean")
-        if not 1 <= int(self.result_size_limit_bytes) <= MAX_RESULT_FIELD_BYTES:
+        if type(self.result_size_limit_bytes) is not int or type(self.result_size_limit_bytes) is bool:
+            raise CapabilityDescriptorValidationError("result_size_limit_bytes must be an integer")
+        if not 1 <= self.result_size_limit_bytes <= MAX_RESULT_FIELD_BYTES:
             raise CapabilityDescriptorValidationError(
                 f"result_size_limit_bytes must be within 1..{MAX_RESULT_FIELD_BYTES}"
             )
+        if type(self.required_env_names) is not tuple:
+            raise CapabilityDescriptorValidationError("required_env_names must use tuple canonical form")
         if self.required_env_names != _normalize_env_names(self.required_env_names):
             raise CapabilityDescriptorValidationError(
                 "required_env_names must use deterministic sorted canonical form"
             )
-        if not str(self.provenance_source).strip():
-            raise CapabilityDescriptorValidationError("provenance_source is required")
-        if not str(self.provenance_version).strip():
-            raise CapabilityDescriptorValidationError("provenance_version is required")
-        if not _SHA256_RE.fullmatch(self.source_fingerprint):
-            raise CapabilityDescriptorValidationError("source_fingerprint must be sha256-prefixed")
+        _require_token(
+            self.provenance_source,
+            field="provenance_source",
+            pattern=_PROVENANCE_TOKEN_RE,
+        )
+        _require_token(
+            self.provenance_version,
+            field="provenance_version",
+            pattern=_PROVENANCE_TOKEN_RE,
+        )
+        _require_token(
+            self.source_fingerprint,
+            field="source_fingerprint",
+            pattern=_SHA256_RE,
+        )
+        _require_token(self.fingerprint, field="fingerprint", pattern=_SHA256_RE)
         expected = _stable_sha256(self._identity_payload())
         if self.fingerprint != expected:
             raise CapabilityDescriptorValidationError("descriptor fingerprint mismatch")
@@ -170,13 +196,17 @@ def project_tool_metadata(
     metadata changes.
     """
 
+    if not isinstance(tool, ToolMetadata):
+        raise CapabilityDescriptorValidationError("tool must be validated ToolMetadata")
     try:
         validated = tool.validate()
     except RegistryValidationError as exc:
         raise CapabilityDescriptorValidationError(str(exc)) from exc
 
     env_names = _normalize_env_names(required_env_names)
-    limit = int(result_size_limit_bytes)
+    if type(result_size_limit_bytes) is not int or type(result_size_limit_bytes) is bool:
+        raise CapabilityDescriptorValidationError("result_size_limit_bytes must be an integer")
+    limit = result_size_limit_bytes
     if not 1 <= limit <= MAX_RESULT_FIELD_BYTES:
         raise CapabilityDescriptorValidationError(
             f"result_size_limit_bytes must be within 1..{MAX_RESULT_FIELD_BYTES}"
@@ -233,6 +263,8 @@ def project_micro_tool_registry(
     deliberately creates no second registry and grants no execution authority.
     """
 
+    if not isinstance(registry, MicroToolRegistry):
+        raise CapabilityDescriptorValidationError("registry must be canonical MicroToolRegistry")
     descriptors = tuple(
         project_tool_metadata(ToolMetadata.from_mapping(item))
         for item in registry.metadata_view()
