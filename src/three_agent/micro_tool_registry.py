@@ -37,7 +37,7 @@ class RegistryPolicyError(PermissionError):
 
 
 def _normalize_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", str(value).lower())
+    normalized = unicodedata.normalize("NFKD", str(value).lower()).replace("đ", "d")
     return " ".join("".join(ch for ch in normalized if not unicodedata.combining(ch)).split())
 
 
