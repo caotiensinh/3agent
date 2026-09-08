@@ -23,15 +23,18 @@ v0.1 has exactly one runtime-reviewed namespace:
   - provenance: `micro_tool_registry`
   - external: `false`
 
+The reviewed namespace set is a **closed source allowlist** (`REVIEWED_NAMESPACE_POLICIES`). A runtime caller cannot make a namespace reviewed merely by constructing a structurally valid `ReviewedCapabilityNamespace`. Adding another reviewed namespace requires a reviewed source change that updates the canonical allowlist.
+
 The schema can describe other capability kinds, but they are not automatically reviewed for runtime exposure.
 
 A descriptor is accepted into the snapshot only when:
 
-1. its namespace is present in the reviewed namespace policy;
-2. descriptor kind equals the namespace's reviewed kind;
-3. descriptor provenance equals the namespace's reviewed provenance;
-4. its own descriptor fingerprint is valid;
-5. its capability ID is globally unique in the effective snapshot.
+1. its namespace policy exactly matches a source-reviewed allowlist entry;
+2. descriptor namespace is present in that reviewed policy set;
+3. descriptor kind equals the namespace's reviewed kind;
+4. descriptor provenance equals the namespace's reviewed provenance;
+5. its own descriptor fingerprint is valid;
+6. its capability ID is globally unique in the effective snapshot.
 
 External namespaces are explicitly rejected in v0.1. External/plugin/MCP admission remains a later quarantine/review slice.
 
@@ -54,14 +57,15 @@ The fingerprint is metadata identity only. It is not Evidence, approval, trust, 
 1. No second mutable capability registry is introduced.
 2. Namespace membership does not grant `TaskCapabilityAuthority`.
 3. Snapshot membership does not invoke a capability.
-4. Duplicate capability IDs fail closed.
-5. Unknown/unreviewed namespaces fail closed.
-6. Kind/provenance mismatch fails closed.
-7. External namespaces fail closed in v0.1.
-8. Descriptor fingerprint tampering fails before admission.
-9. Snapshot fingerprint tampering fails validation.
-10. Input ordering cannot change the canonical snapshot identity.
-11. No credential values, approval state, filesystem grants, or network grants are introduced.
+4. Runtime callers cannot self-mint reviewed namespaces.
+5. Duplicate capability IDs fail closed.
+6. Unknown/unreviewed namespaces fail closed.
+7. Kind/provenance mismatch fails closed.
+8. External namespaces fail closed in v0.1.
+9. Descriptor fingerprint tampering fails before admission.
+10. Snapshot fingerprint tampering fails validation.
+11. Input ordering cannot change the canonical snapshot identity.
+12. No credential values, approval state, filesystem grants, or network grants are introduced.
 
 ## Checklist interpretation
 
