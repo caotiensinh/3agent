@@ -28,6 +28,7 @@ USB_TOOL_METADATA = (
             "usb khong nhan",
             "USB デバイス",
             "USB 認識しない",
+            "USBを認識しない",
             "USB 切断",
         ),
         cost="C0",
