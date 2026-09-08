@@ -16,6 +16,7 @@ from ..adaptive_learning_skill_reuse import prepare_learning_reuse
 from ..prompt_ledger import PromptCompilationLedger
 from ..public_query_compiler import compile_public_search_queries
 from ..skill_catalog import ApprovedSkillCatalog
+from ..skill_catalog_telemetry import SkillCatalogTelemetry
 from ..task_contract import SENSITIVITIES
 from .research_ranked import ResearchAgent as _RankedResearchAgent
 
@@ -85,6 +86,11 @@ class ResearchAgent(_RankedResearchAgent):
     context is exposed to synthesis. If that receipt cannot be bound safely to the
     current TaskContract, learned context is withheld rather than reused without an
     auditable effectiveness observation.
+
+    Catalog telemetry is metadata-only and observational. Runtime view/selection
+    events contain only skill name, exact production SHA, count, and surface. A
+    telemetry persistence failure never grants authority and does not suppress an
+    otherwise valid reuse receipt; integrity resolution itself still fails closed.
     """
 
     def __init__(
@@ -116,6 +122,30 @@ class ResearchAgent(_RankedResearchAgent):
         if str(payload.get("task_id") or "").strip() != task_id:
             raise ValueError("bound TaskContract task_id mismatch")
         return sensitivity
+
+    @staticmethod
+    def _telemetry_warning(
+        store: Any,
+        task_id: str,
+        agent_id: str,
+        *,
+        stage: str,
+        exc: Exception,
+    ) -> None:
+        """Best-effort warning; telemetry cannot become runtime authority."""
+
+        try:
+            store.record_activity(
+                task_id,
+                agent_id,
+                "skill_catalog_telemetry_warning",
+                "warning",
+                f"stage={stage} reason={type(exc).__name__}",
+            )
+        except Exception:
+            # The authoritative reuse receipt already governs reuse. A secondary
+            # telemetry sink failure must not create a new execution/authority gate.
+            pass
 
     def _plan(self, title: str, request: str) -> tuple[str, list[str], list[str]]:
         # Learned context MUST NOT be added here. Planning output may cross the
@@ -172,6 +202,7 @@ class ResearchAgent(_RankedResearchAgent):
         context: LearningContext | None = None
         reuse_context: LearningContext | None = None
         materialized_skill_blocks: tuple[str, ...] = ()
+        materialized_skill_names: tuple[str, ...] = ()
         if live and self.learning_retrieval is not None:
             try:
                 task_sensitivity = self._task_learning_sensitivity(store, task_id)
@@ -190,11 +221,41 @@ class ResearchAgent(_RankedResearchAgent):
                 reuse_context = prepared.reuse_context
                 context = prepared.reference_context
                 materialized_skill_blocks = prepared.materialized_skill_blocks
+                materialized_skill_names = prepared.materialized_skill_names
+
+                telemetry = SkillCatalogTelemetry(self.learning_skill_catalog, store)
+                skill_identities = telemetry.identities_for_names(
+                    self.agent_id,
+                    materialized_skill_names,
+                )
+                if skill_identities:
+                    try:
+                        telemetry.record_viewed(task_id, self.agent_id, skill_identities)
+                    except Exception as telemetry_exc:
+                        self._telemetry_warning(
+                            store,
+                            task_id,
+                            self.agent_id,
+                            stage="viewed",
+                            exc=telemetry_exc,
+                        )
+
                 if reuse_context.items:
                     # Phase 4H: no learned reference or materialized learned skill
                     # is exposed unless its exact item/version set is first bound
                     # to this authoritative task.
                     record_learning_reuse(store, task_id, reuse_context)
+                    if skill_identities:
+                        try:
+                            telemetry.record_selected(task_id, self.agent_id, skill_identities)
+                        except Exception as telemetry_exc:
+                            self._telemetry_warning(
+                                store,
+                                task_id,
+                                self.agent_id,
+                                stage="selected",
+                                exc=telemetry_exc,
+                            )
             except Exception as exc:
                 # Retrieval is optional reference context. Integrity/policy/receipt
                 # failure therefore fails closed to NO learned context while
@@ -210,6 +271,7 @@ class ResearchAgent(_RankedResearchAgent):
                 context = None
                 reuse_context = None
                 materialized_skill_blocks = ()
+                materialized_skill_names = ()
             else:
                 if reuse_context is not None and reuse_context.items:
                     item_ids = ",".join(item.item_id for item in reuse_context.items)
