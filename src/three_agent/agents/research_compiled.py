@@ -91,6 +91,8 @@ class ResearchAgent(_RankedResearchAgent):
     events contain only skill name, exact production SHA, count, and surface. A
     telemetry persistence failure never grants authority and does not suppress an
     otherwise valid reuse receipt; integrity resolution itself still fails closed.
+    Telemetry is not initialized for non-skill learned references, preserving the
+    pre-existing non-skill retrieval boundary exactly.
     """
 
     def __init__(
@@ -223,12 +225,14 @@ class ResearchAgent(_RankedResearchAgent):
                 materialized_skill_blocks = prepared.materialized_skill_blocks
                 materialized_skill_names = prepared.materialized_skill_names
 
-                telemetry = SkillCatalogTelemetry(self.learning_skill_catalog, store)
-                skill_identities = telemetry.identities_for_names(
-                    self.agent_id,
-                    materialized_skill_names,
-                )
-                if skill_identities:
+                telemetry: SkillCatalogTelemetry | None = None
+                skill_identities = ()
+                if materialized_skill_names:
+                    telemetry = SkillCatalogTelemetry(self.learning_skill_catalog, store)
+                    skill_identities = telemetry.identities_for_names(
+                        self.agent_id,
+                        materialized_skill_names,
+                    )
                     try:
                         telemetry.record_viewed(task_id, self.agent_id, skill_identities)
                     except Exception as telemetry_exc:
@@ -245,7 +249,7 @@ class ResearchAgent(_RankedResearchAgent):
                     # is exposed unless its exact item/version set is first bound
                     # to this authoritative task.
                     record_learning_reuse(store, task_id, reuse_context)
-                    if skill_identities:
+                    if telemetry is not None and skill_identities:
                         try:
                             telemetry.record_selected(task_id, self.agent_id, skill_identities)
                         except Exception as telemetry_exc:
