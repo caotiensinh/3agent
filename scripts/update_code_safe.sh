@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 REPO_URL="${THREE_AGENT_REPO_URL:-https://github.com/caotiensinh/3agent.git}"
 REPO_REF="${THREE_AGENT_REPO_REF:-main}"
+TRACKING_REF="${THREE_AGENT_UPDATE_TRACKING_REF:-$REPO_REF}"
 LEGACY_INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-${HOME}/3agent}"
 BIN_DIR="${THREE_AGENT_BIN_DIR:-${HOME}/.local/bin}"
 CONFIG_PATH="${THREE_AGENT_CONFIG_PATH:-${LEGACY_INSTALL_DIR}/config/local.json}"
@@ -10,8 +11,6 @@ RELEASES_DIR="${THREE_AGENT_RELEASES_DIR:-${HOME}/.local/share/workspace/release
 STATE_DIR="${THREE_AGENT_STATE_DIR:-${HOME}/.local/state/workspace}"
 ACTIVATION_LOG="${THREE_AGENT_ACTIVATION_LOG:-${STATE_DIR}/active-releases.log}"
 VERIFY_MODE="${THREE_AGENT_UPDATE_VERIFY:-smoke}"
-UPDATE_SCRIPT_URL="${THREE_AGENT_UPDATE_SCRIPT_URL:-}"
-CANONICAL_REPO_URL="https://github.com/caotiensinh/3agent.git"
 SELF_TEST=0
 CREATED_RELEASE=""
 
@@ -29,6 +28,9 @@ die() { printf '[WorkSpace Update][ERROR] %s\n' "$*" >&2; exit 1; }
 validate_inputs() {
   [[ -n "$REPO_URL" ]] || die "Repository URL is empty"
   [[ -n "$REPO_REF" ]] || die "Repository ref is empty"
+  [[ "$REPO_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Repository ref contains unsupported characters: ${REPO_REF}"
+  [[ -n "$TRACKING_REF" ]] || die "Tracking ref is empty"
+  [[ "$TRACKING_REF" =~ ^[A-Za-z0-9._/-]+$ ]] || die "Tracking ref contains unsupported characters: ${TRACKING_REF}"
   [[ -n "$BIN_DIR" ]] || die "Binary directory is empty"
   [[ -n "$CONFIG_PATH" ]] || die "Configuration path is empty"
   [[ -n "$RELEASES_DIR" ]] || die "Release directory is empty"
@@ -93,7 +95,7 @@ create_release_checkout() {
   fi
 
   if ! git -C "$release" cat-file -e "${target_sha}^{commit}" 2>/dev/null; then
-    git -C "$release" fetch --no-tags origin "$REPO_REF"
+    git -C "$release" fetch --no-tags origin "$target_sha"
   fi
   git -C "$release" checkout --detach "$target_sha"
 
@@ -141,22 +143,35 @@ backup_launcher() {
   cp -a "$path" "${backup_dir}/$(basename "$path").${stamp}.$$"
 }
 
-resolve_update_script_url() {
-  if [[ -n "$UPDATE_SCRIPT_URL" ]]; then
-    return 0
+trusted_update_source() {
+  local release="$1" source
+  source="${release}/scripts/update_code_safe.sh"
+
+  if [[ -r /etc/os-release ]]; then
+    local distro_id="" distro_version=""
+    distro_id="$(. /etc/os-release; printf '%s' "${ID:-}")"
+    distro_version="$(. /etc/os-release; printf '%s' "${VERSION_ID:-}")"
+    if [[ "$distro_id" == "ubuntu" && ( "$distro_version" == "22.04" || "$distro_version" == "24.04" ) ]]; then
+      source="${release}/scripts/update_workspace_ubuntu.sh"
+    fi
   fi
-  if [[ "$REPO_URL" != "$CANONICAL_REPO_URL" ]]; then
-    die "A custom THREE_AGENT_REPO_URL requires THREE_AGENT_UPDATE_SCRIPT_URL"
-  fi
-  UPDATE_SCRIPT_URL="https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/update_code_safe.sh"
+
+  [[ -f "$source" ]] || die "Trusted updater source is missing from verified release: ${source}"
+  bash -n "$source" || die "Trusted updater source failed Bash syntax validation"
+  printf '%s\n' "$source"
 }
 
 install_launchers() {
+  local release="$1" updater_source trusted_updater tmp_updater
   mkdir -p "$BIN_DIR" "$STATE_DIR"
-  resolve_update_script_url
+  updater_source="$(trusted_update_source "$release")"
+  trusted_updater="${BIN_DIR}/3agent-update.sh"
+  tmp_updater="${trusted_updater}.tmp.$$"
+
   backup_launcher "${BIN_DIR}/3agent"
   backup_launcher "${BIN_DIR}/workspace-security-ui"
   backup_launcher "${BIN_DIR}/3agent-update"
+  backup_launcher "$trusted_updater"
 
   cat >"${BIN_DIR}/3agent" <<EOF_LAUNCHER
 #!/usr/bin/env bash
@@ -182,19 +197,23 @@ exec "\$release/.venv/bin/workspace-security-ui" "\$@"
 EOF_SECURITY_UI
   chmod 0755 "${BIN_DIR}/workspace-security-ui"
 
+  cp -p "$updater_source" "$tmp_updater"
+  chmod 0755 "$tmp_updater"
+  mv -f "$tmp_updater" "$trusted_updater"
+
   cat >"${BIN_DIR}/3agent-update" <<EOF_UPDATER
 #!/usr/bin/env bash
 set -euo pipefail
 export THREE_AGENT_REPO_URL=$(printf '%q' "$REPO_URL")
-export THREE_AGENT_REPO_REF=$(printf '%q' "$REPO_REF")
+export THREE_AGENT_REPO_REF=$(printf '%q' "$TRACKING_REF")
+export THREE_AGENT_UPDATE_TRACKING_REF=$(printf '%q' "$TRACKING_REF")
 export THREE_AGENT_INSTALL_DIR=$(printf '%q' "$LEGACY_INSTALL_DIR")
 export THREE_AGENT_BIN_DIR=$(printf '%q' "$BIN_DIR")
 export THREE_AGENT_CONFIG_PATH=$(printf '%q' "$CONFIG_PATH")
 export THREE_AGENT_RELEASES_DIR=$(printf '%q' "$RELEASES_DIR")
 export THREE_AGENT_STATE_DIR=$(printf '%q' "$STATE_DIR")
 export THREE_AGENT_ACTIVATION_LOG=$(printf '%q' "$ACTIVATION_LOG")
-export THREE_AGENT_UPDATE_SCRIPT_URL=$(printf '%q' "$UPDATE_SCRIPT_URL")
-exec bash -c $(printf '%q' "curl -fsSL --retry 3 --connect-timeout 15 '${UPDATE_SCRIPT_URL}' | bash")
+exec bash $(printf '%q' "$trusted_updater") "\$@"
 EOF_UPDATER
   chmod 0755 "${BIN_DIR}/3agent-update"
 }
@@ -223,7 +242,7 @@ main() {
     active="$(current_release)"
     ensure_config "$active"
     verify_release "$active"
-    install_launchers
+    install_launchers "$active"
     THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
     "${BIN_DIR}/workspace-security-ui" --help >/dev/null
     log "Already current at ${target_sha}; verification policy '${VERIFY_MODE}' completed; no release files changed"
@@ -235,7 +254,7 @@ main() {
   ensure_config "$release"
   build_release "$release"
   verify_release "$release"
-  install_launchers
+  install_launchers "$release"
   activate_release "$release" "$target_sha"
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
   "${BIN_DIR}/workspace-security-ui" --help >/dev/null
