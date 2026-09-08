@@ -33,12 +33,10 @@ def _safe_value(value: str | None, *, field: str) -> str | None:
         return None
     if not isinstance(value, str):
         raise SkillSecurityError(f"Skill applicability {field} must be a string")
+    if any(ord(char) < 32 for char in value):
+        raise SkillSecurityError(f"Skill applicability {field} is invalid")
     text = " ".join(value.split()).strip()
-    if (
-        not text
-        or len(text) > _MAX_APPLICABILITY_VALUE_CHARS
-        or any(ord(char) < 32 for char in text)
-    ):
+    if not text or len(text) > _MAX_APPLICABILITY_VALUE_CHARS:
         raise SkillSecurityError(f"Skill applicability {field} is invalid")
     return text
 
@@ -121,16 +119,6 @@ class SkillApplicabilityStatistics:
             for value in counts
         ):
             raise SkillSecurityError("Skill applicability statistics count is invalid")
-        if self.vendor_scoped_references > self.total_references:
-            raise SkillSecurityError("Vendor-scoped reference count exceeds total")
-        if self.version_scoped_references > self.total_references:
-            raise SkillSecurityError("Version-scoped reference count exceeds total")
-        if self.fully_scoped_references > min(
-            self.vendor_scoped_references, self.version_scoped_references
-        ):
-            raise SkillSecurityError("Fully-scoped reference count is inconsistent")
-        if self.unscoped_references > self.total_references:
-            raise SkillSecurityError("Unscoped reference count exceeds total")
 
         expected_order = tuple(
             sorted(
@@ -142,6 +130,10 @@ class SkillApplicabilityStatistics:
             raise SkillSecurityError("Skill applicability buckets must be deterministic")
         seen: set[tuple[str | None, str | None]] = set()
         bucket_total = 0
+        expected_vendor = 0
+        expected_version = 0
+        expected_fully = 0
+        expected_unscoped = 0
         for bucket in self.buckets:
             bucket.validate()
             key = (bucket.vendor_family, bucket.version)
@@ -149,8 +141,25 @@ class SkillApplicabilityStatistics:
                 raise SkillSecurityError("Duplicate skill applicability bucket")
             seen.add(key)
             bucket_total += bucket.reference_count
+            if bucket.vendor_family is not None:
+                expected_vendor += bucket.reference_count
+            if bucket.version is not None:
+                expected_version += bucket.reference_count
+            if bucket.vendor_family is not None and bucket.version is not None:
+                expected_fully += bucket.reference_count
+            if bucket.vendor_family is None and bucket.version is None:
+                expected_unscoped += bucket.reference_count
+
         if bucket_total != self.total_references:
             raise SkillSecurityError("Skill applicability bucket total mismatch")
+        if self.vendor_scoped_references != expected_vendor:
+            raise SkillSecurityError("Vendor-scoped reference count mismatch")
+        if self.version_scoped_references != expected_version:
+            raise SkillSecurityError("Version-scoped reference count mismatch")
+        if self.fully_scoped_references != expected_fully:
+            raise SkillSecurityError("Fully-scoped reference count mismatch")
+        if self.unscoped_references != expected_unscoped:
+            raise SkillSecurityError("Unscoped reference count mismatch")
         return self
 
     @property
