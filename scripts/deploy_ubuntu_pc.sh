@@ -6,6 +6,9 @@ REPO_REF="${THREE_AGENT_REPO_REF:-main}"
 INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-${HOME}/3agent}"
 BIN_DIR="${THREE_AGENT_BIN_DIR:-${HOME}/.local/bin}"
 CONFIG_PATH="${THREE_AGENT_CONFIG_PATH:-${INSTALL_DIR}/config/local.json}"
+RELEASES_DIR="${THREE_AGENT_RELEASES_DIR:-${HOME}/.local/share/workspace/releases}"
+STATE_DIR="${THREE_AGENT_STATE_DIR:-${HOME}/.local/state/workspace}"
+ACTIVATION_LOG="${THREE_AGENT_ACTIVATION_LOG:-${STATE_DIR}/active-releases.log}"
 MODEL="${THREE_AGENT_MODEL:-}"
 INSTALL_OLLAMA="${THREE_AGENT_INSTALL_OLLAMA:-0}"
 PULL_MODEL="${THREE_AGENT_PULL_MODEL:-0}"
@@ -48,6 +51,9 @@ validate_inputs() {
   [[ -n "$INSTALL_DIR" ]] || die "Install directory is empty"
   [[ -n "$BIN_DIR" ]] || die "Binary directory is empty"
   [[ -n "$CONFIG_PATH" ]] || die "Configuration path is empty"
+  [[ -n "$RELEASES_DIR" ]] || die "Release directory is empty"
+  [[ -n "$STATE_DIR" ]] || die "State directory is empty"
+  [[ -n "$ACTIVATION_LOG" ]] || die "Activation log is empty"
 
   if [[ ! "$REPO_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
     die "Repository ref contains unsupported characters: ${REPO_REF}"
@@ -112,6 +118,9 @@ run_bootstrap() {
   export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"
   export THREE_AGENT_BIN_DIR="$BIN_DIR"
   export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"
+  export THREE_AGENT_RELEASES_DIR="$RELEASES_DIR"
+  export THREE_AGENT_STATE_DIR="$STATE_DIR"
+  export THREE_AGENT_ACTIVATION_LOG="$ACTIVATION_LOG"
   export THREE_AGENT_MODEL="$MODEL"
   export THREE_AGENT_INSTALL_OLLAMA="$INSTALL_OLLAMA"
   export THREE_AGENT_PULL_MODEL="$PULL_MODEL"
@@ -120,12 +129,55 @@ run_bootstrap() {
   bash "$BOOTSTRAP_PATH"
 }
 
+install_trusted_update_entrypoint() {
+  local source trusted tmp_launcher
+  source="${INSTALL_DIR}/scripts/update_workspace_ubuntu.sh"
+  trusted="${BIN_DIR}/3agent-update.sh"
+  tmp_launcher="${trusted}.tmp.$$"
+
+  [[ -d "${INSTALL_DIR}/.git" ]] || die "Verified Git checkout is missing after bootstrap: ${INSTALL_DIR}"
+  [[ -f "$source" ]] || die "Trusted Ubuntu updater source is missing from installed checkout: ${source}"
+  bash -n "$source" || die "Trusted Ubuntu updater source failed Bash syntax validation"
+
+  mkdir -p "$BIN_DIR"
+  cp -p "$source" "$tmp_launcher"
+  chmod 0755 "$tmp_launcher"
+  mv -f "$tmp_launcher" "$trusted"
+  cmp -s "$source" "$trusted" || die "Trusted updater payload does not match the exact installed checkout"
+
+  cat >"${BIN_DIR}/3agent-update" <<EOF_UPDATER
+#!/usr/bin/env bash
+set -euo pipefail
+export THREE_AGENT_REPO_URL=$(printf '%q' "$REPO_URL")
+export THREE_AGENT_REPO_REF=$(printf '%q' "$REPO_REF")
+export THREE_AGENT_UPDATE_TRACKING_REF=$(printf '%q' "$REPO_REF")
+export THREE_AGENT_INSTALL_DIR=$(printf '%q' "$INSTALL_DIR")
+export THREE_AGENT_BIN_DIR=$(printf '%q' "$BIN_DIR")
+export THREE_AGENT_CONFIG_PATH=$(printf '%q' "$CONFIG_PATH")
+export THREE_AGENT_RELEASES_DIR=$(printf '%q' "$RELEASES_DIR")
+export THREE_AGENT_STATE_DIR=$(printf '%q' "$STATE_DIR")
+export THREE_AGENT_ACTIVATION_LOG=$(printf '%q' "$ACTIVATION_LOG")
+exec bash $(printf '%q' "$trusted") "\$@"
+EOF_UPDATER
+  chmod 0755 "${BIN_DIR}/3agent-update"
+}
+
 verify_result() {
   local command_path="${BIN_DIR}/3agent"
   local security_ui_path="${BIN_DIR}/workspace-security-ui"
+  local update_path="${BIN_DIR}/3agent-update"
+  local trusted_update_path="${BIN_DIR}/3agent-update.sh"
   [[ -x "$command_path" ]] || die "Installed command is missing: ${command_path}"
   [[ -x "$security_ui_path" ]] || die "Installed security UI launcher is missing: ${security_ui_path}"
+  [[ -x "$update_path" ]] || die "Installed updater launcher is missing: ${update_path}"
+  [[ -f "$trusted_update_path" ]] || die "Trusted local updater payload is missing: ${trusted_update_path}"
   [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
+
+  if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "$update_path"; then
+    die "Installed updater launcher contains a remote execution primitive"
+  fi
+  cmp -s "${INSTALL_DIR}/scripts/update_workspace_ubuntu.sh" "$trusted_update_path" \
+    || die "Installed trusted updater is not identical to the exact installed checkout"
 
   "$command_path" smoke >/dev/null
   "$security_ui_path" --help >/dev/null
@@ -138,7 +190,7 @@ verify_result() {
   log "Install directory: ${INSTALL_DIR}"
   log "Command: ${command_path}"
   log "Security UI: ${security_ui_path}"
-  log "Update: ${BIN_DIR}/3agent-update"
+  log "Update: ${update_path}"
   if [[ -z "$MODEL" ]]; then
     warn "No local LLM model was selected. Core CLI/smoke is ready; live AI agents require a configured model."
   fi
@@ -158,6 +210,9 @@ main() {
 
   check_ubuntu_host
   run_bootstrap
+  # Bootstrap completion proves the checkout before its updater entrypoint is trusted.
+  # Replace the convenience launcher only after that verification has succeeded.
+  install_trusted_update_entrypoint
   verify_result
 }
 
