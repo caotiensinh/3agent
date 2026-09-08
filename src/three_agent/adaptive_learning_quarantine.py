@@ -19,8 +19,10 @@ from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from .adaptive_learning_checkpoint import LearningCheckpointAuthority
+from .adaptive_learning_curation import ACTION_DOMAIN_REVISE_OR_ARCHIVE_REVIEW
+from .adaptive_learning_effectiveness import SIGNAL_DOMAIN_REVIEW
 from .adaptive_learning_maintenance import (
-    STATUS_RECOMMENDATIONS_READY,
+    STATUS_RECOMMENDATIONS_READY as MAINTENANCE_STATUS_RECOMMENDATIONS_READY,
     TYPE_DOMAIN_REVISION_OR_RETIREMENT_REVIEW,
     AdaptiveLearningMaintenanceReceipt,
     AdaptiveMaintenanceRecommendation,
@@ -38,6 +40,7 @@ _MAX_RECOMMENDATIONS = 128
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _REASON = re.compile(r"^[A-Z0-9][A-Z0-9_.:-]{0,127}$")
+_PROPOSAL_ID = re.compile(r"^curation:[0-9a-f]{64}$")
 _RECOMMENDATION_ID = re.compile(r"^quarantine-review:[0-9a-f]{64}$")
 
 
@@ -65,6 +68,20 @@ def _require_sha(value: Any, *, field: str) -> str:
     if not _SHA.fullmatch(text):
         raise AdaptiveLearningQuarantineError(f"QUARANTINE_{field.upper()}_INVALID")
     return text
+
+
+def _require_domain_review_source(source: AdaptiveMaintenanceRecommendation) -> None:
+    source.validate()
+    if source.recommendation_type != TYPE_DOMAIN_REVISION_OR_RETIREMENT_REVIEW:
+        raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_NOT_DOMAIN_REVIEW")
+    if source.advisory_signal != SIGNAL_DOMAIN_REVIEW:
+        raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_SIGNAL_INVALID")
+    if source.curation_action != ACTION_DOMAIN_REVISE_OR_ARCHIVE_REVIEW:
+        raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_ACTION_INVALID")
+    if not source.human_review_required or not source.domain_review_required:
+        raise AdaptiveLearningQuarantineError("QUARANTINE_REVIEW_REQUIREMENT_MISSING")
+    if source.domain not in {"network", "security"}:
+        raise AdaptiveLearningQuarantineError("QUARANTINE_DOMAIN_NOT_SENSITIVE")
 
 
 @dataclass(frozen=True)
@@ -99,14 +116,7 @@ class QuarantineReviewRecommendation:
         source_receipt_sha256: str,
         source: AdaptiveMaintenanceRecommendation,
     ) -> "QuarantineReviewRecommendation":
-        source.validate()
-        if source.recommendation_type != TYPE_DOMAIN_REVISION_OR_RETIREMENT_REVIEW:
-            raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_NOT_DOMAIN_REVIEW")
-        if not source.human_review_required or not source.domain_review_required:
-            raise AdaptiveLearningQuarantineError("QUARANTINE_REVIEW_REQUIREMENT_MISSING")
-        if source.domain not in {"network", "security"}:
-            raise AdaptiveLearningQuarantineError("QUARANTINE_DOMAIN_NOT_SENSITIVE")
-
+        _require_domain_review_source(source)
         reasons = (
             "DOMAIN_REVISION_OR_RETIREMENT_REVIEW",
             "QUARANTINE_RECOMMENDED",
@@ -143,7 +153,7 @@ class QuarantineReviewRecommendation:
         if self.recommended_disposition != RECOMMENDED_DISPOSITION:
             raise AdaptiveLearningQuarantineError("QUARANTINE_DISPOSITION_INVALID")
         _require_sha(self.source_maintenance_receipt_sha256, field="source_receipt_sha256")
-        if not str(self.source_proposal_id or "").startswith("curation:"):
+        if not _PROPOSAL_ID.fullmatch(str(self.source_proposal_id or "")):
             raise AdaptiveLearningQuarantineError("QUARANTINE_PROPOSAL_ID_INVALID")
         _require_id(self.item_id, field="item_id")
         _require_sha(self.knowledge_sha256, field="knowledge_sha256")
@@ -152,6 +162,10 @@ class QuarantineReviewRecommendation:
             raise AdaptiveLearningQuarantineError("QUARANTINE_ACTIVE_LEVEL_INVALID")
         if self.domain not in {"network", "security"}:
             raise AdaptiveLearningQuarantineError("QUARANTINE_DOMAIN_NOT_SENSITIVE")
+        if self.advisory_signal != SIGNAL_DOMAIN_REVIEW:
+            raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_SIGNAL_INVALID")
+        if self.curation_action != ACTION_DOMAIN_REVISE_OR_ARCHIVE_REVIEW:
+            raise AdaptiveLearningQuarantineError("QUARANTINE_SOURCE_ACTION_INVALID")
         if not self.human_review_required or not self.domain_review_required:
             raise AdaptiveLearningQuarantineError("QUARANTINE_REVIEW_REQUIREMENT_MISSING")
         if not self.reason_codes or len(self.reason_codes) > 8:
@@ -265,7 +279,7 @@ class AdaptiveLearningQuarantineProjector:
         if not isinstance(receipt, AdaptiveLearningMaintenanceReceipt):
             raise AdaptiveLearningQuarantineError("QUARANTINE_MAINTENANCE_RECEIPT_REQUIRED")
         receipt.validate()
-        if receipt.status not in {STATUS_RECOMMENDATIONS_READY}:
+        if receipt.status != MAINTENANCE_STATUS_RECOMMENDATIONS_READY:
             raise AdaptiveLearningQuarantineError("QUARANTINE_MAINTENANCE_RECEIPT_NOT_READY")
         if (
             receipt.checkpoint_sequence is None
@@ -287,6 +301,7 @@ class AdaptiveLearningQuarantineProjector:
         for source in receipt.recommendations:
             if source.recommendation_type != TYPE_DOMAIN_REVISION_OR_RETIREMENT_REVIEW:
                 continue
+            _require_domain_review_source(source)
             self._assert_active_identity(source)
             recommendations.append(
                 QuarantineReviewRecommendation.create(
