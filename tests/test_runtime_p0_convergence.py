@@ -42,7 +42,7 @@ class RuntimeP0ConvergenceGateTests(unittest.TestCase):
                     "id": "analyze",
                     "label": "Analyze",
                     "kind": "agent",
-                    "action": "analysis",
+                    "action": "research",
                     "depends_on": ["collect"],
                     "condition": "",
                     "approval_required": False,
