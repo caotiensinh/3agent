@@ -9,12 +9,19 @@ from typing import Any
 
 from .presentation_schemas import PRESENTATION_PLAN_SCHEMA_V1
 from .privacy import redact_sensitive_text
+from .runtime_dispatch import (
+    RuntimeV3DispatchDescriptor,
+    RuntimeV3DispatchError,
+    validate_runtime_v3_executor,
+)
 from .task_contract import TaskContractCompiler
 from .workflow_design import WorkflowDesignError, validate_contract
 
 
 DISPATCH_SCHEMA_VERSION = "workspace-workflow-dispatch/v2"
 EXECUTION_PROFILE = "workspace-fixed-analysis/v1"
+RUNTIME_DISPATCH_SCHEMA_VERSION = "workspace-workflow-runtime-dispatch/v1"
+RUNTIME_EXECUTION_PROFILE = "workspace-governed-runtime/v3"
 _ALLOWED_ACTION_CHAINS = {
     ("input", "research", "presentation", "daily_report", "output"),
     ("input", "research", "validate", "presentation", "daily_report", "output"),
@@ -53,9 +60,10 @@ def _bounded_text(value: Any, *, field: str, default: str, limit: int) -> str:
 class WorkflowDispatchController:
     """Deterministic admission plus explicit administrator authorization.
 
-    V2 exposes only the low-risk linear profile already implemented by the
-    production WorkflowRunner. Node labels and model output never become tools,
-    commands, capabilities, or authority.
+    V2 remains the default fixed Research→Presentation→Daily Report profile.
+    Runtime V3 is a separate opt-in path and accepts only a durable descriptor
+    supplied by a trusted runtime executor. The dispatcher never derives low-level
+    capabilities from Workflow Studio labels or model output.
     """
 
     def __init__(self, orchestrator: Any):
@@ -96,6 +104,66 @@ class WorkflowDispatchController:
         if not isinstance(payload, dict) or payload.get("schema_version") != DISPATCH_SCHEMA_VERSION:
             raise WorkflowDispatchError("invalid dispatch preparation")
         return payload
+
+    def _load_runtime_record(self, task_id: str) -> dict[str, Any]:
+        path = self._record_path(task_id)
+        if not path.is_file():
+            raise WorkflowDispatchError("runtime dispatch preparation not found")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != RUNTIME_DISPATCH_SCHEMA_VERSION
+            or payload.get("execution_profile") != RUNTIME_EXECUTION_PROFILE
+        ):
+            raise WorkflowDispatchError("invalid runtime dispatch preparation")
+        return payload
+
+    def _runtime_executor(self):
+        try:
+            return validate_runtime_v3_executor(
+                getattr(self.orchestrator, "runtime_dispatch_executor", None)
+            )
+        except RuntimeV3DispatchError as exc:
+            raise WorkflowDispatchError(exc.reason_code) from exc
+
+    def _describe_runtime(self, runtime_ref: str) -> RuntimeV3DispatchDescriptor:
+        executor = self._runtime_executor()
+        try:
+            descriptor = executor.describe(str(runtime_ref).strip())
+        except RuntimeV3DispatchError as exc:
+            raise WorkflowDispatchError(exc.reason_code) from exc
+        except Exception as exc:
+            raise WorkflowDispatchError("runtime V3 descriptor unavailable") from exc
+        if not isinstance(descriptor, RuntimeV3DispatchDescriptor):
+            raise WorkflowDispatchError("runtime V3 descriptor type invalid")
+        try:
+            descriptor.validate()
+        except RuntimeV3DispatchError as exc:
+            raise WorkflowDispatchError(exc.reason_code) from exc
+        if descriptor.runtime_ref != str(runtime_ref).strip():
+            raise WorkflowDispatchError("runtime V3 descriptor ref mismatch")
+        return descriptor
+
+    def _bound_contract_state(self, task_id: str) -> tuple[dict[str, Any], str]:
+        try:
+            self.store.get_task(task_id)
+        except KeyError as exc:
+            raise WorkflowDispatchError("runtime V3 task not found") from exc
+        contract = self.store.task_contract_for_task(task_id)
+        record = self.store.task_contract_record(task_id)
+        if contract is None or record is None:
+            raise WorkflowDispatchError("runtime V3 task contract is not bound")
+        digest = _canonical_sha256(contract)
+        stored_digest = str(record["contract_sha256"])
+        if digest != stored_digest:
+            raise WorkflowDispatchError("runtime V3 task contract digest mismatch")
+        if str(contract.get("task_id") or "") != task_id:
+            raise WorkflowDispatchError("runtime V3 task contract task mismatch")
+        if str(contract.get("sensitivity") or "") != str(self.bridge.sensitivity):
+            raise WorkflowDispatchError(
+                "runtime V3 task sensitivity must match the active WorkSpace confidentiality zone"
+            )
+        return contract, digest
 
     @staticmethod
     def _linear_actions(contract: dict[str, Any]) -> tuple[str, ...]:
@@ -279,6 +347,77 @@ class WorkflowDispatchController:
                 "model_policy": asdict(task_contract.model_policy),
             }
 
+    def prepare_runtime_v3(self, runtime_ref: str) -> dict[str, Any]:
+        """Prepare an already-reviewed Runtime V3 package for explicit approval.
+
+        The trusted runtime executor owns package persistence. Workflow Dispatch
+        records only the opaque runtime reference and semantic fingerprints.
+        """
+
+        with self._lock:
+            descriptor = self._describe_runtime(runtime_ref)
+            contract, contract_sha = self._bound_contract_state(descriptor.task_id)
+            record_path = self._record_path(descriptor.task_id)
+            if record_path.exists():
+                raise WorkflowDispatchError("dispatch preparation already exists for task")
+
+            descriptor_fingerprint = descriptor.fingerprint
+            approval_fingerprint = _canonical_sha256(
+                {
+                    "schema_version": RUNTIME_DISPATCH_SCHEMA_VERSION,
+                    "task_id": descriptor.task_id,
+                    "runtime_descriptor_fingerprint": descriptor_fingerprint,
+                    "task_contract_sha256": contract_sha,
+                    "execution_profile": RUNTIME_EXECUTION_PROFILE,
+                }
+            )
+            record = {
+                "schema_version": RUNTIME_DISPATCH_SCHEMA_VERSION,
+                "task_id": descriptor.task_id,
+                "status": "prepared",
+                "execution_profile": RUNTIME_EXECUTION_PROFILE,
+                "runtime_ref": descriptor.runtime_ref,
+                "runtime_descriptor_fingerprint": descriptor_fingerprint,
+                "task_contract_sha256": contract_sha,
+                "approval_fingerprint": approval_fingerprint,
+                "risk_level": str(contract.get("risk_level") or "unknown"),
+                "sensitivity": str(contract.get("sensitivity") or "unknown"),
+                "approval_required": True,
+                "admin_approval_required": True,
+                "run_status": None,
+            }
+            path = self._write_record(record)
+            self.store.record_artifact(
+                descriptor.task_id,
+                "workflow_dispatch",
+                "runtime_dispatch_preparation",
+                str(path),
+            )
+            self.store.record_activity(
+                descriptor.task_id,
+                "workflow_dispatch",
+                "runtime_dispatch_prepared",
+                "ok",
+                (
+                    f"profile={RUNTIME_EXECUTION_PROFILE} "
+                    f"descriptor={descriptor_fingerprint} contract={contract_sha}"
+                ),
+            )
+            return {
+                "schema_version": RUNTIME_DISPATCH_SCHEMA_VERSION,
+                "task_id": descriptor.task_id,
+                "status": "prepared",
+                "execution_profile": RUNTIME_EXECUTION_PROFILE,
+                "runtime_descriptor_fingerprint": descriptor_fingerprint,
+                "task_contract_sha256": contract_sha,
+                "approval_fingerprint": approval_fingerprint,
+                "approval_required": True,
+                "admin_approval_required": True,
+                "execution_authorized": False,
+                "risk_level": record["risk_level"],
+                "sensitivity": record["sensitivity"],
+            }
+
     @staticmethod
     def _runtime_summary(task_id: str, result: Any) -> dict[str, Any]:
         if is_dataclass(result):
@@ -376,5 +515,90 @@ class WorkflowDispatchController:
             "task_id": task_id,
             "dispatch_status": record["status"],
             "execution_profile": EXECUTION_PROFILE,
+            "result": result_payload,
+        }
+
+    def execute_runtime_v3(
+        self,
+        task_id: str,
+        *,
+        approval_fingerprint: str,
+        confirmation: str,
+        approver_id: str,
+    ) -> dict[str, Any]:
+        """Authorize and execute exactly the previously described Runtime V3 package."""
+
+        with self._lock:
+            record = self._load_runtime_record(task_id)
+            if record.get("status") != "prepared":
+                raise WorkflowDispatchError("runtime dispatch preparation is not executable")
+            if str(approval_fingerprint).strip() != record.get("approval_fingerprint"):
+                raise WorkflowDispatchError("approval fingerprint mismatch")
+            if str(confirmation).strip() != "AUTHORIZE":
+                raise WorkflowDispatchError("explicit AUTHORIZE confirmation is required")
+            if not str(approver_id).strip():
+                raise WorkflowDispatchError("approver identity is required")
+
+            runtime_ref = str(record.get("runtime_ref") or "")
+            descriptor = self._describe_runtime(runtime_ref)
+            if descriptor.task_id != task_id:
+                raise WorkflowDispatchError("runtime V3 descriptor task mismatch")
+            expected_descriptor = str(record.get("runtime_descriptor_fingerprint") or "")
+            if descriptor.fingerprint != expected_descriptor:
+                raise WorkflowDispatchError("runtime V3 descriptor drift detected")
+            _, current_contract_sha = self._bound_contract_state(task_id)
+            if current_contract_sha != str(record.get("task_contract_sha256") or ""):
+                raise WorkflowDispatchError("runtime V3 task contract drift detected")
+
+            executor = self._runtime_executor()
+            approver_ref = "sha256:" + hashlib.sha256(
+                str(approver_id).encode("utf-8")
+            ).hexdigest()
+            record["status"] = "executing"
+            record["approver_ref"] = approver_ref
+            self._write_record(record)
+            self.store.record_activity(
+                task_id,
+                "workflow_dispatch",
+                "runtime_dispatch_authorized",
+                "ok",
+                f"profile={RUNTIME_EXECUTION_PROFILE} approver={approver_ref}",
+            )
+
+        try:
+            result = executor.execute(
+                runtime_ref,
+                expected_descriptor_fingerprint=expected_descriptor,
+                approval_fingerprint=str(record["approval_fingerprint"]),
+                approver_ref=approver_ref,
+            )
+        except Exception:
+            with self._lock:
+                record = self._load_runtime_record(task_id)
+                record["status"] = "failed"
+                record["run_status"] = "exception"
+                self._write_record(record)
+            raise
+
+        result_payload = self._runtime_summary(task_id, result)
+        run_status = result_payload["status"]
+        with self._lock:
+            record = self._load_runtime_record(task_id)
+            record["status"] = "completed" if run_status == "completed" else "failed"
+            record["run_status"] = run_status
+            self._write_record(record)
+            self.store.record_activity(
+                task_id,
+                "workflow_dispatch",
+                "runtime_dispatch_finished",
+                "ok" if run_status == "completed" else "error",
+                f"run_status={run_status} profile={RUNTIME_EXECUTION_PROFILE}",
+            )
+        return {
+            "schema_version": RUNTIME_DISPATCH_SCHEMA_VERSION,
+            "task_id": task_id,
+            "dispatch_status": record["status"],
+            "execution_profile": RUNTIME_EXECUTION_PROFILE,
+            "runtime_descriptor_fingerprint": expected_descriptor,
             "result": result_payload,
         }
