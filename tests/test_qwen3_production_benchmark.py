@@ -79,6 +79,15 @@ def test_percentile_interpolates_without_external_dependencies() -> None:
     assert benchmark.percentile([10.0, 20.0], 0.5) == 15.0
 
 
+def test_host_peak_rss_is_portable_and_reported_in_kib() -> None:
+    peak_rss_kib = benchmark.host_peak_rss_kib()
+    assert isinstance(peak_rss_kib, int)
+    assert peak_rss_kib > 0
+    script = (SCRIPTS / "run_qwen3_production_benchmark.py").read_text(encoding="utf-8")
+    assert "import resource\n" not in script.split("def host_peak_rss_kib", maxsplit=1)[0]
+    assert '"host_peak_rss_kib": host_peak_rss_kib()' in script
+
+
 def test_dual_gpu_workflow_delegates_fail_closed_isolation_probe() -> None:
     workflow = (
         ROOT / ".github" / "workflows" / "qwen3-embedding-production-benchmark-rtx5090.yml"
