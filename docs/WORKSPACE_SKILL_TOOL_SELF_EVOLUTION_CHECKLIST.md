@@ -1,19 +1,32 @@
 # WorkSpace Skill + Tool Self-Evolution Checklist
 
-Status: active implementation checklist.
+Status: active implementation checklist, reconciled against live `main` on 2026-09-08.
 
-Current branch: `feat/skill-reviewed-references-v1-20260908`
-
-Current base `main`: `aaeeb424bf2ea0b0c26030e7631fea6e177c2807`
+Current verified `main`: `8e8615d305113b385afe2ceb45d2966edd7b5293`
 
 Architecture: `docs/WORKSPACE_SKILL_TOOL_SELF_EVOLUTION_ARCHITECTURE.md`
 
-Legend:
+## Reconciliation checkpoint
 
-- `[x]` complete in current branch or already satisfied by canonical source
-- `[~]` in progress and not yet merged/fully verified
-- `[ ]` not started
-- `[!]` blocked / requires an explicit dependency or policy decision
+The older version of this checklist lagged behind merged implementation. The status below now reflects the canonical source present on the verified `main` above.
+
+Merged lifecycle milestones used for this reconciliation:
+
+- PR #371 — approved skill catalog progressive disclosure;
+- PR #379 — CandidateSkill approval queue / authenticated human review boundary;
+- PR #382 — Adaptive Micro-Tool Registry v0.2;
+- PR #383 — runtime P0 stateful security convergence gate;
+- PR #385 — approved learned-skill production materialization;
+- PR #388 — exact runtime reuse of materialized learned skills;
+- PR #389 — immutable production supersession and operator rollback mirror;
+- PR #390 — bounded recommendation-only maintenance advisor over Phase 4H/4I.
+
+Important interpretation rules:
+
+- `[x]` means the exact requirement is satisfied by canonical source and merged verification evidence.
+- `[~]` means a meaningful canonical portion exists, but the wording of the requirement is broader than what is currently proven.
+- `[ ]` means the remaining requirement has not yet been proven complete.
+- No item is marked complete merely because an adjacent subsystem exists.
 
 ## A. Architecture and source convergence
 
@@ -28,13 +41,13 @@ Legend:
 
 ## B. Skill progressive disclosure
 
-- [x] **S-01** Add a compact approved skill catalog for one agent (`list_for_agent`) with no skill body in the index. Merged via PR #371 at `aaeeb424bf2ea0b0c26030e7631fea6e177c2807`.
+- [x] **S-01** Add a compact approved skill catalog for one agent (`list_for_agent`) with no skill body in the index. Merged via PR #371.
 - [x] **S-02** Add explicit single-skill on-demand view (`view_for_agent`) that reuses full existing admission/integrity checks. Merged via PR #371.
 - [ ] **S-03** Add bounded metadata search/filter by name, description, category/tag, risk/domain where reviewed metadata exists.
-- [ ] **S-04** Integrate the catalog into agent/runtime selection so default prompt injection stays minimal.
-- [ ] **S-05** Add telemetry for list/view/selected counts without raw prompt/content logging.
+- [x] **S-04** Integrate the catalog into agent/runtime selection so default prompt injection stays minimal. `adaptive_learning_skill_reuse.py` and `agents/research_compiled.py` use adaptive retrieval first and load at most the exact materialized production skill selected for synthesis.
+- [~] **S-05** Add telemetry for list/view/selected counts without raw prompt/content logging. Exact selected/associated-task reuse receipts and retrieval activity exist; dedicated catalog list/view counters are not yet complete.
 
-Acceptance for S-01/S-02:
+Acceptance preserved:
 
 - wrong-agent skills are not listed and cannot be viewed;
 - disabled/unapproved skills are not listed;
@@ -45,16 +58,16 @@ Acceptance for S-01/S-02:
 
 ## C. Reviewed supporting references
 
-- [~] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class).
-- [~] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited.
-- [~] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes.
-- [~] **S-13** Add per-reference and total-reference size limits.
-- [~] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces.
-- [~] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references.
-- [~] **S-16** Add reference provenance and version/vendor applicability metadata.
-- [~] **S-17** Add tests proving an altered reference fails SHA/integrity validation.
+- [x] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class).
+- [x] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited.
+- [x] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes.
+- [x] **S-13** Add per-reference and total-reference size limits.
+- [x] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces through canonical approved skill catalog/loader reference APIs.
+- [x] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references.
+- [x] **S-16** Add reference provenance and version/vendor applicability metadata.
+- [x] **S-17** Add tests proving an altered reference fails SHA/integrity validation.
 
-Current E2 reference policy in this branch:
+Current E2 reference policy:
 
 - maximum 8 references per production skill;
 - maximum 16 KiB canonical UTF-8 per reference;
@@ -66,7 +79,7 @@ Current E2 reference policy in this branch:
 
 ## D. Automatic CandidateSkill creation
 
-Existing canonical foundation already present:
+Existing canonical foundation:
 
 - [x] **L-01** Deterministic learning admission from evidence-backed completed workflows.
 - [x] **L-02** `KnowledgeCandidate(kind="skill")` contract.
@@ -78,95 +91,95 @@ Existing canonical foundation already present:
 
 Required convergence work:
 
-- [ ] **L-10** Add canonical `CandidateSkill` view/adapter over `KnowledgeCandidate(kind="skill")`; do not introduce a duplicate learning object.
-- [ ] **L-11** Define deterministic mapping from candidate content to proposed `SKILL.md` fields.
-- [ ] **L-12** Add agent-facing `skill_candidate_create` operation that can create candidates only from a verified learning source.
-- [ ] **L-13** Ensure the candidate operation has zero production registry write authority.
-- [ ] **L-14** Add candidate duplicate/similarity detection and replay suppression.
-- [ ] **L-15** Add candidate provenance summary and source-evidence coverage metrics.
-- [ ] **L-16** Add candidate security scan receipt.
+- [x] **L-10** Add canonical `CandidateSkill` view/adapter over `KnowledgeCandidate(kind="skill")`; do not introduce a duplicate learning object.
+- [x] **L-11** Define deterministic mapping from candidate content to proposed `SKILL.md` fields.
+- [~] **L-12** Add agent-facing `skill_candidate_create` operation that can create candidates only from a verified learning source. The verified reflection/staging service exists; a distinct generic agent operation surface is not yet proven complete.
+- [x] **L-13** Ensure the candidate operation has zero production registry write authority.
+- [~] **L-14** Add candidate duplicate/similarity detection and replay suppression. Immutable candidate identity and several receipt/replay barriers exist; semantic similarity detection is not yet complete.
+- [x] **L-15** Add candidate provenance summary and source-evidence coverage metrics.
+- [x] **L-16** Add candidate security scan receipt.
 
 ## E. Automatic skill improvement / self-evolution
 
-- [ ] **E-01** Bind `patch` proposals to the exact current production skill SHA/version.
-- [ ] **E-02** Bind `supersede` proposals to explicit lineage and rollback target.
+- [x] **E-01** Bind `patch` proposals to the exact current production skill SHA/version. Phase 4J/4K bind exact base knowledge; PR #389 binds exact production lineage before publication.
+- [x] **E-02** Bind `supersede` proposals to explicit lineage and rollback target. PR #389 preserves immutable prior production versions and exact rollback lineage.
 - [ ] **E-03** Trigger revision candidates from verified contradictions.
-- [ ] **E-04** Trigger revision candidates from repeated verified failure.
+- [x] **E-04** Trigger revision candidates from repeated verified failure. Phase 4H thresholds -> Phase 4I review -> Phase 4J revision path are present; PR #390 closes bounded recommendation orchestration.
 - [ ] **E-05** Trigger revision candidates from vendor/version drift.
-- [ ] **E-06** Trigger revision candidates when effectiveness drops below policy threshold.
-- [ ] **E-07** Compare candidate revision against current production skill on held-out cases.
+- [x] **E-06** Trigger revision candidates when effectiveness drops below policy threshold.
+- [~] **E-07** Compare candidate revision against current production skill on held-out cases. Phase 4K compares exact base/revised versions and post-activation effectiveness, but a dedicated held-out benchmark remains open.
 - [ ] **E-08** Prefer safer/narrower candidates when quality is non-inferior and authority/tool cost is lower.
-- [ ] **E-09** Prevent learning from its own generated candidate text unless independently re-grounded in verified evidence.
-- [ ] **E-10** Record contradiction/resolution lineage.
-- [ ] **E-11** Support quarantine/retirement recommendation without automatic destructive deletion.
-- [ ] **E-12** Add rollback to last verified production version.
+- [~] **E-09** Prevent learning from its own generated candidate text unless independently re-grounded in verified evidence. Verified-success/evidence lineage is mandatory, but a dedicated self-reinforcement resistance gate remains to be completed.
+- [~] **E-10** Record contradiction/resolution lineage. Canonical contradiction contracts exist; complete maintenance-driven resolution lineage remains open.
+- [~] **E-11** Support quarantine/retirement recommendation without automatic destructive deletion. PR #390 emits revision-or-retirement review recommendations; explicit quarantine state is not yet implemented.
+- [x] **E-12** Add rollback to last verified production version. Phase 4K keeps rollback operator-only and PR #389 mirrors completed learning rollback into immutable production state.
 
 ## F. Skill evaluation, promotion, and production materialization
 
 - [ ] **P-01** Define held-out skill benchmark contract.
-- [ ] **P-02** Require deterministic schema/security/provenance checks before evaluation.
-- [ ] **P-03** Require regression comparison with previous production version for patch/supersede.
+- [x] **P-02** Require deterministic schema/security/provenance checks before evaluation. Phase 4K performs deterministic exact-lineage and domain/safety evaluation.
+- [~] **P-03** Require regression comparison with previous production version for patch/supersede. Exact base/revised comparison exists; dedicated held-out regression policy remains open.
 - [ ] **P-04** Define minimum evidence diversity / independent-source policy.
-- [ ] **P-05** Reuse authenticated domain reviewer promotion for `network` / `security` skills.
-- [ ] **P-06** Add deterministic production materializer from an approved candidate to `skills/<name>/SKILL.md` plus registry metadata.
-- [ ] **P-07** Materializer must not accept arbitrary filesystem paths.
-- [ ] **P-08** Production SHA/integrity metadata must be generated from exact materialized bytes.
-- [ ] **P-09** Promotion must be atomic or checkpoint-recoverable.
-- [ ] **P-10** Preserve prior version and rollback lineage.
-- [ ] **P-11** No candidate can directly modify `skills/registry.json` outside the promotion/materialization boundary.
+- [x] **P-05** Reuse authenticated domain reviewer promotion for `network` / `security` skills.
+- [x] **P-06** Add deterministic production materializer from an approved candidate to `skills/<name>/SKILL.md` plus registry metadata. Merged via PR #385.
+- [x] **P-07** Materializer must not accept arbitrary filesystem paths.
+- [x] **P-08** Production SHA/integrity metadata must be generated from exact materialized bytes.
+- [x] **P-09** Promotion/materialization must be atomic or checkpoint-recoverable. Canonical checkpoint mutation plus atomic registry commit/rollback behavior is present.
+- [x] **P-10** Preserve prior version and rollback lineage. Merged via PR #389.
+- [x] **P-11** No candidate can directly modify `skills/registry.json` outside the promotion/materialization/supersession boundary.
 
 ## G. Skill effectiveness and autonomous maintenance
 
-- [ ] **M-01** Count skill listed/viewed/selected/associated task events.
-- [ ] **M-02** Bind verified outcomes to the exact skill version used.
-- [ ] **M-03** Compute success/failure/validator-pass rates.
+- [~] **M-01** Count skill listed/viewed/selected/associated task events. Exact selected/associated-task reuse is recorded; dedicated catalog list/view counters remain open.
+- [x] **M-02** Bind verified outcomes to the exact skill version used. `LearningReuseReceipt` binds task + item + exact knowledge SHA before synthesis, and Phase 4H joins authoritative task/validator outcome.
+- [~] **M-03** Compute success/failure/validator-pass rates. Exact success/failure/waiting/unverified counts and advisory thresholds exist; explicit normalized rate projections remain open.
 - [ ] **M-04** Measure tool-call count, latency, and resource delta where telemetry already exists.
-- [ ] **M-05** Track contradictions and last verified date.
+- [~] **M-05** Track contradictions and last verified date. Contradiction contracts exist; last-verified maintenance projection is not complete.
 - [ ] **M-06** Add vendor/version applicability statistics.
-- [ ] **M-07** Generate `candidate_for_revision`, `candidate_for_retirement`, and `quarantined` recommendations.
+- [~] **M-07** Generate `candidate_for_revision`, `candidate_for_retirement`, and `quarantined` recommendations. Revision/retirement review recommendations exist via PR #390; quarantine recommendation remains open.
 - [ ] **M-08** Add stale-skill review policy.
-- [ ] **M-09** Add bounded autonomous maintenance scheduler; recommendations only unless promotion authority is explicitly present.
+- [x] **M-09** Add bounded autonomous maintenance scheduler/advisor; recommendations only unless promotion authority is explicitly present. PR #390 adds bounded `run_once()` recommendation-only orchestration and no mutation surface.
 
 ## H. Generic Tool / Capability Descriptor
 
-- [ ] **T-01** Define runtime-wide immutable `CapabilityDescriptor` view over existing canonical capability/tool sources.
+- [~] **T-01** Define runtime-wide immutable `CapabilityDescriptor` view over existing canonical capability/tool sources. `ToolMetadata` provides the micro-tool foundation, but the broader multi-kind descriptor is not complete.
 - [ ] **T-02** Support kinds: `tool`, `program`, `gateway`, `agent`, `provider`, `adapter`.
-- [ ] **T-03** Define effect taxonomy: `read`, `compute`, `local_read`, `network_read`, `execute_readonly`, `write_staging`, `write`, `network_write`, `device_control`, `credential_use`, `destructive`.
-- [ ] **T-04** Unknown/plugin/external effects fail closed to effect-capable/high-risk until reviewed.
+- [~] **T-03** Define effect taxonomy. Micro-Tool Registry v0.2 has deterministic `read`, `network_read`, `compute`, `write`, `execute`, `control`, `delete`; broader runtime effect convergence remains open.
+- [~] **T-04** Unknown/plugin/external effects fail closed to effect-capable/high-risk until reviewed. Unknown cost/risk/effect metadata is rejected, but external capability quarantine remains open.
 - [ ] **T-05** Descriptor may contain required environment variable names but never secret values.
 - [ ] **T-06** Descriptor must declare result-size limit and evidence requirement.
-- [ ] **T-07** Descriptor must not grant authority.
+- [x] **T-07** Descriptor/registry selection must not grant authority. Micro-Tool Registry v0.2 explicitly preserves `TaskCapabilityAuthority` as the execution boundary.
 - [ ] **T-08** Add stable descriptor fingerprint/provenance/version metadata.
 
 ## I. Generic Capability Registry
 
-- [ ] **T-10** Add closed built-in registry over reviewed descriptors.
-- [ ] **T-11** Reject duplicate capability IDs and unreviewed overrides.
+- [~] **T-10** Add closed built-in registry over reviewed descriptors. Deterministic `MicroToolRegistry` exists; full runtime-wide capability source convergence remains open.
+- [~] **T-11** Reject duplicate capability IDs and unreviewed overrides. Duplicate IDs fail closed; generalized reviewed override policy remains open.
 - [ ] **T-12** Add namespaces for adapters/plugins/providers.
 - [ ] **T-13** Add immutable registry fingerprint.
-- [ ] **T-14** Add compact agent/task capability listing.
-- [ ] **T-15** Add exact capability resolve/view operation.
-- [ ] **T-16** Preserve domain-specific security registry as an adapter, not a discarded duplicate.
+- [~] **T-14** Add compact agent/task capability listing. Metadata-only compact registry view and authority-aware selection exist; generalized agent/task projection remains open.
+- [x] **T-15** Add exact capability resolve/view operation. `MicroToolRegistry.get()` provides exact validated lookup.
+- [~] **T-16** Preserve domain-specific security registry as an adapter, not a discarded duplicate. Office-IT specs are consumed through `from_specs`; broader domain adapters remain open.
 
 ## J. Toolsets and availability
 
-- [ ] **T-20** Add `ToolsetDescriptor` / named capability groups.
+- [x] **T-20** Add `ToolsetDescriptor` / named capability groups. V0.2 `ToolPreset` is the composition-only named group primitive.
 - [ ] **T-21** Initial `windows_diagnostics` toolset.
 - [ ] **T-22** Initial `linux_diagnostics` toolset.
 - [ ] **T-23** Initial `network_diagnostics` toolset.
 - [ ] **T-24** Initial `camera_diagnostics` toolset.
 - [ ] **T-25** Initial `security_forensics_readonly` toolset.
 - [ ] **T-26** Initial `repository_coding` toolset.
-- [ ] **T-27** Add platform/profile/task filtering.
+- [~] **T-27** Add platform/profile/task filtering. Platform, cost, admin, network scope and task-authority prefiltering exist; full profile/task convergence remains open.
 - [ ] **T-28** Add bounded availability probes.
 - [ ] **T-29** Add TTL cache only when cache identity is correctly scoped.
-- [ ] **T-30** Toolset membership never grants capability authority.
+- [x] **T-30** Toolset membership never grants capability authority.
 
 ## K. Authority-bound invocation and evidence
 
-- [ ] **T-40** Capability selection must resolve descriptor before invocation.
-- [ ] **T-41** Every invocation must intersect with canonical `TaskCapabilityAuthority`.
-- [ ] **T-42** Apply domain-specific policy gate where required.
+- [~] **T-40** Capability selection must resolve descriptor before invocation. Registry selection is descriptor-first; generalized invocation convergence is not complete.
+- [~] **T-41** Every invocation must intersect with canonical `TaskCapabilityAuthority`. Existing execution authority is canonical and registry selection prefilters it; universal generic-adapter enforcement remains open.
+- [~] **T-42** Apply domain-specific policy gate where required. Existing network scope/domain gates exist in specific paths; generic adapter convergence remains open.
 - [ ] **T-43** Add adapter invocation contract with no raw model-selected shell command path.
 - [ ] **T-44** Bound tool result size and error disclosure.
 - [ ] **T-45** Normalize invocation output to runtime `Observation`.
@@ -234,33 +247,55 @@ These should be implemented as small capabilities, not one giant diagnostic work
 
 ## O. CI / security gates
 
-- [x] **C-01** Skill catalog progressive-disclosure regression tests. Exact-head Python 3.11/3.12 unit/regression/EV gates passed before PR #371 merge.
-- [~] **C-02** Reference pack integrity/path/symlink tests.
-- [ ] **C-03** Candidate create/patch/supersede contract tests.
-- [ ] **C-04** Replay/self-reinforcement resistance tests.
-- [ ] **C-05** Held-out evaluation tests.
-- [ ] **C-06** Promotion/materialization atomicity tests.
-- [ ] **C-07** Generic capability registry duplicate/override tests.
-- [ ] **C-08** Authority intersection tests.
+- [x] **C-01** Skill catalog progressive-disclosure regression tests.
+- [x] **C-02** Reference pack integrity/path/symlink/tamper tests.
+- [x] **C-03** Candidate create/patch/supersede contract and production supersession tests.
+- [~] **C-04** Replay/self-reinforcement resistance tests. Replay/duplicate receipts and immutable identities are covered; dedicated independent re-grounding tests remain open.
+- [~] **C-05** Held-out evaluation tests. Deterministic Phase 4K evaluation exists; dedicated held-out benchmark remains open.
+- [x] **C-06** Promotion/materialization/supersession atomicity and rollback tests.
+- [~] **C-07** Generic capability registry duplicate/override tests. Duplicate/malformed metadata tests exist; generalized override policy remains open.
+- [~] **C-08** Authority intersection tests. Micro-tool selection and existing execution authority have coverage; universal adapter invocation convergence remains open.
 - [ ] **C-09** Unknown external tool fail-closed tests.
 - [ ] **C-10** MCP schema drift/quarantine tests.
 - [ ] **C-11** Tool-result bounding/error-redaction tests.
-- [ ] **C-12** Observation/evidence lineage tests.
-- [ ] **C-13** Python 3.11 and 3.12 full regression for the final integrated milestone.
-- [ ] **C-14** Installer/deployment regression for the final integrated milestone.
-- [ ] **C-15** Windows/Linux platform-specific smoke for the final integrated milestone where a runner is available.
+- [~] **C-12** Observation/evidence lineage tests. Adaptive reuse/outcome lineage is tested; generic tool Observation normalization remains open.
+- [~] **C-13** Python 3.11 and 3.12 full regression for the final integrated milestone. Current Skill lifecycle slices pass both versions, but the overall Tool lifecycle is not final.
+- [~] **C-14** Installer/deployment regression for the final integrated milestone. Current slices pass installer and portable deployment CI; final Tool lifecycle remains open.
+- [~] **C-15** Windows/Linux platform-specific smoke for the final integrated milestone where a runner is available. Current slices pass Windows runtime smoke and Ubuntu 22.04/24.04 portable deployment; final Tool lifecycle remains open.
 
 ## Current execution slice
 
-Reference-pack slice `S-10..S-17`:
+### Skill lifecycle — core convergence achieved
 
-1. [~] registry schema and strict E2 resource admission;
-2. [~] path/symlink/traversal/extra-file/integrity checks;
-3. [~] per-file/aggregate size bounds and security scanning;
-4. [~] compact reference list + one-reference view;
-5. [~] vendor/version/provenance metadata;
-6. [~] focused regression tests;
-7. [ ] exact-head PR CI;
-8. [ ] merge only after exact-head verification.
+The core chain is now implemented and merged:
 
-After this slice is merged, continue with `L-10..L-16`: canonical CandidateSkill projection and agent-facing automatic candidate creation backed by the existing verified admission/reflection/staging path. Then implement patch/supersede self-improvement and controlled promotion before starting the generic Tool Registry.
+`verified evidence -> candidate -> validation -> human/domain approval -> production materialization -> runtime retrieval/reuse -> exact reuse receipt -> authoritative effectiveness signal -> bounded maintenance recommendation -> reviewed revision -> deterministic Phase 4K evaluation -> authenticated activation -> immutable production supersession -> operator rollback mirror`
+
+This does **not** mean self-evolution is finished. Remaining Skill-side gaps are deliberately narrower:
+
+1. **S-03 / S-05** — bounded catalog search plus complete list/view telemetry;
+2. **E-03 / E-05** — contradiction-triggered and vendor/version-drift maintenance inputs;
+3. **E-07 / P-01 / P-03** — held-out benchmark and pre-publication regression comparison;
+4. **E-08 / E-09** — safer/narrower preference and explicit self-reinforcement resistance;
+5. **M-03..M-08** — rates, resource correlation, last-verified/vendor applicability, quarantine and stale-skill policy.
+
+### Tool lifecycle — next major convergence area
+
+Micro-Tool Registry v0.2 is already the canonical starting point. Do not create another registry. Continue by extending it toward the remaining requirements:
+
+1. runtime-wide capability descriptor/fingerprint without granting authority;
+2. named Windows/Linux/network/camera/security toolsets built from small capabilities;
+3. universal authority-bound adapter invocation + bounded Observation/evidence receipts;
+4. external/plugin/MCP quarantine and schema-drift handling;
+5. domain migrations as small read-only tools, not one giant diagnostic workflow.
+
+### Merge discipline
+
+For every next slice:
+
+1. re-check live `main` before branch/write;
+2. reuse canonical modules before adding new ones;
+3. keep one narrow responsibility per PR;
+4. run exact-head Python 3.11/3.12 + security + deployment gates that apply;
+5. merge only with exact expected head SHA;
+6. re-check live `main` after merge.
