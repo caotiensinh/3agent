@@ -13,8 +13,8 @@ Status: normative implementation audit for the WorkSpace-native agent runtime.
 - P0-3 canonical `ExecutionPlan` / `ExecutionNode`: PR `#367`, merge commit `8fd819eb028acadf881284b919d0aa86c28039f2`
 - P0-4 canonical `ExecutionObservation` / Evidence binding: PR `#369`, merge commit `83602591dba8772abab4fe1ab60924137c755994`
 - Current P0-5 candidate: PR `#370`, bounded dependency-aware scheduling and dispatch convergence
-- P0-5 synchronized main baseline: `1d4a8745a6fadfe29a3068e2cf5c6b3fb168f455`
-- P0-5 exact converged code head before this documentation update: `edd0b1f724b0499d7fd863c70c3eb2a590b70ef2`
+- Latest synchronized `main` parent for this P0-5 documentation update: `bbb2de7c0d31424d953c4476d6231a9352e0625e`
+- Latest synchronized P0-5 code head before this documentation update: `37cf0f90f35133965fb5f5ce8ab6fc1f586e855c`
 - Audit rule: extend canonical source first; never create parallel runtime abstractions when equivalent primitives already exist.
 
 The architecture is a convergence target over the existing WorkSpace source tree, not permission to build a second runtime implementation tree.
@@ -31,21 +31,21 @@ The architecture is a convergence target over the existing WorkSpace source tree
 
 | Runtime area | Existing canonical source | Status | Current result / remaining gap | Required action |
 | --- | --- | --- | --- | --- |
-| `TaskContext` | `task_context.py`; `task_contract.py`; `harness_task_compiler.py`; `harness_context_manifest.py` | `KEEP/EXTEND` | One immutable task/session/trace/actor runtime binding. Plans, observations and schedulers consume exact context fingerprints. Remaining work is checkpoint/resume and delegation wiring. | Keep `TaskContext` canonical; context text never grants authority. |
-| Authority | `capability_authority.py`; `capability_revocation.py`; `model_authority.py` | `KEEP/EXTEND` | Child authority narrowing is canonical. Plan nodes bind exact narrowed authority. Dispatch revalidates authority and monotonic revocation immediately before execution admission. | Revalidate the same authority/revocation state on resume and provider invocation. |
-| `ExecutionPlan` / `ExecutionNode` | `execution_plan.py`; `workflow_design.py` | `KEEP/EXTEND` | One deterministic immutable DAG bound to task context, authority, budgets, approvals and evidence requirements. It remains non-executing. | Keep plan metadata non-authorizing; do not create another graph format. |
-| Scheduler admission | `runtime_scheduler.py` | `KEEP/EXTEND` | `RuntimeScheduler` is the canonical pure deterministic evaluator for DAG readiness, dependency propagation, approval admission and terminal-state projection. It validates task context, plan, authority and canonical observations and returns immutable scheduling decisions without mutating runtime state. | Keep this evaluator side-effect free. Checkpoint/resume should reconstruct inputs and recompute the decision rather than persist hidden scheduler logic. |
-| Dispatch coordination | `execution_scheduler.py`; `execution_budget.py`; `capability_revocation.py` | `KEEP/EXTEND` | P0-5 `ExecutionScheduler` now consumes `RuntimeScheduler` as its readiness/admission source of truth. It owns only stateful dispatch concerns: tickets, in-flight tracking, persistent budget reservation, revocation checks, bounded concurrency/backpressure, cancellation, deterministic fan-in and canonical observation admission. | Keep provider execution outside this coordinator. Remaining gaps: resource locks, timeout/safe retry adapters and durable checkpoint/resume. |
-| Observation | `execution_observation.py`; domain observation adapters | `KEEP/EXTEND` | Canonical provider-neutral node outcome with exact task/plan/node/authority binding. Non-success states never silently satisfy dependencies. | Propagate stable observation fingerprints into checkpoints and aggregation. |
+| `TaskContext` | `task_context.py`; `task_contract.py`; `harness_task_compiler.py`; `harness_context_manifest.py` | `KEEP/EXTEND` | One immutable task/session/trace/actor runtime binding. Plans, observations, schedulers and canonical runtime checkpoints consume exact context fingerprints. Remaining work is transient dispatch-state checkpoint binding and delegation wiring. | Keep `TaskContext` canonical; context text never grants authority. |
+| Authority | `capability_authority.py`; `capability_revocation.py`; `model_authority.py` | `KEEP/EXTEND` | Child authority narrowing is canonical. Plan nodes bind exact narrowed authority. Dispatch revalidates authority and monotonic revocation immediately before execution admission. Canonical recovery already verifies the parent-authority fingerprint. | Revalidate live revocation and executable authority again at resume/dispatch/provider boundaries; a checkpoint never freezes future permission. |
+| `ExecutionPlan` / `ExecutionNode` | `execution_plan.py`; `workflow_design.py` | `KEEP/EXTEND` | One deterministic immutable DAG bound to task context, authority, budgets, approvals and evidence requirements. It remains non-executing. Runtime checkpoints bind the exact plan fingerprint. | Keep plan metadata non-authorizing; do not create another graph format. |
+| Scheduler admission | `runtime_scheduler.py` | `KEEP/EXTEND` | `RuntimeScheduler` is the canonical pure deterministic evaluator for DAG readiness, dependency propagation, approval admission and terminal-state projection. It validates task context, plan, authority and canonical observations and returns immutable scheduling decisions without mutating runtime state. `RuntimeRecovery` reconstructs inputs and recomputes this decision instead of persisting hidden readiness logic. | Keep this evaluator side-effect free and reusable by dispatch and recovery. |
+| Dispatch coordination | `execution_scheduler.py`; `execution_budget.py`; `capability_revocation.py` | `KEEP/EXTEND` | P0-5 `ExecutionScheduler` consumes `RuntimeScheduler` as its readiness/admission source of truth. It owns only stateful dispatch concerns: tickets, in-flight tracking, persistent budget reservation, revocation checks, bounded concurrency/backpressure, cancellation, deterministic fan-in and canonical observation admission. | Keep provider execution outside this coordinator. Remaining gaps: resource locks, timeout/safe-retry adapters, and durable reconstruction of transient dispatch state such as in-flight tickets, cancellation, current budget/deadline and live revocation state. |
+| Observation | `execution_observation.py`; domain observation adapters | `KEEP/EXTEND` | Canonical provider-neutral node outcome with exact task/plan/node/authority binding. Non-success states never silently satisfy dependencies. Stable observation fingerprints are already bound into canonical runtime checkpoints. | Keep observation fingerprints canonical; extend only where transient dispatch/evidence reconstruction requires additional binding. |
 | Evidence / provenance | `security_monitoring/normalized_evidence.py`; `security_monitoring/execution_evidence_adapter.py`; evidence/custody modules | `KEEP/EXTEND` | Existing DFIR evidence remains canonical; runtime adapter only binds evidence to exact execution identity. | Reuse custody stores; do not replace domain evidence semantics. |
-| Checkpoint | `harness_checkpoint.py`; `harness_context_rehydration.py`; `workflow_state_machine.py`; `execution_scheduler.py` | `KEEP/EXTEND` | Immutable SHA-256 verified SQLite-backed checkpoints and scope-first context rehydration already exist. Scheduler exposes deterministic snapshot state, but runtime resume is not yet bound to plan/authority/revocation/budget/observation identity. | P0-6: bind scheduler reconstruction to existing checkpoint storage and fail closed on stale plan, authority, revocation, budget or evidence state. |
+| Checkpoint / recovery | `runtime_checkpoint.py`; `harness_checkpoint.py`; `harness_context_rehydration.py`; `workflow_state_machine.py` | `KEEP/EXTEND` | Canonical `RuntimeCheckpoint` now binds exact task/context identity, plan, parent authority, scheduling decision, approvals and accepted observation fingerprints in a deterministic integrity-checked envelope. `RuntimeRecovery` revalidates those canonical inputs, recomputes `RuntimeScheduler`, rejects mismatches and never executes or replays a node. `PARTIAL` forces manual reconciliation. Remaining gap is durable integration of transient `ExecutionScheduler` state plus live revocation and persistent budget/deadline reconstruction. | Preserve `RuntimeCheckpoint` / `RuntimeRecovery` as the canonical runtime recovery contract. Extend storage/adapters around it; do not create a second replay scheduler. |
 | Context / Memory | `harness_memory.py`; context compiler/manifest/rehydration modules | `KEEP/EXTEND` | Durable provenance-aware context primitives exist. | Security scope must be enforced before semantic relevance. |
-| Skills / learning | `skills.py`; adaptive-learning admission/evaluation/promotion modules; `skill_catalog.py` | `KEEP/EXTEND` | Reviewed skill admission, progressive disclosure and controlled learning primitives exist. | Production self-modification remains prohibited; promotion requires evidence, tests, review and policy approval. |
+| Skills / learning | `skills.py`; `candidate_skill.py`; `candidate_skill_validation.py`; adaptive-learning admission/evaluation/promotion modules; `skill_catalog.py` | `KEEP/EXTEND` | Reviewed skill admission, progressive disclosure and controlled CandidateSkill lifecycle primitives exist. | Production self-modification remains prohibited; promotion requires evidence, tests, review and policy approval. |
 | Subagents / delegation | agent/handoff modules; authority/plan/observation contracts | `EXTEND` | Handoff integrity and child authority exist, but one runtime-wide delegation contract is still missing. | Future delegation must bind child `TaskContext`, narrowed authority, budget, evidence and aggregation policy. |
 
 ## Canonical scheduler split
 
-The repository now contains two scheduler-named modules with intentionally different responsibilities. They are complementary, not competing implementations.
+The repository contains two scheduler-named modules with intentionally different responsibilities. They are complementary, not competing implementations.
 
 ### `RuntimeScheduler` — pure admission evaluator
 
@@ -70,9 +70,46 @@ The repository now contains two scheduler-named modules with intentionally diffe
 - exact node authority rebinding immediately before dispatch;
 - cancellation of future dispatch while retaining in-flight audit results;
 - admission of only exact canonical observations for currently in-flight nodes;
-- deterministic scheduler snapshot for future checkpoint binding.
+- deterministic scheduler snapshot for future durable transient-state binding.
+
+The scheduler snapshot is reconstruction evidence, not a new authority source and not a replacement for the canonical `RuntimeCheckpoint` contract.
 
 This split prevents a second readiness implementation while preserving separation between pure decision logic and stateful execution control.
+
+## Canonical checkpoint / recovery split
+
+`src/three_agent/runtime_checkpoint.py` adds a provider-neutral runtime checkpoint/recovery contract without becoming another scheduler or execution mechanism.
+
+### `RuntimeCheckpoint`
+
+The canonical checkpoint binds:
+
+- task ID;
+- exact `TaskContext` fingerprint and identity fingerprint;
+- exact `ExecutionPlan` fingerprint;
+- parent-authority fingerprint;
+- recomputed `RuntimeScheduler` decision fingerprint;
+- normalized approved node IDs;
+- validated canonical observation fingerprints;
+- normalized capture timestamp;
+- deterministic checkpoint identity and SHA-256 integrity envelope.
+
+The builder revalidates `TaskContext`, plan, parent authority and every observation before creating the checkpoint.
+
+### `RuntimeRecovery`
+
+Recovery is fail-closed and non-executing:
+
+- exact task/context/plan/authority identity must still match;
+- the supplied observation set must exactly match the checkpointed fingerprints;
+- `RuntimeScheduler` is recomputed from canonical inputs and its fingerprint must match the checkpoint;
+- `PARTIAL` observations return `MANUAL_RECONCILIATION` and are never auto-replayed;
+- completed or blocked scheduling state is preserved explicitly;
+- otherwise recovery returns `RECOVERABLE` with no execution performed.
+
+A checkpoint proves reconstruction identity; it does not mint execution permission. Live revocation, current budget/deadline state and transient dispatch/in-flight state must still be revalidated before any future dispatch.
+
+Focused coverage exists in `tests/test_runtime_checkpoint.py` and `tests/test_runtime_p0_convergence.py`.
 
 ## Important non-duplicates
 
@@ -83,12 +120,13 @@ This split prevents a second readiness implementation while preserving separatio
 5. `RuntimeScheduler` owns pure deterministic scheduling/admission evaluation.
 6. `ExecutionScheduler` owns stateful dispatch coordination and consumes `RuntimeScheduler` decisions.
 7. `ExecutionObservation` owns canonical generic node-result binding and grants no authority.
-8. `TaskExecutionBudgetState` remains persistent atomic budget/deadline authority.
-9. `TaskCapabilityRevocationStore` remains the monotonic revocation source.
-10. `WorkflowDispatchController`, worker pools and provider adapters remain specialized execution mechanisms.
-11. `HarnessCheckpointStore` and `HarnessMemoryStore` own durable reconstruction/context state, not execution permission.
-12. Security/DFIR evidence modules retain acquisition, custody and forensic semantics.
-13. `ApprovedSkillLoader` and `ApprovedSkillCatalog` expose reviewed procedural knowledge but never grant runtime capability authority.
+8. `RuntimeCheckpoint` / `RuntimeRecovery` own canonical runtime reconstruction identity and fail-closed recovery admission; they never execute or replay work.
+9. `TaskExecutionBudgetState` remains persistent atomic budget/deadline authority.
+10. `TaskCapabilityRevocationStore` remains the monotonic revocation source.
+11. `WorkflowDispatchController`, worker pools and provider adapters remain specialized execution mechanisms.
+12. `HarnessCheckpointStore` and `HarnessMemoryStore` remain durable storage/context primitives; they do not replace runtime recovery identity and do not grant execution permission.
+13. Security/DFIR evidence modules retain acquisition, custody and forensic semantics.
+14. `ApprovedSkillLoader`, `ApprovedSkillCatalog` and CandidateSkill lifecycle modules expose reviewed procedural knowledge/lifecycle state but never grant runtime capability authority.
 
 ## P0-1 — authority narrowing
 
@@ -128,14 +166,16 @@ Focused tests: `tests/test_execution_observation.py`.
 
 PR `#370` converges the scheduler path around:
 
-- canonical pure evaluator: `src/three_agent/runtime_scheduler.py` (already present on synchronized `main`);
+- canonical pure evaluator: `src/three_agent/runtime_scheduler.py`;
 - stateful dispatch coordinator: `src/three_agent/execution_scheduler.py`;
 - pure evaluator tests: `tests/test_runtime_scheduler.py`;
 - dispatch coordinator tests: `tests/test_execution_scheduler.py`.
 
-Synchronization merge commit carrying live `main` into the P0-5 branch: `5666c904488b35bd374265521f5999d0a4822248`.
+Previous synchronization merge carrying the first concurrent scheduler baseline into P0-5: `5666c904488b35bd374265521f5999d0a4822248`.
 
-Exact converged code head before this documentation update: `edd0b1f724b0499d7fd863c70c3eb2a590b70ef2`.
+Synchronization with `main=5e4cae128486d29fba43065d9bebb95dffd69b14`: `8b8907763a2283ae91a3664e3513bff09ee68918`.
+
+Latest pre-documentation synchronization with `main=bbb2de7c0d31424d953c4476d6231a9352e0625e`: `37cf0f90f35133965fb5f5ce8ab6fc1f586e855c`.
 
 ### P0-5 invariants
 
@@ -172,7 +212,9 @@ Exact converged code head before this documentation update: `edd0b1f724b0499d7fd
 9. cancellation with retained audit outcome;
 10. duplicate dispatch rejection and backpressure.
 
-Exact code head `edd0b1f724b0499d7fd863c70c3eb2a590b70ef2` passed all five core PR gates: canonical-module CI, Internet-egress-security CI, installer CI, Windows deployment/runtime smoke CI and harness CI. Harness passed unit tests plus enterprise verification EV-01 through EV-10 on both Python 3.11 and Python 3.12. `canonical-autoheal-safe` also passed its focused regression, canonical census, compilation and full repository regression suite on the same exact head.
+Historical exact converged code head `edd0b1f724b0499d7fd863c70c3eb2a590b70ef2` passed all five core PR gates: canonical-module CI, Internet-egress-security CI, installer CI, Windows deployment/runtime smoke CI and harness CI. Harness passed unit tests plus enterprise verification EV-01 through EV-10 on both Python 3.11 and Python 3.12. `canonical-autoheal-safe` also passed its focused regression, canonical census, compilation and full repository regression suite on that exact historical head.
+
+That historical evidence is not a merge gate for the current PR head. PR `#370` may merge only after all required core CI and `canonical-autoheal-safe` pass on the resulting documentation head, followed by a fresh live-`main` / exact-PR-head guard.
 
 ## Remaining P0 sequence
 
@@ -180,10 +222,11 @@ Exact code head `edd0b1f724b0499d7fd863c70c3eb2a590b70ef2` passed all five core 
 2. Canonical `TaskContext` — merged in PR `#366`.
 3. Canonical `ExecutionPlan` / `ExecutionNode` — merged in PR `#367`.
 4. Canonical `ExecutionObservation` / Evidence binding — merged in PR `#369`.
-5. Bounded dependency-aware scheduler — P0-5 candidate PR `#370`; merge only after the resulting documentation-head exact CI and autoheal are green.
-6. P0-6 checkpoint/resume — bind canonical plan fingerprint, deterministic scheduler reconstruction state, accepted observation fingerprints, current authority, revocation and budget/deadline state to existing immutable checkpoint storage.
+5. Bounded dependency-aware scheduler — P0-5 candidate PR `#370`; merge only after exact resulting-head CI and autoheal are green.
+6. Checkpoint/recovery core — canonical `RuntimeCheckpoint` / `RuntimeRecovery` is present on synchronized `main`; remaining work is durable storage/adaptation for transient `ExecutionScheduler` state plus live revocation and persistent budget/deadline reconstruction, without auto-replaying `PARTIAL` or ambiguous in-flight work.
 7. Close provider/resource-lock, timeout and safe-retry integration gaps without creating another scheduler/provider framework.
-8. Run final integration/security/regression convergence and benchmark the normalized runtime path.
+8. Complete runtime-wide delegation binding for child context/authority/budget/evidence aggregation.
+9. Run final integration/security/regression convergence and benchmark the normalized runtime path.
 
 ## Security conclusion
 
@@ -193,4 +236,4 @@ The safe convergence strategy remains:
 
 `existing canonical primitive -> normalize/extend contract -> bind at runtime boundary -> regression tests -> CI evidence`
 
-The central runtime rule remains unchanged: the model may propose reasoning and work, but WorkSpace runtime authority, state, capabilities, scheduling, evidence and execution policy remain outside model control.
+The central runtime rule remains unchanged: the model may propose reasoning and work, but WorkSpace runtime authority, state, capabilities, scheduling, evidence, recovery and execution policy remain outside model control.
