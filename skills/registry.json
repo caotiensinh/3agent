@@ -238,6 +238,20 @@
       "provenance": ["WorkSpace project-owned clean-room synthesis of exact-candidate, deterministic-validator, and evidence-gate principles."],
       "enterprise_tier": "E2",
       "risk_class": "medium"
+    },
+    "office-it-diagnostics": {
+      "enabled": true,
+      "agent_ids": ["research"],
+      "instruction_only": true,
+      "network_access": false,
+      "credential_access": false,
+      "persistent_self_modify": false,
+      "external_code_vendored": false,
+      "sha256": "6e01d52c286026eb0ecc6b6d31eb41da1bef7ffe0fa181d5f4de354f26b357b0",
+      "review": "docs/OFFICE_IT_MICRO_TOOLS_V0_1.md",
+      "provenance": ["WorkSpace project-owned bounded diagnostic doctrine for Windows Event Log, SSH, SMB and printer evidence acquisition."],
+      "enterprise_tier": "E2",
+      "risk_class": "medium"
     }
   }
 }
