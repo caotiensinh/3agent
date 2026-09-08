@@ -21,6 +21,7 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
         self.assertNotIn("network.reachability.internal", contract.allowed_tools)
         self.assertNotIn("network.quality.internal", contract.allowed_tools)
         self.assertNotIn("identity.session.snapshot", contract.allowed_tools)
+        self.assertNotIn("audio.devices.snapshot", contract.allowed_tools)
         authority = TaskCapabilityAuthority.from_contract(contract)
         with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
             authority.require(
@@ -41,6 +42,13 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
                 "identity.session.snapshot",
                 resource_kind="identity_session",
                 resource_ref="local:identity:current",
+                effect="read",
+            )
+        with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
+            authority.require(
+                "audio.devices.snapshot",
+                resource_kind="audio_devices",
+                resource_ref="local:audio:devices",
                 effect="read",
             )
 
@@ -81,6 +89,25 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
         )
         self.assertTrue(decision.allowed)
 
+    def test_explicit_audio_device_read_can_be_authorized_without_write_or_egress(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-AUDIO",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("audio.devices.snapshot",),
+        )
+        self.assertEqual(contract.allowed_tools, ("audio.devices.snapshot",))
+        self.assertEqual(contract.write_scope, "none")
+        self.assertNotEqual(contract.network_scope, "allowlisted_egress")
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        decision = authority.require(
+            "audio.devices.snapshot",
+            resource_kind="audio_devices",
+            resource_ref="local:audio:devices",
+            effect="read",
+        )
+        self.assertTrue(decision.allowed)
+
     def test_identity_session_rejects_effect_widening(self) -> None:
         contract = TaskContractCompiler().compile(
             task_id="TASK-DIAG-IDENTITY-EFFECT",
@@ -97,6 +124,25 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
                 "identity.session.snapshot",
                 resource_kind="identity_session",
                 resource_ref="local:identity:current",
+                effect="network_read",
+            )
+
+    def test_audio_device_read_rejects_effect_widening(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-AUDIO-EFFECT",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("audio.devices.snapshot",),
+        )
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        with self.assertRaisesRegex(
+            CapabilityAuthorityDenied,
+            "CAPABILITY_EFFECT_NOT_ALLOWED",
+        ):
+            authority.require(
+                "audio.devices.snapshot",
+                resource_kind="audio_devices",
+                resource_ref="local:audio:devices",
                 effect="network_read",
             )
 

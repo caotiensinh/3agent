@@ -34,6 +34,7 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "service.status.read",
     "windows.group_policy.result",
     "identity.session.snapshot",
+    "audio.devices.snapshot",
 }
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
