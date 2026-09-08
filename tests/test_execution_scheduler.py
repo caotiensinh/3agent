@@ -33,7 +33,6 @@ class FakeRevocationGuard:
         return (task_id, capability) in self.revoked
 
 
-
 def fork_join_workflow(*, approval=False):
     return {
         "title": "Bounded runtime dependency scheduler",
@@ -164,6 +163,7 @@ class ExecutionSchedulerTests(unittest.TestCase):
         budget = FakeBudgetGuard()
         revocations = FakeRevocationGuard()
         scheduler = ExecutionScheduler(
+            task_context=context,
             plan=plan,
             parent_authority=authority,
             budget_guard=budget,
@@ -320,6 +320,13 @@ class ExecutionSchedulerTests(unittest.TestCase):
             scheduler.issue_dispatch("lane_a")
         with self.assertRaisesRegex(ExecutionSchedulerError, "SCHEDULER_BACKPRESSURE"):
             scheduler.issue_dispatch("lane_b")
+
+    def test_admission_decision_is_runtime_scheduler_source_of_truth(self):
+        _, _, scheduler, _, _ = self._runtime()
+        decision = scheduler.admission_decision()
+        self.assertEqual(decision.ready_node_ids, ("start",))
+        self.assertEqual(scheduler.ready_node_ids(), decision.ready_node_ids)
+        self.assertTrue(decision.fingerprint.startswith("sha256:"))
 
 
 if __name__ == "__main__":

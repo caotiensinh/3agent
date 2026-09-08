@@ -9,6 +9,8 @@ from .capability_authority import TaskCapabilityAuthority
 from .execution_budget import ExecutionBudgetExceeded
 from .execution_observation import ExecutionObservation, ExecutionObservationError
 from .execution_plan import ExecutionNode, ExecutionPlan, ExecutionPlanError
+from .runtime_scheduler import RuntimeScheduler, RuntimeSchedulerError, SchedulingDecision
+from .task_context import TaskContext
 
 EXECUTION_SCHEDULER_SCHEMA = "workspace-execution-scheduler/v1"
 DISPATCH_TICKET_SCHEMA = "workspace-dispatch-ticket/v1"
@@ -82,9 +84,7 @@ class DispatchTicket:
             "node_id": self.node_id,
             "node_fingerprint": self.node_fingerprint,
             "authority_fingerprint": self.authority_fingerprint,
-            "dependency_observation_fingerprints": list(
-                self.dependency_observation_fingerprints
-            ),
+            "dependency_observation_fingerprints": list(self.dependency_observation_fingerprints),
             "dispatch_sequence": self.dispatch_sequence,
             "execution_level": self.execution_level,
             "dispatch_authorized": self.dispatch_authorized,
@@ -108,24 +108,28 @@ class DispatchTicket:
 
 
 class ExecutionScheduler:
-    """Bounded dependency-aware control core over canonical runtime contracts.
+    """Stateful dispatch coordinator over the canonical runtime scheduler evaluator.
 
-    The scheduler never executes a provider itself. It issues immutable dispatch
-    tickets only after revalidating the exact plan, child authority, persistent
-    task budget, monotonic capability revocation, dependencies and approvals.
-    Executors return canonical ``ExecutionObservation`` objects, which are
-    validated again before they can satisfy downstream dependencies.
+    ``RuntimeScheduler`` owns pure DAG readiness/approval/dependency decisions.
+    This coordinator intentionally does not duplicate those decisions. It adds
+    runtime state that the pure evaluator does not own: immutable dispatch
+    tickets, in-flight tracking, persistent budget reservation, monotonic
+    revocation checks, backpressure, cancellation, and canonical observation
+    admission.
     """
 
     def __init__(
         self,
         *,
+        task_context: TaskContext,
         plan: ExecutionPlan,
         parent_authority: TaskCapabilityAuthority,
         budget_guard: SchedulerBudgetGuard,
         revocation_guard: SchedulerRevocationGuard,
         max_concurrency: int = 4,
     ) -> None:
+        if not isinstance(task_context, TaskContext):
+            raise ExecutionSchedulerError("INVALID_TASK_CONTEXT")
         if not isinstance(plan, ExecutionPlan):
             raise ExecutionSchedulerError("INVALID_EXECUTION_PLAN")
         if not isinstance(parent_authority, TaskCapabilityAuthority):
@@ -140,11 +144,19 @@ class ExecutionScheduler:
             raise ExecutionSchedulerError("BUDGET_GUARD_REQUIRED")
         if revocation_guard is None:
             raise ExecutionSchedulerError("REVOCATION_GUARD_REQUIRED")
-        try:
-            plan.validate(parent_authority=parent_authority)
-        except ExecutionPlanError as exc:
-            raise ExecutionSchedulerError("SCHEDULER_PLAN_REVALIDATION_FAILED") from exc
 
+        try:
+            RuntimeScheduler.evaluate(
+                task_context=task_context,
+                plan=plan,
+                parent_authority=parent_authority,
+            )
+        except RuntimeSchedulerError as exc:
+            raise ExecutionSchedulerError(
+                "SCHEDULER_CANONICAL_ADMISSION_REVALIDATION_FAILED"
+            ) from exc
+
+        self.task_context = task_context
         self.plan = plan
         self.parent_authority = parent_authority
         self.budget_guard = budget_guard
@@ -153,9 +165,39 @@ class ExecutionScheduler:
         self._nodes = _node_map(plan)
         self._observations: dict[str, ExecutionObservation] = {}
         self._in_flight: dict[str, DispatchTicket] = {}
+        self._approved_nodes: set[str] = set()
         self._dispatch_sequence = 0
         self._cancelled = False
         self._cancellation_reason: str | None = None
+
+    def _ordered_observations(self) -> tuple[ExecutionObservation, ...]:
+        return tuple(
+            self._observations[node.node_id]
+            for node in self.plan.nodes
+            if node.node_id in self._observations
+        )
+
+    def admission_decision(
+        self,
+        *,
+        approved_nodes: frozenset[str] = frozenset(),
+    ) -> SchedulingDecision:
+        """Return the canonical pure scheduling decision for current observations."""
+        if not isinstance(approved_nodes, frozenset):
+            raise ExecutionSchedulerError("APPROVED_NODES_MUST_BE_FROZENSET")
+        effective_approvals = tuple(sorted(self._approved_nodes | set(approved_nodes)))
+        try:
+            return RuntimeScheduler.evaluate(
+                task_context=self.task_context,
+                plan=self.plan,
+                parent_authority=self.parent_authority,
+                observations=self._ordered_observations(),
+                approved_node_ids=effective_approvals,
+            )
+        except RuntimeSchedulerError as exc:
+            raise ExecutionSchedulerError(
+                f"SCHEDULER_DECISION_REVALIDATION_FAILED:{exc}"
+            ) from exc
 
     def _revalidate_runtime(self, node: ExecutionNode) -> None:
         try:
@@ -198,6 +240,7 @@ class ExecutionScheduler:
         self,
         node: ExecutionNode,
     ) -> tuple[ExecutionObservation, ...]:
+        """Return successful dependencies in the plan-declared fan-in order."""
         rows: list[ExecutionObservation] = []
         for dependency_id in node.depends_on:
             observation = self._observations.get(dependency_id)
@@ -223,43 +266,42 @@ class ExecutionScheduler:
             return "IN_FLIGHT"
         if self._cancelled:
             return "SCHEDULER_CANCELLED"
+
         for dependency_id in node.depends_on:
             observation = self._observations.get(dependency_id)
             if observation is None:
                 return f"DEPENDENCY_PENDING:{dependency_id}"
             if observation.status != "SUCCEEDED":
                 return f"DEPENDENCY_{observation.status}:{dependency_id}"
-        if node.approval_required:
+
+        decision = self.admission_decision()
+        record = next(row for row in decision.records if row.node_id == node_id)
+        if record.state == "READY":
+            return None
+        if record.reason_code == "EXPLICIT_APPROVAL_REQUIRED":
             return "APPROVAL_REQUIRED"
-        return None
+        return record.reason_code
 
     def ready_node_ids(
         self,
         *,
         approved_nodes: frozenset[str] = frozenset(),
     ) -> tuple[str, ...]:
-        if not isinstance(approved_nodes, frozenset):
-            raise ExecutionSchedulerError("APPROVED_NODES_MUST_BE_FROZENSET")
         if self._cancelled:
             return ()
         capacity = self.max_concurrency - len(self._in_flight)
         if capacity <= 0:
             return ()
-        ready: list[str] = []
-        for node in self.plan.nodes:
-            if node.node_id in self._observations or node.node_id in self._in_flight:
-                continue
-            if node.approval_required and node.node_id not in approved_nodes:
-                continue
-            if all(
-                dependency_id in self._observations
-                and self._observations[dependency_id].status == "SUCCEEDED"
-                for dependency_id in node.depends_on
-            ):
-                ready.append(node.node_id)
-                if len(ready) >= capacity:
-                    break
-        return tuple(ready)
+
+        decision = self.admission_decision(approved_nodes=approved_nodes)
+        ready = [
+            record.node_id
+            for record in decision.records
+            if record.state == "READY"
+            and record.node_id not in self._observations
+            and record.node_id not in self._in_flight
+        ]
+        return tuple(ready[:capacity])
 
     def issue_dispatch(
         self,
@@ -280,6 +322,19 @@ class ExecutionScheduler:
             raise ExecutionSchedulerError("SCHEDULER_BACKPRESSURE")
         if node.approval_required and approval_granted is not True:
             raise ExecutionSchedulerError(f"NODE_APPROVAL_REQUIRED:{node_id}")
+
+        candidate_approvals = (
+            frozenset({node_id})
+            if node.approval_required and approval_granted
+            else frozenset()
+        )
+        decision = self.admission_decision(approved_nodes=candidate_approvals)
+        record = next(row for row in decision.records if row.node_id == node_id)
+        if record.state != "READY":
+            self._dependency_observations(node)
+            raise ExecutionSchedulerError(
+                f"SCHEDULER_NODE_NOT_READY:{node_id}:{record.reason_code}"
+            )
 
         dependencies = self._dependency_observations(node)
         self._revalidate_runtime(node)
@@ -315,13 +370,14 @@ class ExecutionScheduler:
             node_id=provisional.node_id,
             node_fingerprint=provisional.node_fingerprint,
             authority_fingerprint=provisional.authority_fingerprint,
-            dependency_observation_fingerprints=(
-                provisional.dependency_observation_fingerprints
-            ),
+            dependency_observation_fingerprints=provisional.dependency_observation_fingerprints,
             dispatch_sequence=provisional.dispatch_sequence,
             execution_level=provisional.execution_level,
             schema_version=provisional.schema_version,
         ).validate()
+
+        if node.approval_required:
+            self._approved_nodes.add(node_id)
         self._in_flight[node.node_id] = ticket
         return ticket
 
@@ -364,6 +420,20 @@ class ExecutionScheduler:
         if observation.authority_fingerprint != ticket.authority_fingerprint:
             raise ExecutionSchedulerError("OBSERVATION_TICKET_AUTHORITY_MISMATCH")
 
+        proposed = (*self._ordered_observations(), observation)
+        try:
+            RuntimeScheduler.evaluate(
+                task_context=self.task_context,
+                plan=self.plan,
+                parent_authority=self.parent_authority,
+                observations=proposed,
+                approved_node_ids=tuple(sorted(self._approved_nodes)),
+            )
+        except RuntimeSchedulerError as exc:
+            raise ExecutionSchedulerError(
+                f"SCHEDULER_OBSERVATION_DECISION_REJECTED:{observation.node_id}"
+            ) from exc
+
         self._observations[observation.node_id] = observation
         del self._in_flight[observation.node_id]
         return observation
@@ -389,12 +459,14 @@ class ExecutionScheduler:
         return {
             "schema_version": EXECUTION_SCHEDULER_SCHEMA,
             "task_id": self.plan.task_id,
+            "task_context_fingerprint": self.task_context.fingerprint,
             "plan_fingerprint": self.plan.fingerprint,
             "parent_authority_fingerprint": self.parent_authority.fingerprint,
             "max_concurrency": self.max_concurrency,
             "cancelled": self._cancelled,
             "cancellation_reason": self._cancellation_reason,
             "dispatch_sequence": self._dispatch_sequence,
+            "approved_node_ids": sorted(self._approved_nodes),
             "in_flight": [
                 self._in_flight[node.node_id].fingerprint
                 for node in self.plan.nodes
