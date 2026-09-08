@@ -57,7 +57,7 @@ def _request(
 class CapabilityInvocationAdapterTests(unittest.TestCase):
     def test_reviewed_handler_coverage_matches_all_current_runtime_tools(self) -> None:
         runtime_ids = tuple(sorted(item.id for item in runtime_tool_metadata()))
-        self.assertEqual(len(runtime_ids), 30)
+        self.assertEqual(len(runtime_ids), 31)
         self.assertEqual(reviewed_runtime_handler_ids(), runtime_ids)
 
     def test_positive_invocation_requires_authority_and_returns_bounded_receipt(self) -> None:
