@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from .task_contract import TOOLS, TaskContract
+from .task_contract import OFFICE_IT_NETWORK_TOOLS, TOOLS, TaskContract
 
 CAPABILITY_DECISION_SCHEMA = "workspace-capability-decision/v1"
 CAPABILITY_AUTHORITY_SCHEMA = "workspace-task-capability-authority/v1"
@@ -22,6 +22,14 @@ _EFFECTS = {
     "write_staging": "write",
     "apply_patch": "write",
     "web_gateway": "network_read",
+    "windows.event.system": "read",
+    "windows.event.application": "read",
+    "windows.event.security": "read",
+    "windows.printer.queue": "read",
+    "network.ssh.probe": "network_read",
+    "network.smb.probe": "network_read",
+    "network.printer.ipp_probe": "network_read",
+    "network.printer.raw_probe": "network_read",
 }
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
@@ -343,6 +351,11 @@ class TaskCapabilityAuthority:
         if cap == "web_gateway":
             if self.sensitivity != "public" or self.network_scope != "allowlisted_egress":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
+        elif cap in OFFICE_IT_NETWORK_TOOLS:
+            if self.network_scope != "internal_only":
+                return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
+            if kind != "network_endpoint":
+                return self._decision(cap, kind, ref, eff, allowed=False, reason_code="RESOURCE_KIND_NOT_AUTHORIZED")
         elif eff.startswith("network"):
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_CAPABILITY_NOT_AUTHORIZED")
 
