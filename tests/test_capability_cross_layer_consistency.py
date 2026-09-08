@@ -6,6 +6,7 @@ from dataclasses import replace
 from three_agent.capability_authority import TaskCapabilityAuthority, _EFFECTS
 from three_agent.diagnostics.runtime_registry import (
     default_runtime_capability_bindings,
+    runtime_micro_tool_registry,
     runtime_tool_metadata,
 )
 from three_agent.invocation_decision_receipt import receipt_from_capability_decision
@@ -56,11 +57,13 @@ class CapabilityCrossLayerConsistencyTests(unittest.TestCase):
         _assert_runtime_consistency(metadata)
 
         runtime_ids = {item.id for item in metadata}
+        registry_ids = {item["id"] for item in runtime_micro_tool_registry().metadata_view()}
         self.assertTrue(runtime_ids)
         self.assertTrue(runtime_ids.issubset(TOOLS))
+        self.assertEqual(runtime_ids, registry_ids)
         self.assertEqual(
-            runtime_ids,
-            {item.id for item in runtime_tool_metadata()},
+            _runtime_snapshot_fingerprint(metadata),
+            sha256_fingerprint(list(runtime_micro_tool_registry().metadata_view())),
         )
 
     def test_deliberate_unknown_registry_drift_is_caught(self) -> None:
