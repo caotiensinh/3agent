@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_twenty_five_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_twenty_nine_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 25)
-        self.assertEqual(len({tool.id for tool in metadata}), 25)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 25)
+        self.assertEqual(len(metadata), 29)
+        self.assertEqual(len({tool.id for tool in metadata}), 29)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 29)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -52,7 +52,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertNotIn("camera.reachability", mapping)
         self.assertNotIn("isp.reachability", mapping)
 
-    def test_runtime_bindings_reuse_common_and_local_endpoint_tools(self) -> None:
+    def test_runtime_bindings_reuse_common_and_domain_completion_tools(self) -> None:
         mapping = {
             binding.capability_tag: binding.tool_ids
             for binding in default_runtime_capability_bindings()
@@ -69,14 +69,19 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["process.top"], ("process.top.snapshot",))
         self.assertEqual(mapping["hardware.usb"], ("hardware.usb.snapshot",))
         self.assertEqual(mapping["camera.devices"], ("camera.devices.snapshot",))
+        self.assertEqual(mapping["storage.io"], ("storage.io.snapshot",))
+        self.assertEqual(mapping["print.driver"], ("windows.print.driver.snapshot",))
+        self.assertEqual(mapping["windows.boot"], ("windows.boot.snapshot",))
+        self.assertEqual(mapping["windows.update"], ("windows.update.history",))
 
-    def test_650_route_coverage_report_is_explicitly_incomplete(self) -> None:
+    def test_650_route_coverage_report_reaches_eighty_five_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
+        self.assertEqual(report.fully_promotable_routes, 85)
         self.assertEqual(
             report.fully_promotable_routes
             + report.partially_covered_routes
@@ -104,6 +109,10 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             "process.top",
             "hardware.usb",
             "camera.devices",
+            "storage.io",
+            "print.driver",
+            "windows.boot",
+            "windows.update",
         ):
             self.assertNotIn(capability, missing)
         self.assertIn("service.health", missing)
@@ -131,6 +140,10 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("process.top.snapshot"), 20)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
         self.assertEqual(selected.get("camera.devices.snapshot"), 20)
+        self.assertEqual(selected.get("storage.io.snapshot"), 20)
+        self.assertEqual(selected.get("windows.print.driver.snapshot"), 20)
+        self.assertEqual(selected.get("windows.boot.snapshot"), 20)
+        self.assertEqual(selected.get("windows.update.history"), 20)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):

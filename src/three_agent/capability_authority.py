@@ -45,6 +45,10 @@ _EFFECTS = {
     "process.top.snapshot": "read",
     "hardware.usb.snapshot": "read",
     "camera.devices.snapshot": "read",
+    "storage.io.snapshot": "read",
+    "windows.print.driver.snapshot": "read",
+    "windows.boot.snapshot": "read",
+    "windows.update.history": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
 }

@@ -38,6 +38,10 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "process.top.snapshot",
     "hardware.usb.snapshot",
     "camera.devices.snapshot",
+    "storage.io.snapshot",
+    "windows.print.driver.snapshot",
+    "windows.boot.snapshot",
+    "windows.update.history",
 }
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
