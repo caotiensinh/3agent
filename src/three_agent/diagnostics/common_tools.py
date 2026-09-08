@@ -15,6 +15,7 @@ from ..micro_tool_registry import MicroToolRegistry, ToolMetadata
 from ..tool_result_boundary import bound_process_output
 
 _SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
+_WINDOWS_SYSTEM_DRIVE_RE = re.compile(r"^[A-Za-z]:$")
 
 _COMMON_TOOLS = (
     ToolMetadata(
@@ -299,7 +300,10 @@ def _resource_snapshot() -> dict[str, Any]:
 
 def _default_storage_path() -> str:
     if platform.system().lower().startswith("win"):
-        return f"{os.environ.get('SystemDrive', 'C:')}\\"
+        system_drive = str(os.environ.get("SystemDrive", "C:")).strip()
+        if not _WINDOWS_SYSTEM_DRIVE_RE.fullmatch(system_drive):
+            system_drive = "C:"
+        return f"{system_drive}\\"
     return "/"
 
 
@@ -343,11 +347,19 @@ def execute_common_read(
         return {"tool_id": tool_id, **_resource_snapshot()}
 
     if tool_id == "system.storage.capacity":
-        path = os.path.abspath(storage_path or _default_storage_path())
-        _require_authority(authority, tool_id, resource_kind="filesystem_capacity", resource_ref=path)
+        if storage_path is not None:
+            raise ValueError("storage_path is not supported; default local system volume only")
+        path = _default_storage_path()
+        _require_authority(
+            authority,
+            tool_id,
+            resource_kind="filesystem_capacity",
+            resource_ref="local:storage:default",
+        )
         usage = shutil.disk_usage(path)
         return {
             "tool_id": tool_id,
+            "scope": "default_local_system_volume",
             "path": path,
             "total_bytes": int(usage.total),
             "used_bytes": int(usage.used),
