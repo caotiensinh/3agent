@@ -7,6 +7,7 @@ Telemetry is observational only and never grants or widens runtime authority.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -24,7 +25,9 @@ _ALLOWED_ACTIONS = frozenset({ACTION_LISTED, ACTION_VIEWED, ACTION_SELECTED})
 _ALLOWED_SURFACES = frozenset({"list", "search", "view", "runtime_selection"})
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-_MAX_IDENTITIES = 16
+_MAX_LISTED_IDENTITIES = 16
+_MAX_EXACT_IDENTITIES = 2
+_MAX_ACTIVITY_DETAILS_CHARS = 800
 
 
 class SkillCatalogTelemetryError(ValueError):
@@ -66,6 +69,30 @@ def _agent_id(value: str) -> str:
     return text
 
 
+def _validated_identities(
+    identities: tuple[SkillCatalogIdentity, ...],
+    *,
+    maximum: int,
+) -> tuple[SkillCatalogIdentity, ...]:
+    if len(identities) > maximum:
+        raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_COUNT_EXCEEDED")
+    if len({item.name for item in identities}) != len(identities):
+        raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_DUPLICATE_SKILL")
+    for item in identities:
+        item.validate()
+    return identities
+
+
+def _identity_set_sha256(identities: tuple[SkillCatalogIdentity, ...]) -> str:
+    canonical = json.dumps(
+        [item.to_payload() for item in sorted(identities, key=lambda value: value.name)],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _canonical_details(
     *,
     action: str,
@@ -76,28 +103,45 @@ def _canonical_details(
         raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_ACTION_INVALID")
     if surface not in _ALLOWED_SURFACES:
         raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_SURFACE_INVALID")
-    if len(identities) > _MAX_IDENTITIES:
-        raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_COUNT_EXCEEDED")
-    if len({item.name for item in identities}) != len(identities):
-        raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_DUPLICATE_SKILL")
-    payload = {
-        "schema_version": SKILL_CATALOG_TELEMETRY_SCHEMA,
-        "event": action,
-        "surface": surface,
-        "count": len(identities),
-        "skills": [item.to_payload() for item in identities],
-    }
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    if action == ACTION_LISTED:
+        _validated_identities(identities, maximum=_MAX_LISTED_IDENTITIES)
+        payload: dict[str, Any] = {
+            "schema_version": SKILL_CATALOG_TELEMETRY_SCHEMA,
+            "event": action,
+            "surface": surface,
+            "count": len(identities),
+            "skill_set_sha256": _identity_set_sha256(identities),
+        }
+    else:
+        _validated_identities(identities, maximum=_MAX_EXACT_IDENTITIES)
+        payload = {
+            "schema_version": SKILL_CATALOG_TELEMETRY_SCHEMA,
+            "event": action,
+            "surface": surface,
+            "count": len(identities),
+            "skills": [item.to_payload() for item in identities],
+        }
+
+    details = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    if len(details) > _MAX_ACTIVITY_DETAILS_CHARS:
+        raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_DETAILS_TOO_LARGE")
+    return details
 
 
 class SkillCatalogTelemetry:
     """TaskStore-backed telemetry around one canonical ``ApprovedSkillCatalog``.
 
-    List/search/view helpers delegate first and record only successful disclosures.
-    Runtime selection resolves exact audited production identities before an
-    effectiveness receipt, then records selection after that receipt succeeds. No
-    raw query, description, prompt, reference text, or skill body is accepted by
-    this API.
+    List/search helpers record only count plus a deterministic digest of exact
+    approved identities, keeping the existing activity-details budget bounded.
+    View/runtime-selection events record exact name and production SHA for at most
+    the canonical two-skill load ceiling. No raw query, description, prompt,
+    reference text, or skill body is accepted by this API.
     """
 
     __slots__ = ("catalog", "store")
@@ -113,7 +157,7 @@ class SkillCatalogTelemetry:
     @staticmethod
     def _identities(rows: Iterable[ApprovedSkillSummary]) -> tuple[SkillCatalogIdentity, ...]:
         values = tuple(rows)
-        if len(values) > _MAX_IDENTITIES:
+        if len(values) > _MAX_LISTED_IDENTITIES:
             raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_COUNT_EXCEEDED")
         identities: list[SkillCatalogIdentity] = []
         for row in values:
@@ -142,7 +186,7 @@ class SkillCatalogTelemetry:
         if isinstance(names, (str, bytes)):
             raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_NAMES_INVALID")
         requested = tuple(str(name or "").strip() for name in names)
-        if len(requested) > _MAX_IDENTITIES or len(set(requested)) != len(requested):
+        if len(requested) > _MAX_EXACT_IDENTITIES or len(set(requested)) != len(requested):
             raise SkillCatalogTelemetryError("SKILL_CATALOG_TELEMETRY_NAMES_INVALID")
         for name in requested:
             if not _ID.fullmatch(name):
