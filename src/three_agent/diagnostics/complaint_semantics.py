@@ -39,13 +39,37 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
 }
 
 _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
-    "gpu_failure": ("gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead", "graphics card broken"),
-    "ram_failure": ("ram hong", "ram bi loi", "ram broken", "bad ram"),
-    "storage_failure": ("ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure"),
-    "power_supply_failure": ("nguon hong", "psu hong", "power supply broken", "bad psu"),
-    "windows_update_regression": ("windows update lam hong", "update lam hong", "windows update broke", "update broke", "update caused"),
-    "malware_infection": ("bi virus", "chac bi virus", "virus roi", "infected by virus", "malware infected"),
-    "overheating": ("do qua nong", "vi qua nong", "overheating", "too hot"),
+    "gpu_failure": (
+        "gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead",
+        "gpu is dead", "graphics card broken", "graphics card is broken",
+        "gpuが壊れ", "gpuが故障", "gpu 故障",
+    ),
+    "ram_failure": (
+        "ram hong", "ram bi loi", "ram broken", "bad ram", "ram is broken",
+        "ramが壊れ", "ramが故障", "ram 故障",
+    ),
+    "storage_failure": (
+        "ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure",
+        "ssd is broken", "ssdが壊れ", "ssdが故障", "disk is failing",
+    ),
+    "power_supply_failure": (
+        "nguon hong", "psu hong", "power supply broken", "power supply is broken",
+        "bad psu", "電源ユニットが壊れ", "電源ユニットが故障", "psu is broken",
+    ),
+    "windows_update_regression": (
+        "windows update lam hong", "update lam hong", "windows update broke",
+        "update broke", "update caused", "windows update caused",
+        "windows updateで壊れ", "updateで壊れ",
+    ),
+    "malware_infection": (
+        "bi virus", "chac bi virus", "virus roi", "infected by virus",
+        "infected by malware", "malware infected", "malware infection",
+        "ウイルスに感染", "マルウェアに感染",
+    ),
+    "overheating": (
+        "do qua nong", "vi qua nong", "overheating", "too hot", "qua nong",
+        "熱暴走", "過熱", "オーバーヒート",
+    ),
 }
 
 # Routing terms intentionally describe evidence channels/subsystems, not conclusions.
