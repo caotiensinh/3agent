@@ -12,6 +12,7 @@ from ..micro_tool_registry import MicroToolRegistry, ToolMetadata
 from ..tool_result_boundary import bound_process_output
 
 NETWORK_REACHABILITY_TOOL_ID = "network.reachability.internal"
+NETWORK_QUALITY_TOOL_ID = "network.quality.internal"
 
 NETWORK_TOOL_METADATA = (
     ToolMetadata(
@@ -28,6 +29,32 @@ NETWORK_TOOL_METADATA = (
             "khong ping duoc",
             "到達できない",
             "pingできない",
+        ),
+        cost="C1",
+        risk="sensitive_read",
+        requires_admin=False,
+        network_access="internal_only",
+        sensitive_outputs=True,
+        effect="network_read",
+    ).validate(),
+    ToolMetadata(
+        id=NETWORK_QUALITY_TOOL_ID,
+        platform="any",
+        category="network",
+        keywords=(
+            "network quality",
+            "latency",
+            "packet loss",
+            "jitter",
+            "choppy audio",
+            "robotic audio",
+            "call drops",
+            "mang chap chon",
+            "mang lag",
+            "do tre mang",
+            "パケットロス",
+            "遅延",
+            "音声 途切れる",
         ),
         cost="C1",
         risk="sensitive_read",
@@ -94,20 +121,21 @@ def build_internal_ping_plan(
     return ("ping", "-n", "-c", str(count), "-W", str(timeout_seconds), target)
 
 
-def probe_internal_reachability(
+def _run_internal_ping(
+    tool_id: str,
     host: str,
     *,
     authority: TaskCapabilityAuthority,
-    count: int = 1,
-    timeout_ms: int = 1000,
+    count: int,
+    timeout_ms: int,
+    resource_suffix: str,
 ) -> dict[str, Any]:
-    """Collect bounded ICMP evidence for one internal IP without diagnosing root cause."""
     target = str(host).strip()
     plan = build_internal_ping_plan(target, count=count, timeout_ms=timeout_ms)
     authority.require(
-        NETWORK_REACHABILITY_TOOL_ID,
+        tool_id,
         resource_kind="network_endpoint",
-        resource_ref=f"{target}:icmp",
+        resource_ref=f"{target}:{resource_suffix}",
         effect="network_read",
     )
     wall_timeout = min(25.0, max(2.0, (int(count) * int(timeout_ms) / 1000.0) + 2.0))
@@ -122,9 +150,8 @@ def probe_internal_reachability(
     )
     bounded = bound_process_output(completed.stdout, completed.stderr)
     return {
-        "tool_id": NETWORK_REACHABILITY_TOOL_ID,
+        "tool_id": tool_id,
         "target": target,
-        "icmp_reply_observed": completed.returncode == 0,
         "returncode": completed.returncode,
         "elapsed_ms": round((time.monotonic() - started) * 1000, 3),
         "interpretation": "evidence_only",
@@ -132,11 +159,66 @@ def probe_internal_reachability(
     }
 
 
+def probe_internal_reachability(
+    host: str,
+    *,
+    authority: TaskCapabilityAuthority,
+    count: int = 1,
+    timeout_ms: int = 1000,
+) -> dict[str, Any]:
+    """Collect bounded ICMP evidence for one internal IP without diagnosing root cause."""
+    result = _run_internal_ping(
+        NETWORK_REACHABILITY_TOOL_ID,
+        host,
+        authority=authority,
+        count=count,
+        timeout_ms=timeout_ms,
+        resource_suffix="icmp",
+    )
+    result["icmp_reply_observed"] = result["returncode"] == 0
+    return result
+
+
+def sample_internal_network_quality(
+    host: str,
+    *,
+    authority: TaskCapabilityAuthority,
+    count: int = 4,
+    timeout_ms: int = 1000,
+) -> dict[str, Any]:
+    """Collect a tiny point-in-time ICMP sample from one internal IP.
+
+    The raw bounded ping output may contain platform-localized latency/loss fields.
+    This function deliberately does not parse those fields into a quality verdict,
+    does not claim application-level jitter, and does not diagnose root cause.
+    """
+    result = _run_internal_ping(
+        NETWORK_QUALITY_TOOL_ID,
+        host,
+        authority=authority,
+        count=count,
+        timeout_ms=timeout_ms,
+        resource_suffix="icmp-quality",
+    )
+    result.update(
+        {
+            "probe_kind": "bounded_icmp_samples",
+            "sample_count_requested": int(count),
+            "per_sample_timeout_ms": int(timeout_ms),
+            "probe_command_succeeded": result["returncode"] == 0,
+            "quality_verdict": None,
+        }
+    )
+    return result
+
+
 __all__ = [
+    "NETWORK_QUALITY_TOOL_ID",
     "NETWORK_REACHABILITY_TOOL_ID",
     "NETWORK_TOOL_METADATA",
     "build_internal_ping_plan",
     "is_internal_ip_literal",
     "network_micro_tool_registry",
     "probe_internal_reachability",
+    "sample_internal_network_quality",
 ]
