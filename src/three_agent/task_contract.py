@@ -35,6 +35,7 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "windows.group_policy.result",
     "identity.session.snapshot",
     "audio.devices.snapshot",
+    "meeting.client.snapshot",
     "process.top.snapshot",
     "hardware.usb.snapshot",
     "camera.devices.snapshot",
