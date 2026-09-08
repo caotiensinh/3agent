@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -21,6 +22,7 @@ _NODE_STATES = frozenset(
     {"READY", "WAITING", "BLOCKED", "SUCCEEDED", "FAILED", "CANCELLED"}
 )
 _TERMINAL_OBSERVATION_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED"})
+_SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 class RuntimeSchedulerError(ValueError):
@@ -45,6 +47,8 @@ def _digest(payload: Any) -> str:
 
 
 def _normalized_ids(values: Iterable[str], *, field_name: str) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)):
+        raise RuntimeSchedulerError(f"INVALID_{field_name.upper()}")
     try:
         normalized = tuple(sorted(set(values)))
     except TypeError as exc:
@@ -52,6 +56,12 @@ def _normalized_ids(values: Iterable[str], *, field_name: str) -> tuple[str, ...
     if any(not isinstance(value, str) or not value for value in normalized):
         raise RuntimeSchedulerError(f"INVALID_{field_name.upper()}")
     return normalized
+
+
+def _sha256(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
+        raise RuntimeSchedulerError(f"INVALID_{field_name.upper()}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -68,15 +78,18 @@ class NodeSchedulingRecord:
 
     def canonical_dict(self) -> dict[str, Any]:
         if self.schema_version != NODE_SCHEDULING_RECORD_SCHEMA:
-            raise RuntimeSchedulerError("NODE_SCHEDULING_RECORD_SCHEMA_VERSION_MISMATCH")
+            raise RuntimeSchedulerError(
+                "NODE_SCHEDULING_RECORD_SCHEMA_VERSION_MISMATCH"
+            )
         if self.state not in _NODE_STATES:
             raise RuntimeSchedulerError("INVALID_NODE_SCHEDULING_STATE")
         if not isinstance(self.node_id, str) or not self.node_id:
             raise RuntimeSchedulerError("INVALID_NODE_ID")
-        if not isinstance(self.node_fingerprint, str) or not self.node_fingerprint.startswith("sha256:"):
-            raise RuntimeSchedulerError("INVALID_NODE_FINGERPRINT")
-        if not isinstance(self.authority_fingerprint, str) or not self.authority_fingerprint.startswith("sha256:"):
-            raise RuntimeSchedulerError("INVALID_NODE_AUTHORITY_FINGERPRINT")
+        _sha256(self.node_fingerprint, field_name="node_fingerprint")
+        _sha256(
+            self.authority_fingerprint,
+            field_name="node_authority_fingerprint",
+        )
         if not isinstance(self.reason_code, str) or not self.reason_code:
             raise RuntimeSchedulerError("INVALID_SCHEDULING_REASON_CODE")
         if not isinstance(self.approval_required, bool):
@@ -106,15 +119,21 @@ class SchedulingDecision:
 
     @property
     def ready_node_ids(self) -> tuple[str, ...]:
-        return tuple(record.node_id for record in self.records if record.state == "READY")
+        return tuple(
+            record.node_id for record in self.records if record.state == "READY"
+        )
 
     @property
     def blocked_node_ids(self) -> tuple[str, ...]:
-        return tuple(record.node_id for record in self.records if record.state == "BLOCKED")
+        return tuple(
+            record.node_id for record in self.records if record.state == "BLOCKED"
+        )
 
     @property
     def waiting_node_ids(self) -> tuple[str, ...]:
-        return tuple(record.node_id for record in self.records if record.state == "WAITING")
+        return tuple(
+            record.node_id for record in self.records if record.state == "WAITING"
+        )
 
     @property
     def terminal_node_ids(self) -> tuple[str, ...]:
@@ -126,7 +145,9 @@ class SchedulingDecision:
 
     def canonical_dict(self) -> dict[str, Any]:
         if self.schema_version != RUNTIME_SCHEDULING_DECISION_SCHEMA:
-            raise RuntimeSchedulerError("SCHEDULING_DECISION_SCHEMA_VERSION_MISMATCH")
+            raise RuntimeSchedulerError(
+                "SCHEDULING_DECISION_SCHEMA_VERSION_MISMATCH"
+            )
         if self.status not in _DECISION_STATUSES:
             raise RuntimeSchedulerError("INVALID_SCHEDULING_DECISION_STATUS")
         if not isinstance(self.records, tuple):
@@ -136,6 +157,11 @@ class SchedulingDecision:
             field_name="approved_node_ids",
         ):
             raise RuntimeSchedulerError("APPROVED_NODE_IDS_NOT_NORMALIZED")
+        _sha256(
+            self.task_context_fingerprint,
+            field_name="task_context_fingerprint",
+        )
+        _sha256(self.plan_fingerprint, field_name="plan_fingerprint")
         return {
             "schema_version": self.schema_version,
             "task_id": self.task_id,
@@ -180,32 +206,46 @@ class RuntimeScheduler:
             task_context.validate()
             plan.validate(parent_authority=parent_authority)
         except (TaskContextError, ExecutionPlanError, ValueError) as exc:
-            raise RuntimeSchedulerError("SCHEDULER_CANONICAL_REVALIDATION_FAILED") from exc
+            raise RuntimeSchedulerError(
+                "SCHEDULER_CANONICAL_REVALIDATION_FAILED"
+            ) from exc
 
         if task_context.task_id != plan.task_id:
             raise RuntimeSchedulerError("SCHEDULER_TASK_MISMATCH")
         if task_context.fingerprint != plan.task_context_fingerprint:
-            raise RuntimeSchedulerError("SCHEDULER_TASK_CONTEXT_FINGERPRINT_MISMATCH")
+            raise RuntimeSchedulerError(
+                "SCHEDULER_TASK_CONTEXT_FINGERPRINT_MISMATCH"
+            )
         if task_context.identity_fingerprint != plan.task_context_identity_fingerprint:
-            raise RuntimeSchedulerError("SCHEDULER_TASK_CONTEXT_IDENTITY_MISMATCH")
+            raise RuntimeSchedulerError(
+                "SCHEDULER_TASK_CONTEXT_IDENTITY_MISMATCH"
+            )
         if task_context.authority_fingerprint != parent_authority.fingerprint:
             raise RuntimeSchedulerError("SCHEDULER_PARENT_AUTHORITY_MISMATCH")
         if plan.parent_authority_fingerprint != parent_authority.fingerprint:
             raise RuntimeSchedulerError("SCHEDULER_PLAN_AUTHORITY_MISMATCH")
 
         node_by_id = {node.node_id: node for node in plan.nodes}
-        approvals = _normalized_ids(approved_node_ids, field_name="approved_node_ids")
-        unknown_approvals = tuple(node_id for node_id in approvals if node_id not in node_by_id)
+        approvals = _normalized_ids(
+            approved_node_ids,
+            field_name="approved_node_ids",
+        )
+        unknown_approvals = tuple(
+            node_id for node_id in approvals if node_id not in node_by_id
+        )
         if unknown_approvals:
             raise RuntimeSchedulerError(
                 "SCHEDULER_UNKNOWN_APPROVED_NODE:" + ",".join(unknown_approvals)
             )
         invalid_approvals = tuple(
-            node_id for node_id in approvals if not node_by_id[node_id].approval_required
+            node_id
+            for node_id in approvals
+            if not node_by_id[node_id].approval_required
         )
         if invalid_approvals:
             raise RuntimeSchedulerError(
-                "SCHEDULER_APPROVAL_FOR_NON_APPROVAL_NODE:" + ",".join(invalid_approvals)
+                "SCHEDULER_APPROVAL_FOR_NON_APPROVAL_NODE:"
+                + ",".join(invalid_approvals)
             )
 
         unique_observations: dict[str, ExecutionObservation] = {}
@@ -220,12 +260,22 @@ class RuntimeScheduler:
                     parent_authority=parent_authority,
                 )
             except ExecutionObservationError as exc:
-                raise RuntimeSchedulerError("SCHEDULER_OBSERVATION_REVALIDATION_FAILED") from exc
+                raise RuntimeSchedulerError(
+                    "SCHEDULER_OBSERVATION_REVALIDATION_FAILED"
+                ) from exc
+
+            node = node_by_id[observation.node_id]
+            if node.approval_required and observation.node_id not in approvals:
+                raise RuntimeSchedulerError(
+                    f"SCHEDULER_APPROVAL_REQUIRED_FOR_OBSERVATION:{observation.node_id}"
+                )
 
             existing = unique_observations.get(observation.observation_id)
             if existing is not None:
                 if existing.fingerprint != observation.fingerprint:
-                    raise RuntimeSchedulerError("SCHEDULER_OBSERVATION_ID_COLLISION")
+                    raise RuntimeSchedulerError(
+                        "SCHEDULER_OBSERVATION_ID_COLLISION"
+                    )
                 continue
             unique_observations[observation.observation_id] = observation
 
@@ -234,9 +284,13 @@ class RuntimeScheduler:
                 continue
             if observation.status in _TERMINAL_OBSERVATION_STATUSES:
                 previous = terminal_by_node.get(observation.node_id)
-                if previous is not None and previous.observation_id != observation.observation_id:
+                if (
+                    previous is not None
+                    and previous.observation_id != observation.observation_id
+                ):
                     raise RuntimeSchedulerError(
-                        f"SCHEDULER_MULTIPLE_TERMINAL_OBSERVATIONS:{observation.node_id}"
+                        "SCHEDULER_MULTIPLE_TERMINAL_OBSERVATIONS:"
+                        + observation.node_id
                     )
                 terminal_by_node[observation.node_id] = observation
 
@@ -261,10 +315,16 @@ class RuntimeScheduler:
                     state_by_node.get(dependency, "WAITING")
                     for dependency in node.depends_on
                 )
-                if any(state in {"FAILED", "CANCELLED", "BLOCKED"} for state in dependency_states):
+                if any(
+                    state in {"FAILED", "CANCELLED", "BLOCKED"}
+                    for state in dependency_states
+                ):
                     state = "BLOCKED"
                     reason = "DEPENDENCY_NOT_SUCCESSFUL"
-                elif not all(dependency in success_nodes for dependency in node.depends_on):
+                elif not all(
+                    dependency in success_nodes
+                    for dependency in node.depends_on
+                ):
                     state = "WAITING"
                     reason = "DEPENDENCY_NOT_TERMINAL_SUCCESS"
                 elif node.approval_required and node.node_id not in approvals:
@@ -287,7 +347,9 @@ class RuntimeScheduler:
             )
 
         record_tuple = tuple(records)
-        if record_tuple and all(record.state == "SUCCEEDED" for record in record_tuple):
+        if record_tuple and all(
+            record.state == "SUCCEEDED" for record in record_tuple
+        ):
             decision_status = "COMPLETE"
         elif any(record.state == "READY" for record in record_tuple):
             decision_status = "READY"
