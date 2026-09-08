@@ -36,7 +36,7 @@ $updateMatch = [regex]::Match($content, '(?s)\$updateCmd\s*=\s*@"\r?\n(?<body>.*
 Assert-True ($updateMatch.Success) 'unable to locate generated 3agent-update.cmd body'
 $updateBody = $updateMatch.Groups['body'].Value
 Assert-True ($updateBody.Contains('THREE_AGENT_REPO_REF=')) 'installed updater must preserve configured repository ref'
-Assert-True ($updateBody.Contains('3agent-update.ps1')) 'installed updater must invoke trusted local updater payload'
+Assert-True ($updateBody.Contains('$(Escape-CmdValue $trustedUpdater)')) 'installed updater source must bind the trusted local updater path'
 Assert-True ($updateBody.Contains('-File')) 'installed updater must use PowerShell -File execution'
 Assert-True (-not [regex]::IsMatch($updateBody, '(?i)https?://|\birm\b|Invoke-RestMethod|Invoke-WebRequest|\biwr\b|\biex\b|Invoke-Expression')) 'installed updater entrypoint must not download or execute remote mutable code'
 Assert-True (-not $content.Contains('raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.ps1')) 'mutable main bootstrap URL must not be embedded in updater code'
