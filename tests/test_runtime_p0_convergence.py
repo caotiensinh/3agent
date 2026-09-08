@@ -317,6 +317,7 @@ class RuntimeP0ConvergenceGateTests(unittest.TestCase):
             parent_authority=authority,
             budget_guard=budget,
             revocation_guard=revocations,
+            observations=(collected,),
         )
         self.assertEqual(recovery.status, "RECOVERABLE")
         self.assertEqual(
