@@ -10,6 +10,7 @@ from .camera_device_tools import CAMERA_DEVICES_TOOL_ID, CAMERA_DEVICE_TOOL_META
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .common_tools import common_tool_metadata
 from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
+from .meeting_client_tools import MEETING_CLIENT_TOOL_ID, MEETING_CLIENT_TOOL_METADATA
 from .network_tools import (
     NETWORK_QUALITY_TOOL_ID,
     NETWORK_REACHABILITY_TOOL_ID,
@@ -40,6 +41,7 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + GROUP_POLICY_TOOL_METADATA
         + IDENTITY_TOOL_METADATA
         + AUDIO_TOOL_METADATA
+        + MEETING_CLIENT_TOOL_METADATA
         + PROCESS_TOOL_METADATA
         + USB_TOOL_METADATA
         + CAMERA_DEVICE_TOOL_METADATA
@@ -86,6 +88,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("group_policy", (GROUP_POLICY_TOOL_ID,)),
             CapabilityBinding("identity.session", (IDENTITY_SESSION_TOOL_ID,)),
             CapabilityBinding("audio.devices", (AUDIO_DEVICES_TOOL_ID,)),
+            CapabilityBinding("meeting.client", (MEETING_CLIENT_TOOL_ID,)),
             CapabilityBinding("process.top", (PROCESS_TOP_TOOL_ID,)),
             CapabilityBinding("hardware.usb", (USB_DEVICES_TOOL_ID,)),
             CapabilityBinding("camera.devices", (CAMERA_DEVICES_TOOL_ID,)),
