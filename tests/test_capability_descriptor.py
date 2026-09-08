@@ -89,17 +89,31 @@ class CapabilityDescriptorTests(unittest.TestCase):
                 with self.assertRaises(CapabilityDescriptorValidationError):
                     project_tool_metadata(_tool(), required_env_names=(bad,))
 
-    def test_result_limit_fails_closed_outside_platform_boundary(self) -> None:
-        for bad in (0, -1, MAX_RESULT_FIELD_BYTES + 1):
+        for bad_names in ((123,), (b"TOKEN",), ("TOKEN", "TOKEN")):
+            with self.subTest(bad_names=bad_names):
+                with self.assertRaises(CapabilityDescriptorValidationError):
+                    project_tool_metadata(_tool(), required_env_names=bad_names)  # type: ignore[arg-type]
+
+    def test_result_limit_fails_closed_outside_or_across_type_boundary(self) -> None:
+        for bad in (0, -1, MAX_RESULT_FIELD_BYTES + 1, True, "64"):
             with self.subTest(bad=bad):
                 with self.assertRaises(CapabilityDescriptorValidationError):
-                    project_tool_metadata(_tool(), result_size_limit_bytes=bad)
+                    project_tool_metadata(_tool(), result_size_limit_bytes=bad)  # type: ignore[arg-type]
 
     def test_descriptor_tamper_is_detected_by_fingerprint_validation(self) -> None:
         descriptor = project_tool_metadata(_tool())
         tampered = replace(descriptor, effect="compute")
         with self.assertRaisesRegex(CapabilityDescriptorValidationError, "fingerprint mismatch"):
             tampered.validate()
+
+    def test_descriptor_direct_validation_rejects_noncanonical_types(self) -> None:
+        descriptor = project_tool_metadata(_tool())
+        with self.assertRaises(CapabilityDescriptorValidationError):
+            replace(descriptor, result_size_limit_bytes=True).validate()
+        with self.assertRaises(CapabilityDescriptorValidationError):
+            replace(descriptor, required_env_names=["TOKEN"]).validate()  # type: ignore[arg-type]
+        with self.assertRaises(CapabilityDescriptorValidationError):
+            replace(descriptor, platform="Windows 11").validate()
 
     def test_schema_declares_future_kinds_without_claiming_runtime_projection(self) -> None:
         self.assertEqual(
