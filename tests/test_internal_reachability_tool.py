@@ -5,12 +5,14 @@ import unittest
 from unittest.mock import patch
 
 from three_agent.diagnostics.network_tools import (
+    NETWORK_QUALITY_TOOL_ID,
     NETWORK_REACHABILITY_TOOL_ID,
     NETWORK_TOOL_METADATA,
     build_internal_ping_plan,
     is_internal_ip_literal,
     network_micro_tool_registry,
     probe_internal_reachability,
+    sample_internal_network_quality,
 )
 
 
@@ -30,14 +32,15 @@ class RecordingAuthority:
 
 
 class InternalReachabilityToolTests(unittest.TestCase):
-    def test_metadata_is_internal_only_network_read(self) -> None:
-        self.assertEqual(len(NETWORK_TOOL_METADATA), 1)
-        tool = NETWORK_TOOL_METADATA[0]
-        self.assertEqual(tool.id, NETWORK_REACHABILITY_TOOL_ID)
-        self.assertEqual(tool.network_access, "internal_only")
-        self.assertEqual(tool.effect, "network_read")
-        self.assertTrue(tool.sensitive_outputs)
-        self.assertEqual(len(network_micro_tool_registry().metadata_view()), 1)
+    def test_metadata_contains_two_internal_only_network_reads(self) -> None:
+        self.assertEqual(len(NETWORK_TOOL_METADATA), 2)
+        metadata = {tool.id: tool for tool in NETWORK_TOOL_METADATA}
+        self.assertEqual(set(metadata), {NETWORK_REACHABILITY_TOOL_ID, NETWORK_QUALITY_TOOL_ID})
+        for tool in metadata.values():
+            self.assertEqual(tool.network_access, "internal_only")
+            self.assertEqual(tool.effect, "network_read")
+            self.assertTrue(tool.sensitive_outputs)
+        self.assertEqual(len(network_micro_tool_registry().metadata_view()), 2)
 
     def test_private_loopback_link_local_and_ula_are_allowed(self) -> None:
         for host in (
@@ -152,6 +155,78 @@ class InternalReachabilityToolTests(unittest.TestCase):
         self.assertEqual(result["interpretation"], "evidence_only")
         self.assertNotIn("root_cause", result)
         self.assertNotIn("device_down", result)
+
+    @patch("three_agent.diagnostics.network_tools.subprocess.run")
+    def test_quality_sample_is_bounded_internal_evidence_only(self, run_mock) -> None:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=("ping",),
+            returncode=0,
+            stdout="4 packets transmitted, 4 received, 0% packet loss\n",
+            stderr="",
+        )
+        authority = RecordingAuthority()
+        with patch("three_agent.diagnostics.network_tools.platform.system", return_value="Linux"):
+            result = sample_internal_network_quality(
+                "192.168.11.1",
+                authority=authority,  # type: ignore[arg-type]
+            )
+        self.assertEqual(result["tool_id"], NETWORK_QUALITY_TOOL_ID)
+        self.assertEqual(result["probe_kind"], "bounded_icmp_samples")
+        self.assertEqual(result["sample_count_requested"], 4)
+        self.assertEqual(result["per_sample_timeout_ms"], 1000)
+        self.assertTrue(result["probe_command_succeeded"])
+        self.assertIsNone(result["quality_verdict"])
+        self.assertEqual(result["interpretation"], "evidence_only")
+        self.assertNotIn("root_cause", result)
+        self.assertNotIn("jitter_ms", result)
+        self.assertEqual(
+            authority.calls,
+            [
+                (
+                    NETWORK_QUALITY_TOOL_ID,
+                    "network_endpoint",
+                    "192.168.11.1:icmp-quality",
+                    "network_read",
+                )
+            ],
+        )
+        args, kwargs = run_mock.call_args
+        self.assertEqual(args[0], ("ping", "-n", "-c", "4", "-W", "1", "192.168.11.1"))
+        self.assertIs(kwargs["shell"], False)
+        self.assertIs(kwargs["check"], False)
+
+    @patch("three_agent.diagnostics.network_tools.subprocess.run")
+    def test_quality_sample_rejects_hostname_and_public_ip_before_subprocess(self, run_mock) -> None:
+        authority = RecordingAuthority()
+        for target in ("example.com", "8.8.8.8"):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(ValueError, "internal/private IP literal"):
+                    sample_internal_network_quality(
+                        target,
+                        authority=authority,  # type: ignore[arg-type]
+                    )
+        self.assertEqual(authority.calls, [])
+        run_mock.assert_not_called()
+
+    @patch("three_agent.diagnostics.network_tools.subprocess.run")
+    def test_quality_sample_preserves_negative_result_as_raw_evidence(self, run_mock) -> None:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=("ping",),
+            returncode=1,
+            stdout="4 packets transmitted, 1 received, 75% packet loss\n",
+            stderr="",
+        )
+        authority = RecordingAuthority()
+        with patch("three_agent.diagnostics.network_tools.platform.system", return_value="Linux"):
+            result = sample_internal_network_quality(
+                "192.168.11.1",
+                authority=authority,  # type: ignore[arg-type]
+            )
+        self.assertFalse(result["probe_command_succeeded"])
+        self.assertIsNone(result["quality_verdict"])
+        self.assertEqual(result["interpretation"], "evidence_only")
+        self.assertNotIn("network_bad", result)
+        self.assertNotIn("root_cause", result)
 
 
 if __name__ == "__main__":
