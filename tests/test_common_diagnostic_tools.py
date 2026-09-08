@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from three_agent.diagnostics.common_tools import (
@@ -120,17 +122,60 @@ class CommonDiagnosticToolsTests(unittest.TestCase):
         self.assertIn("memory_total_bytes", result)
         self.assertEqual(authority.calls[0][0], "system.resource.snapshot")
 
-    def test_storage_capacity_is_bounded_to_requested_path(self) -> None:
+    @patch("three_agent.diagnostics.common_tools.shutil.disk_usage")
+    def test_storage_capacity_uses_only_default_local_system_volume(self, disk_usage_mock) -> None:
+        disk_usage_mock.return_value = SimpleNamespace(total=100, used=40, free=60)
         authority = RecordingAuthority()
         result = execute_common_read(
             "system.storage.capacity",
             authority=authority,  # type: ignore[arg-type]
-            storage_path=".",
         )
         self.assertEqual(result["tool_id"], "system.storage.capacity")
-        self.assertGreater(result["total_bytes"], 0)
-        self.assertGreaterEqual(result["free_bytes"], 0)
-        self.assertEqual(authority.calls[0][1], "filesystem_capacity")
+        self.assertEqual(result["scope"], "default_local_system_volume")
+        self.assertEqual(result["total_bytes"], 100)
+        self.assertEqual(result["used_bytes"], 40)
+        self.assertEqual(result["free_bytes"], 60)
+        self.assertEqual(
+            authority.calls,
+            [("system.storage.capacity", "filesystem_capacity", "local:storage:default", "read")],
+        )
+        disk_usage_mock.assert_called_once()
+
+    @patch("three_agent.diagnostics.common_tools.shutil.disk_usage")
+    def test_storage_capacity_rejects_all_custom_paths_before_authority_or_disk_access(
+        self,
+        disk_usage_mock,
+    ) -> None:
+        for candidate in (".", "/tmp", "//server/share", r"\\server\share"):
+            with self.subTest(candidate=candidate):
+                authority = RecordingAuthority()
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "default local system volume only",
+                ):
+                    execute_common_read(
+                        "system.storage.capacity",
+                        authority=authority,  # type: ignore[arg-type]
+                        storage_path=candidate,
+                    )
+                self.assertEqual(authority.calls, [])
+        disk_usage_mock.assert_not_called()
+
+    @patch("three_agent.diagnostics.common_tools.shutil.disk_usage")
+    def test_windows_system_drive_environment_cannot_redirect_storage_to_unc(
+        self,
+        disk_usage_mock,
+    ) -> None:
+        disk_usage_mock.return_value = SimpleNamespace(total=100, used=40, free=60)
+        authority = RecordingAuthority()
+        with patch("three_agent.diagnostics.common_tools.platform.system", return_value="Windows"):
+            with patch.dict(os.environ, {"SystemDrive": r"\\server\share"}, clear=False):
+                execute_common_read(
+                    "system.storage.capacity",
+                    authority=authority,  # type: ignore[arg-type]
+                )
+        disk_usage_mock.assert_called_once_with("C:\\")
+        self.assertEqual(authority.calls[0][2], "local:storage:default")
 
     def test_interface_snapshot_is_local_only_and_authorized(self) -> None:
         authority = RecordingAuthority()
