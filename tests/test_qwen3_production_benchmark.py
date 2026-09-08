@@ -100,7 +100,9 @@ def test_runner_script_docker_fallback_is_narrow_and_offline() -> None:
     assert "--read-only" in script
     assert "--cap-drop ALL" in script
     assert "--security-opt no-new-privileges" in script
-    assert "/var/run/docker.sock" not in script
+    assert "if [[ -e /var/run/docker.sock ]]; then" in script
+    assert "src=/var/run/docker.sock" not in script
+    assert "dst=/var/run/docker.sock" not in script
     assert "sg docker -c" in script
     assert "docker_access_mode" in script
     assert "rootless_docker_host" in script
