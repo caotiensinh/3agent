@@ -19,6 +19,7 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
         )
         self.assertNotIn("system.resource.snapshot", contract.allowed_tools)
         self.assertNotIn("network.reachability.internal", contract.allowed_tools)
+        self.assertNotIn("network.quality.internal", contract.allowed_tools)
         self.assertNotIn("identity.session.snapshot", contract.allowed_tools)
         authority = TaskCapabilityAuthority.from_contract(contract)
         with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
@@ -27,6 +28,13 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
                 resource_kind="performance_snapshot",
                 resource_ref="local:resources",
                 effect="read",
+            )
+        with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
+            authority.require(
+                "network.quality.internal",
+                resource_kind="network_endpoint",
+                resource_ref="192.168.11.10:icmp-quality",
+                effect="network_read",
             )
         with self.assertRaisesRegex(CapabilityAuthorityDenied, "CAPABILITY_NOT_ALLOWED"):
             authority.require(
@@ -128,6 +136,24 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
         )
         self.assertTrue(decision.allowed)
 
+    def test_internal_network_quality_requires_explicit_tool_and_internal_network_scope(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-QUALITY",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("network.quality.internal",),
+        )
+        self.assertEqual(contract.allowed_tools, ("network.quality.internal",))
+        self.assertEqual(contract.network_scope, "internal_only")
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        decision = authority.require(
+            "network.quality.internal",
+            resource_kind="network_endpoint",
+            resource_ref="192.168.11.10:icmp-quality",
+            effect="network_read",
+        )
+        self.assertTrue(decision.allowed)
+
     def test_internal_reachability_rejects_wrong_resource_kind(self) -> None:
         contract = TaskContractCompiler().compile(
             task_id="TASK-DIAG-PING-KIND",
@@ -147,6 +173,44 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
                 effect="network_read",
             )
 
+    def test_internal_network_quality_rejects_wrong_resource_kind(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-QUALITY-KIND",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("network.quality.internal",),
+        )
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        with self.assertRaisesRegex(
+            CapabilityAuthorityDenied,
+            "RESOURCE_KIND_NOT_AUTHORIZED",
+        ):
+            authority.require(
+                "network.quality.internal",
+                resource_kind="url",
+                resource_ref="192.168.11.10:icmp-quality",
+                effect="network_read",
+            )
+
+    def test_internal_network_quality_rejects_effect_substitution(self) -> None:
+        contract = TaskContractCompiler().compile(
+            task_id="TASK-DIAG-QUALITY-EFFECT",
+            task_type="analysis",
+            sensitivity="internal",
+            allowed_tools=("network.quality.internal",),
+        )
+        authority = TaskCapabilityAuthority.from_contract(contract)
+        with self.assertRaisesRegex(
+            CapabilityAuthorityDenied,
+            "CAPABILITY_EFFECT_NOT_ALLOWED",
+        ):
+            authority.require(
+                "network.quality.internal",
+                resource_kind="network_endpoint",
+                resource_ref="192.168.11.10:icmp-quality",
+                effect="read",
+            )
+
     def test_public_task_cannot_smuggle_internal_reachability(self) -> None:
         with self.assertRaisesRegex(
             TaskContractError,
@@ -157,6 +221,18 @@ class DiagnosticCapabilityAuthorityTests(unittest.TestCase):
                 task_type="analysis",
                 sensitivity="public",
                 allowed_tools=("network.reachability.internal",),
+            )
+
+    def test_public_task_cannot_smuggle_internal_network_quality(self) -> None:
+        with self.assertRaisesRegex(
+            TaskContractError,
+            "Internal diagnostic network tools require network_scope=internal_only",
+        ):
+            TaskContractCompiler().compile(
+                task_id="TASK-DIAG-PUBLIC-QUALITY",
+                task_type="analysis",
+                sensitivity="public",
+                allowed_tools=("network.quality.internal",),
             )
 
     def test_child_authority_cannot_add_diagnostic_tool_not_in_parent(self) -> None:
