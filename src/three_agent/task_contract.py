@@ -16,6 +16,12 @@ TASK_TYPES = {
 SENSITIVITIES = {"public", "internal", "confidential", "restricted", "secret"}
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 MODEL_TIERS = {"none", "small", "specialist", "strong"}
+OFFICE_IT_NETWORK_TOOLS = {
+    "network.ssh.probe",
+    "network.smb.probe",
+    "network.printer.ipp_probe",
+    "network.printer.raw_probe",
+}
 TOOLS = {
     "read_file",
     "search_repo",
@@ -27,6 +33,11 @@ TOOLS = {
     "query_db_readonly",
     "calculator",
     "web_gateway",
+    "windows.event.system",
+    "windows.event.application",
+    "windows.event.security",
+    "windows.printer.queue",
+    *OFFICE_IT_NETWORK_TOOLS,
 }
 VALIDATORS = {
     "policy",
@@ -140,6 +151,11 @@ class TaskContract:
             raise TaskContractError(f"unknown validators: {sorted(unknown_validators)}")
         if self.network_scope not in {"deny", "internal_only", "allowlisted_egress"}:
             raise TaskContractError(f"unsupported network_scope: {self.network_scope}")
+        internal_network_tools = set(self.allowed_tools) & OFFICE_IT_NETWORK_TOOLS
+        if internal_network_tools and self.network_scope != "internal_only":
+            raise TaskContractError(
+                f"Office IT network tools require network_scope=internal_only: {sorted(internal_network_tools)}"
+            )
         if self.model_policy.initial_tier not in MODEL_TIERS or self.model_policy.max_tier not in MODEL_TIERS:
             raise TaskContractError("invalid model tier")
         tier_order = {"none": 0, "small": 1, "specialist": 2, "strong": 3}
