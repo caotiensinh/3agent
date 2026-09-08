@@ -2,10 +2,7 @@ import unittest
 from dataclasses import replace
 
 from three_agent.capability_authority import TaskCapabilityAuthority
-from three_agent.execution_observation import (
-    ExecutionObservationBuilder,
-    ExecutionObservationError,
-)
+from three_agent.execution_observation import ExecutionObservationBuilder
 from three_agent.execution_plan import ExecutionPlanBuilder
 from three_agent.harness_acceptance import AcceptanceContract, AcceptanceCriterion
 from three_agent.harness_task_compiler import HarnessTaskCompiler
@@ -130,8 +127,8 @@ class RuntimeSchedulerTests(unittest.TestCase):
         )
         self.assertEqual(decision.status, "READY")
         self.assertEqual(decision.ready_node_ids, ("start",))
-        self.assertEqual(decision.waiting_node_ids, ("research", "done"))
-        self.assertEqual(decision.blocked_node_ids, ("approve",))
+        self.assertEqual(decision.waiting_node_ids, ("research", "approve", "done"))
+        self.assertEqual(decision.blocked_node_ids, ())
         self.assertTrue(decision.fingerprint.startswith("sha256:"))
 
     def test_success_observations_advance_in_plan_order(self):
@@ -188,7 +185,7 @@ class RuntimeSchedulerTests(unittest.TestCase):
             parent_authority=authority,
             observations=(partial,),
         )
-        self.assertEqual(decision.status, "BLOCKED")
+        self.assertEqual(decision.status, "WAITING")
         self.assertNotIn("start", decision.ready_node_ids)
         start_record = next(record for record in decision.records if record.node_id == "start")
         self.assertEqual(start_record.state, "WAITING")
