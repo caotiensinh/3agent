@@ -25,18 +25,18 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_twenty_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_twenty_one_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 20)
-        self.assertEqual(len({tool.id for tool in metadata}), 20)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 20)
+        self.assertEqual(len(metadata), 21)
+        self.assertEqual(len({tool.id for tool in metadata}), 21)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 21)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
             all(tool.network_access != "allowlisted_egress" for tool in runtime_tool_metadata())
         )
 
-    def test_runtime_reachability_binding_uses_only_dedicated_internal_probe(self) -> None:
+    def test_runtime_network_bindings_use_only_dedicated_internal_probes(self) -> None:
         mapping = {
             binding.capability_tag: binding.tool_ids
             for binding in default_runtime_capability_bindings()
@@ -44,6 +44,10 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(
             mapping["network.reachability"],
             ("network.reachability.internal",),
+        )
+        self.assertEqual(
+            mapping["network.quality"],
+            ("network.quality.internal",),
         )
         self.assertNotIn("camera.reachability", mapping)
         self.assertNotIn("isp.reachability", mapping)
@@ -80,7 +84,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertLess(report.fully_promotable_routes, 650)
         self.assertTrue(report.unresolved_capability_counts)
 
-    def test_reachability_group_policy_and_identity_are_removed_from_missing_backlog(self) -> None:
+    def test_implemented_high_reuse_capabilities_are_removed_from_missing_backlog(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
@@ -88,6 +92,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         )
         missing = dict(report.unresolved_capability_counts)
         self.assertNotIn("network.reachability", missing)
+        self.assertNotIn("network.quality", missing)
         self.assertNotIn("group_policy", missing)
         self.assertNotIn("identity.session", missing)
         self.assertIn("service.health", missing)
@@ -110,6 +115,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("network.reachability.internal"), 100)
         self.assertEqual(selected.get("windows.group_policy.result"), 45)
         self.assertEqual(selected.get("identity.session.snapshot"), 35)
+        self.assertEqual(selected.get("network.quality.internal"), 35)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
