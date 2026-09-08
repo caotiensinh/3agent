@@ -8,6 +8,7 @@ from ..office_it_tools import iter_specs
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .common_tools import common_tool_metadata
 from .network_tools import NETWORK_TOOL_METADATA, NETWORK_REACHABILITY_TOOL_ID
+from .windows_policy_tools import GROUP_POLICY_TOOL_ID, GROUP_POLICY_TOOL_METADATA
 
 
 def _office_it_metadata() -> tuple[ToolMetadata, ...]:
@@ -19,7 +20,12 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
 
     This function does not grant TaskCapabilityAuthority and does not execute tools.
     """
-    items = _office_it_metadata() + common_tool_metadata() + NETWORK_TOOL_METADATA
+    items = (
+        _office_it_metadata()
+        + common_tool_metadata()
+        + NETWORK_TOOL_METADATA
+        + GROUP_POLICY_TOOL_METADATA
+    )
     ids = tuple(item.id for item in items)
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate runtime diagnostic tool ids")
@@ -53,6 +59,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("network.reachability", (NETWORK_REACHABILITY_TOOL_ID,)),
             CapabilityBinding("time.sync", ("time.sync.status",)),
             CapabilityBinding("service.status", ("service.status.read",)),
+            CapabilityBinding("group_policy", (GROUP_POLICY_TOOL_ID,)),
         )
     )
     seen: set[str] = set()
