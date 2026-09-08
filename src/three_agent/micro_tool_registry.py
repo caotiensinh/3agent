@@ -42,6 +42,8 @@ def _normalize_text(value: str) -> str:
 
 
 def _tuple_strings(value: Iterable[Any], *, field: str, max_items: int = 64) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)):
+        raise RegistryValidationError(f"{field} must be a sequence of strings, not a scalar string")
     items = tuple(str(item).strip() for item in value)
     if not items or len(items) > max_items or any(not item for item in items):
         raise RegistryValidationError(f"{field} must contain 1..{max_items} non-empty strings")
@@ -82,6 +84,12 @@ class ToolMetadata:
             raise RegistryValidationError(f"unknown network access class: {self.network_access}")
         if self.effect not in EFFECTS:
             raise RegistryValidationError(f"unknown effect: {self.effect}")
+        if type(self.requires_admin) is not bool:
+            raise RegistryValidationError("requires_admin must be a boolean")
+        if type(self.sensitive_outputs) is not bool:
+            raise RegistryValidationError("sensitive_outputs must be a boolean")
+        if type(self.implemented) is not bool:
+            raise RegistryValidationError("implemented must be a boolean")
         keywords = _tuple_strings(self.keywords, field="keywords")
         if any(len(keyword) > 96 for keyword in keywords):
             raise RegistryValidationError("keyword exceeds 96 characters")
@@ -127,6 +135,14 @@ class ToolMetadata:
         missing = required - set(payload)
         if missing:
             raise RegistryValidationError(f"missing metadata fields: {sorted(missing)}")
+        if not isinstance(payload["keywords"], (list, tuple)):
+            raise RegistryValidationError("keywords must be a list or tuple")
+        for field in ("requires_admin", "sensitive_outputs"):
+            if type(payload[field]) is not bool:
+                raise RegistryValidationError(f"{field} must be a boolean")
+        implemented = payload.get("implemented", True)
+        if type(implemented) is not bool:
+            raise RegistryValidationError("implemented must be a boolean")
         metadata = cls(
             id=str(payload["id"]),
             platform=str(payload["platform"]),
@@ -134,11 +150,11 @@ class ToolMetadata:
             keywords=tuple(str(item) for item in payload["keywords"]),
             cost=str(payload["cost"]),
             risk=str(payload["risk"]),
-            requires_admin=bool(payload["requires_admin"]),
+            requires_admin=payload["requires_admin"],
             network_access=str(payload["network_access"]),
-            sensitive_outputs=bool(payload["sensitive_outputs"]),
+            sensitive_outputs=payload["sensitive_outputs"],
             effect=str(payload["effect"]),
-            implemented=bool(payload.get("implemented", True)),
+            implemented=implemented,
             schema_version=str(payload.get("schema_version", MICRO_TOOL_METADATA_SCHEMA)),
         )
         return metadata.validate()
@@ -152,9 +168,9 @@ class ToolMetadata:
             keywords=tuple(str(item) for item in spec.keywords),
             cost=str(spec.cost),
             risk=str(spec.risk),
-            requires_admin=bool(spec.requires_admin),
+            requires_admin=spec.requires_admin,
             network_access=str(spec.network_access),
-            sensitive_outputs=bool(spec.sensitive_outputs),
+            sensitive_outputs=spec.sensitive_outputs,
             effect=str(spec.effect),
             implemented=True,
         ).validate()
@@ -177,6 +193,8 @@ class ToolPreset:
             raise RegistryValidationError(f"unsupported preset schema: {self.schema_version}")
         if not _ID_RE.fullmatch(self.id):
             raise RegistryValidationError(f"invalid preset id: {self.id!r}")
+        if type(self.explicit_only) is not bool:
+            raise RegistryValidationError("explicit_only must be a boolean")
         _tuple_strings(self.tool_ids, field="tool_ids")
         return self
 
@@ -201,6 +219,12 @@ class ToolSelectionRequest:
             raise ValueError(f"unsupported investigation mode: {self.mode}")
         if not 1 <= int(self.max_tools) <= 64:
             raise ValueError("max_tools must be within 1..64")
+        if self.admin_available is not None and type(self.admin_available) is not bool:
+            raise ValueError("admin_available must be boolean or None")
+        if type(self.allow_external_network) is not bool:
+            raise ValueError("allow_external_network must be boolean")
+        if type(self.full_authorized) is not bool or type(self.escalated) is not bool:
+            raise ValueError("full_authorized and escalated must be boolean")
         if self.cost_ceiling is not None and self.cost_ceiling not in COST_ORDER:
             raise ValueError(f"unknown cost ceiling: {self.cost_ceiling}")
         if self.mode == "full" and not (self.full_authorized or self.escalated):
@@ -246,6 +270,14 @@ class EscalationDecision:
 def decide_escalation(context: EscalationContext) -> EscalationDecision:
     if context.next_cost not in COST_ORDER or context.max_justified_cost not in COST_ORDER:
         raise RegistryValidationError("unknown escalation cost class")
+    for field in (
+        context.evidence_sufficient,
+        context.uncertainty_reduction_expected,
+        context.authority_available,
+        context.explicit_full,
+    ):
+        if type(field) is not bool:
+            raise RegistryValidationError("escalation flags must be boolean")
     if context.evidence_sufficient:
         return EscalationDecision("stop", "EVIDENCE_SUFFICIENT", True)
     if not context.uncertainty_reduction_expected:
@@ -397,6 +429,8 @@ class MicroToolRegistry:
         full_authorized: bool,
         authority: Any | None = None,
     ) -> tuple[ToolMetadata, ...]:
+        if type(full_authorized) is not bool:
+            raise RegistryPolicyError("full_authorized must be boolean")
         try:
             preset = self._presets[str(preset_id)]
         except KeyError as exc:

@@ -8,8 +8,8 @@ import json
 import math
 import os
 import re
-import resource
 import statistics
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +47,54 @@ def percentile(values: Sequence[float], p: float) -> float:
         return ordered[lower]
     fraction = position - lower
     return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
+def host_peak_rss_kib() -> int:
+    """Return peak resident-set/working-set size in KiB without external dependencies."""
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        class ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(ProcessMemoryCounters),
+            wintypes.DWORD,
+        ]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+        if not psapi.GetProcessMemoryInfo(
+            kernel32.GetCurrentProcess(),
+            ctypes.byref(counters),
+            counters.cb,
+        ):
+            error_code = ctypes.get_last_error()
+            raise OSError(error_code, "GetProcessMemoryInfo failed")
+        return int(counters.PeakWorkingSetSize // 1024)
+
+    import resource
+
+    peak_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if sys.platform == "darwin":
+        return peak_rss // 1024
+    return peak_rss
 
 
 def tokenize(text: str) -> set[str]:
@@ -404,7 +452,7 @@ def main() -> int:
         "hardware": {
             "cuda_device_count": int(torch.cuda.device_count()),
             "devices": devices,
-            "host_peak_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
+            "host_peak_rss_kib": host_peak_rss_kib(),
         },
         "checks": checks,
         "security": {
