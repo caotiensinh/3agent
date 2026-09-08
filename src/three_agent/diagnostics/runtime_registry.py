@@ -8,7 +8,11 @@ from ..office_it_tools import iter_specs
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .common_tools import common_tool_metadata
 from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
-from .network_tools import NETWORK_TOOL_METADATA, NETWORK_REACHABILITY_TOOL_ID
+from .network_tools import (
+    NETWORK_QUALITY_TOOL_ID,
+    NETWORK_REACHABILITY_TOOL_ID,
+    NETWORK_TOOL_METADATA,
+)
 from .windows_policy_tools import GROUP_POLICY_TOOL_ID, GROUP_POLICY_TOOL_METADATA
 
 
@@ -43,8 +47,8 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
     """Map abstract route capabilities only to tools that currently exist.
 
     Deliberately absent mappings remain unresolved and therefore fail closed during
-    promotion. Generic internal reachability is bound only to its dedicated bounded
-    ICMP evidence tool, never approximated with fixed-port SSH/SMB/printer probes.
+    promotion. Generic internal reachability and quality are bound only to their
+    dedicated bounded ICMP evidence tools, never approximated with fixed-port probes.
     """
     bindings: list[CapabilityBinding] = list(default_office_it_bindings())
     bindings.extend(
@@ -59,6 +63,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("network.route", ("network.route.snapshot",)),
             CapabilityBinding("network.dns", ("network.dns.snapshot",)),
             CapabilityBinding("network.reachability", (NETWORK_REACHABILITY_TOOL_ID,)),
+            CapabilityBinding("network.quality", (NETWORK_QUALITY_TOOL_ID,)),
             CapabilityBinding("time.sync", ("time.sync.status",)),
             CapabilityBinding("service.status", ("service.status.read",)),
             CapabilityBinding("group_policy", (GROUP_POLICY_TOOL_ID,)),
