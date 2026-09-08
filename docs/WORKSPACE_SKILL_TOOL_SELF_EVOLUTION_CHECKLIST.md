@@ -2,18 +2,33 @@
 
 Status: active implementation checklist.
 
-Current branch: `feat/skill-reviewed-references-v1-20260908`
+Current branch: `feat/candidate-skill-materialization-v1-20260908`
 
-Current base `main`: `aaeeb424bf2ea0b0c26030e7631fea6e177c2807`
+Current base `main`: `bbb2de7c0d31424d953c4476d6231a9352e0625e`
 
 Architecture: `docs/WORKSPACE_SKILL_TOOL_SELF_EVOLUTION_ARCHITECTURE.md`
 
 Legend:
 
-- `[x]` complete in current branch or already satisfied by canonical source
-- `[~]` in progress and not yet merged/fully verified
+- `[x]` complete and merged/verified against the cited canonical source
+- `[~]` partially complete or current implementation slice
 - `[ ]` not started
 - `[!]` blocked / requires an explicit dependency or policy decision
+
+## Definition of done for every Skill/Tool feature
+
+A feature is not complete because a class, API, or UI exists. It is complete only when all applicable gates below are satisfied:
+
+1. it extends/reuses the canonical WorkSpace primitive instead of creating a parallel subsystem;
+2. at least one real upstream producer and downstream consumer path is proven;
+3. state survives process restart where persistence is part of the feature contract;
+4. authorization is explicit, least-privilege, and cannot be minted from model output;
+5. unsafe, stale, tampered, wrong-scope, and partial states fail closed;
+6. backward compatibility with existing runtime/deployment paths is covered;
+7. exact candidate/version/SHA/evidence lineage is auditable;
+8. focused tests plus Python 3.11/3.12 full regression pass;
+9. relevant installer/Windows/security CI remains green;
+10. merge is performed only against the exact tested head SHA.
 
 ## A. Architecture and source convergence
 
@@ -45,16 +60,16 @@ Acceptance for S-01/S-02:
 
 ## C. Reviewed supporting references
 
-- [~] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class).
-- [~] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited.
-- [~] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes.
-- [~] **S-13** Add per-reference and total-reference size limits.
-- [~] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces.
-- [~] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references.
-- [~] **S-16** Add reference provenance and version/vendor applicability metadata.
-- [~] **S-17** Add tests proving an altered reference fails SHA/integrity validation.
+- [x] **S-10** Define registry schema for reviewed per-reference metadata (`path`, SHA-256, size, provenance, content class). Merged via PR #373 at `0db8b59f95131c2450cd25aac7905d429bc48230`.
+- [x] **S-11** Permit only `references/` under E2 production skills; keep `scripts/` prohibited. PR #373.
+- [x] **S-12** Reject symlinks, path traversal, unregistered reference files, unexpected directories, and unreviewed bytes. PR #373.
+- [x] **S-13** Add per-reference and total-reference size limits. PR #373.
+- [x] **S-14** Add `skill_reference_list` and `skill_reference_view` progressive disclosure surfaces. PR #373.
+- [x] **S-15** Add security scanning for external URLs, credential paths, secret literals, prompt injection, executable command blocks, and hidden Unicode in references. PR #373.
+- [x] **S-16** Add reference provenance and version/vendor applicability metadata. PR #373.
+- [x] **S-17** Add tests proving an altered reference fails SHA/integrity validation. PR #373.
 
-Current E2 reference policy in this branch:
+Current E2 reference policy:
 
 - maximum 8 references per production skill;
 - maximum 16 KiB canonical UTF-8 per reference;
@@ -78,13 +93,20 @@ Existing canonical foundation already present:
 
 Required convergence work:
 
-- [ ] **L-10** Add canonical `CandidateSkill` view/adapter over `KnowledgeCandidate(kind="skill")`; do not introduce a duplicate learning object.
-- [ ] **L-11** Define deterministic mapping from candidate content to proposed `SKILL.md` fields.
-- [ ] **L-12** Add agent-facing `skill_candidate_create` operation that can create candidates only from a verified learning source.
-- [ ] **L-13** Ensure the candidate operation has zero production registry write authority.
-- [ ] **L-14** Add candidate duplicate/similarity detection and replay suppression.
-- [ ] **L-15** Add candidate provenance summary and source-evidence coverage metrics.
-- [ ] **L-16** Add candidate security scan receipt.
+- [x] **L-10** Add canonical `CandidateSkill` view/adapter over `KnowledgeCandidate(kind="skill")`; do not introduce a duplicate learning object. Merged via PR #376 at `5e4cae128486d29fba43065d9bebb95dffd69b14`.
+- [x] **L-11** Define deterministic mapping from create-candidate content to proposed `SKILL.md` fields. PR #376.
+- [x] **L-12** Add agent-facing skill candidate create operation only from verified learning/reflection input. PR #376.
+- [x] **L-13** Ensure the candidate operation has zero production registry write authority. PR #376.
+- [~] **L-14** Exact-source replay suppression is complete and tested; semantic duplicate/similarity detection across independent experiences remains.
+- [x] **L-15** Add candidate provenance summary and source-evidence coverage metrics. PR #376.
+- [x] **L-16** Add deterministic, capability-free candidate security scan receipt and post-restart reconstruction. PR #376.
+
+CandidateSkill validation convergence:
+
+- [x] deterministic `candidate -> validated` bridge over canonical `LearningValidationReceipt`, `AdaptiveLearningPolicy`, `LearningOperatorGateway`, and checkpoint authority. Merged via PR #377 at `bbb2de7c0d31424d953c4476d6231a9352e0625e`.
+- [x] validation receipt reconstructs after restart without a second receipt database.
+- [x] validated CandidateSkill remains staged/inactive.
+- [x] end-to-end compatibility proven: stage -> validate -> restart -> reconstruct receipt -> authenticated network/domain review -> approved.
 
 ## E. Automatic skill improvement / self-evolution
 
@@ -104,16 +126,16 @@ Required convergence work:
 ## F. Skill evaluation, promotion, and production materialization
 
 - [ ] **P-01** Define held-out skill benchmark contract.
-- [ ] **P-02** Require deterministic schema/security/provenance checks before evaluation.
+- [x] **P-02** Require deterministic schema/security/provenance checks before validation/evaluation. CandidateSkill security + validation gates merged through PR #376/#377.
 - [ ] **P-03** Require regression comparison with previous production version for patch/supersede.
 - [ ] **P-04** Define minimum evidence diversity / independent-source policy.
-- [ ] **P-05** Reuse authenticated domain reviewer promotion for `network` / `security` skills.
-- [ ] **P-06** Add deterministic production materializer from an approved candidate to `skills/<name>/SKILL.md` plus registry metadata.
-- [ ] **P-07** Materializer must not accept arbitrary filesystem paths.
+- [x] **P-05** Reuse authenticated domain reviewer promotion for `network` / `security` skills; integration proven in PR #377.
+- [~] **P-06** Add deterministic production materialization for an already-approved CandidateSkill. Current slice designs a source-control-safe bundle/publisher boundary rather than direct learner filesystem self-modification.
+- [ ] **P-07** Materializer/publisher must not accept arbitrary model-selected filesystem paths.
 - [ ] **P-08** Production SHA/integrity metadata must be generated from exact materialized bytes.
-- [ ] **P-09** Promotion must be atomic or checkpoint-recoverable.
-- [ ] **P-10** Preserve prior version and rollback lineage.
-- [ ] **P-11** No candidate can directly modify `skills/registry.json` outside the promotion/materialization boundary.
+- [x] **P-09** Learning promotion itself is checkpoint/state-bound and recoverable; production file publication still needs its own atomic/source-control transaction boundary.
+- [ ] **P-10** Preserve prior production skill version and rollback lineage.
+- [x] **P-11** Candidate creation/validation cannot directly modify `skills/registry.json`; production mutation remains outside learner authority.
 
 ## G. Skill effectiveness and autonomous maintenance
 
@@ -235,11 +257,11 @@ These should be implemented as small capabilities, not one giant diagnostic work
 ## O. CI / security gates
 
 - [x] **C-01** Skill catalog progressive-disclosure regression tests. Exact-head Python 3.11/3.12 unit/regression/EV gates passed before PR #371 merge.
-- [~] **C-02** Reference pack integrity/path/symlink tests.
-- [ ] **C-03** Candidate create/patch/supersede contract tests.
-- [ ] **C-04** Replay/self-reinforcement resistance tests.
+- [x] **C-02** Reference pack integrity/path/symlink/content-security regression tests. PR #373.
+- [~] **C-03** Candidate create contract is covered; patch/supersede contract remains.
+- [x] **C-04** Exact-source replay/self-reinforcement resistance is tested for CandidateSkill create and does not duplicate checkpoint/ledger state. PR #376.
 - [ ] **C-05** Held-out evaluation tests.
-- [ ] **C-06** Promotion/materialization atomicity tests.
+- [ ] **C-06** Production materialization/source-control atomicity tests.
 - [ ] **C-07** Generic capability registry duplicate/override tests.
 - [ ] **C-08** Authority intersection tests.
 - [ ] **C-09** Unknown external tool fail-closed tests.
@@ -252,15 +274,17 @@ These should be implemented as small capabilities, not one giant diagnostic work
 
 ## Current execution slice
 
-Reference-pack slice `S-10..S-17`:
+Production-materialization convergence:
 
-1. [~] registry schema and strict E2 resource admission;
-2. [~] path/symlink/traversal/extra-file/integrity checks;
-3. [~] per-file/aggregate size bounds and security scanning;
-4. [~] compact reference list + one-reference view;
-5. [~] vendor/version/provenance metadata;
-6. [~] focused regression tests;
-7. [ ] exact-head PR CI;
-8. [ ] merge only after exact-head verification.
+1. [x] candidate create/stage is canonical, checkpointed and restart-inspectable (PR #376);
+2. [x] deterministic validation receipt and `candidate -> validated` transition (PR #377);
+3. [x] existing authenticated `validated -> approved` network/domain-review path proven compatible (PR #377);
+4. [~] define a deterministic materialization bundle from the exact approved active candidate;
+5. [ ] bind fixed production target paths and registry metadata; no model-selected paths;
+6. [ ] produce review/provenance metadata from exact promotion/learning lineage;
+7. [ ] verify generated bytes with `ApprovedSkillLoader` before publication;
+8. [ ] publish through an explicit source-control/operator boundary rather than learner direct self-modification;
+9. [ ] prove the published skill appears through production `skill_list -> skill_view`;
+10. [ ] exact-head CI and merge only after end-to-end publication compatibility is demonstrated.
 
-After this slice is merged, continue with `L-10..L-16`: canonical CandidateSkill projection and agent-facing automatic candidate creation backed by the existing verified admission/reflection/staging path. Then implement patch/supersede self-improvement and controlled promotion before starting the generic Tool Registry.
+Only after the complete create -> validate -> approve -> publish -> list/view loop is proven should the project move to patch/supersede self-improvement and then the generic Tool Registry.
