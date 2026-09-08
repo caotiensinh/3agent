@@ -1,0 +1,58 @@
+version: 1
+candidate: pc-diagnostic-streaming
+default_mode: bounded_microtools
+full_collection: explicit_or_evidence_justified
+
+tools:
+  - id: windows.event.system.reboot_window
+    os: windows
+    path: windows/event_system_reboot_window.ps1
+    risk: S0
+    scope: bounded_system_event_timeline
+  - id: windows.dump.inventory
+    os: windows
+    path: windows/dump_inventory.ps1
+    risk: S0
+    scope: dump_metadata_only
+  - id: windows.network.state
+    os: windows
+    path: windows/network_state.ps1
+    risk: S0
+    scope: local_network_state
+  - id: windows.inventory.hardware
+    os: windows
+    path: windows/hardware_inventory.ps1
+    risk: S0
+    scope: local_hardware_inventory
+  - id: windows.evidence.deep
+    os: windows
+    path: windows/collect_evidence.ps1
+    risk: S0
+    scope: broad_local_evidence
+    default: false
+  - id: linux.boot.previous
+    os: linux
+    path: linux/previous_boot.sh
+    risk: S0
+    scope: previous_boot_warning_and_kernel_evidence
+  - id: linux.kernel.errors
+    os: linux
+    path: linux/kernel_errors.sh
+    risk: S0
+    scope: bounded_kernel_warning_error_evidence
+  - id: linux.network.state
+    os: linux
+    path: linux/network_state.sh
+    risk: S0
+    scope: local_network_state
+  - id: linux.inventory.hardware
+    os: linux
+    path: linux/hardware_inventory.sh
+    risk: S0
+    scope: local_hardware_inventory
+  - id: linux.evidence.deep
+    os: linux
+    path: linux/collect_evidence.sh
+    risk: S0
+    scope: broad_local_evidence
+    default: false
