@@ -1,6 +1,6 @@
 """Isolated no-tool execution boundary for held-out skill cases.
 
-The child model generates a response only.  PASS/FAIL is computed by this trusted
+The child model generates a response only. PASS/FAIL is computed by this trusted
 parent from bounded, content-addressed literal assertions; the model cannot grade
 itself or mutate learning/runtime state.
 """
@@ -114,7 +114,14 @@ class HeldOutSkillExecutionCase:
             raise HeldOutSkillExecutionError("HELDOUT_CASE_PAYLOAD_INVALID")
         data = dict(payload)
         case_sha = data.pop("case_sha256", None)
-        expected = {"schema_version", "case_id", "heldout_task_id", "prompt", "required_terms", "forbidden_terms"}
+        expected = {
+            "schema_version",
+            "case_id",
+            "heldout_task_id",
+            "prompt",
+            "required_terms",
+            "forbidden_terms",
+        }
         if set(data) != expected:
             raise HeldOutSkillExecutionError("HELDOUT_CASE_PAYLOAD_INVALID")
         case = cls(
@@ -147,7 +154,10 @@ class HeldOutSkillExecutionPacket:
             raise HeldOutSkillExecutionError("HELDOUT_PACKET_SUBJECT_INVALID")
         if not _SKILL.fullmatch(self.skill_name) or not _SHA.fullmatch(self.skill_sha256):
             raise HeldOutSkillExecutionError("HELDOUT_PACKET_SKILL_INVALID")
-        raw = _canonical_instruction_bytes(_text(self.skill_document, "HELDOUT_PACKET_DOCUMENT_INVALID", 4096))
+        document = str(self.skill_document)
+        if not document or len(document) > 4096 or "\x00" in document:
+            raise HeldOutSkillExecutionError("HELDOUT_PACKET_DOCUMENT_INVALID")
+        raw = _canonical_instruction_bytes(document)
         if "sha256:" + hashlib.sha256(raw).hexdigest() != self.skill_sha256:
             raise HeldOutSkillExecutionError("HELDOUT_PACKET_SKILL_SHA_MISMATCH")
         self.case.validate()
@@ -167,7 +177,15 @@ class HeldOutSkillExecutionPacket:
 
     @classmethod
     def from_payload(cls, payload: Any) -> "HeldOutSkillExecutionPacket":
-        fields = {"schema_version", "subject_id", "subject_sha256", "skill_name", "skill_sha256", "skill_document", "case"}
+        fields = {
+            "schema_version",
+            "subject_id",
+            "subject_sha256",
+            "skill_name",
+            "skill_sha256",
+            "skill_document",
+            "case",
+        }
         if not isinstance(payload, dict) or set(payload) != fields:
             raise HeldOutSkillExecutionError("HELDOUT_PACKET_PAYLOAD_INVALID")
         return cls(
@@ -205,7 +223,12 @@ class HeldOutSkillExecutionConfig:
     def executor_sha256(self) -> str:
         self.validate()
         return _sha_payload(
-            {"template_version": TEMPLATE_VERSION, "model": self.model, "temperature": 0, "tools": False}
+            {
+                "template_version": TEMPLATE_VERSION,
+                "model": self.model,
+                "temperature": 0,
+                "tools": False,
+            }
         )
 
 
@@ -233,7 +256,13 @@ class HeldOutSkillExecutionResult:
             raise HeldOutSkillExecutionError("HELDOUT_RESULT_HEADER_INVALID")
         if not _ID.fullmatch(self.subject_id) or not _ID.fullmatch(self.case_id):
             raise HeldOutSkillExecutionError("HELDOUT_RESULT_ID_INVALID")
-        for value in (self.subject_sha256, self.skill_sha256, self.case_sha256, self.executor_sha256, self.response_sha256):
+        for value in (
+            self.subject_sha256,
+            self.skill_sha256,
+            self.case_sha256,
+            self.executor_sha256,
+            self.response_sha256,
+        ):
             if not _SHA.fullmatch(value):
                 raise HeldOutSkillExecutionError("HELDOUT_RESULT_SHA_INVALID")
         for value in (
@@ -245,9 +274,15 @@ class HeldOutSkillExecutionResult:
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise HeldOutSkillExecutionError("HELDOUT_RESULT_COUNT_INVALID")
-        if self.required_matched_count > self.required_term_count or self.forbidden_matched_count > self.forbidden_term_count:
+        if (
+            self.required_matched_count > self.required_term_count
+            or self.forbidden_matched_count > self.forbidden_term_count
+        ):
             raise HeldOutSkillExecutionError("HELDOUT_RESULT_COUNT_INVALID")
-        expected_pass = self.required_matched_count == self.required_term_count and self.forbidden_matched_count == 0
+        expected_pass = (
+            self.required_matched_count == self.required_term_count
+            and self.forbidden_matched_count == 0
+        )
         if self.passed != expected_pass:
             raise HeldOutSkillExecutionError("HELDOUT_RESULT_VERDICT_INVALID")
         expected_reasons = []
@@ -339,8 +374,12 @@ class IsolatedSkillHeldOutRunner:
             raise HeldOutSkillExecutionError("HELDOUT_WORKER_RESPONSE_INVALID")
         response = _text(payload.get("response"), "HELDOUT_WORKER_RESPONSE_INVALID", 12000)
         folded = response.casefold()
-        required_matched = sum(1 for term in packet.case.required_terms if term.casefold() in folded)
-        forbidden_matched = sum(1 for term in packet.case.forbidden_terms if term.casefold() in folded)
+        required_matched = sum(
+            1 for term in packet.case.required_terms if term.casefold() in folded
+        )
+        forbidden_matched = sum(
+            1 for term in packet.case.forbidden_terms if term.casefold() in folded
+        )
         reasons = []
         if required_matched != len(packet.case.required_terms):
             reasons.append("HELDOUT_REQUIRED_TERM_MISSING")
