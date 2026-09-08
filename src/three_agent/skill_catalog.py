@@ -1,13 +1,13 @@
 """Progressive-disclosure projection over the canonical approved skill loader.
 
 The catalog deliberately does not introduce another skill trust model. Every
-listed or viewed production skill remains subject to ``ApprovedSkillLoader``
-registry, review, provenance, integrity, agent-scope, instruction-only, and
-content-safety checks.
+listed or viewed production skill and reference remains subject to
+``ApprovedSkillLoader`` registry, review, provenance, integrity, agent-scope,
+instruction-only, and content-safety checks.
 
-This module exposes compact metadata first and the reviewed procedure only on
-explicit view. It grants no filesystem, network, credential, tool, or execution
-authority.
+This module exposes compact metadata first, then the reviewed procedure or one
+reviewed reference only on explicit view. It grants no filesystem, network,
+credential, tool, or execution authority.
 """
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from .skills import (
 )
 
 SKILL_CATALOG_SCHEMA = "workspace-approved-skill-catalog/v1"
+SKILL_REFERENCE_CATALOG_SCHEMA = "workspace-approved-skill-reference/v1"
 MAX_SKILL_INDEX_DESCRIPTION_CHARS = 240
 
 
@@ -41,6 +42,24 @@ class ApprovedSkillSummary:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ApprovedSkillReferenceSummary:
+    """Compact metadata for one reviewed, read-only skill reference."""
+
+    reference_id: str
+    path: str
+    sha256: str
+    size_bytes: int
+    content_class: str
+    provenance_count: int
+    vendor_family: str | None = None
+    version: str | None = None
+    schema_version: str = SKILL_REFERENCE_CATALOG_SCHEMA
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
 def _compact_description(value: str) -> str:
     text = " ".join(str(value or "").split()).strip()
     if not text:
@@ -53,11 +72,11 @@ def _compact_description(value: str) -> str:
 class ApprovedSkillCatalog:
     """Read-only progressive view of production skills for one runtime agent.
 
-    ``list_for_agent`` returns metadata only. ``view_for_agent`` returns exactly
-    one approved procedure and delegates to the existing loader, preserving its
-    prompt-size and agent-scope controls. Candidate creation and production
-    promotion intentionally live in the adaptive-learning authority path, not in
-    this read-only catalog.
+    ``list_for_agent`` returns skill metadata only. ``view_for_agent`` returns
+    exactly one approved procedure. ``list_references_for_agent`` returns compact
+    reviewed-reference metadata, while ``view_reference_for_agent`` discloses one
+    exact reference on demand. Candidate creation and production promotion remain
+    in the adaptive-learning authority path, not in this read-only catalog.
     """
 
     def __init__(self, root: Path | ApprovedSkillLoader):
@@ -89,7 +108,7 @@ class ApprovedSkillCatalog:
 
             # audit_registry already validated exact bytes. Read the reviewed
             # frontmatter only to project the compact description; never include
-            # the skill body in the index.
+            # the skill body or reference bodies in the index.
             path = self.loader.root / name / "SKILL.md"
             text = _canonical_instruction_text(path.read_bytes())
             metadata, _ = _frontmatter(text)
@@ -115,14 +134,31 @@ class ApprovedSkillCatalog:
         return tuple(summaries)
 
     def view_for_agent(self, agent_id: str, name: str) -> str:
-        """Return one reviewed skill procedure on demand.
-
-        This intentionally reuses ``load_for_agent`` instead of reproducing its
-        admission checks. A caller cannot use the catalog as an alternate path
-        around integrity, review, agent scope, or prompt-size enforcement.
-        """
+        """Return one reviewed skill procedure on demand."""
 
         blocks = self.loader.load_for_agent(str(agent_id or "").strip(), [str(name or "").strip()])
         if len(blocks) != 1:
             raise SkillSecurityError("Expected exactly one approved skill block")
         return blocks[0]
+
+    def list_references_for_agent(
+        self,
+        agent_id: str,
+        name: str,
+    ) -> tuple[ApprovedSkillReferenceSummary, ...]:
+        """Return compact reference metadata without disclosing reference text."""
+
+        rows = self.loader.list_references_for_agent(
+            str(agent_id or "").strip(),
+            str(name or "").strip(),
+        )
+        return tuple(ApprovedSkillReferenceSummary(**row) for row in rows)
+
+    def view_reference_for_agent(self, agent_id: str, name: str, reference_id: str) -> str:
+        """Return exactly one reviewed reference after canonical revalidation."""
+
+        return self.loader.load_reference_for_agent(
+            str(agent_id or "").strip(),
+            str(name or "").strip(),
+            str(reference_id or "").strip(),
+        )
