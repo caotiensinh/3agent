@@ -119,6 +119,8 @@ _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
 
 def _alias_has_non_denied_match(text: str, alias: str) -> bool:
     normalized_alias = normalize_text(alias)
+    normalized_prefixes = tuple(normalize_text(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES)
+    normalized_suffixes = tuple(normalize_text(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES)
     start = 0
     while True:
         index = text.find(normalized_alias, start)
@@ -126,8 +128,8 @@ def _alias_has_non_denied_match(text: str, alias: str) -> bool:
             return False
         before = text[max(0, index - 32):index].rstrip()
         after = text[index + len(normalized_alias):index + len(normalized_alias) + 24].lstrip()
-        prefix_denied = any(before.endswith(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES)
-        suffix_denied = any(after.startswith(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES)
+        prefix_denied = any(before.endswith(prefix) for prefix in normalized_prefixes)
+        suffix_denied = any(after.startswith(suffix) for suffix in normalized_suffixes)
         if not prefix_denied and not suffix_denied:
             return True
         start = index + max(1, len(normalized_alias))
