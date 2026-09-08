@@ -7,9 +7,7 @@ from .complaint_intake import normalize_text
 
 COMPLAINT_SEMANTICS_SCHEMA = "workspace-complaint-semantics/v1"
 
-# These catalogs translate what the customer says into diagnostic observations.
-# Causal language is kept in a separate catalog so it never becomes a fact merely
-# because the customer used a technical word.
+# User wording is evidence about experience, not proof of a technical cause.
 _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
     "perceived_unresponsiveness": (
         "may bi do", "may do", "bi do", "treo", "freeze", "freezes", "frozen",
@@ -36,46 +34,31 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
 }
 
 _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
-    "gpu_failure": (
-        "gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead",
-        "graphics card broken",
-    ),
-    "ram_failure": (
-        "ram hong", "ram bi loi", "ram broken", "bad ram",
-    ),
-    "storage_failure": (
-        "ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure",
-    ),
-    "power_supply_failure": (
-        "nguon hong", "psu hong", "power supply broken", "bad psu",
-    ),
-    "windows_update_regression": (
-        "windows update lam hong", "update lam hong", "windows update broke",
-        "update broke", "update caused",
-    ),
-    "malware_infection": (
-        "bi virus", "chac bi virus", "virus roi", "infected by virus", "malware infected",
-    ),
-    "overheating": (
-        "do qua nong", "vi qua nong", "overheating", "too hot",
-    ),
+    "gpu_failure": ("gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead", "graphics card broken"),
+    "ram_failure": ("ram hong", "ram bi loi", "ram broken", "bad ram"),
+    "storage_failure": ("ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure"),
+    "power_supply_failure": ("nguon hong", "psu hong", "power supply broken", "bad psu"),
+    "windows_update_regression": ("windows update lam hong", "update lam hong", "windows update broke", "update broke", "update caused"),
+    "malware_infection": ("bi virus", "chac bi virus", "virus roi", "infected by virus", "malware infected"),
+    "overheating": ("do qua nong", "vi qua nong", "overheating", "too hot"),
 }
 
+# Routing terms intentionally describe evidence channels/subsystems, not conclusions.
 _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
-    "perceived_unresponsiveness": ("system event", "application event", "freeze"),
-    "unexpected_restart": ("system event", "reboot", "restart", "shutdown", "bsod"),
-    "display_blackout": ("system event", "display"),
-    "blue_screen_observed": ("system event", "bsod", "reboot"),
-    "expected_network_access_unavailable": ("network", "internet"),
-    "application_unresponsive": ("application event", "app crash"),
+    "perceived_unresponsiveness": ("performance", "cpu", "memory", "system event", "application event", "freeze"),
+    "unexpected_restart": ("operating system", "system event", "reboot", "restart", "shutdown", "bsod"),
+    "display_blackout": ("operating system", "system event", "display"),
+    "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
+    "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
+    "application_unresponsive": ("performance", "application event", "app crash"),
 }
 
 _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "gpu_failure": ("display", "system event"),
-    "ram_failure": ("system event", "bsod"),
-    "storage_failure": ("system event",),
+    "ram_failure": ("memory", "system event", "bsod"),
+    "storage_failure": ("storage", "system event"),
     "power_supply_failure": ("system event", "shutdown", "reboot"),
-    "windows_update_regression": ("system event", "reboot"),
+    "windows_update_regression": ("operating system", "system event", "reboot"),
     "malware_infection": ("security event",),
     "overheating": ("system event", "shutdown"),
 }
