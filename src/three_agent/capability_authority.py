@@ -42,6 +42,7 @@ _EFFECTS = {
     "windows.group_policy.result": "read",
     "identity.session.snapshot": "read",
     "network.reachability.internal": "network_read",
+    "network.quality.internal": "network_read",
 }
 _UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
 _STALE_EFFECT_TOOLS = set(_EFFECTS) - TOOLS
