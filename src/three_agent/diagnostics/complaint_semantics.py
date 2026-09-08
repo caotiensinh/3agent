@@ -11,36 +11,65 @@ COMPLAINT_SEMANTICS_SCHEMA = "workspace-complaint-semantics/v1"
 _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
     "perceived_unresponsiveness": (
         "may bi do", "may do", "bi do", "treo", "freeze", "freezes", "frozen",
-        "not responding", "unresponsive", "フリーズ",
+        "not responding", "unresponsive", "dung hinh", "フリーズ", "固まる",
+        "パソコンが固まる",
     ),
     "unexpected_restart": (
-        "tu khoi dong lai", "tu reset", "khoi dong lai", "random restart",
-        "random reboot", "restart", "reboot", "勝手に再起動", "再起動",
+        "tu khoi dong lai", "tu reset", "khoi dong lai", "tu bat lai tu dau",
+        "bat lai tu dau", "random restart", "random reboot", "restart", "reboot",
+        "勝手に再起動", "再起動",
     ),
     "display_blackout": (
-        "man hinh den", "black screen", "screen black", "no display", "画面 真っ暗",
+        "man hinh den", "man hinh khong len", "black screen", "screen black",
+        "no display", "画面 真っ暗", "画面が真っ暗", "真っ暗",
     ),
     "blue_screen_observed": (
-        "man hinh xanh", "blue screen", "bsod", "ブルースクリーン",
+        "man hinh xanh", "xanh man hinh", "blue screen", "bsod", "ブルースクリーン",
     ),
     "expected_network_access_unavailable": (
-        "mat mang", "khong vao mang", "khong co mang", "no internet", "no network",
-        "internet broken", "ネット 繋がらない",
+        "mat mang", "khong vao mang", "khong vao duoc mang", "khong co mang",
+        "internet tu nhien bi mat", "no internet", "no network", "internet broken",
+        "ネット 繋がらない", "ネットが繋がらない",
     ),
     "application_unresponsive": (
-        "app bi do", "phan mem bi do", "app not responding", "application not responding",
-        "アプリ 応答なし",
+        "app bi do", "app bi treo", "phan mem bi do", "phan mem bi treo",
+        "excel bi do", "app not responding", "application not responding",
+        "chrome is not responding", "アプリ 応答なし", "アプリが応答しない",
     ),
 }
 
 _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
-    "gpu_failure": ("gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead", "graphics card broken"),
-    "ram_failure": ("ram hong", "ram bi loi", "ram broken", "bad ram"),
-    "storage_failure": ("ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure"),
-    "power_supply_failure": ("nguon hong", "psu hong", "power supply broken", "bad psu"),
-    "windows_update_regression": ("windows update lam hong", "update lam hong", "windows update broke", "update broke", "update caused"),
-    "malware_infection": ("bi virus", "chac bi virus", "virus roi", "infected by virus", "malware infected"),
-    "overheating": ("do qua nong", "vi qua nong", "overheating", "too hot"),
+    "gpu_failure": (
+        "gpu hong", "gpu bi loi", "card man hinh hong", "gpu broken", "gpu dead",
+        "gpu is dead", "graphics card broken", "graphics card is broken",
+        "gpuが壊れ", "gpuが故障", "gpu 故障",
+    ),
+    "ram_failure": (
+        "ram hong", "ram bi loi", "ram broken", "bad ram", "ram is broken",
+        "ramが壊れ", "ramが故障", "ram 故障",
+    ),
+    "storage_failure": (
+        "ssd hong", "o cung hong", "disk hong", "ssd broken", "disk failure",
+        "ssd is broken", "ssdが壊れ", "ssdが故障", "disk is failing",
+    ),
+    "power_supply_failure": (
+        "nguon hong", "psu hong", "power supply broken", "power supply is broken",
+        "bad psu", "電源ユニットが壊れ", "電源ユニットが故障", "psu is broken",
+    ),
+    "windows_update_regression": (
+        "windows update lam hong", "update lam hong", "windows update broke",
+        "update broke", "update caused", "windows update caused",
+        "windows updateで壊れ", "updateで壊れ",
+    ),
+    "malware_infection": (
+        "bi virus", "chac bi virus", "virus roi", "infected by virus",
+        "infected by malware", "malware infected", "malware infection",
+        "ウイルスに感染", "マルウェアに感染",
+    ),
+    "overheating": (
+        "do qua nong", "vi qua nong", "overheating", "too hot", "qua nong",
+        "熱暴走", "過熱", "オーバーヒート",
+    ),
 }
 
 # Routing terms intentionally describe evidence channels/subsystems, not conclusions.
