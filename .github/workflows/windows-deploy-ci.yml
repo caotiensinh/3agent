@@ -245,31 +245,46 @@ jobs:
         run: |
           $install = Join-Path $env:RUNNER_TEMP 'three-agent-install'
           $bin = Join-Path $env:RUNNER_TEMP 'three-agent-bin'
+          $updateCmd = Join-Path $bin '3agent-update.cmd'
+          $trustedUpdater = Join-Path $bin '3agent-update.ps1'
+          $sourceBootstrap = Join-Path $install 'scripts\bootstrap.ps1'
           & (Join-Path $bin '3agent.cmd') smoke
           if ($LASTEXITCODE -ne 0) { throw '3agent smoke failed' }
-          if (-not (Test-Path (Join-Path $bin '3agent-update.cmd'))) { throw '3agent-update.cmd missing' }
+          if (-not (Test-Path $updateCmd)) { throw '3agent-update.cmd missing' }
+          if (-not (Test-Path $trustedUpdater)) { throw 'trusted 3agent-update.ps1 missing' }
           if (-not (Test-Path (Join-Path $install 'config\local.json'))) { throw 'config/local.json missing' }
+          $launcher = Get-Content -Raw -Path $updateCmd
+          if ($launcher -match '(?i)https?://|\birm\b|Invoke-RestMethod|Invoke-WebRequest|\biwr\b|\biex\b|Invoke-Expression') { throw 'installed updater entrypoint contains remote execution primitives' }
+          if ($launcher -notmatch '(?i)-File\s+"[^"]*3agent-update\.ps1"') { throw 'installed updater does not invoke trusted local updater with -File' }
+          $trustedHash = (Get-FileHash -Algorithm SHA256 $trustedUpdater).Hash
+          $sourceHash = (Get-FileHash -Algorithm SHA256 $sourceBootstrap).Hash
+          if ($trustedHash -ne $sourceHash) { throw 'trusted updater payload is not identical to exact installed bootstrap' }
           $installed = (& git -C $install rev-parse HEAD | Select-Object -First 1).Trim()
           if ($installed -ne $env:EXPECTED_HEAD) { throw "Installed SHA $installed does not match $env:EXPECTED_HEAD" }
           $global:LASTEXITCODE = 0
-      - name: Re-run remotely and preserve configuration
+      - name: Re-run installed trusted updater and preserve configuration
         if: matrix.python == '3.12'
         shell: powershell
         env:
-          THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
-          THREE_AGENT_REPO_REF: ${{ steps.source.outputs.sha }}
-          THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
-          THREE_AGENT_BIN_DIR: ${{ runner.temp }}\three-agent-bin
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
           EXPECTED_HEAD: ${{ steps.source.outputs.sha }}
         run: |
-          $config = Join-Path $env:RUNNER_TEMP 'three-agent-install\config\local.json'
+          $install = Join-Path $env:RUNNER_TEMP 'three-agent-install'
+          $bin = Join-Path $env:RUNNER_TEMP 'three-agent-bin'
+          $config = Join-Path $install 'config\local.json'
+          $updateCmd = Join-Path $bin '3agent-update.cmd'
+          $trustedUpdater = Join-Path $bin '3agent-update.ps1'
           Add-Content -Path $config -Value ''
           $before = (Get-FileHash -Algorithm SHA256 $config).Hash
-          $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
-          $scriptText = Invoke-RestMethod -Uri $url
-          & ([ScriptBlock]::Create($scriptText))
-          if (-not $?) { throw 'Downloaded bootstrap failed during idempotency re-run' }
+          & $updateCmd
+          $updateExit = $LASTEXITCODE
+          if ($updateExit -ne 0) { throw "Installed trusted updater failed with exit code $updateExit" }
           $after = (Get-FileHash -Algorithm SHA256 $config).Hash
-          if ($before -ne $after) { throw 'Existing local config was modified during re-deploy' }
+          if ($before -ne $after) { throw 'Existing local config was modified during trusted updater re-deploy' }
+          $installed = (& git -C $install rev-parse HEAD | Select-Object -First 1).Trim()
+          if ($installed -ne $env:EXPECTED_HEAD) { throw "Trusted updater installed SHA $installed does not match $env:EXPECTED_HEAD" }
+          $sourceBootstrap = Join-Path $install 'scripts\bootstrap.ps1'
+          $trustedHash = (Get-FileHash -Algorithm SHA256 $trustedUpdater).Hash
+          $sourceHash = (Get-FileHash -Algorithm SHA256 $sourceBootstrap).Hash
+          if ($trustedHash -ne $sourceHash) { throw 'trusted updater payload was not refreshed from exact installed checkout' }
           $global:LASTEXITCODE = 0

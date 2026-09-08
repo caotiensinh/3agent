@@ -27,6 +27,19 @@ Assert-True ($content.Contains("'fetch','--prune','origin',`$RepoRef")) 'GitHub 
 Assert-True ($content.Contains("'-m','pip','install','-e',`$InstallDir")) 'project install contract missing'
 Assert-True ($content.Contains("@('smoke')")) 'post-deploy smoke contract missing'
 Assert-True ($content.Contains('3agent-update.cmd')) 'update launcher missing'
+Assert-True ($content.Contains('3agent-update.ps1')) 'trusted local updater payload missing'
+Assert-True ($content.Contains('$trustedBootstrapSource = Join-Path $InstallDir')) 'trusted updater must originate from installed checkout'
+Assert-True ($content.Contains('Copy-Item -Force $trustedBootstrapSource $trustedUpdater')) 'trusted updater copy contract missing'
+Assert-True ($content.Contains('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(Escape-CmdValue $trustedUpdater)"')) 'update launcher must execute the trusted local updater with -File'
+
+$updateMatch = [regex]::Match($content, '(?s)\$updateCmd\s*=\s*@"\r?\n(?<body>.*?)\r?\n"@')
+Assert-True ($updateMatch.Success) 'unable to locate generated 3agent-update.cmd body'
+$updateBody = $updateMatch.Groups['body'].Value
+Assert-True ($updateBody.Contains('THREE_AGENT_REPO_REF=')) 'installed updater must preserve configured repository ref'
+Assert-True ($updateBody.Contains('3agent-update.ps1')) 'installed updater must invoke trusted local updater payload'
+Assert-True ($updateBody.Contains('-File')) 'installed updater must use PowerShell -File execution'
+Assert-True (-not [regex]::IsMatch($updateBody, '(?i)https?://|\birm\b|Invoke-RestMethod|Invoke-WebRequest|\biwr\b|\biex\b|Invoke-Expression')) 'installed updater entrypoint must not download or execute remote mutable code'
+Assert-True (-not $content.Contains('raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.ps1')) 'mutable main bootstrap URL must not be embedded in updater code'
 Assert-True ($content.Contains('Python.Python.3.12')) 'Python WinGet fallback missing'
 Assert-True ($content.Contains('Git.Git')) 'Git WinGet fallback missing'
 
