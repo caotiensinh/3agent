@@ -21,6 +21,7 @@ PROCESS_TOOL_METADATA = (
             "high cpu process",
             "high memory process",
             "process list",
+            "process is using high cpu",
             "computer slow",
             "may cham",
             "process nao an cpu",
