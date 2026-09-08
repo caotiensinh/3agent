@@ -46,6 +46,10 @@ _EFFECTS = {
     "process.top.snapshot": "read",
     "hardware.usb.snapshot": "read",
     "camera.devices.snapshot": "read",
+    "storage.io.snapshot": "read",
+    "windows.print.driver.snapshot": "read",
+    "windows.boot.snapshot": "read",
+    "windows.update.history": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
 }
@@ -81,6 +85,10 @@ _EXACT_RESOURCE_POLICIES = {
     "process.top.snapshot": ("process_inventory", "local:processes:top"),
     "hardware.usb.snapshot": ("usb_devices", "local:usb:devices"),
     "camera.devices.snapshot": ("camera_devices", "local:camera:devices"),
+    "storage.io.snapshot": ("storage_io", "local:storage:io"),
+    "windows.print.driver.snapshot": ("printer_drivers", "local:printer:drivers"),
+    "windows.boot.snapshot": ("boot_state", "local:windows:boot"),
+    "windows.update.history": ("windows_update_history", "local:windows:update-history"),
 }
 _GROUP_POLICY_REFS = frozenset(
     {
