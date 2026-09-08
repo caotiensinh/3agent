@@ -111,6 +111,33 @@ jobs:
           path: unittest.log
           if-no-files-found: warn
           retention-days: 14
+      - name: Runtime P0 benchmark acceptance
+        run: |
+          python scripts/run_runtime_p0_benchmark.py \
+            --iterations 20 \
+            --output "$RUNNER_TEMP/runtime-p0-benchmark.json"
+          python - "$RUNNER_TEMP/runtime-p0-benchmark.json" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as handle:
+              receipt = json.load(handle)
+          assert receipt.get("accepted") is True, "runtime P0 benchmark did not pass"
+          assert len(receipt.get("metrics", {})) == 15, "runtime P0 benchmark dimension count mismatch"
+          print("runtime_p0_benchmark=PASS")
+          print(f"receipt_fingerprint={receipt['receipt_fingerprint']}")
+          print(f"task_context_fingerprint={receipt['task_context_fingerprint']}")
+          print(f"plan_fingerprint={receipt['plan_fingerprint']}")
+          PY
+      - name: Upload runtime P0 benchmark receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-p0-benchmark-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/runtime-p0-benchmark.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Enterprise verification EV-01 through EV-10
         env:
           EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
