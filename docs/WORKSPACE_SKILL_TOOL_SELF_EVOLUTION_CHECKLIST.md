@@ -2,7 +2,7 @@
 
 Status: active implementation checklist, reconciled against live `main` on 2026-09-08.
 
-Current verified `main`: `0a4ff6201929619484480cf862e9b837e8213e2d`
+Current verified `main`: `43a26e0b833e313ceef361d8d00640a408f142f5`
 
 Architecture: `docs/WORKSPACE_SKILL_TOOL_SELF_EVOLUTION_ARCHITECTURE.md`
 
@@ -22,7 +22,8 @@ Merged lifecycle milestones used for this reconciliation:
 - PR #390 — bounded recommendation-only maintenance advisor over Phase 4H/4I;
 - PR #391 — self-evolution checklist reconciliation against merged canonical state;
 - PR #392 — bounded metadata-only approved skill catalog search/filter;
-- PR #393 — metadata-only list/view/selected catalog telemetry on the existing activity ledger.
+- PR #393 — metadata-only list/view/selected catalog telemetry on the existing activity ledger;
+- PR #396 — deterministic recommendation-only stale active-skill review policy.
 
 Important interpretation rules:
 
@@ -140,7 +141,7 @@ Required convergence work:
 - [~] **M-05** Track contradictions and last verified date. Contradiction contracts exist; last-verified maintenance projection is not complete.
 - [ ] **M-06** Add vendor/version applicability statistics.
 - [~] **M-07** Generate `candidate_for_revision`, `candidate_for_retirement`, and `quarantined` recommendations. Revision/retirement review recommendations exist via PR #390; quarantine recommendation remains open.
-- [ ] **M-08** Add stale-skill review policy.
+- [x] **M-08** Add stale-skill review policy. PR #396 adds a deterministic exact-version policy using authenticated active learning state plus canonical reuse receipts, current-tenure activation/rollback freshness, explicit UTC `as_of`, bounded fail-closed scanning, and recommendation-only human/domain review.
 - [x] **M-09** Add bounded autonomous maintenance scheduler/advisor; recommendations only unless promotion authority is explicitly present. PR #390 adds bounded `run_once()` recommendation-only orchestration and no mutation surface.
 
 ## H. Generic Tool / Capability Descriptor
@@ -261,7 +262,7 @@ These should be implemented as small capabilities, not one giant diagnostic work
 - [ ] **C-09** Unknown external tool fail-closed tests.
 - [ ] **C-10** MCP schema drift/quarantine tests.
 - [ ] **C-11** Tool-result bounding/error-redaction tests.
-- [~] **C-12** Observation/evidence lineage tests. Adaptive reuse/outcome lineage is tested; generic tool Observation normalization remains open.
+- [~] **C-12** Observation/evidence lineage tests. Adaptive reuse/outcome lineage is tested; exact stale-skill freshness/rollback tenure behavior is also covered, while generic tool Observation normalization remains open.
 - [~] **C-13** Python 3.11 and 3.12 full regression for the final integrated milestone. Current Skill lifecycle slices pass both versions, but the overall Tool lifecycle is not final.
 - [~] **C-14** Installer/deployment regression for the final integrated milestone. Current slices pass installer and portable deployment CI; final Tool lifecycle remains open.
 - [~] **C-15** Windows/Linux platform-specific smoke for the final integrated milestone where a runner is available. Current slices pass Windows runtime smoke and Ubuntu 22.04/24.04 portable deployment; final Tool lifecycle remains open.
@@ -274,14 +275,14 @@ The core chain is now implemented and merged:
 
 `verified evidence -> candidate -> validation -> human/domain approval -> production materialization -> runtime retrieval/reuse -> exact reuse receipt -> authoritative effectiveness signal -> bounded maintenance recommendation -> reviewed revision -> deterministic Phase 4K evaluation -> authenticated activation -> immutable production supersession -> operator rollback mirror`
 
-Progressive disclosure is also converged through approved catalog list/view, reviewed references, bounded metadata-only search, and metadata-only list/view/selected telemetry.
+Progressive disclosure is also converged through approved catalog list/view, reviewed references, bounded metadata-only search, and metadata-only list/view/selected telemetry. Recommendation-only stale active-skill review is now bound to authenticated exact-version state and current-tenure reuse freshness.
 
 This does **not** mean self-evolution is finished. Remaining Skill-side gaps are deliberately narrower:
 
 1. **E-03 / E-05** — contradiction-triggered and vendor/version-drift maintenance inputs;
 2. **E-07 / P-01 / P-03** — held-out benchmark and pre-publication regression comparison;
 3. **E-08 / E-09** — safer/narrower preference and explicit self-reinforcement resistance;
-4. **M-03..M-08** — rates, resource correlation, last-verified/vendor applicability, quarantine and stale-skill policy.
+4. **M-03..M-07** — normalized rates, resource correlation, last-verified/vendor applicability statistics, and quarantine recommendations.
 
 ### Tool lifecycle — next major convergence area
 
