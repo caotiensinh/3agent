@@ -179,16 +179,47 @@ class RuntimeV3DispatchContractTests(unittest.TestCase):
             files = list(Path(tmp).glob("*.json"))
             self.assertEqual(len(files), 1)
             payload = json.loads(files[0].read_text(encoding="utf-8"))
+            self.assertEqual(
+                set(payload),
+                {"schema_version", "payload_sha256", "manifest"},
+            )
+            manifest = payload["manifest"]
+            self.assertEqual(
+                set(manifest),
+                {
+                    "schema_version",
+                    "runtime_ref",
+                    "provider_id",
+                    "package_ref",
+                    "descriptor",
+                    "descriptor_fingerprint",
+                },
+            )
+            descriptor_payload = manifest["descriptor"]
+            self.assertEqual(
+                set(descriptor_payload),
+                {
+                    "schema_version",
+                    "task_id",
+                    "runtime_ref",
+                    "compiled_plan_fingerprint",
+                    "invocation_bundle_fingerprint",
+                    "authority_fingerprint",
+                    "source_binding_bundle_fingerprint",
+                    "query_bundle_fingerprint",
+                },
+            )
+            self.assertNotIn("compiled_plan", descriptor_payload)
+            self.assertNotIn("invocation_bundle", descriptor_payload)
+            self.assertNotIn("source_binding_bundle", descriptor_payload)
+            self.assertNotIn("query_bundle", descriptor_payload)
+            self.assertEqual(manifest["package_ref"], "package:reviewed-001")
             encoded = repr(payload)
-            self.assertIn("package:reviewed-001", encoded)
             for forbidden in (
                 "SELECT * FROM",
                 "diff --git",
                 "/srv/workspace/private",
                 "secret-value",
-                "invocation_bundle",
-                "source_binding_bundle",
-                "compiled_plan\": {",
             ):
                 self.assertNotIn(forbidden, encoded)
 
