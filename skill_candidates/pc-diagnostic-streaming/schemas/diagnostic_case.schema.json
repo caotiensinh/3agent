@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PC Diagnostic Case",
+  "type": "object",
+  "required": [
+    "symptom",
+    "platform",
+    "hypotheses",
+    "evidence"
+  ],
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "windows",
+        "linux",
+        "unknown"
+      ]
+    },
+    "symptom": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "first_seen": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frequency": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote_reachable_during_incident": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "audio_behavior": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input_behavior": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "recent_changes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cause",
+          "confidence",
+          "evidence_for",
+          "evidence_against"
+        ],
+        "properties": {
+          "cause": {
+            "type": "string"
+          },
+          "confidence": {
+            "enum": [
+              "confirmed",
+              "strong",
+              "probable",
+              "possible",
+              "weak",
+              "unlikely",
+              "excluded"
+            ]
+          },
+          "evidence_for": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_against": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "root_cause": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "state": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "enum": [
+            "observe",
+            "correlate",
+            "update",
+            "discriminate",
+            "act",
+            "verify",
+            "closed"
+          ]
+        },
+        "next_action": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "stop_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "raw": {
+            "type": [
+              "string",
+              "object",
+              "array",
+              "number",
+              "boolean",
+              "null"
+            ]
+          },
+          "normalized": {
+            "type": [
+              "string",
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "subsystem": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reliability": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "unknown"
+            ]
+          },
+          "ambiguity_class": {
+            "enum": [
+              "A0",
+              "A1",
+              "A2",
+              "A3",
+              "unknown"
+            ]
+          },
+          "canonical_concepts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "interpretation_candidates": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "interpretation_confidence": {
+            "enum": [
+              "high",
+              "medium",
+              "low",
+              "unknown"
+            ]
+          },
+          "customer_diagnosis_claim": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requires_disambiguation": {
+            "type": "boolean"
+          },
+          "disambiguator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "asked",
+              "answered",
+              "skipped",
+              "cancelled"
+            ]
+          },
+          "answer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "separates_hypotheses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "contradictions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "observation_a": {
+            "type": "string"
+          },
+          "observation_b": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "reconciled",
+              "unresolved"
+            ]
+          },
+          "reconciliation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_discriminator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
