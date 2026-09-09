@@ -46,6 +46,13 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "windows.update.history",
     "vpn.status.snapshot",
 }
+DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS = {
+    "backup.local_state.snapshot",
+    "cloud_files.client_state.snapshot",
+    "identity.account_state.snapshot",
+    "mail_exchange.client_state.snapshot",
+    "voip.client_state.snapshot",
+}
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
     "network.quality.internal",
@@ -68,6 +75,7 @@ TOOLS = {
     "windows.printer.queue",
     *OFFICE_IT_NETWORK_TOOLS,
     *DIAGNOSTIC_LOCAL_READ_TOOLS,
+    *DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
     *DIAGNOSTIC_INTERNAL_NETWORK_TOOLS,
 }
 VALIDATORS = {
