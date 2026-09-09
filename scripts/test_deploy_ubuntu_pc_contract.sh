@@ -42,6 +42,7 @@ grep -Fq 'scripts/update_workspace_ubuntu.sh' "$ENTRYPOINT" || fail "trusted upd
 grep -Fq '3agent-update.sh' "$ENTRYPOINT" || fail "trusted local updater payload path missing"
 # shellcheck disable=SC2016
 grep -Fq 'exec bash $(printf' "$ENTRYPOINT" || fail "installed updater must execute local trusted payload"
+# shellcheck disable=SC2016
 grep -Fq 'cmp -s "$source" "$trusted"' "$ENTRYPOINT" || fail "trusted updater identity check missing"
 
 if grep -Eq 'apt(-get)? .*nvidia|ubuntu-drivers|modprobe|update-grub|grub-install|reboot|shutdown|rm -rf /' "$ENTRYPOINT"; then
