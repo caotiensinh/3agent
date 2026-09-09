@@ -78,14 +78,14 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
         self.assertEqual(mapping["vpn.status"], ("vpn.status.snapshot",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_forty_two_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_fifty_nine_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 142)
+        self.assertEqual(report.fully_promotable_routes, 159)
         self.assertEqual(report.partially_covered_routes, 161)
         self.assertEqual(report.uncovered_routes, 347)
         self.assertEqual(
@@ -156,7 +156,3 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
             unresolved_capability_backlog((("x", 1),), limit=0)
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -20,6 +20,9 @@ from .diagnostics.backup_status_tools import BACKUP_STATUS_TOOL_ID, read_backup_
 from .diagnostics.camera_device_tools import CAMERA_DEVICES_TOOL_ID, read_camera_devices
 from .diagnostics.cloud_files_tools import CLOUD_FILES_STATUS_TOOL_ID, read_cloud_files_client_state
 from .diagnostics.common_tools import COMMON_TOOL_BY_ID, execute_common_read
+from .diagnostics.display_tools import DISPLAY_TOOL_ID, read_display_snapshot
+from .diagnostics.dock_tools import DOCK_TOOL_ID, read_dock_snapshot
+from .diagnostics.driver_inventory_tools import DRIVER_INVENTORY_TOOL_ID, read_driver_inventory
 from .diagnostics.identity_account_state_tools import (
     IDENTITY_ACCOUNT_STATE_TOOL_ID,
     read_identity_account_state,
@@ -87,6 +90,9 @@ _TIMEOUT_ONLY_TOOLS = frozenset(
         MEETING_CLIENT_TOOL_ID,
         PROCESS_TOP_TOOL_ID,
         USB_DEVICES_TOOL_ID,
+        DISPLAY_TOOL_ID,
+        DOCK_TOOL_ID,
+        DRIVER_INVENTORY_TOOL_ID,
         CAMERA_DEVICES_TOOL_ID,
         STORAGE_IO_TOOL_ID,
         PRINT_DRIVER_TOOL_ID,
@@ -450,6 +456,12 @@ def _invoke_reviewed_handler(
         return read_top_processes(authority=authority, **kwargs)
     if tool_id == USB_DEVICES_TOOL_ID:
         return read_usb_devices(authority=authority, **kwargs)
+    if tool_id == DISPLAY_TOOL_ID:
+        return read_display_snapshot(authority=authority, **kwargs)
+    if tool_id == DOCK_TOOL_ID:
+        return read_dock_snapshot(authority=authority, **kwargs)
+    if tool_id == DRIVER_INVENTORY_TOOL_ID:
+        return read_driver_inventory(authority=authority, **kwargs)
     if tool_id == CAMERA_DEVICES_TOOL_ID:
         return read_camera_devices(authority=authority, **kwargs)
     if tool_id == STORAGE_IO_TOOL_ID:
