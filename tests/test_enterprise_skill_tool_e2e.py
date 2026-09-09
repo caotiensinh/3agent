@@ -82,6 +82,40 @@ class EnterpriseSkillToolE2ETests(unittest.TestCase):
         )
         self.assertNotIn("scope.same_area", when_single)
 
+    def test_explicit_scope_in_initial_complaint_prevents_reasking(self) -> None:
+        scenarios = (
+            ("Chi may toi khong vao duoc mang", "one_user_or_device", {"scope.others_affected": False}),
+            (
+                "Mang cham ca phong ke toan",
+                "room_or_area",
+                {"scope.others_affected": True, "scope.same_area": True},
+            ),
+            (
+                "Ca van phong mat mang",
+                "site",
+                {"scope.others_affected": True, "scope.site_affected": True},
+            ),
+            (
+                "Hai chi nhanh deu mat VPN",
+                "multiple_sites",
+                {"scope.others_affected": True, "scope.multiple_sites": True},
+            ),
+        )
+        for text, expected_scope, expected_facts in scenarios:
+            with self.subTest(text=text):
+                session = build_complaint_session(text)
+                for key, value in expected_facts.items():
+                    self.assertIs(session.facts.get(key), value, (text, key, session.facts))
+                self.assertEqual(classify_scope(session.facts).scope, expected_scope)
+                question_ids = {item.id for item in next_best_questions(session, max_questions=3)}
+                self.assertNotIn("scope.others_affected", question_ids)
+                if expected_scope in {"room_or_area", "site", "multiple_sites"}:
+                    self.assertNotIn("scope.same_area", question_ids)
+
+    def test_diacritic_stripping_does_not_turn_neutral_ip_statement_into_security_alert(self) -> None:
+        domains = set(self._domains("IP la 192.168.11.10"))
+        self.assertNotIn("security", domains)
+
     def test_blast_radius_classification_distinguishes_single_area_site_and_multisite(self) -> None:
         cases = (
             ({"scope.others_affected": False}, "one_user_or_device"),
