@@ -47,7 +47,16 @@ def _ticket(task_id: str, *, node_id: str = "lane-a", sequence: int = 1) -> Disp
     )
     ticket_id = "dispatch:" + _identity_digest(provisional._identity_dict()).split(":", 1)[1][:24]
     return DispatchTicket(
-        **{**provisional.__dict__, "ticket_id": ticket_id}
+        ticket_id=ticket_id,
+        task_id=provisional.task_id,
+        plan_fingerprint=provisional.plan_fingerprint,
+        node_id=provisional.node_id,
+        node_fingerprint=provisional.node_fingerprint,
+        authority_fingerprint=provisional.authority_fingerprint,
+        dependency_observation_fingerprints=provisional.dependency_observation_fingerprints,
+        dispatch_sequence=provisional.dispatch_sequence,
+        execution_level=provisional.execution_level,
+        schema_version=provisional.schema_version,
     ).validate()
 
 
@@ -71,7 +80,21 @@ def _observation(ticket: DispatchTicket, *, status: str = "SUCCEEDED") -> Execut
     )
     observation_id = "observation:" + _identity_digest(provisional._identity_dict()).split(":", 1)[1][:24]
     return ExecutionObservation(
-        **{**provisional.__dict__, "observation_id": observation_id}
+        observation_id=observation_id,
+        task_id=provisional.task_id,
+        task_context_fingerprint=provisional.task_context_fingerprint,
+        plan_fingerprint=provisional.plan_fingerprint,
+        node_id=provisional.node_id,
+        node_fingerprint=provisional.node_fingerprint,
+        authority_fingerprint=provisional.authority_fingerprint,
+        status=provisional.status,
+        started_at=provisional.started_at,
+        finished_at=provisional.finished_at,
+        normalized_output_json=provisional.normalized_output_json,
+        error_class=provisional.error_class,
+        evidence_bindings=provisional.evidence_bindings,
+        cost=provisional.cost,
+        schema_version=provisional.schema_version,
     ).validate()
 
 
