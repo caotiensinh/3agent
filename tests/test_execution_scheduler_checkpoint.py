@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from three_agent.capability_authority import TaskCapabilityAuthority
@@ -188,6 +189,7 @@ def build_runtime(
         actor_id="ACTOR-CHECKPOINT-1",
         purpose="persistent runtime checkpoint",
         project_id="PROJECT-CHECKPOINT-1",
+        created_at=datetime(2026, 9, 9, tzinfo=timezone.utc),
     )
     authority = TaskCapabilityAuthority.from_contract(contract)
     lane_budget = TaskResourceBudget(
