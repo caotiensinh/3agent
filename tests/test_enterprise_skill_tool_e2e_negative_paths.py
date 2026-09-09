@@ -227,14 +227,15 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertNotIn("router_failure", semantics.canonical_symptoms)
         self.assertNotIn("switch_failure", semantics.canonical_symptoms)
         result = select_pc_diagnostic_tool_metadata(text, platform_name="Windows", max_tools=4)
-        self.assertIn("network.ipconfig.snapshot", result.selected_ids())
+        self.assertIn("network.quality.internal", result.selected_ids())
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
 
-    def test_onvif_success_but_rtsp_failure_remains_remote_camera_network_problem(self) -> None:
+    def test_onvif_success_but_rtsp_failure_fails_closed_without_local_webcam_fallback(self) -> None:
         text = "ONVIF nhan camera binh thuong nhung RTSP khong xem duoc"
         result = select_pc_diagnostic_tool_metadata(text, platform_name="Windows", max_tools=4)
         self.assertNotIn("camera.devices.snapshot", result.selected_ids())
-        self.assertIn("network.reachability.internal", result.selected_ids())
+        self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
+        self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
         rejected = {(item.tool_id, item.reason_code) for item in result.rejected}
         self.assertIn(("camera.devices.snapshot", "CROSS_DOMAIN_REMOTE_CAMERA"), rejected)
 
