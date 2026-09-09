@@ -39,6 +39,13 @@ class SecureMemoryStoreTests(unittest.TestCase):
         self.assertEqual(len(store.query("n", limit=50)), 2)
         self.assertEqual(len(store.query("n", max_bytes=1)), 0)
 
+    def test_managed_connection_closes_sqlite_handle(self):
+        store = SecureMemoryStore(self.db)
+        with store._connection() as conn:
+            self.assertEqual(conn.execute("SELECT 1").fetchone()[0], 1)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
     def test_ttl_expiry_and_purge_produces_receipt(self):
         store = SecureMemoryStore(self.db)
         store.put("n", "short", "value", actor="agent", approved_by="operator", ttl_seconds=1)
