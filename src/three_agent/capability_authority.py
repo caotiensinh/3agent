@@ -281,7 +281,7 @@ class CapabilityDecision:
             "effect": self.effect,
             "allowed": self.allowed,
             "reason_code": self.reason_code,
-            "authority_fingerprint": self.fingerprint,
+            "authority_fingerprint": self.authority_fingerprint,
         }
 
 
