@@ -16,9 +16,16 @@ from .capability_authority import (
 )
 from .capability_registry_snapshot import snapshot_micro_tool_registry
 from .diagnostics.audio_tools import AUDIO_DEVICES_TOOL_ID, read_audio_devices
+from .diagnostics.backup_status_tools import BACKUP_STATUS_TOOL_ID, read_backup_local_state
 from .diagnostics.camera_device_tools import CAMERA_DEVICES_TOOL_ID, read_camera_devices
+from .diagnostics.cloud_files_tools import CLOUD_FILES_STATUS_TOOL_ID, read_cloud_files_client_state
 from .diagnostics.common_tools import COMMON_TOOL_BY_ID, execute_common_read
+from .diagnostics.identity_account_state_tools import (
+    IDENTITY_ACCOUNT_STATE_TOOL_ID,
+    read_identity_account_state,
+)
 from .diagnostics.identity_tools import IDENTITY_SESSION_TOOL_ID, read_identity_session
+from .diagnostics.mail_exchange_tools import MAIL_EXCHANGE_STATUS_TOOL_ID, read_mail_exchange_client_state
 from .diagnostics.meeting_client_tools import MEETING_CLIENT_TOOL_ID, read_running_meeting_clients
 from .diagnostics.network_tools import (
     NETWORK_QUALITY_TOOL_ID,
@@ -31,6 +38,7 @@ from .diagnostics.process_tools import PROCESS_TOP_TOOL_ID, read_top_processes
 from .diagnostics.runtime_registry import runtime_micro_tool_registry
 from .diagnostics.storage_io_tools import STORAGE_IO_TOOL_ID, read_storage_io
 from .diagnostics.usb_tools import USB_DEVICES_TOOL_ID, read_usb_devices
+from .diagnostics.voip_tools import VOIP_CLIENT_STATE_TOOL_ID, read_voip_client_state
 from .diagnostics.vpn_tools import VPN_STATUS_TOOL_ID, read_vpn_status
 from .diagnostics.windows_boot_tools import WINDOWS_BOOT_TOOL_ID, read_windows_boot
 from .diagnostics.windows_policy_tools import GROUP_POLICY_TOOL_ID, read_group_policy_result
@@ -63,6 +71,15 @@ _FIXED_PORT_PROBES = frozenset(
     }
 )
 _COMMON_TOOL_IDS = frozenset(COMMON_TOOL_BY_ID)
+_WAVE1_REVIEWED_HANDLER_IDS = frozenset(
+    {
+        BACKUP_STATUS_TOOL_ID,
+        CLOUD_FILES_STATUS_TOOL_ID,
+        IDENTITY_ACCOUNT_STATE_TOOL_ID,
+        MAIL_EXCHANGE_STATUS_TOOL_ID,
+        VOIP_CLIENT_STATE_TOOL_ID,
+    }
+)
 _TIMEOUT_ONLY_TOOLS = frozenset(
     {
         IDENTITY_SESSION_TOOL_ID,
@@ -245,13 +262,17 @@ def reviewed_runtime_handler_ids() -> tuple[str, ...]:
     return tuple(sorted(ids))
 
 
+def _is_reviewed_runtime_handler(tool_id: str) -> bool:
+    return tool_id in reviewed_runtime_handler_ids() or tool_id in _WAVE1_REVIEWED_HANDLER_IDS
+
+
 def current_runtime_invocation_identity(tool_id: str) -> tuple[str, str]:
     """Return current immutable snapshot/descriptor fingerprints for one reviewed runtime tool."""
     registry = runtime_micro_tool_registry()
     tool = registry.get(_require_tool_id(tool_id))
     if not tool.implemented:
         raise CapabilityInvocationAdapterError("TOOL_NOT_IMPLEMENTED")
-    if tool.id not in reviewed_runtime_handler_ids():
+    if not _is_reviewed_runtime_handler(tool.id):
         raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
     snapshot = snapshot_micro_tool_registry(registry)
     descriptor = next((item for item in snapshot.descriptors if item.id == tool.id), None)
@@ -289,7 +310,7 @@ def _allowed_parameter_names(tool_id: str) -> frozenset[str]:
         return frozenset({"host", "count", "timeout_ms"})
     if tool_id == GROUP_POLICY_TOOL_ID:
         return frozenset({"scope", "timeout"})
-    if tool_id in _TIMEOUT_ONLY_TOOLS:
+    if tool_id in _TIMEOUT_ONLY_TOOLS or tool_id in _WAVE1_REVIEWED_HANDLER_IDS:
         return frozenset({"timeout"})
     raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
@@ -441,6 +462,16 @@ def _invoke_reviewed_handler(
         return read_windows_update_history(authority=authority, **kwargs)
     if tool_id == VPN_STATUS_TOOL_ID:
         return read_vpn_status(authority=authority, **kwargs)
+    if tool_id == CLOUD_FILES_STATUS_TOOL_ID:
+        return read_cloud_files_client_state(authority=authority, **kwargs)
+    if tool_id == MAIL_EXCHANGE_STATUS_TOOL_ID:
+        return read_mail_exchange_client_state(authority=authority, **kwargs)
+    if tool_id == VOIP_CLIENT_STATE_TOOL_ID:
+        return read_voip_client_state(authority=authority, **kwargs)
+    if tool_id == IDENTITY_ACCOUNT_STATE_TOOL_ID:
+        return read_identity_account_state(authority=authority, **kwargs)
+    if tool_id == BACKUP_STATUS_TOOL_ID:
+        return read_backup_local_state(authority=authority, **kwargs)
     raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
 
@@ -468,7 +499,7 @@ def invoke_runtime_tool(
         raise CapabilityInvocationAdapterError("UNKNOWN_RUNTIME_TOOL_ID") from exc
     if not tool.implemented:
         raise CapabilityInvocationAdapterError("TOOL_NOT_IMPLEMENTED")
-    if tool.id not in reviewed_runtime_handler_ids():
+    if not _is_reviewed_runtime_handler(tool.id):
         raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
     snapshot = snapshot_micro_tool_registry(registry)
