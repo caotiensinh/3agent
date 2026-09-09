@@ -187,7 +187,7 @@ jobs:
             echo "Installed updater contains a remote-fetch command" >&2
             exit 1
           fi
-      - name: Re-run installed trusted Ubuntu updater and preserve configuration
+      - name: Stress installed trusted Ubuntu updater 10 times and preserve invariants
         shell: bash
         run: |
           install_dir="${{ runner.temp }}/three-agent-install"
@@ -196,26 +196,49 @@ jobs:
           config_path="$install_dir/config/local.json"
           launcher="$bin_dir/3agent-update"
           trusted="$bin_dir/3agent-update.sh"
-          before="$(sha256sum "$config_path" | awk '{print $1}')"
+          expected="${{ steps.deploy_ref.outputs.expected_head }}"
 
-          "$launcher"
+          for iteration in {1..10}; do
+            echo "E2E trusted updater iteration ${iteration}/10"
+            before_config="$(sha256sum "$config_path" | awk '{print $1}')"
+            if [[ -f "$state_dir/active-releases.log" ]]; then
+              before_activation_count="$(wc -l <"$state_dir/active-releases.log")"
+            else
+              before_activation_count=0
+            fi
 
-          after="$(sha256sum "$config_path" | awk '{print $1}')"
-          test "$before" = "$after"
-          test "$(tail -n 1 "$state_dir/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
-          "$bin_dir/3agent" smoke
-          test -f "$trusted"
-          exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
-          test "$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
-          printf '%s\n' "$exec_lines" | grep -Fq "$trusted"
-          if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash'; then
-            echo "Trusted updater re-run restored a remote execution primitive" >&2
-            exit 1
-          fi
-          if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
-            echo "Trusted updater re-run restored a remote-fetch command" >&2
-            exit 1
-          fi
+            "$launcher"
+
+            after_config="$(sha256sum "$config_path" | awk '{print $1}')"
+            test "$before_config" = "$after_config"
+            test -f "$state_dir/active-releases.log"
+            active_sha="$(tail -n 1 "$state_dir/active-releases.log" | awk -F '\t' '{print $2}')"
+            active_release="$(tail -n 1 "$state_dir/active-releases.log" | awk -F '\t' '{print $3}')"
+            test "$active_sha" = "$expected"
+            test -d "$active_release"
+            cmp -s "$active_release/scripts/update_workspace_ubuntu.sh" "$trusted"
+            "$bin_dir/3agent" smoke
+
+            exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+            test "$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+            printf '%s\n' "$exec_lines" | grep -Fq "$trusted"
+            if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash'; then
+              echo "Iteration ${iteration}: trusted updater restored a remote execution primitive" >&2
+              exit 1
+            fi
+            if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+              echo "Iteration ${iteration}: trusted updater restored a remote-fetch command" >&2
+              exit 1
+            fi
+
+            after_activation_count="$(wc -l <"$state_dir/active-releases.log")"
+            if [[ "$iteration" -gt 1 ]]; then
+              test "$after_activation_count" -eq "$before_activation_count" || {
+                echo "Iteration ${iteration}: same-SHA update unexpectedly appended activation history" >&2
+                exit 1
+              }
+            fi
+          done
       - name: Re-run bootstrap idempotently and preserve config
         shell: bash
         env:
