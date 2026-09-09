@@ -4,9 +4,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'install.sh'
       - 'scripts/bootstrap.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
+      - 'scripts/test_one_command_entrypoints_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
       - 'scripts/update_workspace_ubuntu.sh'
@@ -41,9 +43,11 @@ on:
       - 'docs/PORTABLE_DEPLOY.md'
   pull_request:
     paths:
+      - 'install.sh'
       - 'scripts/bootstrap.sh'
       - 'scripts/deploy_ubuntu_pc.sh'
       - 'scripts/test_deploy_ubuntu_pc_contract.sh'
+      - 'scripts/test_one_command_entrypoints_contract.sh'
       - 'scripts/update_code_safe.sh'
       - 'scripts/test_update_code_safe_contract.sh'
       - 'scripts/update_workspace_ubuntu.sh'
@@ -92,12 +96,15 @@ jobs:
           sudo apt-get install -y shellcheck
       - name: Deployment entrypoint contracts
         run: |
+          bash scripts/test_one_command_entrypoints_contract.sh
           bash scripts/test_deploy_ubuntu_pc_contract.sh
           bash scripts/test_update_code_safe_contract.sh
           bash scripts/test_update_workspace_ubuntu_contract.sh
       - name: ShellCheck
         run: |
           shellcheck \
+            install.sh \
+            scripts/test_one_command_entrypoints_contract.sh \
             scripts/bootstrap.sh \
             scripts/deploy_ubuntu_pc.sh \
             scripts/test_deploy_ubuntu_pc_contract.sh \
@@ -136,8 +143,8 @@ jobs:
       - name: One-command Ubuntu PC deployment from GitHub
         shell: bash
         env:
-          DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/deploy_ubuntu_pc.sh
-          THREE_AGENT_BOOTSTRAP_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/bootstrap.sh
+          DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/install.sh
+          WORKSPACE_SOURCE_REF: ${{ steps.deploy_ref.outputs.expected_head }}
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
@@ -239,11 +246,11 @@ jobs:
               }
             fi
           done
-      - name: Re-run bootstrap idempotently and preserve config
+      - name: Re-run one-command installer idempotently and preserve config
         shell: bash
         env:
-          DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/deploy_ubuntu_pc.sh
-          THREE_AGENT_BOOTSTRAP_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/scripts/bootstrap.sh
+          DEPLOY_ENTRYPOINT_URL: https://raw.githubusercontent.com/${{ github.repository }}/${{ steps.deploy_ref.outputs.expected_head }}/install.sh
+          WORKSPACE_SOURCE_REF: ${{ steps.deploy_ref.outputs.expected_head }}
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
           THREE_AGENT_REPO_REF: ${{ steps.deploy_ref.outputs.ref }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}/three-agent-install
