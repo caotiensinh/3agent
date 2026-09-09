@@ -86,7 +86,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         )
         self.assertEqual(report.total_routes, 650)
         self.assertEqual(report.fully_promotable_routes, 159)
-        self.assertEqual(report.partially_covered_routes, 161)
+        self.assertEqual(report.partially_covered_routes, 144)
         self.assertEqual(report.uncovered_routes, 347)
         self.assertEqual(
             report.fully_promotable_routes
