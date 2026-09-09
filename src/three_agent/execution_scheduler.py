@@ -748,20 +748,18 @@ class ExecutionScheduler:
         )
 
     def snapshot(self) -> dict[str, Any]:
-        """Return deterministic control state including checkpoint recovery state."""
-        return {
+        """Return deterministic control state without changing the legacy shape when unbound."""
+        snapshot = {
             "schema_version": EXECUTION_SCHEDULER_SCHEMA,
             "task_id": self.plan.task_id,
             "task_context_fingerprint": self.task_context.fingerprint,
             "plan_fingerprint": self.plan.fingerprint,
             "parent_authority_fingerprint": self.parent_authority.fingerprint,
             "max_concurrency": self.max_concurrency,
-            "checkpoint_bound": self.checkpoint_repository is not None,
             "cancelled": self._cancelled,
             "cancellation_reason": self._cancellation_reason,
             "dispatch_sequence": self._dispatch_sequence,
             "approved_node_ids": sorted(self._approved_nodes),
-            "recovery_required_ticket_ids": list(self.recovery_required_ticket_ids),
             "in_flight": [
                 self._in_flight[node.node_id].fingerprint
                 for node in self.plan.nodes
@@ -773,3 +771,9 @@ class ExecutionScheduler:
                 if node.node_id in self._observations
             ],
         }
+        if self.checkpoint_repository is not None:
+            snapshot["checkpoint_bound"] = True
+            snapshot["recovery_required_ticket_ids"] = list(
+                self.recovery_required_ticket_ids
+            )
+        return snapshot
