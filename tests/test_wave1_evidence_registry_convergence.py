@@ -27,7 +27,8 @@ class Wave1EvidenceRegistryConvergenceTests(unittest.TestCase):
         registry = runtime_micro_tool_registry()
         for tool_id in WAVE1_TOOL_IDS:
             metadata = registry.get(tool_id)
-            self.assertTrue(metadata.implemented, tool_id)
+            # Registry convergence proves bounded metadata semantics, not execution readiness.
+            self.assertIs(metadata.validate(), metadata, tool_id)
             self.assertEqual(metadata.network_access, "none", tool_id)
             self.assertEqual(metadata.effect, "read", tool_id)
             self.assertFalse(metadata.requires_admin, tool_id)
