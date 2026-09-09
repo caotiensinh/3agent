@@ -11,6 +11,9 @@ from .camera_device_tools import CAMERA_DEVICES_TOOL_ID, CAMERA_DEVICE_TOOL_META
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
 from .cloud_files_tools import CLOUD_FILES_STATUS_METADATA
 from .common_tools import common_tool_metadata
+from .display_tools import DISPLAY_TOOL_ID, DISPLAY_TOOL_METADATA
+from .dock_tools import DOCK_TOOL_ID, DOCK_TOOL_METADATA
+from .driver_inventory_tools import DRIVER_INVENTORY_METADATA, DRIVER_INVENTORY_TOOL_ID
 from .identity_account_state_tools import IDENTITY_ACCOUNT_STATE_METADATA
 from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
 from .mail_exchange_tools import MAIL_EXCHANGE_STATUS_METADATA
@@ -51,6 +54,9 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + MEETING_CLIENT_TOOL_METADATA
         + PROCESS_TOOL_METADATA
         + USB_TOOL_METADATA
+        + DISPLAY_TOOL_METADATA
+        + DOCK_TOOL_METADATA
+        + DRIVER_INVENTORY_METADATA
         + CAMERA_DEVICE_TOOL_METADATA
         + STORAGE_IO_TOOL_METADATA
         + PRINT_DRIVER_TOOL_METADATA
@@ -103,6 +109,9 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("meeting.client", (MEETING_CLIENT_TOOL_ID,)),
             CapabilityBinding("process.top", (PROCESS_TOP_TOOL_ID,)),
             CapabilityBinding("hardware.usb", (USB_DEVICES_TOOL_ID,)),
+            CapabilityBinding("hardware.display", (DISPLAY_TOOL_ID,)),
+            CapabilityBinding("hardware.dock", (DOCK_TOOL_ID,)),
+            CapabilityBinding("driver.inventory", (DRIVER_INVENTORY_TOOL_ID,)),
             CapabilityBinding("camera.devices", (CAMERA_DEVICES_TOOL_ID,)),
             CapabilityBinding("print.driver", (PRINT_DRIVER_TOOL_ID,)),
             CapabilityBinding("windows.boot", (WINDOWS_BOOT_TOOL_ID,)),
