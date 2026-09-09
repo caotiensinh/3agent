@@ -78,15 +78,15 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
         self.assertEqual(mapping["vpn.status"], ("vpn.status.snapshot",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_twenty_five_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_thirty_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 125)
-        self.assertEqual(report.partially_covered_routes, 175)
+        self.assertEqual(report.fully_promotable_routes, 130)
+        self.assertEqual(report.partially_covered_routes, 170)
         self.assertEqual(report.uncovered_routes, 350)
         self.assertEqual(
             report.fully_promotable_routes
@@ -144,7 +144,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("network.quality.internal"), 35)
         self.assertEqual(selected.get("audio.devices.snapshot"), 35)
         self.assertEqual(selected.get("meeting.client.snapshot"), 20)
-        self.assertEqual(selected.get("process.top.snapshot"), 20)
+        self.assertEqual(selected.get("process.top.snapshot"), 22)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
         self.assertEqual(selected.get("camera.devices.snapshot"), 20)
         self.assertEqual(selected.get("storage.io.snapshot"), 20)
