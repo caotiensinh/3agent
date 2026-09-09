@@ -5,12 +5,14 @@ on:
     paths:
       - 'src/three_agent/application_e2e_multilingual.py'
       - 'tests/test_application_e2e_multilingual.py'
+      - 'scripts/run_e2e_acceptance.sh'
       - '.github/workflows/application-e2e-multilingual.yml'
   push:
     branches: [main]
     paths:
       - 'src/three_agent/application_e2e_multilingual.py'
       - 'tests/test_application_e2e_multilingual.py'
+      - 'scripts/run_e2e_acceptance.sh'
       - '.github/workflows/application-e2e-multilingual.yml'
   workflow_dispatch:
     inputs:
@@ -47,6 +49,13 @@ jobs:
         run: python -m pip install -e .
       - name: Validate 30-prompt VI JA EN matrix
         run: python -m unittest tests.test_application_e2e_multilingual -v
+      - name: Validate default and generic GPU acceptance contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          bash scripts/run_e2e_acceptance.sh --self-test
+          THREE_AGENT_REQUIRED_GPU_COUNT=2 THREE_AGENT_REQUIRED_GPU_NAME_FILTER='' \
+            bash scripts/run_e2e_acceptance.sh --self-test
       - name: Print sanitized matrix contract
         run: python -m three_agent.application_e2e_multilingual
 
@@ -67,7 +76,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: true
           persist-credentials: false
-      - name: Verify exact source and physical model host
+      - name: Verify exact source and dual-NVIDIA model host
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -77,9 +86,9 @@ jobs:
           test "$actual_sha" = "$EXPECTED_SHA"
           command -v nvidia-smi >/dev/null
           mapfile -t gpu_names < <(nvidia-smi --query-gpu=name --format=csv,noheader)
-          gpu_count="$(printf '%s\n' "${gpu_names[@]}" | grep -c 'RTX 5090' || true)"
+          gpu_count="${#gpu_names[@]}"
           printf 'E2E preflight: runner=%s machine=%s exact_sha=%s\n' "${RUNNER_NAME:-unknown}" "$(hostname)" "$actual_sha"
-          printf 'E2E preflight: RTX5090_COUNT=%s\n' "$gpu_count"
+          printf 'E2E preflight: NVIDIA_GPU_COUNT=%s\n' "$gpu_count"
           printf 'E2E preflight GPU: %s\n' "${gpu_names[@]}"
           test "$gpu_count" -ge 2
       - name: Create isolated acceptance environment
@@ -181,15 +190,15 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: true
           persist-credentials: false
-      - name: Verify exact source and GPU host
+      - name: Verify exact source and dual-NVIDIA host
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)"
-          printf 'Multi-turn E2E: RTX5090_COUNT=%s\n' "$gpu_count"
+          gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
+          printf 'Multi-turn E2E: NVIDIA_GPU_COUNT=%s\n' "$gpu_count"
           test "$gpu_count" -ge 2
       - name: Create isolated multi-turn environment
         shell: bash
@@ -261,8 +270,8 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           for cmd in git jq curl python3 nvidia-smi ollama; do command -v "$cmd" >/dev/null; done
           mapfile -t gpu_names < <(nvidia-smi --query-gpu=name --format=csv,noheader)
-          gpu_count="$(printf '%s\n' "${gpu_names[@]}" | grep -c 'RTX 5090' || true)"
-          printf 'Full E2E: RTX5090_COUNT=%s\n' "$gpu_count"
+          gpu_count="${#gpu_names[@]}"
+          printf 'Full E2E: NVIDIA_GPU_COUNT=%s\n' "$gpu_count"
           printf 'Full E2E GPU: %s\n' "${gpu_names[@]}"
           test "$gpu_count" -ge 2
           curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:11434/api/tags >/dev/null
@@ -303,7 +312,8 @@ jobs:
             LOCAL_LLM_MODEL="$FULL_E2E_MODEL" \
             THREE_AGENT_CONFIG="$FULL_E2E_CONFIG" \
             THREE_AGENT_E2E_SKIP_UPDATE=1 \
-            THREE_AGENT_REQUIRED_RTX5090_COUNT=2 \
+            THREE_AGENT_REQUIRED_GPU_COUNT=2 \
+            THREE_AGENT_REQUIRED_GPU_NAME_FILTER='' \
             THREE_AGENT_E2E_LANGUAGE="$lang" \
             THREE_AGENT_E2E_TITLE="$title" \
             THREE_AGENT_E2E_REQUEST="$request" \
