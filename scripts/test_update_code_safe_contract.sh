@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UPDATER="${ROOT}/scripts/update_code_safe.sh"
+UBUNTU_ENTRYPOINT="${ROOT}/scripts/update_workspace_ubuntu.sh"
 TMP_DIR=""
 
 fail() {
@@ -22,6 +23,7 @@ cleanup() {
 trap cleanup EXIT
 
 [[ -f "$UPDATER" ]] || fail "update_code_safe.sh is missing"
+[[ -f "$UBUNTU_ENTRYPOINT" ]] || fail "update_workspace_ubuntu.sh is missing"
 bash -n "$UPDATER" || fail "bash syntax"
 bash "$UPDATER" --self-test >/dev/null || fail "self-test"
 
@@ -37,6 +39,9 @@ grep -Fq 'Previous installation preserved' "$UPDATER" || fail "preservation audi
 grep -Fq 'THREE_AGENT_UPDATE_VERIFY' "$UPDATER" || fail "verification policy missing"
 # shellcheck disable=SC2016
 grep -Fq 'verify_release "$active"' "$UPDATER" || fail "already-current releases must honor the verification policy"
+grep -Fq '3agent-update.sh' "$UPDATER" || fail "trusted local updater payload missing"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_REPO_REF=$(printf' "$UPDATER" || fail "tracking ref launcher export missing"
 
 if grep -Eq '(^|[[:space:];|&])rm([[:space:]]|$)|git[[:space:]].*(clean|reset[[:space:]]+--hard)|rsync[[:space:]].*--delete|find[[:space:]].*[[:space:]]-delete' "$UPDATER"; then
   fail "destructive operation detected in safe updater"
@@ -54,13 +59,15 @@ config_dir="${TMP_DIR}/config"
 python_log="${TMP_DIR}/python.log"
 ui_log="${TMP_DIR}/ui.log"
 
-mkdir -p "${release}/.venv/bin" "${release}/src" "${release}/tests" "$bin_dir" "$state_dir" "$config_dir"
+mkdir -p "${release}/.venv/bin" "${release}/src" "${release}/tests" "${release}/scripts" "$bin_dir" "$state_dir" "$config_dir"
 
 git init -q "$release"
 git -C "$release" config user.name "WorkSpace CI"
 git -C "$release" config user.email "workspace-ci@example.invalid"
 printf 'fixture\n' >"${release}/fixture.txt"
-git -C "$release" add fixture.txt
+cp -p "$UBUNTU_ENTRYPOINT" "${release}/scripts/update_workspace_ubuntu.sh"
+cp -p "$UPDATER" "${release}/scripts/update_code_safe.sh"
+git -C "$release" add fixture.txt scripts/update_workspace_ubuntu.sh scripts/update_code_safe.sh
 git -C "$release" commit -qm "test: create updater fixture"
 target_sha="$(git -C "$release" rev-parse HEAD)"
 
@@ -96,6 +103,7 @@ FAKE_PYTHON_LOG="$python_log" \
 FAKE_UI_LOG="$ui_log" \
 THREE_AGENT_REPO_URL="https://github.com/caotiensinh/3agent.git" \
 THREE_AGENT_REPO_REF="$target_sha" \
+THREE_AGENT_UPDATE_TRACKING_REF="main" \
 THREE_AGENT_INSTALL_DIR="${TMP_DIR}/legacy" \
 THREE_AGENT_BIN_DIR="$bin_dir" \
 THREE_AGENT_CONFIG_PATH="${config_dir}/local.json" \
@@ -115,4 +123,24 @@ FAKE_UI_LOG="$ui_log" "${bin_dir}/workspace-security-ui" --help >/dev/null \
 grep -Fq 'active-releases.log' "${bin_dir}/workspace-security-ui" \
   || fail "security UI launcher is not bound to active release history"
 
-pass "append-only non-destructive updater contract including active security UI launcher"
+[[ -x "${bin_dir}/3agent-update" ]] || fail "trusted updater launcher was not installed"
+[[ -f "${bin_dir}/3agent-update.sh" ]] || fail "trusted local updater payload was not installed"
+cmp -s "${release}/scripts/update_workspace_ubuntu.sh" "${bin_dir}/3agent-update.sh" \
+  || fail "trusted updater payload is not identical to verified release source"
+grep -Fq 'THREE_AGENT_REPO_REF=main' "${bin_dir}/3agent-update" \
+  || fail "installed updater did not preserve configured tracking ref"
+
+launcher="${bin_dir}/3agent-update"
+exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+exec_count="$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)"
+[[ "$exec_count" -eq 1 ]] || fail "installed updater must expose exactly one execution line"
+printf '%s\n' "$exec_lines" | grep -Fq '3agent-update.sh' \
+  || fail "installed updater does not execute trusted local updater payload"
+if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+  fail "installed updater execution line contains a remote execution primitive"
+fi
+if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+  fail "installed updater contains a remote-fetch command"
+fi
+
+pass "append-only updater preserves exact release semantics and installs only a trusted local updater entrypoint"
