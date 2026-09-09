@@ -31,6 +31,7 @@ from .diagnostics.process_tools import PROCESS_TOP_TOOL_ID, read_top_processes
 from .diagnostics.runtime_registry import runtime_micro_tool_registry
 from .diagnostics.storage_io_tools import STORAGE_IO_TOOL_ID, read_storage_io
 from .diagnostics.usb_tools import USB_DEVICES_TOOL_ID, read_usb_devices
+from .diagnostics.vpn_tools import VPN_STATUS_TOOL_ID, read_vpn_status
 from .diagnostics.windows_boot_tools import WINDOWS_BOOT_TOOL_ID, read_windows_boot
 from .diagnostics.windows_policy_tools import GROUP_POLICY_TOOL_ID, read_group_policy_result
 from .diagnostics.windows_update_tools import WINDOWS_UPDATE_TOOL_ID, read_windows_update_history
@@ -73,6 +74,7 @@ _TIMEOUT_ONLY_TOOLS = frozenset(
         PRINT_DRIVER_TOOL_ID,
         WINDOWS_BOOT_TOOL_ID,
         WINDOWS_UPDATE_TOOL_ID,
+        VPN_STATUS_TOOL_ID,
     }
 )
 _FORBIDDEN_PARAMETER_NAMES = frozenset(
@@ -428,6 +430,8 @@ def _invoke_reviewed_handler(
         return read_windows_boot(authority=authority, **kwargs)
     if tool_id == WINDOWS_UPDATE_TOOL_ID:
         return read_windows_update_history(authority=authority, **kwargs)
+    if tool_id == VPN_STATUS_TOOL_ID:
+        return read_vpn_status(authority=authority, **kwargs)
     raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
 

@@ -51,6 +51,7 @@ _EFFECTS = {
     "windows.print.driver.snapshot": "read",
     "windows.boot.snapshot": "read",
     "windows.update.history": "read",
+    "vpn.status.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
 }
@@ -91,6 +92,7 @@ _EXACT_RESOURCE_POLICIES = {
     "windows.print.driver.snapshot": ("printer_drivers", "local:printer:drivers"),
     "windows.boot.snapshot": ("boot_state", "local:windows:boot"),
     "windows.update.history": ("windows_update_history", "local:windows:update-history"),
+    "vpn.status.snapshot": ("vpn_status", "local:vpn:status"),
 }
 _GROUP_POLICY_REFS = frozenset(
     {
