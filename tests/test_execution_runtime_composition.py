@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from three_agent.capability_authority import TaskCapabilityAuthority
-from three_agent.execution_budget import ExecutionBudgetExceeded
-from three_agent.execution_checkpoint_writer_fence import (
-    WriterFencedExecutionCheckpointRepository,
+from three_agent.execution_budget import TaskExecutionBudgetState
+from three_agent.execution_dispatch_budget import (
+    AtomicBudgetWriterFencedExecutionCheckpointRepository,
+    DispatchBudgetPreflightGuard,
 )
 from three_agent.execution_observation import ExecutionObservationBuilder
 from three_agent.execution_plan import ExecutionNodeBinding, ExecutionPlanBuilder
@@ -23,20 +24,6 @@ from three_agent.runtime_writer_lease import RuntimeWriterLeaseRepository
 from three_agent.store import TaskStore
 from three_agent.task_context import TaskContextBuilder, TaskResourceBudget
 from three_agent.task_contract import TaskContractCompiler
-
-
-class FakeBudgetGuard:
-    def __init__(self):
-        self.active = True
-        self.steps = 0
-
-    def assert_active(self):
-        if not self.active:
-            raise ExecutionBudgetExceeded("TASK_WALL_TIME_BUDGET_EXHAUSTED")
-
-    def reserve(self, *, steps=0, tool_calls=0, retries=0, escalations=0):
-        self.assert_active()
-        self.steps += steps
 
 
 class FakeRevocationGuard:
@@ -94,7 +81,12 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
             "Production composition test",
             "Require writer-fenced persistence for canonical execution.",
         )
-        self.context, self.authority, self.plan = self._build_plan()
+        self.context, self.authority, self.plan, self.contract = self._build_plan()
+        self.store.bind_task_contract(self.task.task_id, self.contract.to_dict())
+        self.budget = TaskExecutionBudgetState.from_bound_contract(
+            self.store,
+            self.task.task_id,
+        )
         self.leases = RuntimeWriterLeaseRepository(self.store)
         self.leases.initialize()
 
@@ -154,7 +146,7 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
                 ),
             },
         )
-        return context, authority, plan
+        return context, authority, plan, contract
 
     def _compose(self, run_id, **overrides):
         arguments = {
@@ -163,7 +155,7 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
             "task_context": self.context,
             "plan": self.plan,
             "parent_authority": self.authority,
-            "budget_guard": FakeBudgetGuard(),
+            "budget_guard": self.budget,
             "revocation_guard": FakeRevocationGuard(),
             "max_concurrency": 1,
         }
@@ -196,24 +188,61 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
 
         self.assertIsNone(self._current_lease())
 
-    def test_composition_mandates_writer_fenced_repository(self):
+    def test_composition_mandates_atomic_budget_writer_fenced_repository(self):
         runtime = self._compose("RUN-COMPOSITION-A")
 
         self.assertIsInstance(
             runtime.checkpoint_repository,
-            WriterFencedExecutionCheckpointRepository,
+            AtomicBudgetWriterFencedExecutionCheckpointRepository,
         )
         self.assertIs(
             runtime.scheduler.checkpoint_repository,
             runtime.checkpoint_repository,
         )
+        self.assertIsInstance(runtime.scheduler.budget_guard, DispatchBudgetPreflightGuard)
+        self.assertIs(
+            runtime.scheduler.budget_guard.controller,
+            runtime.checkpoint_repository.dispatch_budget_controller,
+        )
         self.assertEqual(runtime.run_id, "RUN-COMPOSITION-A")
         self.assertEqual(runtime.writer_lease.run_id, runtime.run_id)
         self.assertEqual(runtime.writer_lease.generation, 1)
 
-    def test_same_durable_run_restart_reuses_generation_and_recovers_dispatch(self):
+    def test_superseded_writer_cannot_dispatch_or_charge_budget(self):
+        stale = self._compose("RUN-COMPOSITION-A")
+        before = self.budget.snapshot()["steps_used"]
+        current = self._compose("RUN-COMPOSITION-B")
+
+        self.assertEqual(
+            current.writer_lease.generation,
+            stale.writer_lease.generation + 1,
+        )
+        with self.assertRaisesRegex(
+            ExecutionSchedulerError,
+            "SCHEDULER_CHECKPOINT_DISPATCH_FAILED:start",
+        ):
+            stale.scheduler.issue_dispatch("start")
+
+        self.assertEqual(self.budget.snapshot()["steps_used"], before)
+        with self.store.connect() as conn:
+            dispatches = conn.execute(
+                "SELECT COUNT(*) AS n FROM execution_dispatch_checkpoints"
+            ).fetchone()["n"]
+        self.assertEqual(dispatches, 0)
+
+        current.scheduler.issue_dispatch("start")
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
+        with self.store.connect() as conn:
+            dispatches = conn.execute(
+                "SELECT COUNT(*) AS n FROM execution_dispatch_checkpoints"
+            ).fetchone()["n"]
+        self.assertEqual(dispatches, 1)
+
+    def test_same_durable_run_restart_reuses_generation_without_double_charging(self):
         first = self._compose("RUN-COMPOSITION-A")
+        before = self.budget.snapshot()["steps_used"]
         ticket = first.scheduler.issue_dispatch("start")
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
 
         restarted = self._compose("RUN-COMPOSITION-A")
         self.assertEqual(restarted.writer_lease, first.writer_lease)
@@ -221,14 +250,17 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
             restarted.scheduler.recovery_required_ticket_ids,
             (ticket.ticket_id,),
         )
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
 
         accepted = restarted.scheduler.accept_observation(self._observation("start"))
         self.assertEqual(accepted.node_id, "start")
         self.assertEqual(restarted.scheduler.recovery_required_ticket_ids, ())
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
         self.assertTrue(restarted.checkpoint_repository.verify_writer_fence_bindings())
 
     def test_superseding_run_fences_stale_runtime_and_cannot_settle_old_dispatch(self):
         first = self._compose("RUN-COMPOSITION-A")
+        before = self.budget.snapshot()["steps_used"]
         ticket = first.scheduler.issue_dispatch("start")
 
         second = self._compose("RUN-COMPOSITION-B")
@@ -240,6 +272,7 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
             second.scheduler.recovery_required_ticket_ids,
             (ticket.ticket_id,),
         )
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
 
         with self.assertRaisesRegex(
             ExecutionSchedulerError,
@@ -258,6 +291,15 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
                 "SELECT COUNT(*) AS n FROM execution_observation_checkpoints"
             ).fetchone()["n"]
         self.assertEqual(observations, 0)
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
+
+    def test_noncanonical_budget_cannot_enter_production_composition(self):
+        with self.assertRaisesRegex(
+            ExecutionRuntimeCompositionError,
+            "EXECUTION_RUNTIME_CANONICAL_BUDGET_STATE_REQUIRED",
+        ):
+            self._compose("RUN-COMPOSITION-A", budget_guard=object())
+        self.assertIsNone(self._current_lease())
 
     def test_invalid_admission_or_scheduler_shape_does_not_supersede_current_writer(self):
         first = self._compose("RUN-COMPOSITION-A")
