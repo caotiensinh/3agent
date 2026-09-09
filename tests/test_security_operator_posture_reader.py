@@ -16,7 +16,7 @@ class SecurityOperatorPostureReaderTests(unittest.TestCase):
     def test_missing_database_is_not_created_or_initialized(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             database_path = Path(temp_dir) / "must-not-be-created.sqlite3"
-            config = SimpleNamespace(database_path=database_path)
+            config = SimpleNamespace(database_path=database_path, assets=(), dependencies=())
 
             events = _read_correlation_events_query_only(config)  # type: ignore[arg-type]
             payload = safe_operator_posture_summary(  # type: ignore[arg-type]

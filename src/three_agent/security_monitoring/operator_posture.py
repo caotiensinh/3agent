@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable, Mapping
 
-from .contracts import MonitoringContractError
+from .asset_dependency import (
+    ALLOWED_DEPENDENCY_RELATIONS,
+    AssetDependency,
+    DeclaredAssetDependencyGraph,
+)
+from .contracts import AssetInventoryRecord, MonitoringContractError
 from .correlation_graph import (
     CorrelationEvent,
     CorrelationGraphConfig,
@@ -20,6 +25,7 @@ OPERATOR_POSTURE_EVENT_LIMIT = 100
 OPERATOR_POSTURE_ENTITY_LIMIT = 4096
 OPERATOR_POSTURE_EDGE_LIMIT = 2048
 OPERATOR_POSTURE_WINDOW_SECONDS = 900
+OPERATOR_POSTURE_DEPENDENCY_DEPTH = 16
 
 _SEVERITIES = ("info", "low", "medium", "high", "critical")
 _HEALTH_BUCKETS = ("healthy", "degraded", "unreachable", "unknown")
@@ -28,6 +34,8 @@ _RECENCY_BUCKETS = ("last_15m", "15m_to_1h", "1h_to_24h", "older", "future")
 _TRIAGE_CONFIDENCE_BUCKETS = ("low", "medium", "high")
 _TRIAGE_PRIORITY_BUCKETS = ("normal", "elevated", "high")
 _TRIAGE_KIND_BUCKETS = tuple(sorted(TRIAGE_KINDS))
+_DEPENDENCY_RELATION_BUCKETS = tuple(sorted(ALLOWED_DEPENDENCY_RELATIONS))
+_DEPENDENCY_SEED_STATES = {"available", "unavailable", "data_gap"}
 
 
 def _mapping(value: object) -> Mapping[str, object]:
@@ -137,19 +145,114 @@ def _network_triage_posture(graphs: object) -> dict[str, object]:
     }
 
 
+def _dependency_impact_posture(
+    *,
+    inventory: Iterable[AssetInventoryRecord],
+    dependencies: Iterable[AssetDependency],
+    seed_asset_ids: Iterable[str],
+    seed_data_state: str,
+    source_finding_count: int,
+    ignored_seed_ref_count: int,
+    seed_input_truncated: bool,
+) -> dict[str, object]:
+    assets = tuple(inventory)
+    declared = tuple(dependencies)
+    seeds = tuple(seed_asset_ids)
+    state = str(seed_data_state or "").strip()
+    if state not in _DEPENDENCY_SEED_STATES:
+        raise MonitoringContractError("unsupported dependency seed data state")
+
+    relation_counts = {relation: 0 for relation in _DEPENDENCY_RELATION_BUCKETS}
+    for dependency in declared:
+        item = dependency.validate()
+        relation_counts[item.relation] += 1
+
+    authority = {
+        "advisory_only": True,
+        "aggregate_only": True,
+        "declared_dependencies_only": True,
+        "config_is_authoritative": True,
+        "database_read_only": True,
+        "raw_impact_assessment_exposed": False,
+        "asset_ids_exposed": False,
+        "dependency_ids_exposed": False,
+        "finding_ids_exposed": False,
+        "declaration_fingerprints_exposed": False,
+        "network_addresses_exposed": False,
+        "browser_seed_selection": False,
+        "topology_inference": False,
+        "database_write": False,
+        "network_execution": False,
+        "collector_execution": False,
+        "packet_capture_execution": False,
+        "remediation_execution": False,
+    }
+    base: dict[str, object] = {
+        "configured": bool(declared),
+        "available": False,
+        "data_state": "not_configured" if not declared else state,
+        "declared_dependency_count": len(declared),
+        "relation_counts": relation_counts,
+        "source_finding_count": max(0, int(source_finding_count)),
+        "active_seed_asset_count": len(set(seeds)),
+        "ignored_seed_ref_count": max(0, int(ignored_seed_ref_count)),
+        "seed_input_truncated": bool(seed_input_truncated),
+        "potential_affected_asset_count": 0,
+        "used_dependency_count": 0,
+        "observed_max_depth": 0,
+        "depth_counts": {"1": 0, "2": 0, "3": 0, "4_plus": 0},
+        "impact_truncated": False,
+        "authority": authority,
+    }
+    if not declared or state in {"unavailable", "data_gap"}:
+        return base
+    if not seeds:
+        base["data_state"] = "empty"
+        return base
+
+    assessment = DeclaredAssetDependencyGraph(assets, declared).impact(
+        seeds,
+        max_depth=OPERATOR_POSTURE_DEPENDENCY_DEPTH,
+    )
+    depth_counts = {"1": 0, "2": 0, "3": 0, "4_plus": 0}
+    for _asset_id, depth in assessment.depth_by_asset:
+        bucket = str(depth) if depth in {1, 2, 3} else "4_plus"
+        depth_counts[bucket] += 1
+
+    base.update(
+        {
+            "available": True,
+            "data_state": "available",
+            "potential_affected_asset_count": len(assessment.potentially_affected_asset_ids),
+            "used_dependency_count": len(assessment.dependency_ids),
+            "observed_max_depth": max((depth for _, depth in assessment.depth_by_asset), default=0),
+            "depth_counts": depth_counts,
+            "impact_truncated": bool(assessment.truncated),
+        }
+    )
+    return base
+
+
 def reduce_operator_posture(
     *,
     soc: Mapping[str, object],
     assets: Mapping[str, object],
     correlation_events: Iterable[CorrelationEvent],
     now: datetime | None = None,
+    dependency_inventory: Iterable[AssetInventoryRecord] = (),
+    dependencies: Iterable[AssetDependency] = (),
+    dependency_seed_asset_ids: Iterable[str] = (),
+    dependency_seed_data_state: str = "unavailable",
+    dependency_source_finding_count: int = 0,
+    dependency_ignored_seed_ref_count: int = 0,
+    dependency_seed_input_truncated: bool = False,
 ) -> dict[str, object]:
     """Reduce canonical read-only monitoring truth to privacy-safe operator aggregates.
 
     The reducer accepts already-normalized in-process objects but never returns their
     identifiers, entity/evidence references, categories, source IDs, raw values, exact
-    timestamps, rule IDs, graph IDs, or network addressing. All public dimensions are
-    fixed enums or numeric aggregates.
+    timestamps, rule IDs, graph IDs, dependency IDs, asset IDs, or network addressing.
+    All public dimensions are fixed enums or numeric aggregates.
     """
 
     current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -201,6 +304,15 @@ def reduce_operator_posture(
         "exact_correlation_observed": bool(graphs),
     }
     network_triage = _network_triage_posture(graphs)
+    dependency_impact = _dependency_impact_posture(
+        inventory=dependency_inventory,
+        dependencies=dependencies,
+        seed_asset_ids=dependency_seed_asset_ids,
+        seed_data_state=dependency_seed_data_state,
+        source_finding_count=dependency_source_finding_count,
+        ignored_seed_ref_count=dependency_ignored_seed_ref_count,
+        seed_input_truncated=dependency_seed_input_truncated,
+    )
 
     evidence_events = tuple(
         item for item in events if item.stage is not None and item.event.evidence_ref is not None
@@ -261,6 +373,7 @@ def reduce_operator_posture(
         "asset_health": _asset_health(assets),
         "correlation": correlation,
         "network_triage": network_triage,
+        "dependency_impact": dependency_impact,
         "flow": flow,
         "timeline": timeline,
         "contains_raw_evidence": False,
@@ -275,9 +388,12 @@ def reduce_operator_posture(
             "evidence_refs_exposed": False,
             "rule_ids_exposed": False,
             "asset_ids_exposed": False,
+            "dependency_ids_exposed": False,
+            "finding_ids_exposed": False,
             "network_addresses_exposed": False,
             "raw_values_exposed": False,
             "browser_filters_exposed": False,
+            "browser_dependency_seed_selection": False,
             "database_write": False,
             "network_execution": False,
             "collector_execution": False,
