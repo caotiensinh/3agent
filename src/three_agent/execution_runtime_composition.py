@@ -129,17 +129,6 @@ def compose_writer_fenced_execution_runtime(
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_CANONICAL_BUDGET_STATE_REQUIRED"
         )
-    if budget_guard.task_id != plan.task_id:
-        raise ExecutionRuntimeCompositionError(
-            "EXECUTION_RUNTIME_BUDGET_TASK_SCOPE_MISMATCH"
-        )
-    if (
-        budget_guard.store.db_path.resolve(strict=False)
-        != task_store.db_path.resolve(strict=False)
-    ):
-        raise ExecutionRuntimeCompositionError(
-            "EXECUTION_RUNTIME_BUDGET_STORE_MISMATCH"
-        )
     if revocation_guard is None:
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_REVOCATION_GUARD_REQUIRED"
@@ -164,6 +153,8 @@ def compose_writer_fenced_execution_runtime(
             "EXECUTION_RUNTIME_REAPPROVED_NODE_INVALID"
         )
 
+    # Validate the canonical task/plan/authority shape before reading fields from
+    # those objects and before any writer generation can be claimed.
     try:
         RuntimeScheduler.evaluate(
             task_context=task_context,
@@ -174,6 +165,18 @@ def compose_writer_fenced_execution_runtime(
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_CANONICAL_ADMISSION_FAILED"
         ) from exc
+
+    if budget_guard.task_id != plan.task_id:
+        raise ExecutionRuntimeCompositionError(
+            "EXECUTION_RUNTIME_BUDGET_TASK_SCOPE_MISMATCH"
+        )
+    if (
+        budget_guard.store.db_path.resolve(strict=False)
+        != task_store.db_path.resolve(strict=False)
+    ):
+        raise ExecutionRuntimeCompositionError(
+            "EXECUTION_RUNTIME_BUDGET_STORE_MISMATCH"
+        )
 
     try:
         dispatch_budget_controller = DispatchBudgetController(task_store, budget_guard)
