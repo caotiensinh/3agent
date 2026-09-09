@@ -40,7 +40,7 @@ class FakeRevocationGuard:
         return False
 
 
-def one_node_workflow():
+def minimal_workflow():
     return {
         "title": "Atomic dispatch budget",
         "objective": "Commit one dispatch budget step with its durable checkpoint.",
@@ -56,7 +56,16 @@ def one_node_workflow():
                 "depends_on": [],
                 "condition": "",
                 "approval_required": False,
-            }
+            },
+            {
+                "id": "finish",
+                "label": "Finish",
+                "kind": "output",
+                "action": "output",
+                "depends_on": ["start"],
+                "condition": "",
+                "approval_required": False,
+            },
         ],
         "outputs": ["Atomic receipt"],
         "warnings": [],
@@ -114,7 +123,7 @@ class ExecutionDispatchBudgetTests(unittest.TestCase):
         self.plan = ExecutionPlanBuilder.build(
             task_context=self.context,
             parent_authority=self.authority,
-            workflow_contract=one_node_workflow(),
+            workflow_contract=minimal_workflow(),
             node_bindings={},
         )
         self.revocations = FakeRevocationGuard()
@@ -341,7 +350,7 @@ class ExecutionDispatchBudgetTests(unittest.TestCase):
             plan = ExecutionPlanBuilder.build(
                 task_context=context,
                 parent_authority=authority,
-                workflow_contract=one_node_workflow(),
+                workflow_contract=minimal_workflow(),
                 node_bindings={},
             )
             runtime = compose_writer_fenced_execution_runtime(
