@@ -129,10 +129,18 @@ cmp -s "${release}/scripts/update_workspace_ubuntu.sh" "${bin_dir}/3agent-update
   || fail "trusted updater payload is not identical to verified release source"
 grep -Fq 'THREE_AGENT_REPO_REF=main' "${bin_dir}/3agent-update" \
   || fail "installed updater did not preserve configured tracking ref"
-grep -Fq '3agent-update.sh' "${bin_dir}/3agent-update" \
+
+launcher="${bin_dir}/3agent-update"
+exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+exec_count="$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)"
+[[ "$exec_count" -eq 1 ]] || fail "installed updater must expose exactly one execution line"
+printf '%s\n' "$exec_lines" | grep -Fq '3agent-update.sh' \
   || fail "installed updater does not execute trusted local updater payload"
-if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "${bin_dir}/3agent-update"; then
-  fail "installed updater launcher contains a remote execution primitive"
+if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+  fail "installed updater execution line contains a remote execution primitive"
+fi
+if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+  fail "installed updater contains a remote-fetch command"
 fi
 
 pass "append-only updater preserves exact release semantics and installs only a trusted local updater entrypoint"
