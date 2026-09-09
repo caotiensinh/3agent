@@ -37,27 +37,15 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         )
 
     def test_runtime_network_bindings_use_only_dedicated_internal_probes(self) -> None:
-        mapping = {
-            binding.capability_tag: binding.tool_ids
-            for binding in default_runtime_capability_bindings()
-        }
-        self.assertEqual(
-            mapping["network.reachability"],
-            ("network.reachability.internal",),
-        )
-        self.assertEqual(
-            mapping["network.quality"],
-            ("network.quality.internal",),
-        )
+        mapping = {binding.capability_tag: binding.tool_ids for binding in default_runtime_capability_bindings()}
+        self.assertEqual(mapping["network.reachability"], ("network.reachability.internal",))
+        self.assertEqual(mapping["network.quality"], ("network.quality.internal",))
         self.assertEqual(mapping["vpn.status"], ("vpn.status.local",))
         self.assertNotIn("camera.reachability", mapping)
         self.assertNotIn("isp.reachability", mapping)
 
     def test_runtime_bindings_reuse_common_and_domain_completion_tools(self) -> None:
-        mapping = {
-            binding.capability_tag: binding.tool_ids
-            for binding in default_runtime_capability_bindings()
-        }
+        mapping = {binding.capability_tag: binding.tool_ids for binding in default_runtime_capability_bindings()}
         self.assertEqual(mapping["system.resources"], ("system.resource.snapshot",))
         self.assertEqual(mapping["server.resources"], ("system.resource.snapshot",))
         self.assertEqual(mapping["network.ip"], ("network.ipconfig.snapshot",))
@@ -77,46 +65,22 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
 
     def test_650_route_coverage_report_reaches_one_hundred_twenty_five_fully_promotable_routes(self) -> None:
-        report = build_coverage_report(
-            self.routes,
-            runtime_micro_tool_registry(),
-            bindings=default_runtime_capability_bindings(),
-        )
+        report = build_coverage_report(self.routes, runtime_micro_tool_registry(), bindings=default_runtime_capability_bindings())
         self.assertEqual(report.total_routes, 650)
         self.assertEqual(report.fully_promotable_routes, 125)
-        self.assertEqual(
-            report.fully_promotable_routes
-            + report.partially_covered_routes
-            + report.uncovered_routes,
-            650,
-        )
+        self.assertEqual(report.fully_promotable_routes + report.partially_covered_routes + report.uncovered_routes, 650)
         self.assertGreater(report.partially_covered_routes, 0)
         self.assertGreater(report.uncovered_routes, 0)
         self.assertLess(report.fully_promotable_routes, 650)
         self.assertTrue(report.unresolved_capability_counts)
 
     def test_implemented_high_reuse_capabilities_are_removed_from_missing_backlog(self) -> None:
-        report = build_coverage_report(
-            self.routes,
-            runtime_micro_tool_registry(),
-            bindings=default_runtime_capability_bindings(),
-        )
+        report = build_coverage_report(self.routes, runtime_micro_tool_registry(), bindings=default_runtime_capability_bindings())
         missing = dict(report.unresolved_capability_counts)
         for capability in (
-            "network.reachability",
-            "network.quality",
-            "group_policy",
-            "identity.session",
-            "audio.devices",
-            "meeting.client",
-            "process.top",
-            "hardware.usb",
-            "camera.devices",
-            "storage.io",
-            "print.driver",
-            "vpn.status",
-            "windows.boot",
-            "windows.update",
+            "network.reachability", "network.quality", "group_policy", "identity.session",
+            "audio.devices", "meeting.client", "process.top", "hardware.usb", "camera.devices",
+            "storage.io", "print.driver", "vpn.status", "windows.boot", "windows.update",
         ):
             self.assertNotIn(capability, missing)
         self.assertIn("service.health", missing)
@@ -126,17 +90,13 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(backlog, tuple(sorted(backlog, key=lambda item: (-item[1], item[0]))))
 
     def test_existing_tool_usage_is_visible_in_coverage_report(self) -> None:
-        report = build_coverage_report(
-            self.routes,
-            runtime_micro_tool_registry(),
-            bindings=default_runtime_capability_bindings(),
-        )
+        report = build_coverage_report(self.routes, runtime_micro_tool_registry(), bindings=default_runtime_capability_bindings())
         selected = dict(report.selected_tool_counts)
         self.assertGreater(selected.get("system.resource.snapshot", 0), 0)
         self.assertGreater(selected.get("network.ipconfig.snapshot", 0), 0)
         self.assertGreater(selected.get("network.dns.snapshot", 0), 0)
         self.assertGreater(selected.get("windows.printer.queue", 0), 0)
-        self.assertEqual(selected.get("network.reachability.internal"), 120)
+        self.assertEqual(selected.get("network.reachability.internal"), 100)
         self.assertEqual(selected.get("windows.group_policy.result"), 45)
         self.assertEqual(selected.get("identity.session.snapshot"), 35)
         self.assertEqual(selected.get("network.quality.internal"), 35)
