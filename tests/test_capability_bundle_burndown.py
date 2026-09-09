@@ -34,10 +34,10 @@ class CapabilityBundleBurndownTests(unittest.TestCase):
 
     def test_groups_only_exact_multi_capability_gaps(self) -> None:
         routes = (
-            self._route("IT-9101", "alpha", ("covered", "x", "y")),
-            self._route("IT-9102", "beta", ("covered", "y", "x")),
-            self._route("IT-9103", "alpha", ("covered", "x", "z")),
-            self._route("IT-9104", "alpha", ("covered", "single")),
+            self._route("IT-9101", "lan_wifi", ("covered", "x", "y")),
+            self._route("IT-9102", "cloud_files", ("covered", "y", "x")),
+            self._route("IT-9103", "lan_wifi", ("covered", "x", "z")),
+            self._route("IT-9104", "lan_wifi", ("covered", "single")),
         )
         items = build_capability_bundle_candidates(
             routes,
@@ -48,13 +48,13 @@ class CapabilityBundleBurndownTests(unittest.TestCase):
 
         self.assertEqual(set(by_tags), {("x", "y"), ("x", "z")})
         self.assertEqual(by_tags[("x", "y")].route_unlock_count, 2)
-        self.assertEqual(by_tags[("x", "y")].affected_domain_ids, ("alpha", "beta"))
+        self.assertEqual(by_tags[("x", "y")].affected_domain_ids, ("cloud_files", "lan_wifi"))
         self.assertEqual(by_tags[("x", "y")].capability_count, 2)
         self.assertEqual(by_tags[("x", "y")].closure_efficiency.numerator, 1)
         self.assertEqual(by_tags[("x", "y")].closure_efficiency.denominator, 1)
 
     def test_rejected_binding_routes_receive_no_bundle_credit(self) -> None:
-        route = self._route("IT-9110", "alpha", ("mixed.covered", "x", "y"))
+        route = self._route("IT-9110", "lan_wifi", ("mixed.covered", "x", "y"))
         items = build_capability_bundle_candidates(
             (route,),
             self.registry,
@@ -69,9 +69,16 @@ class CapabilityBundleBurndownTests(unittest.TestCase):
 
     def test_ranking_uses_routes_closed_per_capability_before_raw_frequency(self) -> None:
         routes = tuple(
-            [self._route(f"IT-92{i:02d}", "alpha", ("covered", "a", "b")) for i in range(1, 5)]
+            [
+                self._route(f"IT-92{i:02d}", "lan_wifi", ("covered", "a", "b"))
+                for i in range(1, 5)
+            ]
             + [
-                self._route(f"IT-93{i:02d}", "beta", ("covered", "c", "d", "e"))
+                self._route(
+                    f"IT-93{i:02d}",
+                    "cloud_files",
+                    ("covered", "c", "d", "e"),
+                )
                 for i in range(1, 6)
             ]
         )
@@ -107,13 +114,13 @@ class CapabilityBundleBurndownTests(unittest.TestCase):
             CapabilityBundleBurndownItem(
                 capability_tags=("only",),
                 route_unlock_count=1,
-                affected_domain_ids=("alpha",),
+                affected_domain_ids=("lan_wifi",),
             ).validate()
         with self.assertRaises(ValueError):
             CapabilityBundleBurndownItem(
                 capability_tags=("a", "b"),
                 route_unlock_count=1,
-                affected_domain_ids=("alpha",),
+                affected_domain_ids=("lan_wifi",),
                 selection_authority="auto",
             ).validate()
 
