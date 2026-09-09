@@ -15,6 +15,7 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
             platform_name="Windows",
             max_tools=4,
         )
+        self.assertIn("vpn.status.snapshot", result.selected_ids())
         self.assertNotIn("network.route.snapshot", result.selected_ids())
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
 
@@ -24,9 +25,21 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
             platform_name="Windows",
             max_tools=4,
         )
+        self.assertIn("vpn.status.snapshot", result.selected_ids())
         self.assertNotIn("network.route.snapshot", result.selected_ids())
         rejected = {(item.tool_id, item.reason_code) for item in result.rejected}
         self.assertIn(("network.route.snapshot", "CROSS_DOMAIN_VPN_AUTH"), rejected)
+
+    def test_connected_vpn_with_internal_resource_failure_selects_status_and_route(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "VPN vao duoc nhung server noi bo khong vao duoc",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        ids = set(result.selected_ids())
+        self.assertIn("vpn.status.snapshot", ids)
+        self.assertIn("network.route.snapshot", ids)
+        self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
 
     def test_teams_camera_not_detected_selects_local_camera_inventory(self) -> None:
         result = select_pc_diagnostic_tool_metadata(
