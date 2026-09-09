@@ -49,6 +49,7 @@ _EFFECTS = {
     "camera.devices.snapshot": "read",
     "storage.io.snapshot": "read",
     "windows.print.driver.snapshot": "read",
+    "vpn.status.local": "read",
     "windows.boot.snapshot": "read",
     "windows.update.history": "read",
     "network.reachability.internal": "network_read",
@@ -89,6 +90,7 @@ _EXACT_RESOURCE_POLICIES = {
     "camera.devices.snapshot": ("camera_devices", "local:camera:devices"),
     "storage.io.snapshot": ("storage_io", "local:storage:io"),
     "windows.print.driver.snapshot": ("printer_drivers", "local:printer:drivers"),
+    "vpn.status.local": ("vpn_status", "local:vpn:status"),
     "windows.boot.snapshot": ("boot_state", "local:windows:boot"),
     "windows.update.history": ("windows_update_history", "local:windows:update-history"),
 }
@@ -279,7 +281,7 @@ class CapabilityDecision:
             "effect": self.effect,
             "allowed": self.allowed,
             "reason_code": self.reason_code,
-            "authority_fingerprint": self.authority_fingerprint,
+            "authority_fingerprint": self.fingerprint,
         }
 
 
