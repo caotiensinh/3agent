@@ -92,7 +92,7 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
         self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
 
-    def test_explicit_malware_denial_is_not_promoted_to_security_hypothesis(self) -> None:
+    def test_explicit_malware_denial_is_preserved_without_promoting_hypothesis(self) -> None:
         for text in (
             "May cham nhung khong phai bi virus",
             "May cham, khong nghi la bi virus",
@@ -101,10 +101,23 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
             with self.subTest(text=text):
                 semantics = normalize_complaint_semantics(text)
                 self.assertNotIn("malware_infection", semantics.customer_hypotheses)
+                self.assertIn("malware_infection", semantics.denied_customer_hypotheses)
+
+    def test_multilingual_device_denial_is_preserved_as_denied_hypothesis(self) -> None:
+        cases = (
+            ("Khong phai router bi hong, chi may toi mat mang", "router_failure"),
+            ("カメラが故障ではない。RTSPだけ見られない", "camera_failure"),
+        )
+        for text, hypothesis in cases:
+            with self.subTest(text=text):
+                semantics = normalize_complaint_semantics(text)
+                self.assertNotIn(hypothesis, semantics.customer_hypotheses)
+                self.assertIn(hypothesis, semantics.denied_customer_hypotheses)
 
     def test_positive_malware_guess_is_hypothesis_not_observed_symptom(self) -> None:
         semantics = normalize_complaint_semantics("May cham, chac bi virus roi")
         self.assertIn("malware_infection", semantics.customer_hypotheses)
+        self.assertNotIn("malware_infection", semantics.denied_customer_hypotheses)
         self.assertNotIn("malware_infection", semantics.canonical_symptoms)
 
     def test_hostname_failure_with_ip_connectivity_selects_dns_evidence(self) -> None:
