@@ -105,6 +105,32 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
         self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
 
+    def test_duplicate_ip_wording_stays_hypothesis_and_selects_local_evidence(self) -> None:
+        semantics = normalize_complaint_semantics("May nay chac bi trung IP, mang luc duoc luc khong")
+        self.assertIn("duplicate_ip_conflict", semantics.customer_hypotheses)
+        self.assertNotIn("duplicate_ip_conflict", semantics.canonical_symptoms)
+        result = select_pc_diagnostic_tool_metadata(
+            "May nay chac bi trung IP, mang luc duoc luc khong",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertIn("network.ipconfig.snapshot", result.selected_ids())
+        self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
+
+    def test_vlan_mismatch_wording_stays_hypothesis_and_selects_config_evidence(self) -> None:
+        semantics = normalize_complaint_semantics("May nay chac sai VLAN, IP khac subnet")
+        self.assertIn("vlan_or_subnet_mismatch", semantics.customer_hypotheses)
+        self.assertNotIn("vlan_or_subnet_mismatch", semantics.canonical_symptoms)
+        result = select_pc_diagnostic_tool_metadata(
+            "May nay chac sai VLAN, IP khac subnet",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        ids = set(result.selected_ids())
+        self.assertIn("network.ipconfig.snapshot", ids)
+        self.assertIn("network.route.snapshot", ids)
+        self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
+
     def test_explicit_malware_denial_is_preserved_without_promoting_hypothesis(self) -> None:
         for text in (
             "May cham nhung khong phai bi virus",
@@ -154,13 +180,14 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertIn("network.dns.snapshot", ids)
         self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
 
-    def test_file_share_access_denied_does_not_become_generic_reachability_failure(self) -> None:
+    def test_file_share_access_denied_separates_identity_from_network_path(self) -> None:
         result = select_pc_diagnostic_tool_metadata(
             "Shared folder tren server bao Access Denied",
             platform_name="Windows",
             max_tools=4,
         )
         ids = set(result.selected_ids())
+        self.assertIn("identity.session.snapshot", ids)
         self.assertIn("network.smb.probe", ids)
         self.assertNotIn("network.reachability.internal", ids)
 
