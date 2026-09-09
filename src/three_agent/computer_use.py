@@ -10,6 +10,7 @@ from typing import Any, Mapping
 COMPUTER_ACTION_REQUEST_SCHEMA = "workspace-computer-action-request/v1"
 COMPUTER_OBSERVATION_SCHEMA = "workspace-computer-observation/v1"
 COMPUTER_ROUTE_DECISION_SCHEMA = "workspace-computer-route-decision/v1"
+COMPUTER_POLICY_DECISION_SCHEMA = "workspace-computer-policy-decision/v1"
 
 RISK_CLASSES = frozenset(
     {
@@ -19,6 +20,7 @@ RISK_CLASSES = frozenset(
         "R3_PRIVILEGED_OR_SENSITIVE",
     }
 )
+POLICY_OUTCOMES = frozenset({"ALLOW_AUTOMATIC", "REQUIRE_APPROVAL", "DENY"})
 
 EXECUTION_ROUTES = (
     "api",
@@ -287,6 +289,42 @@ class ComputerRouteDecision:
         return _digest(self.canonical_dict())
 
 
+@dataclass(frozen=True)
+class ComputerPolicyDecision:
+    task_id: str
+    action_fingerprint: str
+    authority_fingerprint: str
+    outcome: str
+    reason_code: str
+    schema_version: str = COMPUTER_POLICY_DECISION_SCHEMA
+
+    def validate(self) -> "ComputerPolicyDecision":
+        if self.schema_version != COMPUTER_POLICY_DECISION_SCHEMA:
+            raise ComputerUseError("COMPUTER_POLICY_SCHEMA_VERSION_MISMATCH")
+        _reference(self.task_id, "task_id")
+        _sha256(self.action_fingerprint, "action_fingerprint")
+        _sha256(self.authority_fingerprint, "authority_fingerprint")
+        if self.outcome not in POLICY_OUTCOMES:
+            raise ComputerUseError("UNKNOWN_COMPUTER_POLICY_OUTCOME")
+        _reference(self.reason_code, "reason_code")
+        return self
+
+    def canonical_dict(self) -> dict[str, str]:
+        self.validate()
+        return {
+            "schema_version": self.schema_version,
+            "task_id": self.task_id,
+            "action_fingerprint": self.action_fingerprint,
+            "authority_fingerprint": self.authority_fingerprint,
+            "outcome": self.outcome,
+            "reason_code": self.reason_code,
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        return _digest(self.canonical_dict())
+
+
 def select_execution_route(
     *,
     available_routes: tuple[str, ...],
@@ -342,7 +380,7 @@ def require_fresh_observation(
 
 
 def derive_action_policy(operation: str) -> dict[str, Any]:
-    """Return deterministic metadata used by later WorkSpace authority integration."""
+    """Return deterministic metadata used by WorkSpace authority integration."""
 
     effect, risk_class, requires_writer = operation_policy(operation)
     return {
@@ -350,3 +388,75 @@ def derive_action_policy(operation: str) -> dict[str, Any]:
         "risk_class": risk_class,
         "requires_writer": requires_writer,
     }
+
+
+def decide_computer_action(
+    action: ComputerActionRequest,
+    capability_decision: Any,
+) -> ComputerPolicyDecision:
+    """Project existing WorkSpace authority into fail-closed computer-use admission.
+
+    ``capability_decision`` is intentionally duck-typed to avoid making this core
+    contract module another authority. It must be an existing WorkSpace
+    CapabilityDecision-shaped object. Model confidence and provider text are not
+    inputs to this function and therefore cannot alter the decision class.
+    """
+
+    action.validate()
+    required_fields = (
+        "task_id",
+        "capability",
+        "resource_kind",
+        "resource_ref",
+        "effect",
+        "allowed",
+        "reason_code",
+        "authority_fingerprint",
+    )
+    if any(not hasattr(capability_decision, field) for field in required_fields):
+        raise ComputerUseError("INVALID_COMPUTER_CAPABILITY_DECISION")
+    if capability_decision.task_id != action.task_id:
+        raise ComputerUseError("COMPUTER_AUTHORITY_TASK_MISMATCH")
+    if capability_decision.capability != action.operation:
+        raise ComputerUseError("COMPUTER_AUTHORITY_CAPABILITY_MISMATCH")
+    if capability_decision.resource_kind != action.resource_kind:
+        raise ComputerUseError("COMPUTER_AUTHORITY_RESOURCE_KIND_MISMATCH")
+    if capability_decision.resource_ref != action.resource_ref:
+        raise ComputerUseError("COMPUTER_AUTHORITY_RESOURCE_REF_MISMATCH")
+    if capability_decision.effect != action.effect:
+        raise ComputerUseError("COMPUTER_AUTHORITY_EFFECT_MISMATCH")
+    authority_fingerprint = _sha256(
+        capability_decision.authority_fingerprint,
+        "authority_fingerprint",
+    )
+
+    if capability_decision.allowed is not True:
+        return ComputerPolicyDecision(
+            task_id=action.task_id,
+            action_fingerprint=action.fingerprint,
+            authority_fingerprint=authority_fingerprint,
+            outcome="DENY",
+            reason_code="CAPABILITY_AUTHORITY_DENIED",
+        ).validate()
+
+    if action.risk_class == "R0_OBSERVE":
+        outcome = "ALLOW_AUTOMATIC"
+        reason = "AUTHORIZED_R0_OBSERVATION"
+    elif action.risk_class in {"R1_REVERSIBLE_INTERACTION", "R2_STATE_CHANGE"}:
+        outcome = "REQUIRE_APPROVAL"
+        reason = (
+            "AUTHORIZED_R1_INTERACTION_REQUIRES_APPROVAL"
+            if action.risk_class == "R1_REVERSIBLE_INTERACTION"
+            else "AUTHORIZED_R2_STATE_CHANGE_REQUIRES_APPROVAL"
+        )
+    else:
+        outcome = "DENY"
+        reason = "R3_PRIVILEGED_OR_SENSITIVE_DENIED_BY_DEFAULT"
+
+    return ComputerPolicyDecision(
+        task_id=action.task_id,
+        action_fingerprint=action.fingerprint,
+        authority_fingerprint=authority_fingerprint,
+        outcome=outcome,
+        reason_code=reason,
+    ).validate()
