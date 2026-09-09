@@ -45,13 +45,17 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
     ),
     "vpn_access_unavailable": (
         "vpn loi", "khong vao vpn", "khong ket noi vpn", "vpn login fail", "vpn login failed",
-        "cannot connect vpn", "cannot connect to vpn", "vpn connection failed", "vpn login failed",
-        "vpn 接続できない", "vpn に接続できない", "vpn ログインできない",
+        "cannot connect vpn", "cannot connect to vpn", "vpn connection failed",
+        "vpn 接続できない", "vpn接続できない", "vpn に接続できない", "vpn ログインできない", "vpnログインできない",
     ),
     "vpn_internal_resource_unavailable": (
         "vpn vao duoc nhung", "vpn da vao duoc nhung", "vpn ket noi duoc nhung",
         "vpn connected but", "connected to vpn but", "vpn works but",
         "vpn接続できるが", "vpn接続済みだが", "vpnは繋がるが",
+    ),
+    "authorization_denied": (
+        "access denied", "permission denied", "khong co quyen", "bi tu choi truy cap",
+        "quyen truy cap bi tu choi", "アクセス拒否", "アクセスが拒否", "権限がありません",
     ),
     "audio_output_unavailable": (
         "khong co tieng", "mat tieng", "khong nghe thay tieng", "khong co am thanh",
@@ -108,6 +112,15 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
         "camera is broken", "camera dead", "camera is dead", "camera may be failing",
         "カメラが壊れ", "カメラが故障", "camera 故障",
     ),
+    "duplicate_ip_conflict": (
+        "trung ip", "bi trung ip", "xung dot ip", "duplicate ip", "ip conflict",
+        "same ip address", "重複 ip", "ip アドレスの競合", "ipアドレスの競合",
+    ),
+    "vlan_or_subnet_mismatch": (
+        "sai vlan", "khac vlan", "vlan sai", "vlan mismatch", "wrong vlan",
+        "sai subnet", "khac subnet", "wrong subnet", "subnet mismatch",
+        "vlan が違う", "vlanが違う", "サブネットが違う",
+    ),
     "windows_update_regression": (
         "windows update lam hong", "update lam hong", "windows update broke",
         "update broke", "update caused", "windows update caused",
@@ -155,6 +168,7 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "hostname_resolution_unavailable": ("dns", "name resolution", "ip address", "gateway"),
     "vpn_access_unavailable": ("vpn status", "vpn connection", "remote access vpn"),
     "vpn_internal_resource_unavailable": ("vpn status", "vpn connection", "vpn route", "route", "gateway"),
+    "authorization_denied": ("current user", "login identity"),
     "audio_output_unavailable": ("audio device", "no sound", "speaker", "microphone"),
     "application_unresponsive": ("performance", "application event", "app crash"),
 }
@@ -168,6 +182,8 @@ _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "dns_failure": ("dns", "name resolution", "ip address", "gateway"),
     "switch_failure": ("network adapter", "ip address", "gateway"),
     "camera_failure": ("reachability", "ping"),
+    "duplicate_ip_conflict": ("network adapter", "ip address"),
+    "vlan_or_subnet_mismatch": ("network adapter", "ip address", "gateway", "route"),
     "windows_update_regression": ("operating system", "system event", "reboot"),
     "malware_infection": ("security event",),
     "overheating": ("system event", "shutdown"),
