@@ -60,6 +60,19 @@ DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
     "network.quality.internal",
 }
+COMPUTER_USE_TOOLS = {
+    "computer.screen.observe",
+    "computer.window.observe",
+    "computer.accessibility.observe",
+    "browser.dom.observe",
+    "browser.navigate",
+    "browser.interact",
+    "computer.pointer.interact",
+    "computer.keyboard.interact",
+    "computer.clipboard.read",
+    "computer.clipboard.write",
+}
+COMPUTER_USE_NETWORK_TOOLS = {"browser.navigate"}
 INTERNAL_NETWORK_TOOLS = OFFICE_IT_NETWORK_TOOLS | DIAGNOSTIC_INTERNAL_NETWORK_TOOLS
 TOOLS = {
     "read_file",
@@ -80,6 +93,7 @@ TOOLS = {
     *DIAGNOSTIC_LOCAL_READ_TOOLS,
     *DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
     *DIAGNOSTIC_INTERNAL_NETWORK_TOOLS,
+    *COMPUTER_USE_TOOLS,
 }
 VALIDATORS = {
     "policy",
@@ -198,6 +212,14 @@ class TaskContract:
             raise TaskContractError(
                 f"Internal diagnostic network tools require network_scope=internal_only: {sorted(internal_network_tools)}"
             )
+        computer_network_tools = set(self.allowed_tools) & COMPUTER_USE_NETWORK_TOOLS
+        if computer_network_tools:
+            if self.network_scope != "allowlisted_egress":
+                raise TaskContractError(
+                    f"Computer-use network tools require network_scope=allowlisted_egress: {sorted(computer_network_tools)}"
+                )
+            if "web_gateway" not in self.allowed_tools:
+                raise TaskContractError("Computer-use network tools require web_gateway authority")
         if self.model_policy.initial_tier not in MODEL_TIERS or self.model_policy.max_tier not in MODEL_TIERS:
             raise TaskContractError("invalid model tier")
         tier_order = {"none": 0, "small": 1, "specialist": 2, "strong": 3}
