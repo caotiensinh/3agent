@@ -1,0 +1,337 @@
+name: application-e2e-multilingual
+
+on:
+  pull_request:
+    paths:
+      - 'src/three_agent/application_e2e_multilingual.py'
+      - 'tests/test_application_e2e_multilingual.py'
+      - '.github/workflows/application-e2e-multilingual.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/three_agent/application_e2e_multilingual.py'
+      - 'tests/test_application_e2e_multilingual.py'
+      - '.github/workflows/application-e2e-multilingual.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN to execute the multilingual whole-application E2E suite'
+        required: true
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-application-e2e-multilingual
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: multilingual corpus contract
+    if: github.event_name != 'workflow_dispatch' || inputs.confirm == 'RUN'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate
+        run: python -m pip install -e .
+      - name: Validate 30-prompt VI JA EN matrix
+        run: python -m unittest tests.test_application_e2e_multilingual -v
+      - name: Print sanitized matrix contract
+        run: python -m three_agent.application_e2e_multilingual
+
+  live-prompt-matrix:
+    name: live UI API model prompt matrix
+    needs: contract
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'workflow_dispatch' || inputs.confirm == 'RUN')
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    timeout-minutes: 120
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+          persist-credentials: false
+      - name: Verify exact source and physical model host
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          command -v nvidia-smi >/dev/null
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)" -ge 2
+      - name: Create isolated acceptance environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-app-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install -e .
+          echo "APP_E2E_VENV=$VENV" >> "$GITHUB_ENV"
+      - name: Resolve acceptance config without printing it
+        shell: bash
+        env:
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "APP_E2E_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+      - name: Run 30 live prompts through UI HTTP API and local model
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          REPORT="$RUNNER_TEMP/application-e2e-multilingual-${EXPECTED_SHA}.json"
+          RUNTIME_DIR="$RUNNER_TEMP/application-e2e-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$RUNTIME_DIR"
+          install -d -m 700 "$RUNTIME_DIR"
+          echo "APP_E2E_REPORT=$REPORT" >> "$GITHUB_ENV"
+          set +e
+          THREE_AGENT_RUNTIME_DIR="$RUNTIME_DIR" \
+          WORKSPACE_CONFIG="$APP_E2E_CONFIG" \
+            "$APP_E2E_VENV/bin/python" -m three_agent.application_e2e_multilingual \
+              --live \
+              --source-sha "$EXPECTED_SHA" \
+              --output "$REPORT"
+          rc=$?
+          set -e
+          rm -rf "$RUNTIME_DIR"
+          exit "$rc"
+      - name: Publish sanitized prompt-matrix summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test -n "${APP_E2E_REPORT:-}" && test -f "$APP_E2E_REPORT"; then
+            "$APP_E2E_VENV/bin/python" - "$APP_E2E_REPORT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## Multilingual application prompt matrix')
+          print()
+          print(f"- source SHA: `{p.get('source_sha', 'unknown')}`")
+          print(f"- result: `{'PASS' if p.get('passed') else 'FAIL'}`")
+          print(f"- cases: `{p.get('case_count', 0)}`")
+          print(f"- categories: `{p.get('category_count', 0)}`")
+          print(f"- language counts: `{p.get('language_counts', {})}`")
+          print(f"- frontend served: `{p.get('frontend_served', False)}`")
+          print(f"- frontend contract: `{p.get('frontend_contract_passed', False)}`")
+          print(f"- failed cases: `{p.get('failed_case_count', 0)}`")
+          print('- raw prompts/answers: `not persisted`')
+          print()
+          print('| case | category | language | route | status | model | chars | failures |')
+          print('|---|---|---|---|---|---:|---:|---|')
+          for item in p.get('results', []):
+              print('| {case} | {category} | {lang} | {route} | {status} | {model} | {chars} | {failures} |'.format(
+                  case=item.get('case_id', ''),
+                  category=item.get('category', ''),
+                  lang=item.get('actual_language', ''),
+                  route=item.get('route', ''),
+                  status=item.get('status', ''),
+                  model=str(bool(item.get('model_returned'))).lower(),
+                  chars=item.get('response_chars', 0),
+                  failures=','.join(item.get('failures', [])),
+              ))
+          PY
+          else
+            echo '## Multilingual application prompt matrix' >> "$GITHUB_STEP_SUMMARY"
+            echo '- result: `NO_REPORT`' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload sanitized prompt-matrix evidence
+        if: always() && env.APP_E2E_REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-e2e-multilingual-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.APP_E2E_REPORT }}
+          if-no-files-found: error
+          retention-days: 14
+
+  live-multiturn:
+    name: live multilingual multi-turn context
+    needs: live-prompt-matrix
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+          persist-credentials: false
+      - name: Create isolated multi-turn environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-multiturn-e2e-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install -e .
+          echo "MULTITURN_E2E_VENV=$VENV" >> "$GITHUB_ENV"
+      - name: Resolve acceptance config without printing it
+        shell: bash
+        env:
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "MULTITURN_E2E_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+      - name: Run existing multilingual multi-turn acceptance
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          REPORT="$RUNNER_TEMP/application-multiturn-${EXPECTED_SHA}.json"
+          RUNTIME_DIR="$RUNNER_TEMP/application-multiturn-runtime-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$RUNTIME_DIR"
+          install -d -m 700 "$RUNTIME_DIR"
+          echo "MULTITURN_E2E_REPORT=$REPORT" >> "$GITHUB_ENV"
+          set +e
+          THREE_AGENT_RUNTIME_DIR="$RUNTIME_DIR" \
+          WORKSPACE_CONFIG="$MULTITURN_E2E_CONFIG" \
+            "$MULTITURN_E2E_VENV/bin/workspace-chat-multiturn-acceptance" \
+              --live \
+              --source-sha "$EXPECTED_SHA" \
+              --output "$REPORT"
+          rc=$?
+          set -e
+          rm -rf "$RUNTIME_DIR"
+          exit "$rc"
+      - name: Upload sanitized multi-turn evidence
+        if: always() && env.MULTITURN_E2E_REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-multiturn-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.MULTITURN_E2E_REPORT }}
+          if-no-files-found: error
+          retention-days: 14
+
+  live-full-workflow:
+    name: live Research Presentation Daily Report VI JA EN
+    needs: live-multiturn
+    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+          persist-credentials: false
+      - name: Prepare exact-head full-workflow runtime
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          for cmd in git jq curl python3 nvidia-smi ollama; do command -v "$cmd" >/dev/null; done
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)" -ge 2
+          curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:11434/api/tags >/dev/null
+          rm -rf .venv
+          python3 -m venv .venv
+          .venv/bin/python -m pip install -e .
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "FULL_E2E_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+          MODEL="$(.venv/bin/python - "$CONFIG_PATH" <<'PY'
+          import sys
+          from three_agent.config import load_config
+          c = load_config(sys.argv[1])
+          model = c.model_policy.research_model if c.model_policy and c.model_policy.enabled else c.llm.model
+          print(model)
+          PY
+          )"
+          test -n "$MODEL"
+          ollama list | awk 'NR>1 {print $1}' | grep -Fxq "$MODEL"
+          echo "FULL_E2E_MODEL=$MODEL" >> "$GITHUB_ENV"
+      - name: Run full physical workflow in Vietnamese Japanese English
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          RESULTS="$RUNNER_TEMP/full-workflow-multilingual.tsv"
+          RECEIPT="$RUNNER_TEMP/full-workflow-multilingual-${EXPECTED_SHA}.json"
+          : > "$RESULTS"
+          echo "FULL_E2E_RECEIPT=$RECEIPT" >> "$GITHUB_ENV"
+          overall=0
+
+          run_case() {
+            local lang="$1" title="$2" request="$3" format="$4" rc=0
+            set +e
+            THREE_AGENT_ROOT="$GITHUB_WORKSPACE" \
+            THREE_AGENT_MODEL="$FULL_E2E_MODEL" \
+            LOCAL_LLM_MODEL="$FULL_E2E_MODEL" \
+            THREE_AGENT_CONFIG="$FULL_E2E_CONFIG" \
+            THREE_AGENT_E2E_SKIP_UPDATE=1 \
+            THREE_AGENT_REQUIRED_RTX5090_COUNT=2 \
+            THREE_AGENT_E2E_LANGUAGE="$lang" \
+            THREE_AGENT_E2E_TITLE="$title" \
+            THREE_AGENT_E2E_REQUEST="$request" \
+            THREE_AGENT_E2E_FORMAT="$format" \
+              bash scripts/run_e2e_acceptance.sh
+            rc=$?
+            set -e
+            printf '%s\t%s\t%s\n' "$lang" "$format" "$rc" >> "$RESULTS"
+            if (( rc != 0 )); then overall=1; fi
+          }
+
+          run_case vi \
+            'Kiểm thử E2E nghiên cứu kỹ thuật' \
+            'Nghiên cứu các bước chẩn đoán DNS trên Linux từ các nguồn kỹ thuật đáng tin cậy, loại bỏ thông tin trùng lặp, giữ nguồn bằng chứng và tạo kết quả phù hợp cho nhóm R&D.' \
+            source
+          run_case ja \
+            '技術調査E2Eテスト' \
+            'LinuxのDNS障害切り分け手順を信頼できる技術情報から調査し、重複を除去し、根拠を保持してR&D向けに整理してください。' \
+            pptx
+          run_case en \
+            'Technical research E2E test' \
+            'Research Linux DNS troubleshooting steps from trustworthy technical sources, remove duplicates, preserve evidence lineage, and organize the result for an R&D audience.' \
+            source
+
+          .venv/bin/python - "$RESULTS" "$RECEIPT" "$EXPECTED_SHA" <<'PY'
+          import json, pathlib, sys
+          rows = []
+          for line in pathlib.Path(sys.argv[1]).read_text(encoding='utf-8').splitlines():
+              lang, fmt, rc = line.split('\t')
+              rows.append({'language': lang, 'format': fmt, 'exit_code': int(rc), 'passed': int(rc) == 0})
+          payload = {
+              'schema': 'workspace-e2e/full-workflow-multilingual-v1',
+              'source_sha': sys.argv[3],
+              'case_count': len(rows),
+              'languages': [row['language'] for row in rows],
+              'results': rows,
+              'passed': all(row['passed'] for row in rows),
+              'raw_prompts_uploaded': False,
+              'raw_outputs_uploaded': False,
+          }
+          pathlib.Path(sys.argv[2]).write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
+          PY
+          exit "$overall"
+      - name: Upload sanitized full-workflow receipt
+        if: always() && env.FULL_E2E_RECEIPT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-workflow-multilingual-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.FULL_E2E_RECEIPT }}
+          if-no-files-found: error
+          retention-days: 14
