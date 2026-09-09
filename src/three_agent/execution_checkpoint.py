@@ -53,8 +53,34 @@ def _require_sha256(value: str, field: str) -> str:
     return value
 
 
+def _parse_canonical_payload(
+    raw_json: str,
+    stored_sha256: str,
+    *,
+    kind: str,
+) -> Any:
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise ExecutionCheckpointError(f"{kind}_CHECKPOINT_JSON_INVALID") from exc
+    if _canonical_json(payload) != raw_json:
+        raise ExecutionCheckpointError(f"{kind}_CHECKPOINT_NOT_CANONICAL")
+    if stored_sha256 != _digest_payload(payload):
+        raise ExecutionCheckpointError(f"{kind}_CHECKPOINT_DIGEST_MISMATCH")
+    return payload
+
+
+def _validate_dispatch_fingerprints(ticket: DispatchTicket) -> None:
+    _require_sha256(ticket.plan_fingerprint, "plan_fingerprint")
+    _require_sha256(ticket.node_fingerprint, "node_fingerprint")
+    _require_sha256(ticket.authority_fingerprint, "authority_fingerprint")
+    for dependency in ticket.dependency_observation_fingerprints:
+        _require_sha256(dependency, "dependency_observation_fingerprint")
+
+
 def _dispatch_payload(ticket: DispatchTicket) -> dict[str, Any]:
     ticket.validate()
+    _validate_dispatch_fingerprints(ticket)
     return {
         "ticket_id": ticket.ticket_id,
         "schema_version": ticket.schema_version,
@@ -118,7 +144,9 @@ def _dispatch_from_payload(payload: Any) -> DispatchTicket:
             execution_level=int(payload["execution_level"]),
             schema_version=str(payload["schema_version"]),
         )
-        return ticket.validate()
+        ticket.validate()
+        _validate_dispatch_fingerprints(ticket)
+        return ticket
     except (TypeError, ValueError) as exc:
         raise ExecutionCheckpointError("INVALID_DISPATCH_CHECKPOINT") from exc
 
@@ -217,8 +245,7 @@ def _observation_from_payload(payload: Any) -> ExecutionObservation:
         observation.validate()
     except (TypeError, ValueError) as exc:
         raise ExecutionCheckpointError("INVALID_OBSERVATION_CHECKPOINT") from exc
-    expected_output_sha = observation.normalized_output_sha256
-    if payload["normalized_output_sha256"] != expected_output_sha:
+    if payload["normalized_output_sha256"] != observation.normalized_output_sha256:
         raise ExecutionCheckpointError("OBSERVATION_OUTPUT_DIGEST_MISMATCH")
     return observation
 
@@ -302,6 +329,14 @@ class ExecutionCheckpointRepository:
                     ON execution_checkpoint_events(task_id, plan_fingerprint, sequence);
                 """
             )
+
+    @staticmethod
+    def _require_task(conn, task_id: str) -> None:
+        if conn.execute(
+            "SELECT 1 FROM tasks WHERE task_id = ? LIMIT 1",
+            (task_id,),
+        ).fetchone() is None:
+            raise ExecutionCheckpointError("EXECUTION_CHECKPOINT_TASK_NOT_FOUND")
 
     @staticmethod
     def _event_hash(
@@ -388,17 +423,27 @@ class ExecutionCheckpointRepository:
         now = _utc_now()
         with self.task_store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._require_task(conn, ticket.task_id)
             existing = conn.execute(
-                "SELECT ticket_sha256 FROM execution_dispatch_checkpoints WHERE ticket_id = ?",
+                """
+                SELECT ticket_json, ticket_sha256
+                FROM execution_dispatch_checkpoints
+                WHERE ticket_id = ?
+                """,
                 (ticket.ticket_id,),
             ).fetchone()
             if existing is not None:
-                if str(existing["ticket_sha256"]) != payload_sha256:
+                existing_payload = _parse_canonical_payload(
+                    str(existing["ticket_json"]),
+                    str(existing["ticket_sha256"]),
+                    kind="DISPATCH",
+                )
+                if _digest_payload(existing_payload) != payload_sha256:
                     raise ExecutionCheckpointError("DISPATCH_CHECKPOINT_IDENTITY_CONFLICT")
                 return ticket
             node_row = conn.execute(
                 """
-                SELECT ticket_id, ticket_sha256
+                SELECT ticket_id
                 FROM execution_dispatch_checkpoints
                 WHERE task_id = ? AND plan_fingerprint = ? AND node_id = ?
                 """,
@@ -444,9 +489,10 @@ class ExecutionCheckpointRepository:
         now = _utc_now()
         with self.task_store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._require_task(conn, observation.task_id)
             ticket = conn.execute(
                 """
-                SELECT ticket_id, ticket_json
+                SELECT ticket_id, ticket_json, ticket_sha256
                 FROM execution_dispatch_checkpoints
                 WHERE task_id = ? AND plan_fingerprint = ? AND node_id = ?
                 """,
@@ -454,7 +500,12 @@ class ExecutionCheckpointRepository:
             ).fetchone()
             if ticket is None:
                 raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_REQUIRES_DISPATCH")
-            dispatch = _dispatch_from_payload(json.loads(str(ticket["ticket_json"])))
+            dispatch_payload = _parse_canonical_payload(
+                str(ticket["ticket_json"]),
+                str(ticket["ticket_sha256"]),
+                kind="DISPATCH",
+            )
+            dispatch = _dispatch_from_payload(dispatch_payload)
             if observation.node_fingerprint != dispatch.node_fingerprint:
                 raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_NODE_MISMATCH")
             if observation.authority_fingerprint != dispatch.authority_fingerprint:
@@ -462,14 +513,19 @@ class ExecutionCheckpointRepository:
 
             existing = conn.execute(
                 """
-                SELECT observation_sha256
+                SELECT observation_json, observation_sha256
                 FROM execution_observation_checkpoints
                 WHERE observation_id = ?
                 """,
                 (observation.observation_id,),
             ).fetchone()
             if existing is not None:
-                if str(existing["observation_sha256"]) != payload_sha256:
+                existing_payload = _parse_canonical_payload(
+                    str(existing["observation_json"]),
+                    str(existing["observation_sha256"]),
+                    kind="OBSERVATION",
+                )
+                if _digest_payload(existing_payload) != payload_sha256:
                     raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_IDENTITY_CONFLICT")
                 return observation
             node_row = conn.execute(
@@ -518,6 +574,7 @@ class ExecutionCheckpointRepository:
         plan_fingerprint: str,
         reason_code: str,
     ) -> None:
+        _require_sha256(plan_fingerprint, "plan_fingerprint")
         if not isinstance(reason_code, str) or not reason_code.strip():
             raise ExecutionCheckpointError("INVALID_CANCELLATION_REASON")
         reason = reason_code.strip()
@@ -527,9 +584,10 @@ class ExecutionCheckpointRepository:
         now = _utc_now()
         with self.task_store.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            self._require_task(conn, task_id)
             latest = conn.execute(
                 """
-                SELECT payload_json
+                SELECT payload_json, payload_sha256
                 FROM execution_checkpoint_events
                 WHERE task_id = ? AND plan_fingerprint = ? AND event_type = 'CANCELLED'
                 ORDER BY sequence DESC
@@ -537,8 +595,14 @@ class ExecutionCheckpointRepository:
                 """,
                 (task_id, plan_fingerprint),
             ).fetchone()
-            if latest is not None and str(latest["payload_json"]) == payload_json:
-                return
+            if latest is not None:
+                latest_payload = _parse_canonical_payload(
+                    str(latest["payload_json"]),
+                    str(latest["payload_sha256"]),
+                    kind="CANCELLATION",
+                )
+                if _canonical_json(latest_payload) == payload_json:
+                    return
             self._append_event(
                 conn,
                 task_id=task_id,
@@ -596,6 +660,7 @@ class ExecutionCheckpointRepository:
             raise ExecutionCheckpointError("EXECUTION_CHECKPOINT_EVENT_CHAIN_INVALID")
 
         with self.task_store.connect() as conn:
+            self._require_task(conn, task_id)
             dispatch_rows = conn.execute(
                 """
                 SELECT *
@@ -616,7 +681,7 @@ class ExecutionCheckpointRepository:
             ).fetchall()
             cancellation = conn.execute(
                 """
-                SELECT payload_json
+                SELECT payload_json, payload_sha256
                 FROM execution_checkpoint_events
                 WHERE task_id = ? AND plan_fingerprint = ? AND event_type = 'CANCELLED'
                 ORDER BY sequence DESC
@@ -628,15 +693,11 @@ class ExecutionCheckpointRepository:
         dispatches: list[DispatchTicket] = []
         dispatch_by_node: dict[str, DispatchTicket] = {}
         for row in dispatch_rows:
-            raw_json = str(row["ticket_json"])
-            try:
-                payload = json.loads(raw_json)
-            except json.JSONDecodeError as exc:
-                raise ExecutionCheckpointError("DISPATCH_CHECKPOINT_JSON_INVALID") from exc
-            if _canonical_json(payload) != raw_json:
-                raise ExecutionCheckpointError("DISPATCH_CHECKPOINT_NOT_CANONICAL")
-            if str(row["ticket_sha256"]) != _digest_payload(payload):
-                raise ExecutionCheckpointError("DISPATCH_CHECKPOINT_DIGEST_MISMATCH")
+            payload = _parse_canonical_payload(
+                str(row["ticket_json"]),
+                str(row["ticket_sha256"]),
+                kind="DISPATCH",
+            )
             ticket = _dispatch_from_payload(payload)
             if ticket.task_id != task_id or ticket.plan_fingerprint != plan_fingerprint:
                 raise ExecutionCheckpointError("DISPATCH_CHECKPOINT_SCOPE_MISMATCH")
@@ -648,15 +709,11 @@ class ExecutionCheckpointRepository:
         observations: list[ExecutionObservation] = []
         observed_nodes: set[str] = set()
         for row in observation_rows:
-            raw_json = str(row["observation_json"])
-            try:
-                payload = json.loads(raw_json)
-            except json.JSONDecodeError as exc:
-                raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_JSON_INVALID") from exc
-            if _canonical_json(payload) != raw_json:
-                raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_NOT_CANONICAL")
-            if str(row["observation_sha256"]) != _digest_payload(payload):
-                raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_DIGEST_MISMATCH")
+            payload = _parse_canonical_payload(
+                str(row["observation_json"]),
+                str(row["observation_sha256"]),
+                kind="OBSERVATION",
+            )
             observation = _observation_from_payload(payload)
             if observation.task_id != task_id or observation.plan_fingerprint != plan_fingerprint:
                 raise ExecutionCheckpointError("OBSERVATION_CHECKPOINT_SCOPE_MISMATCH")
@@ -672,10 +729,11 @@ class ExecutionCheckpointRepository:
 
         cancellation_reason = None
         if cancellation is not None:
-            try:
-                cancellation_payload = json.loads(str(cancellation["payload_json"]))
-            except json.JSONDecodeError as exc:
-                raise ExecutionCheckpointError("CANCELLATION_CHECKPOINT_JSON_INVALID") from exc
+            cancellation_payload = _parse_canonical_payload(
+                str(cancellation["payload_json"]),
+                str(cancellation["payload_sha256"]),
+                kind="CANCELLATION",
+            )
             reason = cancellation_payload.get("reason_code")
             if not isinstance(reason, str) or not reason:
                 raise ExecutionCheckpointError("CANCELLATION_CHECKPOINT_INVALID")
