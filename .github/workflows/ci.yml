@@ -39,54 +39,72 @@ jobs:
           rm -f "$result" "$log"
 
           set +e
-          python scripts/validate_execution_governance.py 2>&1 | tee "$log"
+          python scripts/validate_execution_governance.py \
+            --json-output "$result" 2>&1 | tee "$log"
           rc=${PIPESTATUS[0]}
           set -e
 
-          valid=false
-          classification="POLICY_INVALID"
-          rule_id="GOV-CI-POLICY"
-          message="canonical governance validator rejected repository state"
-
-          if [ "$rc" -eq 0 ]; then
-            valid=true
-            classification="PASS"
-            rule_id="GOV-CI-PASS"
-            message="canonical governance validator passed"
-          elif grep -qiE 'duplicate JSON key|canonical policy duplication/drift|new parallel/versioned implementation files are forbidden' "$log"; then
-            classification="DUPLICATE_FAILURE"
-            rule_id="GOV-CI-DUPLICATE"
-            message="duplicate or parallel governance authority detected"
-          elif grep -qiE 'path must remain inside repository root|No such file or directory|cannot find|not found' "$log"; then
-            classification="CONFIG_ERROR"
-            rule_id="GOV-CI-CONFIG"
-            message="governance configuration or path is invalid"
-          elif grep -qiE 'command not found|python: not found|failed to start|runner' "$log"; then
-            classification="INFRA_FAILURE"
-            rule_id="GOV-CI-INFRA"
-            message="governance verifier infrastructure failed"
-          elif ! grep -q 'EXECUTION_GOVERNANCE: FAIL:' "$log"; then
-            classification="VALIDATOR_ERROR"
-            rule_id="GOV-CI-VALIDATOR"
-            message="validator terminated without canonical failure output"
-          fi
-
-          cat > "$result" <<JSON
+          if [ ! -f "$result" ]; then
+            cat > "$result" <<JSON
           {
-            "valid": ${valid},
-            "classification": "${classification}",
-            "rule_id": "${rule_id}",
-            "exit_code": ${rc},
-            "message": "${message}",
-            "head_sha": "$(git rev-parse HEAD)"
+            "valid": false,
+            "classification": "INFRA_FAILURE",
+            "violations": [
+              {
+                "rule_id": "GOV-CI-EVIDENCE-MISSING",
+                "severity": "error",
+                "message": "validator did not produce the requested machine-readable evidence"
+              }
+            ]
           }
           JSON
+          fi
 
-          cat "$result"
+          python - "$result" "$rc" "$(git rev-parse HEAD)" <<'PY'
+          import json
+          import sys
+
+          path, exit_code, head_sha = sys.argv[1:]
+          with open(path, "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          data["validator_exit_code"] = int(exit_code)
+          data["head_sha"] = head_sha
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(data, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+          classification="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          print(data.get("classification", "VALIDATOR_ERROR"))
+          PY
+          )"
+          rule_id="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          violations = data.get("violations") or []
+          print(violations[0].get("rule_id", "GOV-CI-PASS") if violations else "GOV-CI-PASS")
+          PY
+          )"
+
+          case "$classification" in
+            PASS|POLICY_INVALID|CONFIG_ERROR|VALIDATOR_ERROR|TEST_FAILURE|DUPLICATE_FAILURE|INFRA_FAILURE) ;;
+            *)
+              classification="VALIDATOR_ERROR"
+              rule_id="GOV-CI-CLASSIFICATION-UNKNOWN"
+              ;;
+          esac
+
           echo "governance_ci_classification=${classification}"
           echo "governance_ci_rule_id=${rule_id}"
           if [ "$rc" -ne 0 ]; then
-            echo "::error title=Execution governance ${classification}::${message}; read execution-governance evidence artifact"
+            echo "::error title=Execution governance ${classification}::rule=${rule_id}; read execution-governance evidence artifact"
           fi
           exit "$rc"
       - name: Upload execution governance evidence
