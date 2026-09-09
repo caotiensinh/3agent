@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from three_agent.secure_memory import SecureMemoryStore
@@ -58,11 +59,12 @@ class SecureMemoryStoreTests(unittest.TestCase):
     def test_record_tamper_is_detected(self):
         store = SecureMemoryStore(self.db)
         record, _ = store.put("n", "k", {"safe": True}, actor="agent", approved_by="operator")
-        with sqlite3.connect(self.db) as conn:
-            conn.execute(
-                "UPDATE secure_memory_records SET value_json=? WHERE record_id=?",
-                (json.dumps({"safe": False}), record.record_id),
-            )
+        with closing(sqlite3.connect(self.db)) as conn:
+            with conn:
+                conn.execute(
+                    "UPDATE secure_memory_records SET value_json=? WHERE record_id=?",
+                    (json.dumps({"safe": False}), record.record_id),
+                )
         with self.assertRaisesRegex(RuntimeError, "MEMORY_RECORD_INTEGRITY_FAILED"):
             store.get("n", "k")
 
@@ -71,8 +73,9 @@ class SecureMemoryStoreTests(unittest.TestCase):
         store.put("n", "a", 1, actor="agent", approved_by="operator")
         store.put("n", "b", 2, actor="agent", approved_by="operator")
         self.assertTrue(store.verify_audit_chain())
-        with sqlite3.connect(self.db) as conn:
-            conn.execute("UPDATE secure_memory_receipts SET result='tampered' WHERE sequence=1")
+        with closing(sqlite3.connect(self.db)) as conn:
+            with conn:
+                conn.execute("UPDATE secure_memory_receipts SET result='tampered' WHERE sequence=1")
         self.assertFalse(store.verify_audit_chain())
 
     def test_policy_can_authorize_exact_mutation(self):
