@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import Any
 
 from .diagnostics.complaint_semantics import normalize_complaint_semantics
+from .diagnostics.routing_guardrails import apply_cross_domain_guardrails
 from .diagnostics.runtime_registry import runtime_micro_tool_registry
 from .micro_tool_registry import MicroToolRegistry, ToolSelectionRequest, ToolSelectionResult
 from .office_it_tools import TOOL_SPECS, OfficeITToolSpec, iter_specs
@@ -57,7 +58,8 @@ def select_pc_diagnostic_tool_metadata(
         authority=authority,
         admin_available=admin_available,
     )
-    return runtime_micro_tool_registry().select(request)
+    result = runtime_micro_tool_registry().select(request)
+    return apply_cross_domain_guardrails(query, result)
 
 
 def select_office_it_tools(
