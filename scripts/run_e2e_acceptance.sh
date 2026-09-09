@@ -12,7 +12,8 @@ LANGUAGE="${THREE_AGENT_E2E_LANGUAGE:-ja}"
 SLIDES="${THREE_AGENT_E2E_SLIDES:-6}"
 FORMAT="${THREE_AGENT_E2E_FORMAT:-pptx}"
 SKIP_UPDATE="${THREE_AGENT_E2E_SKIP_UPDATE:-0}"
-REQUIRED_GPU_COUNT="${THREE_AGENT_REQUIRED_RTX5090_COUNT:-2}"
+REQUIRED_GPU_COUNT="${THREE_AGENT_REQUIRED_GPU_COUNT:-${THREE_AGENT_REQUIRED_RTX5090_COUNT:-2}}"
+REQUIRED_GPU_NAME_FILTER="${THREE_AGENT_REQUIRED_GPU_NAME_FILTER-RTX 5090}"
 
 log() { printf '[3Agent-E2E] %s\n' "$*"; }
 fail() { printf '[3Agent-E2E][FAIL] %s\n' "$*" >&2; exit 1; }
@@ -45,11 +46,19 @@ if ! nvidia-smi >/dev/null 2>&1; then
   fail "nvidia-smi is unhealthy"
 fi
 
-GPU_COUNT="$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)"
-if (( GPU_COUNT < REQUIRED_GPU_COUNT )); then
-  fail "Expected at least $REQUIRED_GPU_COUNT RTX 5090 GPUs, found $GPU_COUNT"
+mapfile -t GPU_NAMES < <(nvidia-smi --query-gpu=name --format=csv,noheader)
+RTX5090_COUNT="$(printf '%s\n' "${GPU_NAMES[@]}" | grep -F -c 'RTX 5090' || true)"
+if [[ -n "$REQUIRED_GPU_NAME_FILTER" ]]; then
+  GPU_COUNT="$(printf '%s\n' "${GPU_NAMES[@]}" | grep -F -c "$REQUIRED_GPU_NAME_FILTER" || true)"
+  GPU_REQUIREMENT="$REQUIRED_GPU_NAME_FILTER"
+else
+  GPU_COUNT="${#GPU_NAMES[@]}"
+  GPU_REQUIREMENT="NVIDIA GPU"
 fi
-log "GPU PASS: $GPU_COUNT RTX 5090 detected"
+if (( GPU_COUNT < REQUIRED_GPU_COUNT )); then
+  fail "Expected at least $REQUIRED_GPU_COUNT $GPU_REQUIREMENT devices, found $GPU_COUNT"
+fi
+log "GPU PASS: $GPU_COUNT matching $GPU_REQUIREMENT devices detected"
 nvidia-smi --query-gpu=index,name,driver_version,memory.total,uuid --format=csv,noheader
 
 log "Checking Ollama API and configured model"
@@ -94,8 +103,10 @@ jq -n \
   --arg head "$(git rev-parse HEAD)" \
   --arg model "$MODEL" \
   --arg driver "$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1)" \
-  --argjson gpu_count "$GPU_COUNT" \
-  '{timestamp:$timestamp,git_head:$head,model:$model,nvidia_driver:$driver,rtx5090_count:$gpu_count}' \
+  --arg gpu_name_filter "$REQUIRED_GPU_NAME_FILTER" \
+  --argjson gpu_match_count "$GPU_COUNT" \
+  --argjson rtx5090_count "$RTX5090_COUNT" \
+  '{timestamp:$timestamp,git_head:$head,model:$model,nvidia_driver:$driver,gpu_name_filter:$gpu_name_filter,gpu_match_count:$gpu_match_count,rtx5090_count:$rtx5090_count}' \
   > "$SYSTEM_JSON"
 
 log "Running live Research -> Presentation -> Daily Report workflow"
