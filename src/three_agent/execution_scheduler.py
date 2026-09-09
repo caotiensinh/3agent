@@ -107,6 +107,29 @@ class DispatchTicket:
         return self
 
 
+class SchedulerCheckpointRepository(Protocol):
+    """Persistence boundary used by ``ExecutionScheduler`` without owning execution."""
+
+    def initialize(self) -> None: ...
+
+    def record_dispatch(self, ticket: DispatchTicket) -> DispatchTicket: ...
+
+    def record_observation(
+        self,
+        observation: ExecutionObservation,
+    ) -> ExecutionObservation: ...
+
+    def record_cancellation(
+        self,
+        *,
+        task_id: str,
+        plan_fingerprint: str,
+        reason_code: str,
+    ) -> None: ...
+
+    def load(self, *, task_id: str, plan_fingerprint: str) -> Any: ...
+
+
 class ExecutionScheduler:
     """Stateful dispatch coordinator over the canonical runtime scheduler evaluator.
 
@@ -116,6 +139,12 @@ class ExecutionScheduler:
     tickets, in-flight tracking, persistent budget reservation, monotonic
     revocation checks, backpressure, cancellation, and canonical observation
     admission.
+
+    When a checkpoint repository is supplied, persisted completed observations
+    are restored and persisted unfinished dispatches become ``RECOVERY_REQUIRED``.
+    They are never returned to the ready set or replayed automatically. Persisted
+    dispatches for approval-required nodes require explicit re-approval on every
+    restore because a checkpoint row is not itself an approval receipt.
     """
 
     def __init__(
@@ -127,6 +156,8 @@ class ExecutionScheduler:
         budget_guard: SchedulerBudgetGuard,
         revocation_guard: SchedulerRevocationGuard,
         max_concurrency: int = 4,
+        checkpoint_repository: SchedulerCheckpointRepository | None = None,
+        checkpoint_reapproved_nodes: frozenset[str] = frozenset(),
     ) -> None:
         if not isinstance(task_context, TaskContext):
             raise ExecutionSchedulerError("INVALID_TASK_CONTEXT")
@@ -144,6 +175,19 @@ class ExecutionScheduler:
             raise ExecutionSchedulerError("BUDGET_GUARD_REQUIRED")
         if revocation_guard is None:
             raise ExecutionSchedulerError("REVOCATION_GUARD_REQUIRED")
+        if not isinstance(checkpoint_reapproved_nodes, frozenset):
+            raise ExecutionSchedulerError(
+                "CHECKPOINT_REAPPROVED_NODES_MUST_BE_FROZENSET"
+            )
+        if any(
+            not isinstance(node_id, str) or not node_id.strip()
+            for node_id in checkpoint_reapproved_nodes
+        ):
+            raise ExecutionSchedulerError("INVALID_CHECKPOINT_REAPPROVED_NODE")
+        if checkpoint_repository is None and checkpoint_reapproved_nodes:
+            raise ExecutionSchedulerError(
+                "CHECKPOINT_REAPPROVALS_REQUIRE_REPOSITORY"
+            )
 
         try:
             RuntimeScheduler.evaluate(
@@ -162,13 +206,20 @@ class ExecutionScheduler:
         self.budget_guard = budget_guard
         self.revocation_guard = revocation_guard
         self.max_concurrency = max_concurrency
+        self.checkpoint_repository = checkpoint_repository
         self._nodes = _node_map(plan)
         self._observations: dict[str, ExecutionObservation] = {}
         self._in_flight: dict[str, DispatchTicket] = {}
+        self._recovery_required: dict[str, DispatchTicket] = {}
         self._approved_nodes: set[str] = set()
         self._dispatch_sequence = 0
         self._cancelled = False
         self._cancellation_reason: str | None = None
+
+        if checkpoint_repository is not None:
+            self._restore_checkpoint(
+                checkpoint_reapproved_nodes=checkpoint_reapproved_nodes,
+            )
 
     def _ordered_observations(self) -> tuple[ExecutionObservation, ...]:
         return tuple(
@@ -176,6 +227,198 @@ class ExecutionScheduler:
             for node in self.plan.nodes
             if node.node_id in self._observations
         )
+
+    def _restore_checkpoint(
+        self,
+        *,
+        checkpoint_reapproved_nodes: frozenset[str],
+    ) -> None:
+        repository = self.checkpoint_repository
+        if repository is None:
+            return
+
+        unknown_reapprovals = sorted(
+            node_id
+            for node_id in checkpoint_reapproved_nodes
+            if node_id not in self._nodes
+        )
+        if unknown_reapprovals:
+            raise ExecutionSchedulerError(
+                "SCHEDULER_CHECKPOINT_REAPPROVAL_UNKNOWN_NODE:"
+                + ",".join(unknown_reapprovals)
+            )
+
+        try:
+            repository.initialize()
+            recovered = repository.load(
+                task_id=self.plan.task_id,
+                plan_fingerprint=self.plan.fingerprint,
+            )
+        except Exception as exc:
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_RESTORE_FAILED") from exc
+
+        if getattr(recovered, "task_id", None) != self.plan.task_id:
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_TASK_MISMATCH")
+        if getattr(recovered, "plan_fingerprint", None) != self.plan.fingerprint:
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_PLAN_MISMATCH")
+
+        dispatches = getattr(recovered, "dispatches", None)
+        observations = getattr(recovered, "observations", None)
+        recovery_ticket_ids = getattr(recovered, "recovery_required_ticket_ids", None)
+        cancellation_reason = getattr(recovered, "cancellation_reason", None)
+        if not isinstance(dispatches, tuple):
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_DISPATCHES_INVALID")
+        if not isinstance(observations, tuple):
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_OBSERVATIONS_INVALID")
+        if not isinstance(recovery_ticket_ids, tuple):
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_RECOVERY_SET_INVALID")
+
+        restored_dispatches: dict[str, DispatchTicket] = {}
+        seen_sequences: set[int] = set()
+        approval_dispatch_nodes: set[str] = set()
+        for ticket in dispatches:
+            if not isinstance(ticket, DispatchTicket):
+                raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_DISPATCH_INVALID")
+            ticket.validate()
+            if ticket.task_id != self.plan.task_id:
+                raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_DISPATCH_TASK_MISMATCH")
+            if ticket.plan_fingerprint != self.plan.fingerprint:
+                raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_DISPATCH_PLAN_MISMATCH")
+            node = self._nodes.get(ticket.node_id)
+            if node is None:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_UNKNOWN_NODE:{ticket.node_id}"
+                )
+            if ticket.node_fingerprint != node.fingerprint:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_NODE_FINGERPRINT_MISMATCH:{ticket.node_id}"
+                )
+            if ticket.authority_fingerprint != node.authority_fingerprint:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_AUTHORITY_FINGERPRINT_MISMATCH:{ticket.node_id}"
+                )
+            if ticket.execution_level != node.execution_level:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_EXECUTION_LEVEL_MISMATCH:{ticket.node_id}"
+                )
+            if ticket.node_id in restored_dispatches:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_DUPLICATE_NODE:{ticket.node_id}"
+                )
+            if ticket.dispatch_sequence in seen_sequences:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_DUPLICATE_SEQUENCE:{ticket.dispatch_sequence}"
+                )
+            restored_dispatches[ticket.node_id] = ticket
+            seen_sequences.add(ticket.dispatch_sequence)
+            self._dispatch_sequence = max(
+                self._dispatch_sequence,
+                ticket.dispatch_sequence,
+            )
+            if node.approval_required:
+                approval_dispatch_nodes.add(node.node_id)
+
+        unexpected_reapprovals = sorted(
+            checkpoint_reapproved_nodes - approval_dispatch_nodes
+        )
+        if unexpected_reapprovals:
+            raise ExecutionSchedulerError(
+                "SCHEDULER_CHECKPOINT_REAPPROVAL_NOT_APPLICABLE:"
+                + ",".join(unexpected_reapprovals)
+            )
+        missing_reapprovals = sorted(
+            approval_dispatch_nodes - checkpoint_reapproved_nodes
+        )
+        if missing_reapprovals:
+            raise ExecutionSchedulerError(
+                "SCHEDULER_CHECKPOINT_REAPPROVAL_REQUIRED:"
+                + ",".join(missing_reapprovals)
+            )
+        self._approved_nodes.update(approval_dispatch_nodes)
+
+        for observation in observations:
+            if not isinstance(observation, ExecutionObservation):
+                raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_OBSERVATION_INVALID")
+            if observation.node_id in self._observations:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_DUPLICATE_OBSERVATION:{observation.node_id}"
+                )
+            try:
+                observation.validate(
+                    plan=self.plan,
+                    parent_authority=self.parent_authority,
+                )
+            except ExecutionObservationError as exc:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_OBSERVATION_REJECTED:{observation.node_id}"
+                ) from exc
+            ticket = restored_dispatches.get(observation.node_id)
+            if ticket is None:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_OBSERVATION_WITHOUT_DISPATCH:{observation.node_id}"
+                )
+            if observation.node_fingerprint != ticket.node_fingerprint:
+                raise ExecutionSchedulerError(
+                    "SCHEDULER_CHECKPOINT_OBSERVATION_NODE_MISMATCH"
+                )
+            if observation.authority_fingerprint != ticket.authority_fingerprint:
+                raise ExecutionSchedulerError(
+                    "SCHEDULER_CHECKPOINT_OBSERVATION_AUTHORITY_MISMATCH"
+                )
+            self._observations[observation.node_id] = observation
+
+        for node_id, ticket in restored_dispatches.items():
+            node = self._nodes[node_id]
+            expected_dependencies: list[str] = []
+            for dependency_id in node.depends_on:
+                observation = self._observations.get(dependency_id)
+                if observation is None or observation.status != "SUCCEEDED":
+                    raise ExecutionSchedulerError(
+                        "SCHEDULER_CHECKPOINT_DISPATCH_DEPENDENCY_MISSING:"
+                        f"{node_id}:{dependency_id}"
+                    )
+                expected_dependencies.append(observation.fingerprint)
+            if ticket.dependency_observation_fingerprints != tuple(expected_dependencies):
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_DEPENDENCY_FINGERPRINT_MISMATCH:{node_id}"
+                )
+
+        expected_recovery = {
+            ticket.ticket_id
+            for node_id, ticket in restored_dispatches.items()
+            if node_id not in self._observations
+        }
+        if (
+            any(not isinstance(ticket_id, str) for ticket_id in recovery_ticket_ids)
+            or len(set(recovery_ticket_ids)) != len(recovery_ticket_ids)
+            or set(recovery_ticket_ids) != expected_recovery
+        ):
+            raise ExecutionSchedulerError("SCHEDULER_CHECKPOINT_RECOVERY_SET_MISMATCH")
+
+        for node_id, ticket in restored_dispatches.items():
+            if node_id not in self._observations:
+                self._recovery_required[node_id] = ticket
+
+        if cancellation_reason is not None:
+            if not isinstance(cancellation_reason, str) or not cancellation_reason.strip():
+                raise ExecutionSchedulerError(
+                    "SCHEDULER_CHECKPOINT_CANCELLATION_REASON_INVALID"
+                )
+            self._cancelled = True
+            self._cancellation_reason = cancellation_reason.strip()
+
+        try:
+            RuntimeScheduler.evaluate(
+                task_context=self.task_context,
+                plan=self.plan,
+                parent_authority=self.parent_authority,
+                observations=self._ordered_observations(),
+                approved_node_ids=tuple(sorted(self._approved_nodes)),
+            )
+        except RuntimeSchedulerError as exc:
+            raise ExecutionSchedulerError(
+                "SCHEDULER_CHECKPOINT_OBSERVATION_SET_INVALID"
+            ) from exc
 
     def admission_decision(
         self,
@@ -264,8 +507,12 @@ class ExecutionScheduler:
             return "OBSERVED"
         if node_id in self._in_flight:
             return "IN_FLIGHT"
+        if node_id in self._recovery_required:
+            return "RECOVERY_REQUIRED"
         if self._cancelled:
             return "SCHEDULER_CANCELLED"
+        if self._recovery_required:
+            return "SCHEDULER_RECOVERY_REQUIRED"
 
         for dependency_id in node.depends_on:
             observation = self._observations.get(dependency_id)
@@ -287,7 +534,7 @@ class ExecutionScheduler:
         *,
         approved_nodes: frozenset[str] = frozenset(),
     ) -> tuple[str, ...]:
-        if self._cancelled:
+        if self._cancelled or self._recovery_required:
             return ()
         capacity = self.max_concurrency - len(self._in_flight)
         if capacity <= 0:
@@ -300,6 +547,7 @@ class ExecutionScheduler:
             if record.state == "READY"
             and record.node_id not in self._observations
             and record.node_id not in self._in_flight
+            and record.node_id not in self._recovery_required
         ]
         return tuple(ready[:capacity])
 
@@ -318,6 +566,10 @@ class ExecutionScheduler:
             raise ExecutionSchedulerError(f"NODE_ALREADY_OBSERVED:{node_id}")
         if node_id in self._in_flight:
             raise ExecutionSchedulerError(f"NODE_ALREADY_IN_FLIGHT:{node_id}")
+        if node_id in self._recovery_required:
+            raise ExecutionSchedulerError(f"NODE_RECOVERY_REQUIRED:{node_id}")
+        if self._recovery_required:
+            raise ExecutionSchedulerError("SCHEDULER_RECOVERY_REQUIRED")
         if len(self._in_flight) >= self.max_concurrency:
             raise ExecutionSchedulerError("SCHEDULER_BACKPRESSURE")
         if node.approval_required and approval_granted is not True:
@@ -376,6 +628,14 @@ class ExecutionScheduler:
             schema_version=provisional.schema_version,
         ).validate()
 
+        if self.checkpoint_repository is not None:
+            try:
+                self.checkpoint_repository.record_dispatch(ticket)
+            except Exception as exc:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_DISPATCH_FAILED:{node_id}"
+                ) from exc
+
         if node.approval_required:
             self._approved_nodes.add(node_id)
         self._in_flight[node.node_id] = ticket
@@ -402,6 +662,8 @@ class ExecutionScheduler:
         if not isinstance(observation, ExecutionObservation):
             raise ExecutionSchedulerError("CANONICAL_EXECUTION_OBSERVATION_REQUIRED")
         ticket = self._in_flight.get(observation.node_id)
+        if ticket is None:
+            ticket = self._recovery_required.get(observation.node_id)
         if ticket is None:
             raise ExecutionSchedulerError(
                 f"OBSERVATION_NODE_NOT_IN_FLIGHT:{observation.node_id}"
@@ -434,8 +696,17 @@ class ExecutionScheduler:
                 f"SCHEDULER_OBSERVATION_DECISION_REJECTED:{observation.node_id}"
             ) from exc
 
+        if self.checkpoint_repository is not None:
+            try:
+                self.checkpoint_repository.record_observation(observation)
+            except Exception as exc:
+                raise ExecutionSchedulerError(
+                    f"SCHEDULER_CHECKPOINT_OBSERVATION_FAILED:{observation.node_id}"
+                ) from exc
+
         self._observations[observation.node_id] = observation
-        del self._in_flight[observation.node_id]
+        self._in_flight.pop(observation.node_id, None)
+        self._recovery_required.pop(observation.node_id, None)
         return observation
 
     def fan_in(self, node_id: str) -> tuple[ExecutionObservation, ...]:
@@ -447,15 +718,37 @@ class ExecutionScheduler:
     def cancel(self, *, reason_code: str = "OPERATOR_CANCELLED") -> None:
         if not isinstance(reason_code, str) or not reason_code.strip():
             raise ExecutionSchedulerError("INVALID_CANCELLATION_REASON")
+        reason = reason_code.strip()
         self._cancelled = True
-        self._cancellation_reason = reason_code.strip()
+        self._cancellation_reason = reason
+        if self.checkpoint_repository is not None:
+            try:
+                self.checkpoint_repository.record_cancellation(
+                    task_id=self.plan.task_id,
+                    plan_fingerprint=self.plan.fingerprint,
+                    reason_code=reason,
+                )
+            except Exception as exc:
+                # Keep the local scheduler cancelled even when durable audit
+                # persistence fails; allowing new dispatch would be less safe.
+                raise ExecutionSchedulerError(
+                    "SCHEDULER_CHECKPOINT_CANCELLATION_FAILED"
+                ) from exc
 
     @property
     def cancelled(self) -> bool:
         return self._cancelled
 
+    @property
+    def recovery_required_ticket_ids(self) -> tuple[str, ...]:
+        return tuple(
+            self._recovery_required[node.node_id].ticket_id
+            for node in self.plan.nodes
+            if node.node_id in self._recovery_required
+        )
+
     def snapshot(self) -> dict[str, Any]:
-        """Return deterministic control state for future checkpoint binding."""
+        """Return deterministic control state including checkpoint recovery state."""
         return {
             "schema_version": EXECUTION_SCHEDULER_SCHEMA,
             "task_id": self.plan.task_id,
@@ -463,10 +756,12 @@ class ExecutionScheduler:
             "plan_fingerprint": self.plan.fingerprint,
             "parent_authority_fingerprint": self.parent_authority.fingerprint,
             "max_concurrency": self.max_concurrency,
+            "checkpoint_bound": self.checkpoint_repository is not None,
             "cancelled": self._cancelled,
             "cancellation_reason": self._cancellation_reason,
             "dispatch_sequence": self._dispatch_sequence,
             "approved_node_ids": sorted(self._approved_nodes),
+            "recovery_required_ticket_ids": list(self.recovery_required_ticket_ids),
             "in_flight": [
                 self._in_flight[node.node_id].fingerprint
                 for node in self.plan.nodes
