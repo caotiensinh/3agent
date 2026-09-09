@@ -112,6 +112,18 @@ class EnterpriseSkillToolE2ETests(unittest.TestCase):
                 if expected_scope in {"room_or_area", "site", "multiple_sites"}:
                     self.assertNotIn("scope.same_area", question_ids)
 
+    def test_organization_wide_scope_is_preserved_without_reasking_local_scope(self) -> None:
+        session = build_complaint_session("Ca cong ty deu mat mang")
+        self.assertEqual(classify_scope(session.facts).scope, "organization")
+        question_ids = {item.id for item in next_best_questions(session, max_questions=3)}
+        self.assertNotIn("scope.others_affected", question_ids)
+        self.assertNotIn("scope.same_area", question_ids)
+
+    def test_initial_recent_change_is_not_asked_again(self) -> None:
+        session = build_complaint_session("Ca phong mat mang sau khi reboot switch")
+        question_ids = {item.id for item in next_best_questions(session, max_questions=3)}
+        self.assertNotIn("timeline.recent_change", question_ids)
+
     def test_diacritic_stripping_does_not_turn_neutral_ip_statement_into_security_alert(self) -> None:
         domains = set(self._domains("IP la 192.168.11.10"))
         self.assertNotIn("security", domains)
@@ -192,6 +204,54 @@ class EnterpriseSkillToolE2ETests(unittest.TestCase):
         ids = result.selected_ids()
         self.assertIn("network.dns.snapshot", ids)
         self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
+
+    def test_file_share_complaint_selects_smb_probe(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "Excel khong mo duoc file share tren server 192.168.11.20",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertIn("network.smb.probe", result.selected_ids())
+        smb = next(item for item in result.selected if item.id == "network.smb.probe")
+        self.assertEqual(smb.network_access, "internal_only")
+        self.assertEqual(smb.effect, "network_read")
+
+    def test_colloquial_dhcp_symptom_selects_ipconfig_evidence(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "May tu nhien ra IP 169.254 nen khong vao mang duoc",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertIn("network.ipconfig.snapshot", result.selected_ids())
+
+    def test_network_printer_complaint_selects_queue_and_internal_probe(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "May in mang khong in duoc",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        ids = set(result.selected_ids())
+        self.assertIn("windows.printer.queue", ids)
+        self.assertTrue({"network.printer.ipp_probe", "network.printer.raw_probe"}.intersection(ids))
+        self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
+
+    def test_restart_after_windows_update_selects_event_and_update_history(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "May tu khoi dong lai sau Windows Update",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        ids = set(result.selected_ids())
+        self.assertIn("windows.event.system", ids)
+        self.assertIn("windows.update.history", ids)
+
+    def test_vpn_internal_resource_failure_selects_local_route_evidence(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "VPN vao duoc nhung server noi bo khong vao duoc",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertIn("network.route.snapshot", result.selected_ids())
 
     def test_authority_prefilter_reduces_tools_instead_of_expanding_scope(self) -> None:
         authority = SimpleNamespace(
