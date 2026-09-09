@@ -9,6 +9,8 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from .task_contract import (
+    COMPUTER_USE_NETWORK_TOOLS,
+    COMPUTER_USE_TOOLS,
     DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
     INTERNAL_NETWORK_TOOLS,
     TOOLS,
@@ -63,6 +65,16 @@ _EFFECTS = {
     "vpn.status.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
+    "computer.screen.observe": "read",
+    "computer.window.observe": "read",
+    "computer.accessibility.observe": "read",
+    "browser.dom.observe": "read",
+    "browser.navigate": "network_read",
+    "browser.interact": "write",
+    "computer.pointer.interact": "write",
+    "computer.keyboard.interact": "write",
+    "computer.clipboard.read": "read",
+    "computer.clipboard.write": "write",
     **{tool_id: "read" for tool_id in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS},
 }
 _UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
@@ -76,6 +88,34 @@ if _UNKNOWN_EFFECT_TOOLS or _STALE_EFFECT_TOOLS:
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
 _SERVICE_RESOURCE_RE = re.compile(r"^local:service:[A-Za-z0-9_.@-]{1,128}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
+_COMPUTER_ID = r"[A-Za-z0-9_.@-]{1,128}"
+_COMPUTER_RESOURCE_POLICIES = {
+    "computer.screen.observe": ("screen", re.compile(rf"^local:desktop:screen:{_COMPUTER_ID}$")),
+    "computer.window.observe": ("window", re.compile(rf"^local:desktop:window:{_COMPUTER_ID}$")),
+    "computer.accessibility.observe": (
+        "accessibility_tree",
+        re.compile(rf"^local:desktop:accessibility:{_COMPUTER_ID}$"),
+    ),
+    "browser.dom.observe": (
+        "browser_document",
+        re.compile(rf"^browser:profile:{_COMPUTER_ID}/tab:{_COMPUTER_ID}$"),
+    ),
+    "browser.navigate": ("browser_profile", re.compile(rf"^browser:profile:{_COMPUTER_ID}$")),
+    "browser.interact": (
+        "browser_document",
+        re.compile(rf"^browser:profile:{_COMPUTER_ID}/tab:{_COMPUTER_ID}$"),
+    ),
+    "computer.pointer.interact": (
+        "pointer_target",
+        re.compile(rf"^local:desktop:window:{_COMPUTER_ID}$"),
+    ),
+    "computer.keyboard.interact": (
+        "keyboard_target",
+        re.compile(rf"^local:desktop:window:{_COMPUTER_ID}$"),
+    ),
+    "computer.clipboard.read": ("clipboard", re.compile(r"^local:desktop:clipboard$")),
+    "computer.clipboard.write": ("clipboard", re.compile(r"^local:desktop:clipboard$")),
+}
 _WAVE1_INVOCABLE_LOCAL_READ_TOOLS = frozenset(
     {
         "backup.local_state.snapshot",
@@ -237,6 +277,15 @@ def _resource_policy_denial(
         if resource_kind != expected_kind:
             return "RESOURCE_KIND_NOT_AUTHORIZED"
         if resource_ref != expected_ref:
+            return "RESOURCE_REF_NOT_AUTHORIZED"
+        return None
+
+    computer = _COMPUTER_RESOURCE_POLICIES.get(capability)
+    if computer is not None:
+        expected_kind, ref_pattern = computer
+        if resource_kind != expected_kind:
+            return "RESOURCE_KIND_NOT_AUTHORIZED"
+        if not ref_pattern.fullmatch(resource_ref):
             return "RESOURCE_REF_NOT_AUTHORIZED"
         return None
 
@@ -531,6 +580,13 @@ class TaskCapabilityAuthority:
         if cap == "web_gateway":
             if self.sensitivity != "public" or self.network_scope != "allowlisted_egress":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
+        elif cap in COMPUTER_USE_NETWORK_TOOLS:
+            if (
+                self.sensitivity != "public"
+                or self.network_scope != "allowlisted_egress"
+                or "web_gateway" not in self.allowed_tools
+            ):
+                return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
         elif cap in INTERNAL_NETWORK_TOOLS:
             if self.network_scope != "internal_only":
                 return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_SCOPE_NOT_AUTHORIZED")
@@ -539,7 +595,11 @@ class TaskCapabilityAuthority:
         elif eff.startswith("network"):
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="NETWORK_CAPABILITY_NOT_AUTHORIZED")
 
-        if eff == "write" and not self._write_allowed(ref):
+        # Filesystem write_scope governs filesystem mutations. Computer-use state
+        # changes are separately fenced by explicit tool+resource authority and the
+        # computer-use approval/writer policy; conflating them would either block all
+        # UI actions or incorrectly make a filesystem path an actuator permission.
+        if eff == "write" and cap not in COMPUTER_USE_TOOLS and not self._write_allowed(ref):
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="WRITE_SCOPE_NOT_AUTHORIZED")
 
         return self._decision(cap, kind, ref, eff, allowed=True, reason_code="CAPABILITY_AUTHORIZED")
