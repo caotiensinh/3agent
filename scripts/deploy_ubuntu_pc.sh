@@ -167,14 +167,23 @@ verify_result() {
   local security_ui_path="${BIN_DIR}/workspace-security-ui"
   local update_path="${BIN_DIR}/3agent-update"
   local trusted_update_path="${BIN_DIR}/3agent-update.sh"
+  local exec_lines exec_count
   [[ -x "$command_path" ]] || die "Installed command is missing: ${command_path}"
   [[ -x "$security_ui_path" ]] || die "Installed security UI launcher is missing: ${security_ui_path}"
   [[ -x "$update_path" ]] || die "Installed updater launcher is missing: ${update_path}"
   [[ -f "$trusted_update_path" ]] || die "Trusted local updater payload is missing: ${trusted_update_path}"
   [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
 
-  if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "$update_path"; then
-    die "Installed updater launcher contains a remote execution primitive"
+  exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$update_path" || true)"
+  exec_count="$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)"
+  [[ "$exec_count" -eq 1 ]] || die "Installed updater must expose exactly one execution line"
+  printf '%s\n' "$exec_lines" | grep -Fq "$trusted_update_path" \
+    || die "Installed updater does not execute the trusted local updater payload"
+  if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+    die "Installed updater execution line contains a remote execution primitive"
+  fi
+  if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$update_path"; then
+    die "Installed updater contains a remote-fetch command"
   fi
   cmp -s "${INSTALL_DIR}/scripts/update_workspace_ubuntu.sh" "$trusted_update_path" \
     || die "Installed trusted updater is not identical to the exact installed checkout"
