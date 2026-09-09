@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_thirty_one_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_thirty_two_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 31)
-        self.assertEqual(len({tool.id for tool in metadata}), 31)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 31)
+        self.assertEqual(len(metadata), 32)
+        self.assertEqual(len({tool.id for tool in metadata}), 32)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 32)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(

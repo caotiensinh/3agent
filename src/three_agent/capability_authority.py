@@ -28,6 +28,7 @@ _EFFECTS = {
     "windows.event.security": "read",
     "windows.printer.queue": "read",
     "network.ssh.probe": "network_read",
+    "network.rtsp.probe": "network_read",
     "network.smb.probe": "network_read",
     "network.printer.ipp_probe": "network_read",
     "network.printer.raw_probe": "network_read",
@@ -103,6 +104,7 @@ _GROUP_POLICY_REFS = frozenset(
 )
 _NETWORK_RESOURCE_SUFFIXES = {
     "network.ssh.probe": ":22",
+    "network.rtsp.probe": ":554",
     "network.smb.probe": ":445",
     "network.printer.ipp_probe": ":631",
     "network.printer.raw_probe": ":9100",
