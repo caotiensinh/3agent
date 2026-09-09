@@ -40,22 +40,51 @@ PRODUCTION_EXTENSIONS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".cs",
     ".sh", ".ps1", ".yml", ".yaml", ".json",
 }
+DEFAULT_RULE_ID = "GOV-POLICY-CONTRACT"
 
 
 class GovernanceError(ValueError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        rule_id: str = DEFAULT_RULE_ID,
+        classification: str = "POLICY_INVALID",
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.rule_id = rule_id
+        self.classification = classification
+        self.path = path
 
 
-def _require(condition: bool, message: str) -> None:
+def _require(
+    condition: bool,
+    message: str,
+    *,
+    rule_id: str = DEFAULT_RULE_ID,
+    classification: str = "POLICY_INVALID",
+    path: str | None = None,
+) -> None:
     if not condition:
-        raise GovernanceError(message)
+        raise GovernanceError(
+            message,
+            rule_id=rule_id,
+            classification=classification,
+            path=path,
+        )
 
 
 def _reject_duplicate_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise GovernanceError(f"duplicate JSON key is forbidden: {key}")
+            raise GovernanceError(
+                f"duplicate JSON key is forbidden: {key}",
+                rule_id="GOV-JSON-DUPLICATE",
+                classification="DUPLICATE_FAILURE",
+                path=key,
+            )
         result[key] = value
     return result
 
@@ -65,7 +94,12 @@ def load_json(path: Path) -> dict[str, Any]:
         path.read_text(encoding="utf-8"),
         object_pairs_hook=_reject_duplicate_object_pairs,
     )
-    _require(isinstance(data, dict), f"{path}: root must be a JSON object")
+    _require(
+        isinstance(data, dict),
+        f"{path}: root must be a JSON object",
+        rule_id="GOV-JSON-ROOT",
+        path=str(path),
+    )
     return data
 
 
@@ -78,7 +112,10 @@ def _resolve_repo_path(repo_root: Path, raw_path: str | Path, label: str) -> Pat
         resolved.relative_to(repo_root)
     except ValueError as exc:
         raise GovernanceError(
-            f"{label} path must remain inside repository root: {raw_path}"
+            f"{label} path must remain inside repository root: {raw_path}",
+            rule_id="GOV-PATH-BOUNDARY",
+            classification="CONFIG_ERROR",
+            path=str(raw_path),
         ) from exc
     return resolved
 
@@ -92,7 +129,12 @@ def _git_output(repo_root: Path, *args: str) -> str:
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or "unknown git failure"
-        raise GovernanceError(f"git {' '.join(args)} failed: {detail}")
+        raise GovernanceError(
+            f"git {' '.join(args)} failed: {detail}",
+            rule_id="GOV-GIT-COMMAND",
+            classification="INFRA_FAILURE",
+            path=str(repo_root),
+        )
     return completed.stdout
 
 
@@ -281,10 +323,21 @@ def validate_policy(policy: dict[str, Any], repo_root: Path | None = None) -> No
 
     if repo_root is not None:
         candidates = sorted(repo_root.glob("config/workspace.execution-governance*.json"))
-        _require(candidates == [repo_root / CANONICAL_RELATIVE], f"canonical policy duplication/drift: {candidates}")
+        _require(
+            candidates == [repo_root / CANONICAL_RELATIVE],
+            f"canonical policy duplication/drift: {candidates}",
+            rule_id="GOV-CANONICAL-DUPLICATE",
+            classification="DUPLICATE_FAILURE",
+            path="config",
+        )
         if _is_git_repo(repo_root):
             violations = _new_parallel_implementation_paths(policy, repo_root)
-            _require(not violations, f"new parallel/versioned implementation files are forbidden: {violations}")
+            _require(
+                not violations,
+                f"new parallel/versioned implementation files are forbidden: {violations}",
+                rule_id="GOV-CANONICAL-PARALLEL-AUTHORITY",
+                classification="DUPLICATE_FAILURE",
+            )
 
 
 def _evidence_present(value: Any) -> bool:
@@ -512,11 +565,73 @@ def validate_receipt(policy: dict[str, Any], receipt: dict[str, Any]) -> None:
             _require(_evidence_present(receipt.get("operator_abort_evidence")), "operator abort requires explicit evidence")
 
 
+def _failure_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, GovernanceError):
+        classification = exc.classification
+        rule_id = exc.rule_id
+        path = exc.path
+    elif isinstance(exc, FileNotFoundError):
+        classification = "CONFIG_ERROR"
+        rule_id = "GOV-CONFIG-MISSING"
+        path = exc.filename
+    elif isinstance(exc, json.JSONDecodeError):
+        classification = "POLICY_INVALID"
+        rule_id = "GOV-JSON-MALFORMED"
+        path = None
+    elif isinstance(exc, OSError):
+        classification = "INFRA_FAILURE"
+        rule_id = "GOV-IO-ERROR"
+        path = getattr(exc, "filename", None)
+    elif isinstance(exc, (ValueError, TypeError, KeyError)):
+        classification = "POLICY_INVALID"
+        rule_id = "GOV-POLICY-TYPE"
+        path = None
+    else:
+        classification = "VALIDATOR_ERROR"
+        rule_id = "GOV-VALIDATOR-EXCEPTION"
+        path = None
+    violation: dict[str, Any] = {
+        "rule_id": rule_id,
+        "severity": "error",
+        "message": str(exc),
+    }
+    if path:
+        violation["path"] = str(path)
+    return {
+        "valid": False,
+        "classification": classification,
+        "violations": [violation],
+    }
+
+
+def _success_payload() -> dict[str, Any]:
+    return {
+        "valid": True,
+        "classification": "PASS",
+        "violations": [],
+    }
+
+
+def _write_json_output(raw_path: str | None, payload: dict[str, Any]) -> None:
+    if not raw_path:
+        return
+    path = Path(raw_path).resolve()
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _print_machine_result(payload: dict[str, Any], *, stream: Any) -> None:
+    print(
+        "EXECUTION_GOVERNANCE_JSON: " + json.dumps(payload, sort_keys=True),
+        file=stream,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--policy", default=str(CANONICAL_RELATIVE))
     parser.add_argument("--session", help="Optional session receipt JSON")
     parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--json-output", help="Optional machine-readable result JSON path")
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
     try:
@@ -526,10 +641,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.session:
             receipt_path = _resolve_repo_path(repo_root, args.session, "session")
             validate_receipt(policy, load_json(receipt_path))
-    except (OSError, json.JSONDecodeError, GovernanceError, ValueError) as exc:
+    except Exception as exc:
+        payload = _failure_payload(exc)
+        try:
+            _write_json_output(args.json_output, payload)
+        except OSError as output_exc:
+            output_payload = _failure_payload(output_exc)
+            output_payload["violations"].append(payload["violations"][0])
+            payload = output_payload
         print(f"EXECUTION_GOVERNANCE: FAIL: {exc}", file=sys.stderr)
+        _print_machine_result(payload, stream=sys.stderr)
+        return 1
+
+    payload = _success_payload()
+    try:
+        _write_json_output(args.json_output, payload)
+    except OSError as exc:
+        payload = _failure_payload(exc)
+        print(f"EXECUTION_GOVERNANCE: FAIL: {exc}", file=sys.stderr)
+        _print_machine_result(payload, stream=sys.stderr)
         return 1
     print("EXECUTION_GOVERNANCE: PASS")
+    _print_machine_result(payload, stream=sys.stdout)
     return 0
 
 
