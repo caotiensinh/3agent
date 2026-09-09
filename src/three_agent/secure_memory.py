@@ -4,10 +4,11 @@ import hashlib
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 MEMORY_SCHEMA = "workspace-secure-memory/v1"
 MEMORY_RECEIPT_SCHEMA = "workspace-secure-memory-receipt/v1"
@@ -138,8 +139,18 @@ class SecureMemoryStore:
         conn.execute("PRAGMA busy_timeout=10000")
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Use a transactional SQLite connection and always release its file handle."""
+        conn = self.connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _initialize(self) -> None:
-        with self.connect() as conn:
+        with self._connection() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
@@ -340,7 +351,7 @@ class SecureMemoryStore:
         expires_at = _iso(now_dt + timedelta(seconds=ttl_seconds)) if ttl_seconds else None
         record_id = self.record_id_for(namespace, key)
 
-        with self._lock, self.connect() as conn:
+        with self._lock, self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT created_at, version FROM secure_memory_records WHERE record_id = ?",
@@ -430,7 +441,7 @@ class SecureMemoryStore:
         namespace = self._identifier(namespace, field="namespace")
         key = self._identifier(key, field="key")
         record_id = self.record_id_for(namespace, key)
-        with self.connect() as conn:
+        with self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM secure_memory_records WHERE record_id=? AND namespace=?",
                 (record_id, namespace),
@@ -469,7 +480,7 @@ class SecureMemoryStore:
             params.append(escaped + "%")
         sql += " ORDER BY updated_at DESC, memory_key LIMIT ?"
         params.append(bounded_limit)
-        with self.connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(sql, params).fetchall()
 
         result: list[MemoryRecord] = []
@@ -502,7 +513,7 @@ class SecureMemoryStore:
         approver = self._approved("delete", namespace, key, actor, approved_by)
         record_id = self.record_id_for(namespace, key)
         now = _iso(_utc_now())
-        with self._lock, self.connect() as conn:
+        with self._lock, self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             cur = conn.execute(
                 "DELETE FROM secure_memory_records WHERE record_id=? AND namespace=?",
@@ -525,7 +536,7 @@ class SecureMemoryStore:
     def purge_expired(self, *, actor: str = "system", approved_by: str = "system-policy") -> int:
         now = _iso(_utc_now())
         removed = 0
-        with self._lock, self.connect() as conn:
+        with self._lock, self._connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             rows = conn.execute(
                 "SELECT record_id, namespace, memory_key FROM secure_memory_records "
@@ -553,7 +564,7 @@ class SecureMemoryStore:
         return removed
 
     def list_receipts(self) -> tuple[MemoryReceipt, ...]:
-        with self.connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM secure_memory_receipts ORDER BY sequence"
             ).fetchall()
