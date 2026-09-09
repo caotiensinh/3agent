@@ -145,7 +145,22 @@ The validator fails closed on:
 - under-sized substantial lane plan without dependency-limit evidence;
 - `BLOCKED_EXTERNAL`, `HARD_FAILED`, or operator abort without their required proof.
 
-CI executes the policy validator before the normal test suite. Future runtime/executor layers that want to enforce this contract must call the same validator/contract instead of reimplementing policy values.
+CI executes the policy validator before the normal test suite. The `Execution governance canonical gate` writes both `execution-governance.log` and a machine-readable `execution-governance.json` evidence record, and the workflow uploads them for RCA even when the gate fails.
+
+The CI evidence classification contract is:
+
+- `POLICY_INVALID` — canonical policy or mandatory rule is invalid;
+- `CONFIG_ERROR` — required governance input/path/configuration is missing or invalid;
+- `VALIDATOR_ERROR` — the validator terminates without its canonical fail-closed result;
+- `TEST_FAILURE` — the repository unit-test phase fails;
+- `DUPLICATE_FAILURE` — duplicate/parallel canonical authority or implementation is detected;
+- `INFRA_FAILURE` — runner/interpreter infrastructure prevents deterministic validation.
+
+Each governance evidence record also carries a stable CI rule identifier, validator exit code, exact checked head SHA, and an actionable message. This evidence is diagnostic; it never converts an error into a warning and never changes the validator exit code.
+
+The repository-hosting layer is a separate enforcement boundary. A green workflow is not by itself an unbypassable GitHub merge gate. Repository administrators must configure branch protection or a repository ruleset that requires the relevant `harness-ci` status checks before merging or direct updates to `main`. If that hosting rule is absent, reports must describe CI enforcement as present but must not claim that GitHub merge enforcement is complete.
+
+Future runtime/executor layers that want to enforce this contract must call the same validator/contract instead of reimplementing policy values.
 
 ## 9. Canonical edit rule
 
