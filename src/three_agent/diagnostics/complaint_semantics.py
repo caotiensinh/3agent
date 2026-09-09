@@ -41,6 +41,11 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
         "vpn connected but", "connected to vpn but", "vpn works but",
         "vpn接続できるが", "vpn接続済みだが", "vpnは繋がるが",
     ),
+    "audio_output_unavailable": (
+        "khong co tieng", "mat tieng", "khong nghe thay tieng", "khong co am thanh",
+        "no sound", "no audio", "cannot hear audio", "sound is missing",
+        "音が出ない", "音が聞こえない", "音声が出ない",
+    ),
     "application_unresponsive": (
         "app bi do", "app bi treo", "phan mem bi do", "phan mem bi treo",
         "ung dung khong phan hoi", "excel bi do", "excel khong phan hoi",
@@ -109,6 +114,7 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
     "vpn_internal_resource_unavailable": ("vpn route", "route", "gateway"),
+    "audio_output_unavailable": ("audio device", "no sound", "speaker", "microphone"),
     "application_unresponsive": ("performance", "application event", "app crash"),
 }
 
