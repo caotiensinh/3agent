@@ -24,6 +24,7 @@ _MAX_CRON_SEARCH_MINUTES = 370 * 24 * 60
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _TERMINAL_CLAIM_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED"})
+_UNRESOLVED_CLAIM_STATUSES = frozenset({"CLAIMED", "RECOVERY_REQUIRED"})
 
 
 class PersistentSchedulerError(ValueError):
@@ -130,24 +131,25 @@ def _parse_cron_field(
                 raise PersistentSchedulerError("CRON_STEP_INVALID")
 
         if base == "*":
-            start, end = minimum, maximum
+            raw_start, raw_end = minimum, maximum
         elif "-" in base:
             left, right = base.split("-", 1)
             if not left.isdigit() or not right.isdigit():
                 raise PersistentSchedulerError("CRON_RANGE_INVALID")
             raw_start, raw_end = int(left), int(right)
-            start, end = normalize(raw_start), normalize(raw_end)
-            if sunday_alias and raw_end == 7:
-                end = 7
             if raw_start > raw_end:
                 raise PersistentSchedulerError("CRON_RANGE_INVALID")
+            # Validate both endpoints before iteration. DOW alone accepts 7 as
+            # the standard Sunday alias.
+            normalize(raw_start)
+            normalize(raw_end)
         else:
             if slash or not base.isdigit():
                 raise PersistentSchedulerError("CRON_FIELD_INVALID")
             values.add(normalize(int(base)))
             continue
 
-        for candidate in range(start, end + 1, step):
+        for candidate in range(raw_start, raw_end + 1, step):
             values.add(normalize(candidate))
 
     if not values:
@@ -305,15 +307,14 @@ class ScheduleEvent:
 class PersistentWallClockScheduler:
     """Persistent wall-clock admission layer over the canonical WorkSpace runtime.
 
-    This class does not execute tools, widen capabilities, or create an alternate
-    execution engine. A claim only says that one pre-bound task occurrence is due.
-    The caller must still execute that task through the existing TaskContract,
-    capability authority, budget, validator and ExecutionScheduler path.
+    It never executes tools or widens capabilities. A claim only states that one
+    pre-bound task occurrence is due; execution must still use the existing
+    TaskContract/capability/budget/validator/ExecutionScheduler path.
 
-    Missed occurrences are deliberately coalesced: one tick can claim at most one
-    occurrence per schedule and advances ``next_run_at`` to the first occurrence
-    after ``now``. This prevents an offline node from creating an unbounded burst.
-    Expired claims become ``RECOVERY_REQUIRED`` and are never automatically rerun.
+    Missed occurrences are coalesced to one claim per schedule per tick and the
+    next time is advanced beyond ``now``. Unresolved claims block later
+    occurrences for the same schedule. Expired leases become
+    ``RECOVERY_REQUIRED`` and are never automatically replayed.
     """
 
     def __init__(self, store: TaskStore):
@@ -360,6 +361,8 @@ class PersistentWallClockScheduler:
                 );
                 CREATE INDEX IF NOT EXISTS idx_schedule_claims_status
                     ON schedule_claims(status, lease_until, claim_id);
+                CREATE INDEX IF NOT EXISTS idx_schedule_claims_unresolved
+                    ON schedule_claims(schedule_id, status, claim_id);
 
                 CREATE TABLE IF NOT EXISTS schedule_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -389,8 +392,7 @@ class PersistentWallClockScheduler:
 
     @staticmethod
     def _task_exists(conn: sqlite3.Connection, task_id: str) -> None:
-        row = conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone()
-        if row is None:
+        if conn.execute("SELECT 1 FROM tasks WHERE task_id=?", (task_id,)).fetchone() is None:
             raise PersistentSchedulerError("SCHEDULE_TASK_NOT_FOUND")
 
     def _append_event(
@@ -492,14 +494,13 @@ class PersistentWallClockScheduler:
         matcher = _CronMatcher.parse(expression)
         tz = _timezone(timezone_name)
         current = _aware_utc(now or _utc_now(), field="now")
-        next_run = _next_cron(matcher.expression, tz.key, after=current)
         return self._register(
             schedule_id=schedule_id,
             task_id=task_id,
             kind="cron",
             schedule_value=matcher.expression,
             timezone_name=tz.key,
-            next_run_at=next_run,
+            next_run_at=_next_cron(matcher.expression, tz.key, after=current),
             now=current,
         )
 
@@ -574,11 +575,10 @@ class PersistentWallClockScheduler:
     def list_schedules(self, *, enabled_only: bool = False) -> tuple[PersistentSchedule, ...]:
         with self.store.connect() as conn:
             sql = "SELECT * FROM scheduled_jobs"
-            params: tuple[object, ...] = ()
             if enabled_only:
                 sql += " WHERE enabled=1"
             sql += " ORDER BY schedule_id"
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql).fetchall()
         return tuple(self._row_to_schedule(row) for row in rows)
 
     def disable(self, schedule_id: str, *, now: datetime | None = None) -> PersistentSchedule:
@@ -612,8 +612,8 @@ class PersistentWallClockScheduler:
             ).fetchone()
             if row is None:
                 raise KeyError(schedule_id)
-            contract_sha256 = self._contract_digest(conn, str(row["task_id"]))
-            if contract_sha256 != str(row["contract_sha256"]):
+            current_contract = self._contract_digest(conn, str(row["task_id"]))
+            if current_contract != str(row["contract_sha256"]):
                 raise PersistentSchedulerError("SCHEDULE_TASK_CONTRACT_CHANGED")
             next_run = self._next_after_row(row, current)
             conn.execute(
@@ -653,6 +653,16 @@ class PersistentWallClockScheduler:
             )
         raise PersistentSchedulerError("SCHEDULE_KIND_CORRUPT")
 
+    @staticmethod
+    def _has_unresolved_claim(conn: sqlite3.Connection, schedule_id: str) -> bool:
+        placeholders = ",".join("?" for _ in _UNRESOLVED_CLAIM_STATUSES)
+        params: tuple[object, ...] = (schedule_id, *tuple(sorted(_UNRESOLVED_CLAIM_STATUSES)))
+        row = conn.execute(
+            f"SELECT 1 FROM schedule_claims WHERE schedule_id=? AND status IN ({placeholders}) LIMIT 1",
+            params,
+        ).fetchone()
+        return row is not None
+
     def claim_due(
         self,
         *,
@@ -680,11 +690,20 @@ class PersistentWallClockScheduler:
                 ORDER BY next_run_at,schedule_id
                 LIMIT ?
                 """,
-                (current_text, limit),
+                (current_text, _MAX_DUE_PER_TICK),
             ).fetchall()
             for row in rows:
+                if len(claims) >= limit:
+                    break
                 schedule_id = str(row["schedule_id"])
                 task_id = str(row["task_id"])
+
+                # Never overlap occurrences while the previous execution outcome
+                # is unresolved. This is checked inside the same IMMEDIATE
+                # transaction that creates a claim.
+                if self._has_unresolved_claim(conn, schedule_id):
+                    continue
+
                 try:
                     current_contract = self._contract_digest(conn, task_id)
                 except PersistentSchedulerError as exc:
@@ -856,7 +875,7 @@ class PersistentWallClockScheduler:
                 if current_status != status:
                     raise PersistentSchedulerError("SCHEDULE_CLAIM_ALREADY_TERMINAL")
                 return self._row_to_claim(row)
-            if current_status not in {"CLAIMED", "RECOVERY_REQUIRED"}:
+            if current_status not in _UNRESOLVED_CLAIM_STATUSES:
                 raise PersistentSchedulerError("SCHEDULE_CLAIM_STATE_INVALID")
             conn.execute(
                 """
@@ -893,10 +912,8 @@ class PersistentWallClockScheduler:
         sql = "SELECT * FROM schedule_claims"
         if statuses is not None:
             normalized = tuple(sorted({str(value).strip().upper() for value in statuses}))
-            if not normalized or any(
-                value not in {"CLAIMED", "RECOVERY_REQUIRED", *_TERMINAL_CLAIM_STATUSES}
-                for value in normalized
-            ):
+            allowed = _UNRESOLVED_CLAIM_STATUSES | _TERMINAL_CLAIM_STATUSES
+            if not normalized or any(value not in allowed for value in normalized):
                 raise PersistentSchedulerError("SCHEDULE_CLAIM_STATUS_FILTER_INVALID")
             placeholders = ",".join("?" for _ in normalized)
             sql += f" WHERE status IN ({placeholders})"
