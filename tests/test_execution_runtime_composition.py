@@ -208,6 +208,36 @@ class ExecutionRuntimeCompositionTests(unittest.TestCase):
         self.assertEqual(runtime.writer_lease.run_id, runtime.run_id)
         self.assertEqual(runtime.writer_lease.generation, 1)
 
+    def test_superseded_writer_cannot_dispatch_or_charge_budget(self):
+        stale = self._compose("RUN-COMPOSITION-A")
+        before = self.budget.snapshot()["steps_used"]
+        current = self._compose("RUN-COMPOSITION-B")
+
+        self.assertEqual(
+            current.writer_lease.generation,
+            stale.writer_lease.generation + 1,
+        )
+        with self.assertRaisesRegex(
+            ExecutionSchedulerError,
+            "SCHEDULER_CHECKPOINT_DISPATCH_FAILED:start",
+        ):
+            stale.scheduler.issue_dispatch("start")
+
+        self.assertEqual(self.budget.snapshot()["steps_used"], before)
+        with self.store.connect() as conn:
+            dispatches = conn.execute(
+                "SELECT COUNT(*) AS n FROM execution_dispatch_checkpoints"
+            ).fetchone()["n"]
+        self.assertEqual(dispatches, 0)
+
+        current.scheduler.issue_dispatch("start")
+        self.assertEqual(self.budget.snapshot()["steps_used"], before + 1)
+        with self.store.connect() as conn:
+            dispatches = conn.execute(
+                "SELECT COUNT(*) AS n FROM execution_dispatch_checkpoints"
+            ).fetchone()["n"]
+        self.assertEqual(dispatches, 1)
+
     def test_same_durable_run_restart_reuses_generation_without_double_charging(self):
         first = self._compose("RUN-COMPOSITION-A")
         before = self.budget.snapshot()["steps_used"]
