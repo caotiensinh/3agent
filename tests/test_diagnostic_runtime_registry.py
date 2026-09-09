@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_thirty_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_thirty_one_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 30)
-        self.assertEqual(len({tool.id for tool in metadata}), 30)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 30)
+        self.assertEqual(len(metadata), 31)
+        self.assertEqual(len({tool.id for tool in metadata}), 31)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 31)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -49,6 +49,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             mapping["network.quality"],
             ("network.quality.internal",),
         )
+        self.assertEqual(mapping["vpn.status"], ("vpn.status.local",))
         self.assertNotIn("camera.reachability", mapping)
         self.assertNotIn("isp.reachability", mapping)
 
@@ -75,14 +76,14 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.boot"], ("windows.boot.snapshot",))
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_five_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_twenty_five_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 105)
+        self.assertEqual(report.fully_promotable_routes, 125)
         self.assertEqual(
             report.fully_promotable_routes
             + report.partially_covered_routes
@@ -113,6 +114,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             "camera.devices",
             "storage.io",
             "print.driver",
+            "vpn.status",
             "windows.boot",
             "windows.update",
         ):
@@ -134,12 +136,13 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertGreater(selected.get("network.ipconfig.snapshot", 0), 0)
         self.assertGreater(selected.get("network.dns.snapshot", 0), 0)
         self.assertGreater(selected.get("windows.printer.queue", 0), 0)
-        self.assertEqual(selected.get("network.reachability.internal"), 100)
+        self.assertEqual(selected.get("network.reachability.internal"), 120)
         self.assertEqual(selected.get("windows.group_policy.result"), 45)
         self.assertEqual(selected.get("identity.session.snapshot"), 35)
         self.assertEqual(selected.get("network.quality.internal"), 35)
         self.assertEqual(selected.get("audio.devices.snapshot"), 35)
         self.assertEqual(selected.get("meeting.client.snapshot"), 20)
+        self.assertEqual(selected.get("vpn.status.local"), 20)
         self.assertEqual(selected.get("process.top.snapshot"), 20)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
         self.assertEqual(selected.get("camera.devices.snapshot"), 20)
