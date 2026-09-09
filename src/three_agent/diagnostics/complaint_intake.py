@@ -170,6 +170,83 @@ def extract_entities(value: str) -> tuple[str, ...]:
     return tuple(sorted(set(found)))
 
 
+def extract_explicit_scope_facts(value: str) -> Mapping[str, Any]:
+    """Extract only explicit blast-radius statements so the planner does not re-ask answered scope facts."""
+    text = normalize_text(value)
+
+    def contains_any(phrases: tuple[str, ...]) -> bool:
+        return any(normalize_text(phrase) in text for phrase in phrases)
+
+    if contains_any(
+        (
+            "hai chi nhanh",
+            "2 chi nhanh",
+            "nhieu chi nhanh",
+            "cac chi nhanh",
+            "two branches",
+            "multiple branches",
+            "multiple sites",
+            "several sites",
+            "複数拠点",
+            "2拠点",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.multiple_sites": True}
+    if contains_any(
+        (
+            "ca van phong",
+            "toan van phong",
+            "ca chi nhanh",
+            "toan chi nhanh",
+            "whole office",
+            "entire office",
+            "whole site",
+            "entire site",
+            "オフィス全体",
+            "拠点全体",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.site_affected": True}
+    if contains_any(
+        (
+            "ca phong",
+            "toan phong",
+            "ca tang",
+            "toan tang",
+            "ca khu vuc",
+            "toan khu vuc",
+            "moi nguoi trong phong",
+            "tat ca trong phong",
+            "whole room",
+            "entire room",
+            "whole floor",
+            "everyone in the room",
+            "部屋全体",
+            "フロア全体",
+            "同じ部屋の全員",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.same_area": True}
+    if contains_any(
+        (
+            "chi may toi",
+            "chi may nay",
+            "chi minh toi",
+            "chi toi bi",
+            "moi may toi",
+            "only my pc",
+            "only my computer",
+            "only me",
+            "just my pc",
+            "自分だけ",
+            "このpcだけ",
+            "この端末だけ",
+        )
+    ):
+        return {"scope.others_affected": False}
+    return {}
+
+
 @dataclass(frozen=True)
 class DomainCandidate:
     domain_id: str
@@ -276,7 +353,7 @@ def build_complaint_session(value: str, *, max_candidates: int = 5) -> Complaint
         language_hint=detect_language_hint(raw),
         entities=extract_entities(raw),
         candidates=rank_domain_candidates(raw, max_candidates=max_candidates),
-        facts={},
+        facts=extract_explicit_scope_facts(raw),
     )
 
 
@@ -487,6 +564,10 @@ def next_best_questions(
             score += 20 * len(overlap)
         if question.id == "scope.same_area" and known.get("scope.others_affected") is not True:
             continue
+        if question.id == "scope.same_area" and (
+            known.get("scope.site_affected") is True or known.get("scope.multiple_sites") is True
+        ):
+            continue
         if question.id == "context.what_is_affected" and not top_domains and not entities_known:
             score += 40
         if question.id == "scope.others_affected" and top_domains:
@@ -644,6 +725,7 @@ __all__ = [
     "evaluate_evidence_sufficiency",
     "evaluate_physical_boundary",
     "extract_entities",
+    "extract_explicit_scope_facts",
     "next_best_questions",
     "normalize_answer",
     "normalize_text",
