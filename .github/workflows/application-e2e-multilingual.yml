@@ -56,7 +56,7 @@ jobs:
     if: >-
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'workflow_dispatch' || inputs.confirm == 'RUN')
-    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
     timeout-minutes: 120
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -73,9 +73,15 @@ jobs:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -Eeuo pipefail
-          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_SHA"
           command -v nvidia-smi >/dev/null
-          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)" -ge 2
+          mapfile -t gpu_names < <(nvidia-smi --query-gpu=name --format=csv,noheader)
+          gpu_count="$(printf '%s\n' "${gpu_names[@]}" | grep -c 'RTX 5090' || true)"
+          printf 'E2E preflight: runner=%s machine=%s exact_sha=%s\n' "${RUNNER_NAME:-unknown}" "$(hostname)" "$actual_sha"
+          printf 'E2E preflight: RTX5090_COUNT=%s\n' "$gpu_count"
+          printf 'E2E preflight GPU: %s\n' "${gpu_names[@]}"
+          test "$gpu_count" -ge 2
       - name: Create isolated acceptance environment
         shell: bash
         run: |
@@ -167,7 +173,7 @@ jobs:
   live-multiturn:
     name: live multilingual multi-turn context
     needs: live-prompt-matrix
-    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -175,6 +181,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           clean: true
           persist-credentials: false
+      - name: Verify exact source and GPU host
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)"
+          printf 'Multi-turn E2E: RTX5090_COUNT=%s\n' "$gpu_count"
+          test "$gpu_count" -ge 2
       - name: Create isolated multi-turn environment
         shell: bash
         run: |
@@ -227,7 +243,7 @@ jobs:
   live-full-workflow:
     name: live Research Presentation Daily Report VI JA EN
     needs: live-multiturn
-    runs-on: [self-hosted, Linux, X64, r9, rtx5090]
+    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
@@ -244,7 +260,11 @@ jobs:
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           for cmd in git jq curl python3 nvidia-smi ollama; do command -v "$cmd" >/dev/null; done
-          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090' || true)" -ge 2
+          mapfile -t gpu_names < <(nvidia-smi --query-gpu=name --format=csv,noheader)
+          gpu_count="$(printf '%s\n' "${gpu_names[@]}" | grep -c 'RTX 5090' || true)"
+          printf 'Full E2E: RTX5090_COUNT=%s\n' "$gpu_count"
+          printf 'Full E2E GPU: %s\n' "${gpu_names[@]}"
+          test "$gpu_count" -ge 2
           curl -fsS --connect-timeout 5 --max-time 15 http://127.0.0.1:11434/api/tags >/dev/null
           rm -rf .venv
           python3 -m venv .venv
