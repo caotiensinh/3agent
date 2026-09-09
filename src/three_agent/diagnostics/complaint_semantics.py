@@ -36,6 +36,13 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
         "no internet", "no network", "internet broken", "cannot connect to the internet",
         "ネット 繋がらない", "ネットが繋がらない", "ネットに接続できない", "ネットに接続できません",
     ),
+    "hostname_resolution_unavailable": (
+        "hostname khong resolve", "khong resolve duoc hostname", "khong phan giai duoc hostname",
+        "ten may khong phan giai", "ten server khong phan giai", "cannot resolve hostname",
+        "hostname not resolving", "hostname does not resolve", "ip works but hostname does not",
+        "vao duoc bang ip nhung khong vao duoc bang ten", "bang ip vao duoc nhung ten khong vao duoc",
+        "ホスト名を解決できない", "名前解決できない", "ipでは繋がるがホスト名では繋がらない",
+    ),
     "vpn_internal_resource_unavailable": (
         "vpn vao duoc nhung", "vpn da vao duoc nhung", "vpn ket noi duoc nhung",
         "vpn connected but", "connected to vpn but", "vpn works but",
@@ -76,6 +83,26 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
         "power supply is broken", "bad psu", "psu is failing", "電源ユニットが壊れ",
         "電源ユニットが故障", "psu is broken",
     ),
+    "router_failure": (
+        "router hong", "router bi hong", "router chet", "router bi loi", "router broken",
+        "router is broken", "router dead", "router is dead", "router may be failing",
+        "ルーターが壊れ", "ルーターが故障", "router 故障",
+    ),
+    "dns_failure": (
+        "dns chet", "dns hong", "dns bi hong", "dns bi loi", "dns server chet",
+        "dns broken", "dns is broken", "dns server down", "dns server is down",
+        "dnsが壊れ", "dnsが故障", "dnsサーバーが落ちている",
+    ),
+    "switch_failure": (
+        "switch hong", "switch bi hong", "switch chet", "switch bi loi", "switch broken",
+        "switch is broken", "switch dead", "switch is dead", "switch may be failing",
+        "スイッチが壊れ", "スイッチが故障", "switch 故障",
+    ),
+    "camera_failure": (
+        "camera hong", "camera bi hong", "camera chet", "camera bi loi", "camera broken",
+        "camera is broken", "camera dead", "camera is dead", "camera may be failing",
+        "カメラが壊れ", "カメラが故障", "camera 故障",
+    ),
     "windows_update_regression": (
         "windows update lam hong", "update lam hong", "windows update broke",
         "update broke", "update caused", "windows update caused",
@@ -96,6 +123,13 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
 # observed symptom such as "khong phan hoi" / "not responding".
 _HYPOTHESIS_NEGATION_PREFIXES = (
     "khong phai",
+    "khong nghi la",
+    "khong nghi",
+    "khong do",
+    "not caused by",
+    "probably not",
+    "is not",
+    "isn't",
     "not",
 )
 _HYPOTHESIS_NEGATION_SUFFIXES = (
@@ -113,6 +147,7 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "display_blackout": ("operating system", "system event", "display"),
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
+    "hostname_resolution_unavailable": ("dns", "name resolution", "ip address", "gateway"),
     "vpn_internal_resource_unavailable": ("vpn route", "route", "gateway"),
     "audio_output_unavailable": ("audio device", "no sound", "speaker", "microphone"),
     "application_unresponsive": ("performance", "application event", "app crash"),
@@ -123,6 +158,10 @@ _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "ram_failure": ("memory", "system event", "bsod"),
     "storage_failure": ("storage", "system event"),
     "power_supply_failure": ("system event", "shutdown", "reboot"),
+    "router_failure": ("network adapter", "ip address", "gateway", "route", "dns"),
+    "dns_failure": ("dns", "name resolution", "ip address", "gateway"),
+    "switch_failure": ("network adapter", "ip address", "gateway"),
+    "camera_failure": ("reachability", "ping"),
     "windows_update_regression": ("operating system", "system event", "reboot"),
     "malware_infection": ("security event",),
     "overheating": ("system event", "shutdown"),
