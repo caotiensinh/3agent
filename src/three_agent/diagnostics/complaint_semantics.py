@@ -158,6 +158,17 @@ _HYPOTHESIS_NEGATION_SUFFIXES = (
     "じゃありません",
 )
 
+_WIFI_TERMS = ("wifi", "wi-fi", "wireless", "無線lan", "無線 lan")
+_INTERMITTENT_TERMS = (
+    "chap chon",
+    "luc duoc luc khong",
+    "intermittent",
+    "unstable",
+    "keeps dropping",
+    "途切れる",
+    "不安定",
+)
+
 # Routing terms intentionally describe evidence channels/subsystems, not conclusions.
 _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "perceived_unresponsiveness": ("performance", "cpu", "memory", "system event", "application event", "freeze"),
@@ -165,6 +176,7 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "display_blackout": ("operating system", "system event", "display"),
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
+    "intermittent_network_quality": ("network quality", "packet loss", "latency"),
     "hostname_resolution_unavailable": ("dns", "name resolution", "ip address", "gateway"),
     "vpn_access_unavailable": ("vpn status", "vpn connection", "remote access vpn"),
     "vpn_internal_resource_unavailable": ("vpn status", "vpn connection", "vpn route", "route", "gateway"),
@@ -260,6 +272,15 @@ def _matched_denied_ids(
     )
 
 
+def _derived_symptom_ids(text: str) -> tuple[str, ...]:
+    """Derive bounded symptoms from co-occurring wording without promoting a cause."""
+    wifi_observed = any(normalize_text(term) in text for term in _WIFI_TERMS)
+    intermittent_observed = any(normalize_text(term) in text for term in _INTERMITTENT_TERMS)
+    if wifi_observed and intermittent_observed:
+        return ("intermittent_network_quality",)
+    return ()
+
+
 @dataclass(frozen=True)
 class ComplaintSemantics:
     raw_text: str
@@ -284,10 +305,13 @@ def normalize_complaint_semantics(value: str) -> ComplaintSemantics:
     if not raw:
         raise ValueError("complaint text is required")
     normalized = normalize_text(raw)
+    canonical_symptoms = tuple(
+        sorted(set(_matched_ids(normalized, _SYMPTOM_ALIASES)) | set(_derived_symptom_ids(normalized)))
+    )
     return ComplaintSemantics(
         raw_text=raw,
         normalized_text=normalized,
-        canonical_symptoms=_matched_ids(normalized, _SYMPTOM_ALIASES),
+        canonical_symptoms=canonical_symptoms,
         customer_hypotheses=_matched_ids(
             normalized,
             _CUSTOMER_HYPOTHESIS_ALIASES,
