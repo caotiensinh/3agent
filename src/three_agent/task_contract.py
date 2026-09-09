@@ -43,6 +43,7 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "windows.print.driver.snapshot",
     "windows.boot.snapshot",
     "windows.update.history",
+    "vpn.status.snapshot",
 }
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",

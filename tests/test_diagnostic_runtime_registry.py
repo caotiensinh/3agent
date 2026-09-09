@@ -25,11 +25,11 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_thirty_atomic_tools(self) -> None:
+    def test_runtime_registry_combines_thirty_one_atomic_tools(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 30)
-        self.assertEqual(len({tool.id for tool in metadata}), 30)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 30)
+        self.assertEqual(len(metadata), 31)
+        self.assertEqual(len({tool.id for tool in metadata}), 31)
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 31)
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -74,23 +74,24 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["print.driver"], ("windows.print.driver.snapshot",))
         self.assertEqual(mapping["windows.boot"], ("windows.boot.snapshot",))
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
+        self.assertEqual(mapping["vpn.status"], ("vpn.status.snapshot",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_five_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_twenty_five_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 105)
+        self.assertEqual(report.fully_promotable_routes, 125)
+        self.assertEqual(report.partially_covered_routes, 175)
+        self.assertEqual(report.uncovered_routes, 350)
         self.assertEqual(
             report.fully_promotable_routes
             + report.partially_covered_routes
             + report.uncovered_routes,
             650,
         )
-        self.assertGreater(report.partially_covered_routes, 0)
-        self.assertGreater(report.uncovered_routes, 0)
         self.assertLess(report.fully_promotable_routes, 650)
         self.assertTrue(report.unresolved_capability_counts)
 
@@ -115,6 +116,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             "print.driver",
             "windows.boot",
             "windows.update",
+            "vpn.status",
         ):
             self.assertNotIn(capability, missing)
         self.assertIn("service.health", missing)
@@ -147,6 +149,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(selected.get("windows.print.driver.snapshot"), 20)
         self.assertEqual(selected.get("windows.boot.snapshot"), 20)
         self.assertEqual(selected.get("windows.update.history"), 20)
+        self.assertEqual(selected.get("vpn.status.snapshot"), 20)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):

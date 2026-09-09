@@ -20,6 +20,7 @@ from .print_driver_tools import PRINT_DRIVER_TOOL_ID, PRINT_DRIVER_TOOL_METADATA
 from .process_tools import PROCESS_TOP_TOOL_ID, PROCESS_TOOL_METADATA
 from .storage_io_tools import STORAGE_IO_TOOL_ID, STORAGE_IO_TOOL_METADATA
 from .usb_tools import USB_DEVICES_TOOL_ID, USB_TOOL_METADATA
+from .vpn_tools import VPN_STATUS_TOOL_ID, VPN_STATUS_TOOL_METADATA
 from .windows_boot_tools import WINDOWS_BOOT_TOOL_ID, WINDOWS_BOOT_TOOL_METADATA
 from .windows_policy_tools import GROUP_POLICY_TOOL_ID, GROUP_POLICY_TOOL_METADATA
 from .windows_update_tools import WINDOWS_UPDATE_TOOL_ID, WINDOWS_UPDATE_TOOL_METADATA
@@ -49,6 +50,7 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + PRINT_DRIVER_TOOL_METADATA
         + WINDOWS_BOOT_TOOL_METADATA
         + WINDOWS_UPDATE_TOOL_METADATA
+        + VPN_STATUS_TOOL_METADATA
     )
     ids = tuple(item.id for item in items)
     if len(ids) != len(set(ids)):
@@ -95,6 +97,7 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("print.driver", (PRINT_DRIVER_TOOL_ID,)),
             CapabilityBinding("windows.boot", (WINDOWS_BOOT_TOOL_ID,)),
             CapabilityBinding("windows.update", (WINDOWS_UPDATE_TOOL_ID,)),
+            CapabilityBinding("vpn.status", (VPN_STATUS_TOOL_ID,)),
         )
     )
     seen: set[str] = set()
