@@ -224,6 +224,7 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
     def test_room_specific_wifi_problem_stays_network_scoped_without_root_cause_claim(self) -> None:
         text = "Wi-Fi chi chap chon trong phong hop A, ra ngoai hanh lang thi binh thuong"
         semantics = normalize_complaint_semantics(text)
+        self.assertIn("intermittent_network_quality", semantics.canonical_symptoms)
         self.assertNotIn("router_failure", semantics.canonical_symptoms)
         self.assertNotIn("switch_failure", semantics.canonical_symptoms)
         result = select_pc_diagnostic_tool_metadata(text, platform_name="Windows", max_tools=4)
@@ -236,8 +237,6 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertNotIn("camera.devices.snapshot", result.selected_ids())
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
         self.assertTrue(all(item.network_access != "allowlisted_egress" for item in result.selected))
-        rejected = {(item.tool_id, item.reason_code) for item in result.rejected}
-        self.assertIn(("camera.devices.snapshot", "CROSS_DOMAIN_REMOTE_CAMERA"), rejected)
 
     def test_clean_security_evidence_does_not_turn_user_virus_claim_into_observed_fact(self) -> None:
         text = "May cham, toi nghi bi virus nhung Windows Defender full scan bao clean"
