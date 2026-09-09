@@ -57,7 +57,7 @@ def _request(
 class CapabilityInvocationAdapterTests(unittest.TestCase):
     def test_reviewed_handler_coverage_matches_all_current_runtime_tools(self) -> None:
         runtime_ids = tuple(sorted(item.id for item in runtime_tool_metadata()))
-        self.assertEqual(len(runtime_ids), 31)
+        self.assertEqual(len(runtime_ids), 32)
         self.assertEqual(reviewed_runtime_handler_ids(), runtime_ids)
 
     def test_positive_invocation_requires_authority_and_returns_bounded_receipt(self) -> None:
@@ -185,6 +185,56 @@ class CapabilityInvocationAdapterTests(unittest.TestCase):
         with patch(
             "three_agent.capability_invocation_adapter.probe_internal_reachability"
         ) as handler:
+            with self.assertRaisesRegex(
+                CapabilityInvocationAdapterError,
+                "INTERNAL_IP_LITERAL_REQUIRED",
+            ):
+                invoke_runtime_tool(request, authority=authority)
+            handler.assert_not_called()
+
+    def test_rtsp_invocation_uses_reviewed_protocol_handler_and_internal_authority(self) -> None:
+        request = _request(
+            "network.rtsp.probe",
+            parameters={"host": "192.168.11.196", "timeout": 1.25},
+        )
+        authority = _authority(
+            request.tool_id,
+            network_scope="internal_only",
+        )
+        fake_result = {
+            "tool_id": request.tool_id,
+            "target": "192.168.11.196",
+            "port": 554,
+            "rtsp_service_observed": True,
+            "interpretation": "evidence_only",
+        }
+        with patch(
+            "three_agent.capability_invocation_adapter.probe_rtsp_service",
+            return_value=fake_result,
+        ) as handler:
+            result = invoke_runtime_tool(request, authority=authority)
+
+        handler.assert_called_once_with(
+            "192.168.11.196",
+            authority=authority,
+            timeout_seconds=1.25,
+        )
+        self.assertEqual(result.tool_id, "network.rtsp.probe")
+        self.assertTrue(result.decision_receipt.allowed)
+        self.assertEqual(result.decision_receipt.effect, "network_read")
+        self.assertIn('"port":554', result.bounded_payload.text)
+        self.assertIn('"interpretation":"evidence_only"', result.bounded_payload.text)
+
+    def test_rtsp_public_target_is_rejected_before_protocol_handler(self) -> None:
+        request = _request(
+            "network.rtsp.probe",
+            parameters={"host": "8.8.8.8"},
+        )
+        authority = _authority(
+            request.tool_id,
+            network_scope="internal_only",
+        )
+        with patch("three_agent.capability_invocation_adapter.probe_rtsp_service") as handler:
             with self.assertRaisesRegex(
                 CapabilityInvocationAdapterError,
                 "INTERNAL_IP_LITERAL_REQUIRED",

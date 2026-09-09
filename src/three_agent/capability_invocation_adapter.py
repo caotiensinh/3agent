@@ -36,7 +36,7 @@ from .diagnostics.windows_boot_tools import WINDOWS_BOOT_TOOL_ID, read_windows_b
 from .diagnostics.windows_policy_tools import GROUP_POLICY_TOOL_ID, read_group_policy_result
 from .diagnostics.windows_update_tools import WINDOWS_UPDATE_TOOL_ID, read_windows_update_history
 from .invocation_decision_receipt import InvocationDecisionReceipt, receipt_from_capability_decision
-from .office_it_tools import execute_local_read, probe_tcp
+from .office_it_tools import execute_local_read, probe_rtsp_service, probe_tcp
 from .tool_result_boundary import BoundedTextResult, bound_text_result
 
 CAPABILITY_INVOCATION_REQUEST_SCHEMA = "workspace-capability-invocation-request/v1"
@@ -53,6 +53,7 @@ _EVENT_TOOLS = frozenset(
         "windows.event.security",
     }
 )
+_RTSP_SERVICE_PROBE = "network.rtsp.probe"
 _FIXED_PORT_PROBES = frozenset(
     {
         "network.ssh.probe",
@@ -235,7 +236,7 @@ def reviewed_runtime_handler_ids() -> tuple[str, ...]:
     """Return the closed source-reviewed handler coverage for the canonical runtime registry."""
     ids = (
         set(_EVENT_TOOLS)
-        | {"windows.printer.queue"}
+        | {"windows.printer.queue", _RTSP_SERVICE_PROBE}
         | set(_FIXED_PORT_PROBES)
         | set(_COMMON_TOOL_IDS)
         | {NETWORK_REACHABILITY_TOOL_ID, NETWORK_QUALITY_TOOL_ID, GROUP_POLICY_TOOL_ID}
@@ -264,6 +265,8 @@ def _allowed_parameter_names(tool_id: str) -> frozenset[str]:
         return frozenset({"hours", "max_events", "timeout"})
     if tool_id == "windows.printer.queue":
         return frozenset({"timeout"})
+    if tool_id == _RTSP_SERVICE_PROBE:
+        return frozenset({"host", "timeout"})
     if tool_id in _FIXED_PORT_PROBES:
         return frozenset({"host", "timeout", "max_banner_bytes"})
     if tool_id in {
@@ -316,7 +319,7 @@ def _normalized_parameters(tool_id: str, raw: Mapping[str, object]) -> dict[str,
     params: dict[str, object] = {}
 
     if "timeout" in raw:
-        timeout_high = 5.0 if tool_id in _FIXED_PORT_PROBES else 30.0
+        timeout_high = 5.0 if tool_id in _FIXED_PORT_PROBES or tool_id == _RTSP_SERVICE_PROBE else 30.0
         params["timeout"] = _bounded_float(raw["timeout"], field="timeout", low=0.1, high=timeout_high)
     if "hours" in raw:
         params["hours"] = _bounded_int(raw["hours"], field="hours", low=1, high=168)
@@ -331,7 +334,7 @@ def _normalized_parameters(tool_id: str, raw: Mapping[str, object]) -> dict[str,
     if "timeout_ms" in raw:
         params["timeout_ms"] = _bounded_int(raw["timeout_ms"], field="timeout_ms", low=100, high=5000)
 
-    if tool_id in _FIXED_PORT_PROBES or tool_id in {
+    if tool_id in _FIXED_PORT_PROBES or tool_id == _RTSP_SERVICE_PROBE or tool_id in {
         NETWORK_REACHABILITY_TOOL_ID,
         NETWORK_QUALITY_TOOL_ID,
     }:
@@ -397,6 +400,12 @@ def _invoke_reviewed_handler(
 
     if tool_id in _EVENT_TOOLS or tool_id == "windows.printer.queue":
         return execute_local_read(tool_id, authority=authority, **kwargs)
+    if tool_id == _RTSP_SERVICE_PROBE:
+        host = str(kwargs.pop("host"))
+        timeout = kwargs.pop("timeout", None)
+        if timeout is None:
+            return probe_rtsp_service(host, authority=authority)
+        return probe_rtsp_service(host, authority=authority, timeout_seconds=float(timeout))
     if tool_id in _FIXED_PORT_PROBES:
         host = str(kwargs.pop("host"))
         return probe_tcp(tool_id, host, authority=authority, **kwargs)

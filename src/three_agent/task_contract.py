@@ -18,6 +18,7 @@ RISK_LEVELS = {"low", "medium", "high", "critical"}
 MODEL_TIERS = {"none", "small", "specialist", "strong"}
 OFFICE_IT_NETWORK_TOOLS = {
     "network.ssh.probe",
+    "network.rtsp.probe",
     "network.smb.probe",
     "network.printer.ipp_probe",
     "network.printer.raw_probe",

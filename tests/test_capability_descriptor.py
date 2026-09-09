@@ -72,7 +72,7 @@ class CapabilityDescriptorTests(unittest.TestCase):
     def test_current_office_it_registry_projects_without_execution(self) -> None:
         descriptors = project_micro_tool_registry(MicroToolRegistry.from_specs(iter_specs()))
 
-        self.assertEqual(len(descriptors), 8)
+        self.assertEqual(len(descriptors), 9)
         self.assertTrue(all(item.kind == "tool" for item in descriptors))
         self.assertTrue(all(item.namespace == DEFAULT_TOOL_NAMESPACE for item in descriptors))
         self.assertTrue(all(item.fingerprint.startswith("sha256:") for item in descriptors))
