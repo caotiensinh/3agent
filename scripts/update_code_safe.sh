@@ -149,8 +149,8 @@ trusted_update_source() {
 
   if [[ -r /etc/os-release ]]; then
     local distro_id="" distro_version=""
-    distro_id="$(. /etc/os-release; printf '%s' "${ID:-}")"
-    distro_version="$(. /etc/os-release; printf '%s' "${VERSION_ID:-}")"
+    distro_id="$(awk -F= '$1 == "ID" {gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release)"
+    distro_version="$(awk -F= '$1 == "VERSION_ID" {gsub(/^"|"$/, "", $2); print $2; exit}' /etc/os-release)"
     if [[ "$distro_id" == "ubuntu" && ( "$distro_version" == "22.04" || "$distro_version" == "24.04" ) ]]; then
       source="${release}/scripts/update_workspace_ubuntu.sh"
     fi
