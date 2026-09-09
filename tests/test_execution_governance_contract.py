@@ -26,6 +26,10 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
             set(self.policy["applies_to"]),
             {"human", "agent", "sub_agent", "automation", "ci_worker"},
         )
+        repository_default = self.policy["repository_default"]
+        self.assertTrue(repository_default["mandatory_for_all_repository_work"])
+        self.assertTrue(repository_default["no_actor_self_exemption"])
+        self.assertTrue(repository_default["local_remote_and_ci_execution_equally_bound"])
 
     def test_parallel_execution_uses_twenty_lane_canonical_contract(self) -> None:
         parallel = self.policy["parallel_execution"]
@@ -58,7 +62,11 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
             }.issubset(required)
         )
         self.assertEqual(set(lane_contract["attempt_outcomes"]), {"PASS", "FAIL"})
+        self.assertEqual(set(lane_contract["log_states"]), {"AVAILABLE", "MISSING"})
         self.assertTrue(lane_contract["later_attempt_after_fail_requires_prior_failure_diagnosis_ref"])
+        self.assertIn("captured_log_evidence", lane_contract["instrumented_attempt_required_fields"])
+        self.assertIn("logic_analysis_evidence", lane_contract["post_instrumentation_failure_required_fields"])
+        self.assertIn("syntax_analysis_evidence", lane_contract["post_instrumentation_failure_required_fields"])
 
     def test_failure_handling_is_failure_first_and_forbids_blind_retry(self) -> None:
         failure = self.policy["failure_handling"]
@@ -67,8 +75,14 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
             failure["required_sequence"],
             [
                 "capture_failure",
-                "read_failed_logs",
+                "locate_log_source",
+                "read_failed_logs_if_available",
+                "instrument_if_logs_missing",
+                "rerun_instrumented_path",
+                "read_instrumented_logs",
                 "identify_failure_signature",
+                "analyze_logic",
+                "analyze_syntax",
                 "classify_root_cause",
                 "record_diagnosis",
                 "choose_justified_next_action",
@@ -76,6 +90,13 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
                 "rerun_targeted_verifier",
             ],
         )
+        self.assertTrue(failure["missing_log_requires_targeted_instrumentation"])
+        self.assertTrue(failure["instrumentation_must_target_failure_boundary"])
+        self.assertTrue(failure["instrumentation_must_be_bounded_redacted_and_reversible"])
+        self.assertTrue(failure["instrumented_rerun_required_before_logic_change"])
+        self.assertTrue(failure["instrumented_logs_must_be_read_before_next_edit"])
+        self.assertTrue(failure["unresolved_after_instrumented_rerun_requires_logic_and_syntax_analysis"])
+        self.assertTrue(failure["multiple_debug_strategies_required_before_hard_failed"])
         self.assertTrue(failure["blind_rerun_forbidden"])
         self.assertTrue(failure["edit_before_failure_evidence_review_forbidden"])
         self.assertTrue(failure["same_attempt_rerun_without_new_evidence_forbidden"])
@@ -88,6 +109,9 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
         self.assertTrue(solver["strategy_change_required_after_repeated_failure"])
         self.assertEqual(solver["repeated_failure_threshold"], 2)
         self.assertGreaterEqual(solver["minimum_distinct_strategy_families_before_hard_failed"], 3)
+        self.assertIn("targeted_instrumentation", solver["allowed_strategy_changes"])
+        self.assertIn("logic_trace", solver["allowed_strategy_changes"])
+        self.assertIn("syntax_static_analysis", solver["allowed_strategy_changes"])
         self.assertIn("decompose", solver["allowed_strategy_changes"])
         self.assertIn("collect_new_evidence", solver["allowed_strategy_changes"])
         self.assertTrue(solver["blocker_requires_external_dependency"])
@@ -124,7 +148,7 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
         self.assertTrue(canonical["production_entrypoints_must_reference_canonical_files"])
         self.assertEqual(canonical["explicit_compatibility_exceptions"], [])
 
-    def test_progress_is_verified_work_and_reports_both_percentages(self) -> None:
+    def test_progress_is_verified_work_and_reports_start_completion_remaining_and_delta(self) -> None:
         progress = self.policy["progress"]
         self.assertTrue(progress["measurement_required_every_session"])
         self.assertEqual(
@@ -133,10 +157,18 @@ class ExecutionGovernanceContractTests(unittest.TestCase):
         )
         self.assertIn("passed_verified_acceptance_weight", progress["formula"])
         self.assertEqual(progress["remaining_formula"], "100 - completion_percent")
+        self.assertEqual(
+            progress["progress_delta_formula"],
+            "completion_percent - start_completion_percent",
+        )
         self.assertTrue(progress["rebaseline_when_required_scope_changes"])
         self.assertTrue(progress["silent_denominator_change_forbidden"])
+        self.assertTrue(progress["negative_progress_delta_requires_rebaseline_evidence"])
+        self.assertTrue(progress["report_start_completed_percent"])
         self.assertTrue(progress["report_completed_percent"])
         self.assertTrue(progress["report_remaining_percent"])
+        self.assertTrue(progress["report_progress_delta_percent"])
+        self.assertTrue(progress["report_session_progress_summary"])
 
     def test_passed_task_or_module_requires_same_session_commit(self) -> None:
         commit = self.policy["commit_discipline"]
