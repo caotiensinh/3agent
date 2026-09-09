@@ -18,6 +18,16 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         self.assertNotIn("network.route.snapshot", result.selected_ids())
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
 
+    def test_vpn_authentication_context_suppresses_incidental_gateway_route_match(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "VPN login fail sau khi doi mat khau, gateway 192.168.11.1",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertNotIn("network.route.snapshot", result.selected_ids())
+        rejected = {(item.tool_id, item.reason_code) for item in result.rejected}
+        self.assertIn(("network.route.snapshot", "CROSS_DOMAIN_VPN_AUTH"), rejected)
+
     def test_teams_camera_not_detected_selects_local_camera_inventory(self) -> None:
         result = select_pc_diagnostic_tool_metadata(
             "Teams camera khong nhan",
@@ -43,6 +53,16 @@ class EnterpriseSkillToolNegativePathE2ETests(unittest.TestCase):
         )
         self.assertNotIn("camera.devices.snapshot", result.selected_ids())
         self.assertTrue(all(item.effect in {"read", "network_read", "compute"} for item in result.selected))
+
+    def test_remote_camera_japanese_wording_suppresses_local_webcam_inventory(self) -> None:
+        result = select_pc_diagnostic_tool_metadata(
+            "監視カメラ RTSP が見られない",
+            platform_name="Windows",
+            max_tools=4,
+        )
+        self.assertNotIn("camera.devices.snapshot", result.selected_ids())
+        rejected = {(item.tool_id, item.reason_code) for item in result.rejected}
+        self.assertIn(("camera.devices.snapshot", "CROSS_DOMAIN_REMOTE_CAMERA"), rejected)
 
     def test_blue_screen_after_windows_update_selects_system_and_update_evidence(self) -> None:
         result = select_pc_diagnostic_tool_metadata(
