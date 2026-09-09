@@ -15,6 +15,7 @@ from three_agent.capability_invocation_adapter import (
 from three_agent.capability_registry_snapshot import snapshot_micro_tool_registry
 from three_agent.diagnostics.runtime_registry import runtime_tool_metadata
 from three_agent.micro_tool_registry import MicroToolRegistry
+from three_agent.task_contract import DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS
 
 
 def _sha(char: str) -> str:
@@ -55,10 +56,12 @@ def _request(
 
 
 class CapabilityInvocationAdapterTests(unittest.TestCase):
-    def test_reviewed_handler_coverage_matches_all_current_runtime_tools(self) -> None:
-        runtime_ids = tuple(sorted(item.id for item in runtime_tool_metadata()))
-        self.assertEqual(len(runtime_ids), 32)
-        self.assertEqual(reviewed_runtime_handler_ids(), runtime_ids)
+    def test_reviewed_handlers_plus_staged_tools_cover_current_runtime_without_overlap(self) -> None:
+        runtime_ids = set(item.id for item in runtime_tool_metadata())
+        reviewed_ids = set(reviewed_runtime_handler_ids())
+        staged_ids = set(DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS)
+        self.assertTrue(reviewed_ids.isdisjoint(staged_ids))
+        self.assertEqual(runtime_ids, reviewed_ids | staged_ids)
 
     def test_positive_invocation_requires_authority_and_returns_bounded_receipt(self) -> None:
         request = _request()
