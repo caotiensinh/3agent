@@ -22,6 +22,13 @@ WAVE1_TOOL_IDS = (
     IDENTITY_ACCOUNT_STATE_TOOL_ID,
     BACKUP_STATUS_TOOL_ID,
 )
+WAVE1_EXACT_RESOURCES = {
+    CLOUD_FILES_STATUS_TOOL_ID: ("cloud_files_client_state", "local:cloud-files:client-state"),
+    MAIL_EXCHANGE_STATUS_TOOL_ID: ("mail_exchange_client_state", "local:mail-exchange:client-state"),
+    VOIP_CLIENT_STATE_TOOL_ID: ("voip_client_state", "local:voip:client-state"),
+    IDENTITY_ACCOUNT_STATE_TOOL_ID: ("identity_account_state", "local:identity:account-state"),
+    BACKUP_STATUS_TOOL_ID: ("backup_local_state", "local:backup:state"),
+}
 
 
 class Wave1EvidenceRegistryConvergenceTests(unittest.TestCase):
@@ -29,7 +36,6 @@ class Wave1EvidenceRegistryConvergenceTests(unittest.TestCase):
         registry = runtime_micro_tool_registry()
         for tool_id in WAVE1_TOOL_IDS:
             metadata = registry.get(tool_id)
-            # Registry convergence proves bounded metadata semantics, not execution readiness.
             self.assertIs(metadata.validate(), metadata, tool_id)
             self.assertEqual(metadata.network_access, "none", tool_id)
             self.assertEqual(metadata.effect, "read", tool_id)
@@ -59,26 +65,36 @@ class Wave1EvidenceRegistryConvergenceTests(unittest.TestCase):
         }
         self.assertTrue(set(WAVE1_TOOL_IDS).isdisjoint(bound_tool_ids))
 
-    def test_wave1_runtime_vocabulary_is_staged_and_authority_remains_fail_closed(self) -> None:
+    def test_wave1_route_vocabulary_stays_staged_but_exact_local_invocation_is_authorized(self) -> None:
         self.assertEqual(set(WAVE1_TOOL_IDS), DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS)
         for tool_id in WAVE1_TOOL_IDS:
             with self.subTest(tool_id=tool_id):
                 authority = TaskCapabilityAuthority._build(
-                    task_id="TASK-WAVE1-STAGED",
+                    task_id="TASK-WAVE1-INVOKE",
                     sensitivity="internal",
                     allowed_sources=(),
                     allowed_tools=(tool_id,),
                     write_scope="none",
                     network_scope="deny",
                 )
+                resource_kind, resource_ref = WAVE1_EXACT_RESOURCES[tool_id]
                 decision = authority.authorize(
                     tool_id,
-                    resource_kind="staged_runtime_evidence",
+                    resource_kind=resource_kind,
+                    resource_ref=resource_ref,
+                    effect="read",
+                )
+                self.assertTrue(decision.allowed)
+                self.assertEqual(decision.reason_code, "CAPABILITY_AUTHORIZED")
+
+                wrong = authority.authorize(
+                    tool_id,
+                    resource_kind=resource_kind,
                     resource_ref="local:staged:evidence",
                     effect="read",
                 )
-                self.assertFalse(decision.allowed)
-                self.assertEqual(decision.reason_code, "CAPABILITY_NOT_INVOCABLE")
+                self.assertFalse(wrong.allowed)
+                self.assertEqual(wrong.reason_code, "RESOURCE_REF_NOT_AUTHORIZED")
 
     def test_wave1_tool_ids_remain_distinct_evidence_primitives(self) -> None:
         self.assertEqual(len(WAVE1_TOOL_IDS), len(set(WAVE1_TOOL_IDS)))

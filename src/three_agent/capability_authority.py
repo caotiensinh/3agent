@@ -73,6 +73,15 @@ if _UNKNOWN_EFFECT_TOOLS or _STALE_EFFECT_TOOLS:
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
 _SERVICE_RESOURCE_RE = re.compile(r"^local:service:[A-Za-z0-9_.@-]{1,128}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
+_WAVE1_INVOCABLE_LOCAL_READ_TOOLS = frozenset(
+    {
+        "backup.local_state.snapshot",
+        "cloud_files.client_state.snapshot",
+        "identity.account_state.snapshot",
+        "mail_exchange.client_state.snapshot",
+        "voip.client_state.snapshot",
+    }
+)
 
 # These are authorization policy bindings, not a second runtime registry. Every entry
 # mirrors a resource identifier emitted by reviewed bounded tool implementation code.
@@ -100,6 +109,20 @@ _EXACT_RESOURCE_POLICIES = {
     "windows.boot.snapshot": ("boot_state", "local:windows:boot"),
     "windows.update.history": ("windows_update_history", "local:windows:update-history"),
     "vpn.status.snapshot": ("vpn_status", "local:vpn:status"),
+    "cloud_files.client_state.snapshot": (
+        "cloud_files_client_state",
+        "local:cloud-files:client-state",
+    ),
+    "mail_exchange.client_state.snapshot": (
+        "mail_exchange_client_state",
+        "local:mail-exchange:client-state",
+    ),
+    "voip.client_state.snapshot": ("voip_client_state", "local:voip:client-state"),
+    "identity.account_state.snapshot": (
+        "identity_account_state",
+        "local:identity:account-state",
+    ),
+    "backup.local_state.snapshot": ("backup_local_state", "local:backup:state"),
 }
 _GROUP_POLICY_REFS = frozenset(
     {
@@ -489,7 +512,7 @@ class TaskCapabilityAuthority:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_UNKNOWN")
         if cap not in self.allowed_tools:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_ALLOWED")
-        if cap in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS:
+        if cap in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS and cap not in _WAVE1_INVOCABLE_LOCAL_READ_TOOLS:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_INVOCABLE")
         expected_effect = _EFFECTS.get(cap)
         if expected_effect != eff:
