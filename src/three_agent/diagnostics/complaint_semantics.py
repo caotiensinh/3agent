@@ -43,6 +43,11 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
         "vao duoc bang ip nhung khong vao duoc bang ten", "bang ip vao duoc nhung ten khong vao duoc",
         "ホスト名を解決できない", "名前解決できない", "ipでは繋がるがホスト名では繋がらない",
     ),
+    "vpn_access_unavailable": (
+        "vpn loi", "khong vao vpn", "khong ket noi vpn", "vpn login fail", "vpn login failed",
+        "cannot connect vpn", "cannot connect to vpn", "vpn connection failed", "vpn login failed",
+        "vpn 接続できない", "vpn に接続できない", "vpn ログインできない",
+    ),
     "vpn_internal_resource_unavailable": (
         "vpn vao duoc nhung", "vpn da vao duoc nhung", "vpn ket noi duoc nhung",
         "vpn connected but", "connected to vpn but", "vpn works but",
@@ -148,7 +153,8 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
     "hostname_resolution_unavailable": ("dns", "name resolution", "ip address", "gateway"),
-    "vpn_internal_resource_unavailable": ("vpn route", "route", "gateway"),
+    "vpn_access_unavailable": ("vpn status", "vpn connection", "remote access vpn"),
+    "vpn_internal_resource_unavailable": ("vpn status", "vpn connection", "vpn route", "route", "gateway"),
     "audio_output_unavailable": ("audio device", "no sound", "speaker", "microphone"),
     "application_unresponsive": ("performance", "application event", "app crash"),
 }
