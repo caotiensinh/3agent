@@ -36,6 +36,11 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
         "no internet", "no network", "internet broken", "cannot connect to the internet",
         "ネット 繋がらない", "ネットが繋がらない", "ネットに接続できない", "ネットに接続できません",
     ),
+    "vpn_internal_resource_unavailable": (
+        "vpn vao duoc nhung", "vpn da vao duoc nhung", "vpn ket noi duoc nhung",
+        "vpn connected but", "connected to vpn but", "vpn works but",
+        "vpn接続できるが", "vpn接続済みだが", "vpnは繋がるが",
+    ),
     "application_unresponsive": (
         "app bi do", "app bi treo", "phan mem bi do", "phan mem bi treo",
         "ung dung khong phan hoi", "excel bi do", "excel khong phan hoi",
@@ -103,6 +108,7 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "display_blackout": ("operating system", "system event", "display"),
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
+    "vpn_internal_resource_unavailable": ("vpn route", "route", "gateway"),
     "application_unresponsive": ("performance", "application event", "app crash"),
 }
 
