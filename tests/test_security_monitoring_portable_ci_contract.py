@@ -28,7 +28,10 @@ class SecurityMonitoringPortableCIContractTests(unittest.TestCase):
     def test_portable_gate_keeps_exact_lineage_and_idempotent_redeploy(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}", text)
-        self.assertIn('git -C "${{ runner.temp }}/three-agent-install" rev-parse HEAD', text)
+        self.assertIn(
+            'test "$(git -C "$install_dir" rev-parse HEAD)" = "${{ steps.deploy_ref.outputs.expected_head }}"',
+            text,
+        )
         self.assertIn("Re-run bootstrap idempotently and preserve config", text)
         self.assertIn('test "$before" = "$after"', text)
 
