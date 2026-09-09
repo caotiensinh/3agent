@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Iterable
 
 from ..micro_tool_registry import MicroToolRegistry
@@ -49,6 +50,53 @@ class CapabilityBurndownItem:
         if self.execution_enabled is not False:
             raise ValueError("capability burn-down items cannot enable execution")
         return self
+
+
+@dataclass(frozen=True)
+class CapabilityBundleBurndownItem:
+    """Planning-only view of an exact unresolved capability bundle.
+
+    Every counted route has exactly this unresolved capability set and no rejected
+    binding. Implementing the entire bundle would therefore make those routes eligible
+    for promotion under the same registry/binding inputs. The item does not select an
+    implementation, grant authority, or claim that the bundle is safe to build.
+    """
+
+    capability_tags: tuple[str, ...]
+    route_unlock_count: int
+    affected_domain_ids: tuple[str, ...]
+    execution_enabled: bool = False
+    selection_authority: str = "none"
+    schema_version: str = CAPABILITY_BURNDOWN_SCHEMA
+
+    def validate(self) -> "CapabilityBundleBurndownItem":
+        if self.schema_version != CAPABILITY_BURNDOWN_SCHEMA:
+            raise ValueError(f"unsupported capability burn-down schema: {self.schema_version}")
+        if len(self.capability_tags) < 2:
+            raise ValueError("capability bundle must contain at least two capabilities")
+        if tuple(sorted(set(self.capability_tags))) != self.capability_tags:
+            raise ValueError("capability bundle tags must be unique and sorted")
+        if not all(tag.strip() for tag in self.capability_tags):
+            raise ValueError("capability bundle tags cannot be blank")
+        if self.route_unlock_count < 1:
+            raise ValueError("route_unlock_count must be positive")
+        if not self.affected_domain_ids:
+            raise ValueError("affected_domain_ids is required")
+        if self.execution_enabled is not False:
+            raise ValueError("capability bundle items cannot enable execution")
+        if self.selection_authority != "none":
+            raise ValueError("capability bundle items cannot grant selection authority")
+        return self
+
+    @property
+    def capability_count(self) -> int:
+        return len(self.capability_tags)
+
+    @property
+    def closure_efficiency(self) -> Fraction:
+        """Exact routes-closed-per-capability ratio for deterministic ranking."""
+
+        return Fraction(self.route_unlock_count, self.capability_count)
 
 
 @dataclass(frozen=True)
@@ -107,6 +155,16 @@ class _Accumulator:
             self.affected_domain_ids = set()
         if self.one_step_domain_ids is None:
             self.one_step_domain_ids = set()
+
+
+@dataclass
+class _BundleAccumulator:
+    route_unlock_count: int = 0
+    affected_domain_ids: set[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.affected_domain_ids is None:
+            self.affected_domain_ids = set()
 
 
 def build_capability_burndown_plan(
@@ -213,6 +271,71 @@ def build_capability_burndown_plan(
     ).validate()
 
 
+def build_capability_bundle_candidates(
+    routes: Iterable[PlannedDiagnosticRoute],
+    registry: MicroToolRegistry,
+    *,
+    bindings: Iterable[CapabilityBinding],
+    allow_external_network: bool = False,
+) -> tuple[CapabilityBundleBurndownItem, ...]:
+    """Rank exact multi-capability gaps by deterministic closure efficiency.
+
+    Only routes with two or more unresolved capabilities and no rejected bindings are
+    counted. Routes are grouped by their exact sorted unresolved set. That makes every
+    `route_unlock_count` an auditable statement: implementing the complete bundle would
+    remove the capability gap for exactly those routes under the same planning inputs.
+
+    Ranking uses the exact `route_unlock_count / capability_count` ratio, then fewer
+    capabilities, then higher raw route closure, then lexical tags for stable output.
+    This is planning metadata only and grants no execution or selection authority.
+    """
+
+    if type(allow_external_network) is not bool:
+        raise ValueError("allow_external_network must be boolean")
+
+    bindings_tuple = tuple(bindings)
+    accumulators: dict[tuple[str, ...], _BundleAccumulator] = {}
+    for route in tuple(routes):
+        result = promote_planned_route(
+            route,
+            registry,
+            bindings=bindings_tuple,
+            allow_external_network=allow_external_network,
+        )
+        if result.promotable or result.rejected_bindings:
+            continue
+        unresolved = tuple(sorted(set(result.unresolved_capability_tags)))
+        if len(unresolved) < 2:
+            continue
+        item = accumulators.setdefault(unresolved, _BundleAccumulator())
+        item.route_unlock_count += 1
+        assert item.affected_domain_ids is not None
+        item.affected_domain_ids.add(route.domain_id)
+
+    items: list[CapabilityBundleBurndownItem] = []
+    for capability_tags, accumulator in accumulators.items():
+        assert accumulator.affected_domain_ids is not None
+        items.append(
+            CapabilityBundleBurndownItem(
+                capability_tags=capability_tags,
+                route_unlock_count=accumulator.route_unlock_count,
+                affected_domain_ids=tuple(sorted(accumulator.affected_domain_ids)),
+            ).validate()
+        )
+
+    return tuple(
+        sorted(
+            items,
+            key=lambda item: (
+                -item.closure_efficiency,
+                item.capability_count,
+                -item.route_unlock_count,
+                item.capability_tags,
+            ),
+        )
+    )
+
+
 def one_step_closure_candidates(
     plan: CapabilityBurndownPlan,
 ) -> tuple[CapabilityBurndownItem, ...]:
@@ -224,8 +347,10 @@ def one_step_closure_candidates(
 
 __all__ = [
     "CAPABILITY_BURNDOWN_SCHEMA",
+    "CapabilityBundleBurndownItem",
     "CapabilityBurndownItem",
     "CapabilityBurndownPlan",
+    "build_capability_bundle_candidates",
     "build_capability_burndown_plan",
     "one_step_closure_candidates",
 ]
