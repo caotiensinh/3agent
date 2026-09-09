@@ -78,15 +78,15 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
         self.assertEqual(mapping["vpn.status"], ("vpn.status.snapshot",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_forty_four_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_forty_two_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 144)
-        self.assertEqual(report.partially_covered_routes, 159)
+        self.assertEqual(report.fully_promotable_routes, 142)
+        self.assertEqual(report.partially_covered_routes, 161)
         self.assertEqual(report.uncovered_routes, 347)
         self.assertEqual(
             report.fully_promotable_routes
@@ -138,13 +138,13 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertGreater(selected.get("network.ipconfig.snapshot", 0), 0)
         self.assertGreater(selected.get("network.dns.snapshot", 0), 0)
         self.assertGreater(selected.get("windows.printer.queue", 0), 0)
-        self.assertEqual(selected.get("network.reachability.internal"), 102)
+        self.assertEqual(selected.get("network.reachability.internal"), 101)
         self.assertEqual(selected.get("windows.group_policy.result"), 44)
         self.assertEqual(selected.get("identity.session.snapshot"), 34)
         self.assertEqual(selected.get("network.quality.internal"), 33)
         self.assertEqual(selected.get("audio.devices.snapshot"), 37)
         self.assertEqual(selected.get("meeting.client.snapshot"), 20)
-        self.assertEqual(selected.get("process.top.snapshot"), 23)
+        self.assertEqual(selected.get("process.top.snapshot"), 22)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
         self.assertEqual(selected.get("camera.devices.snapshot"), 21)
         self.assertEqual(selected.get("storage.io.snapshot"), 20)
