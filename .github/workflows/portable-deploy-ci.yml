@@ -166,16 +166,25 @@ jobs:
             echo "Trusted installed updater is not identical to exact installed checkout" >&2
             exit 1
           }
-          grep -Fq '3agent-update.sh' "$launcher" || {
-            echo "Installed updater does not invoke the trusted local payload" >&2
-            exit 1
-          }
           grep -Fq 'THREE_AGENT_REPO_REF=${{ steps.deploy_ref.outputs.ref }}' "$launcher" || {
             echo "Installed updater did not preserve the configured tracking ref" >&2
             exit 1
           }
-          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh' "$launcher"; then
-            echo "Installed updater launcher contains a mutable remote execution primitive" >&2
+          exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+          test "$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1 || {
+            echo "Installed updater must expose exactly one execution line" >&2
+            exit 1
+          }
+          printf '%s\n' "$exec_lines" | grep -Fq "$trusted" || {
+            echo "Installed updater does not invoke the trusted local payload" >&2
+            exit 1
+          }
+          if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+            echo "Installed updater execution line contains a mutable remote execution primitive" >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+            echo "Installed updater contains a remote-fetch command" >&2
             exit 1
           fi
       - name: Re-run installed trusted Ubuntu updater and preserve configuration
@@ -185,17 +194,26 @@ jobs:
           bin_dir="${{ runner.temp }}/three-agent-bin"
           state_dir="${{ runner.temp }}/three-agent-state"
           config_path="$install_dir/config/local.json"
+          launcher="$bin_dir/3agent-update"
+          trusted="$bin_dir/3agent-update.sh"
           before="$(sha256sum "$config_path" | awk '{print $1}')"
 
-          "$bin_dir/3agent-update"
+          "$launcher"
 
           after="$(sha256sum "$config_path" | awk '{print $1}')"
           test "$before" = "$after"
           test "$(tail -n 1 "$state_dir/active-releases.log" | awk -F '\t' '{print $2}')" = "${{ steps.deploy_ref.outputs.expected_head }}"
           "$bin_dir/3agent" smoke
-          test -f "$bin_dir/3agent-update.sh"
-          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "$bin_dir/3agent-update"; then
+          test -f "$trusted"
+          exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+          test "$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+          printf '%s\n' "$exec_lines" | grep -Fq "$trusted"
+          if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash'; then
             echo "Trusted updater re-run restored a remote execution primitive" >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+            echo "Trusted updater re-run restored a remote-fetch command" >&2
             exit 1
           fi
       - name: Re-run bootstrap idempotently and preserve config
@@ -212,11 +230,14 @@ jobs:
           THREE_AGENT_SKIP_SYSTEM_PACKAGES: '1'
         run: |
           install_dir="${{ runner.temp }}/three-agent-install"
+          bin_dir="${{ runner.temp }}/three-agent-bin"
           config_path="$install_dir/config/local.json"
           runner_state="$install_dir/actions-runner/.credentials"
           backup_path="$install_dir/config/local.json.backup-ci"
           before_path="$install_dir/config/local.json.before-ci"
           operator_state="$install_dir/operator-local-state.keep"
+          launcher="$bin_dir/3agent-update"
+          trusted="$bin_dir/3agent-update.sh"
 
           mkdir -p "$install_dir/actions-runner"
           printf '\n' >> "$config_path"
@@ -239,8 +260,15 @@ jobs:
           test "$backup_before" = "$(sha256sum "$backup_path" | awk '{print $1}')"
           test "$before_before" = "$(sha256sum "$before_path" | awk '{print $1}')"
           test "$operator_before" = "$(sha256sum "$operator_state" | awk '{print $1}')"
-          test -f "${{ runner.temp }}/three-agent-bin/3agent-update.sh"
-          if grep -Eq 'https?://|(^|[[:space:]])curl([[:space:]]|$)|[|][[:space:]]*bash' "${{ runner.temp }}/three-agent-bin/3agent-update"; then
-            echo "Idempotent deployment restored an untrusted updater entrypoint" >&2
+          test -f "$trusted"
+          exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+          test "$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)" -eq 1
+          printf '%s\n' "$exec_lines" | grep -Fq "$trusted"
+          if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash'; then
+            echo "Idempotent deployment restored an untrusted updater execution line" >&2
+            exit 1
+          fi
+          if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+            echo "Idempotent deployment restored a remote-fetch command" >&2
             exit 1
           fi
