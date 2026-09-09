@@ -39,7 +39,7 @@ def workflow():
                 "id": "observe",
                 "label": "Observe browser",
                 "kind": "agent",
-                "action": "observe",
+                "action": "research",
                 "depends_on": ["start"],
                 "condition": "",
                 "approval_required": False,
@@ -251,7 +251,7 @@ class ComputerUseEvidenceTests(unittest.TestCase):
         authority, plan = self.runtime()
         item = self.action(plan, plan.task_id)
         pre, post = self.observations(plan.task_id)
-        with self.assertRaisesRegex(ValueError, "OBSERVATION_TOOL_CALLS_EXCEEDS_NODE_BUDGET"):
+        with self.assertRaisesRegex(ValueError, "OBSERVATION_TOOL_CALLS_EXCEED_NODE_BUDGET"):
             build_computer_execution_observation(
                 plan=plan,
                 node_id="observe",
