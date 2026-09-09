@@ -70,9 +70,9 @@ DOMAIN_PROFILES: tuple[DomainProfile, ...] = (
     DomainProfile("mail_exchange", "Outlook, email and Exchange", ("outlook", "email not sending", "email not received", "mailbox", "mail slow", "khong gui mail", "khong nhan mail", "mail loi", "メール", "Outlook"), ("mail", "outlook")),
     DomainProfile("meeting_collaboration", "Teams, Zoom and conferencing", ("teams no sound", "zoom no sound", "teams camera", "meeting no audio", "screen share", "teams mic", "khong nghe teams", "teams khong co tieng", "会議 音", "Teams"), ("teams", "audio")),
     DomainProfile("cloud_files", "OneDrive, SharePoint and cloud files", ("onedrive", "sharepoint", "sync error", "sync conflict", "cloud file", "khong dong bo", "onedrive loi", "同期できない", "SharePoint"), ("onedrive", "sharepoint")),
-    DomainProfile("file_share_gpo", "SMB, mapped drives, permissions and GPO", ("shared folder", "mapped drive", "network drive", "access denied", "gpo", "group policy", "thu muc chia se", "o mang", "khong vao folder", "共有フォルダ", "ネットワークドライブ"), ("share", "permission")),
+    DomainProfile("file_share_gpo", "SMB, mapped drives, permissions and GPO", ("shared folder", "file share", "mapped drive", "network drive", "access denied", "gpo", "group policy", "thu muc chia se", "o mang", "khong vao folder", "共有フォルダ", "ネットワークドライブ"), ("share", "permission")),
     DomainProfile("business_apps", "Software, browser and business applications", ("app not working", "software error", "browser error", "activation", "install failed", "phan mem loi", "khong mo duoc phan mem", "アプリ エラー", "ソフト 起動しない"), ("application", "browser")),
-    DomainProfile("security", "Security, phishing, EDR and policy", ("phishing", "virus", "malware", "edr", "antivirus", "blocked by security", "bi chan", "bao mat", "virus", "フィッシング", "ウイルス"), ("security", "malware")),
+    DomainProfile("security", "Security, phishing, EDR and policy", ("phishing", "virus", "malware", "edr", "antivirus", "blocked by security", "suspicious connection", "unknown ip connection", "tu ket noi den ip la", "ket noi den ip la", "bi chan", "bao mat", "virus", "フィッシング", "ウイルス"), ("security", "malware")),
     DomainProfile("mobile_mdm", "Mobile, MDM and BYOD", ("iphone work mail", "android work mail", "mdm", "company portal", "mobile enrollment", "dien thoai cong ty", "iphone khong vao mail", "モバイル", "MDM"), ("mobile", "mdm")),
     DomainProfile("server_backup", "Server, virtualization, storage and backup", ("server down", "server slow", "vm down", "backup failed", "restore failed", "storage full", "server loi", "backup loi", "サーバー", "バックアップ"), ("server", "backup")),
     DomainProfile("voip", "VoIP, phones and headsets", ("phone no audio", "one way audio", "softphone", "voip", "headset", "call drop", "dien thoai khong co tieng", "電話 音", "VoIP"), ("voip", "phone")),
@@ -118,11 +118,11 @@ _ENTITY_ALIASES: Mapping[str, tuple[str, ...]] = {
     "audio": ("sound", "audio", "mic", "microphone", "tieng", "音", "マイク"),
     "onedrive": ("onedrive",),
     "sharepoint": ("sharepoint",),
-    "share": ("shared folder", "network drive", "mapped drive", "thu muc chia se", "共有フォルダ"),
+    "share": ("shared folder", "file share", "network drive", "mapped drive", "thu muc chia se", "共有フォルダ"),
     "permission": ("access denied", "permission", "quyen", "アクセス拒否"),
     "application": ("app", "application", "software", "phan mem", "アプリ"),
     "browser": ("browser", "chrome", "edge", "ブラウザ"),
-    "security": ("security", "edr", "antivirus", "bao mat", "セキュリティ"),
+    "security": ("security", "edr", "antivirus", "bao mat", "suspicious connection", "unknown ip connection", "tu ket noi den ip la", "ket noi den ip la", "セキュリティ"),
     "malware": ("virus", "malware", "phishing", "ウイルス"),
     "mobile": ("iphone", "android", "mobile", "dien thoai", "スマホ"),
     "mdm": ("mdm", "company portal", "intune"),
@@ -487,6 +487,10 @@ def next_best_questions(
             score += 20 * len(overlap)
         if question.id == "scope.same_area" and known.get("scope.others_affected") is not True:
             continue
+        if question.id == "context.what_is_affected" and not top_domains and not entities_known:
+            score += 40
+        if question.id == "scope.others_affected" and top_domains:
+            score += 1
         ranked.append((-score, question.id, question))
     ranked.sort(key=lambda item: (item[0], item[1]))
     return tuple(item[2] for item in ranked[: int(max_questions)])
