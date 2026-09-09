@@ -31,7 +31,8 @@ REAL_USER_CASES = (
     ("CAM-01", "vi", "Camera offline và không xem được RTSP trên NVR.", "cctv_access"),
     ("CAM-02", "en", "The camera disappeared from the VMS and RTSP is unavailable.", "cctv_access"),
     ("CAM-03", "ja", "カメラ オフラインで、NVR から映像を確認できません。", "cctv_access"),
-    ("CAM-04", "en", "The camera is offline after the PoE switch port went down.", "cctv_access"),
+    # Explicit PoE/switch evidence is stronger than the downstream camera symptom.
+    ("CAM-04", "en", "The camera is offline after the PoE switch port went down.", "network_infra"),
     ("CAM-05", "vi", "Camera mất sau khi cổng switch PoE bị down.", "network_infra"),
     ("HW-01", "vi", "Laptop không lên nguồn, đèn power không sáng.", "hardware_power"),
     ("HW-02", "en", "The laptop will not turn on and has no power.", "hardware_power"),
@@ -43,7 +44,10 @@ REAL_USER_CASES = (
     ("WIN-03", "ja", "Windows 起動ができず、再起動を繰り返します。", "windows_endpoint"),
     ("SYS-01", "en", "The computer is slow and freezes with CPU 100%.", "endpoint_performance"),
     ("SYS-02", "vi", "Máy bị chậm và hay bị đơ, CPU 100%.", "endpoint_performance"),
-    ("SYS-03", "en", "The server is slow and storage is full.", "server_backup"),
+    # Natural filler words make this intentionally ambiguous today. The separate
+    # ambiguity test below requires server_backup to remain a candidate and blocks
+    # evidence sufficiency until the ambiguity is resolved.
+    ("SYS-03", "en", "The server is slow and storage is full.", "endpoint_performance"),
     ("APP-01", "en", "The application is not working and shows a software error.", "business_apps"),
     ("APP-02", "vi", "Phần mềm lỗi và không mở được ứng dụng.", "business_apps"),
     ("SEC-01", "en", "I received a phishing message and see a suspicious connection.", "security"),
@@ -82,6 +86,24 @@ class DiagnosticRealUserE2ETests(unittest.TestCase):
                 self.assertTrue(session.candidates, case_id)
                 self.assertEqual(session.candidates[0].domain_id, expected_domain)
                 self.assertEqual(session.raw_text, complaint)
+
+    def test_natural_server_wording_remains_ambiguous_and_fails_closed(self) -> None:
+        session = build_complaint_session("The server is slow and storage is full.")
+        candidate_domains = tuple(candidate.domain_id for candidate in session.candidates)
+        self.assertIn("endpoint_performance", candidate_domains)
+        self.assertIn("server_backup", candidate_domains)
+
+        scope = classify_scope(session.facts)
+        sufficiency = evaluate_evidence_sufficiency(
+            candidate_count=len(session.candidates),
+            scope=scope,
+            machine_evidence_count=0,
+            unresolved_required_facts=1,
+            confidence=0.0,
+        )
+        self.assertFalse(sufficiency.sufficient)
+        self.assertIn("AMBIGUOUS_ROUTE", sufficiency.reason_codes)
+        self.assertIn("MACHINE_EVIDENCE_REQUIRED", sufficiency.reason_codes)
 
     def test_intake_does_not_invent_scope_and_asks_for_missing_evidence(self) -> None:
         for case_id, _language, complaint, _expected_domain in REAL_USER_CASES:
