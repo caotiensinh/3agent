@@ -21,8 +21,6 @@ WAVE2_EXPECTED = {
     "IT-0230": ("network.dns",),
     "IT-0243": ("group_policy",),
     "IT-0260": ("vpn.status", "network.route", "network.dns", "network.reachability"),
-    "IT-0301": ("network.reachability",),
-    "IT-0311": ("server.resources", "process.top"),
     "IT-0325": ("audio.devices", "network.quality"),
     "IT-0330": ("audio.devices",),
     "IT-0331": ("audio.devices",),
@@ -44,7 +42,9 @@ NEIGHBOR_DEFAULTS = {
         "application.version",
         "license.state",
     ),
+    "IT-0301": ("server.resources", "service.status", "storage.capacity", "backup.status"),
     "IT-0302": ("server.resources", "service.status", "storage.capacity", "backup.status"),
+    "IT-0311": ("server.resources", "service.status", "storage.capacity", "backup.status"),
     "IT-0324": ("voip.registration", "audio.devices", "network.quality", "network.nat"),
 }
 
@@ -103,7 +103,7 @@ class CatalogIssueCapabilityOverridesWave2Tests(unittest.TestCase):
                 )
                 self.assertTrue(result.selected_tool_ids)
 
-    def test_neighboring_routes_keep_conservative_domain_defaults(self) -> None:
+    def test_neighboring_and_broad_routes_keep_conservative_domain_defaults(self) -> None:
         for route_id, expected_tags in NEIGHBOR_DEFAULTS.items():
             with self.subTest(route_id=route_id):
                 route = self.by_id[route_id]
