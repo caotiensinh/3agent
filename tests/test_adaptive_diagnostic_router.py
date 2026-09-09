@@ -16,7 +16,7 @@ class AdaptiveDiagnosticRouterTests(unittest.TestCase):
         second = office_it_micro_tool_registry()
         self.assertIs(first, second)
         metadata = first.metadata_view()
-        self.assertEqual(len(metadata), 8)
+        self.assertEqual(len(metadata), 9)
         self.assertEqual({item["schema_version"] for item in metadata}, {"workspace-micro-tool-metadata/v1"})
 
     def test_ssh_request_routes_to_existing_atomic_tool(self) -> None:
