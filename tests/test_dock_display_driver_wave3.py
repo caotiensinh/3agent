@@ -207,18 +207,13 @@ class DockDisplayDriverWave3Tests(unittest.TestCase):
             root = Path(temp_dir)
             pci = root / "pci"
             usb = root / "usb"
-            drivers = root / "drivers"
             pci.mkdir()
             usb.mkdir()
-            drivers.mkdir()
-            driver_target = drivers / "fixture_driver"
-            driver_target.mkdir()
-            pci_device = pci / "0000:00:01.0"
+            pci_device = pci / "device-0"
             pci_device.mkdir()
             (pci_device / "vendor").write_text("0x1234", encoding="utf-8")
             (pci_device / "device").write_text("0x5678", encoding="utf-8")
             (pci_device / "class").write_text("0x020000", encoding="utf-8")
-            (pci_device / "driver").symlink_to(driver_target, target_is_directory=True)
             usb_device = usb / "1-1"
             usb_device.mkdir()
             (usb_device / "manufacturer").write_text("Vendor", encoding="utf-8")
@@ -226,7 +221,10 @@ class DockDisplayDriverWave3Tests(unittest.TestCase):
             (usb_device / "idVendor").write_text("1234", encoding="utf-8")
             (usb_device / "idProduct").write_text("5678", encoding="utf-8")
             (usb_device / "serial").write_text("SECRET-SERIAL", encoding="utf-8")
-            with patch("three_agent.diagnostics.driver_inventory_tools.LINUX_PCI_ROOT", pci), patch(
+            with patch(
+                "three_agent.diagnostics.driver_inventory_tools._driver_name",
+                side_effect=lambda entry: "fixture_driver" if entry == pci_device else None,
+            ), patch("three_agent.diagnostics.driver_inventory_tools.LINUX_PCI_ROOT", pci), patch(
                 "three_agent.diagnostics.driver_inventory_tools.LINUX_USB_ROOT", usb
             ):
                 result = read_driver_inventory(
