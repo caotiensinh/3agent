@@ -1,0 +1,102 @@
+name: cameraops-host-local-rescue-diag-once
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/cameraops-host-local-rescue-diag-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cameraops-host-local-rescue-diag-once
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: [self-hosted]
+    timeout-minutes: 10
+    steps:
+      - name: Verify exact host and inspect CameraOps runner read-only
+        shell: bash
+        run: |
+          set -u
+          echo '=== RELAY EXECUTION IDENTITY ==='
+          echo "HOST=$(hostname)"
+          id
+          echo "RUNNER_TEMP=$RUNNER_TEMP"
+          echo "PWD=$PWD"
+          if [ "$(hostname)" != "aiserver" ]; then
+            echo 'FAIL-CLOSED: self-hosted relay is not aiserver'
+            exit 21
+          fi
+
+          ROOT=/home/aiserver/actions-runner
+          echo '=== CAMERAOPS ROOT ==='
+          if [ ! -d "$ROOT" ]; then
+            echo 'FAIL-CLOSED: CameraOps runner root missing'
+            exit 22
+          fi
+          ls -ld "$ROOT"
+          ls -la "$ROOT" | sed -n '1,120p'
+
+          echo '=== CAMERAOPS REGISTRATION ==='
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/home/aiserver/actions-runner/.runner')
+          if not p.is_file():
+              print('CAMERAOPS_RUNNER_FILE=ABSENT')
+              raise SystemExit(0)
+          d = json.loads(p.read_text(encoding='utf-8'))
+          for k in ('agentId','agentName','poolName','poolId','serverUrl','gitHubUrl','workFolder'):
+              print(f'{k}={d.get(k)}')
+          PY
+
+          echo '=== CAMERAOPS SERVICE FILE ==='
+          if [ -f "$ROOT/.service" ]; then
+            printf 'SERVICE_FILE='
+            cat "$ROOT/.service"
+          else
+            echo 'SERVICE_FILE=ABSENT'
+          fi
+
+          echo '=== CAMERAOPS PROCESS SNAPSHOT ==='
+          pgrep -af '/home/aiserver/actions-runner/bin/Runner.Listener' || true
+          pgrep -af '/home/aiserver/actions-runner/bin/Runner.Worker' || true
+
+          echo '=== ALL ACTIONS RUNNER SYSTEMD UNITS ==='
+          systemctl list-unit-files 'actions.runner.*' --no-pager || true
+          systemctl list-units --type=service 'actions.runner.*' --all --no-pager || true
+
+          if [ -f "$ROOT/.service" ]; then
+            svc="$(cat "$ROOT/.service")"
+            echo "TARGET_SERVICE=$svc"
+            systemctl status "$svc" --no-pager -l || true
+            printf 'TARGET_ACTIVE='; systemctl is-active "$svc" || true
+            printf 'TARGET_ENABLED='; systemctl is-enabled "$svc" || true
+            echo '=== TARGET JOURNAL LAST 120 ==='
+            journalctl -u "$svc" -n 120 --no-pager 2>/dev/null \
+              | sed -E 's/(token|authorization|credential|secret)[=: ]+[^ ]+/\1=[REDACTED]/Ig' || true
+          fi
+
+          echo '=== SUDO CAPABILITY READ-ONLY ==='
+          if sudo -n true 2>/dev/null; then
+            echo 'SUDO_NONINTERACTIVE=true'
+          else
+            echo 'SUDO_NONINTERACTIVE=false'
+          fi
+
+          echo '=== CAMERAOPS LATEST DIAG FILES ==='
+          find "$ROOT/_diag" -maxdepth 1 -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -8 || true
+          latest="$(find "$ROOT/_diag" -maxdepth 1 -type f -name 'Runner_*.log' -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"
+          if [ -n "${latest:-}" ]; then
+            echo "LATEST_RUNNER_LOG=$latest"
+            grep -Eai 'error|fail|offline|connect|listener|service|session|retry|unauthorized|forbidden|timeout|shutdown|stop|exit' "$latest" \
+              | tail -160 \
+              | sed -E 's/(token|authorization|credential|secret)[=: ]+[^ ]+/\1=[REDACTED]/Ig' || true
+          fi
+
+          echo 'HOST_LOCAL_DIAGNOSTIC_MUTATION=false'
