@@ -6,6 +6,7 @@ from .capability_authority import TaskCapabilityAuthority
 from .execution_checkpoint_writer_fence import WriterFencedExecutionCheckpointRepository
 from .execution_plan import ExecutionPlan
 from .execution_scheduler import (
+    MAX_SCHEDULER_CONCURRENCY,
     ExecutionScheduler,
     SchedulerBudgetGuard,
     SchedulerRevocationGuard,
@@ -94,11 +95,12 @@ def compose_writer_fenced_execution_runtime(
     ``run_id`` must come from the caller's durable run/session lifecycle. This
     function deliberately does not generate one and exposes no unfenced fallback.
 
-    Canonical scheduling admission is evaluated before writer ownership changes,
-    preventing invalid task/plan/authority input from superseding a healthy run.
-    After admission succeeds, the existing writer-lease repository claims the
-    exact task/plan generation and the existing writer-fenced checkpoint adapter
-    becomes the only checkpoint repository supplied to ``ExecutionScheduler``.
+    Canonical scheduling admission and non-persistent scheduler inputs are
+    validated before writer ownership changes, preventing invalid input from
+    superseding a healthy run. After admission succeeds, the existing writer-lease
+    repository claims the exact task/plan generation and the existing writer-fenced
+    checkpoint adapter becomes the only checkpoint repository supplied to
+    ``ExecutionScheduler``.
     """
 
     if not isinstance(task_store, TaskStore):
@@ -111,9 +113,24 @@ def compose_writer_fenced_execution_runtime(
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_REVOCATION_GUARD_REQUIRED"
         )
+    if (
+        isinstance(max_concurrency, bool)
+        or not isinstance(max_concurrency, int)
+        or not 1 <= max_concurrency <= MAX_SCHEDULER_CONCURRENCY
+    ):
+        raise ExecutionRuntimeCompositionError(
+            "EXECUTION_RUNTIME_MAX_CONCURRENCY_INVALID"
+        )
     if not isinstance(checkpoint_reapproved_nodes, frozenset):
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_REAPPROVED_NODES_MUST_BE_FROZENSET"
+        )
+    if any(
+        not isinstance(node_id, str) or not node_id.strip()
+        for node_id in checkpoint_reapproved_nodes
+    ):
+        raise ExecutionRuntimeCompositionError(
+            "EXECUTION_RUNTIME_REAPPROVED_NODE_INVALID"
         )
 
     try:
@@ -156,8 +173,8 @@ def compose_writer_fenced_execution_runtime(
             checkpoint_reapproved_nodes=checkpoint_reapproved_nodes,
         )
     except Exception as exc:
-        # Do not silently fall back to an unfenced repository. The claimed
-        # generation remains durable so a caller can retry with the same run_id.
+        # Never fall back to unfenced persistence. Keeping the claimed generation
+        # lets the same durable run_id retry without creating another generation.
         raise ExecutionRuntimeCompositionError(
             "EXECUTION_RUNTIME_SCHEDULER_COMPOSITION_FAILED"
         ) from exc
