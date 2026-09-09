@@ -8,6 +8,7 @@ from .execution_plan import ExecutionPlan
 from .execution_scheduler import (
     MAX_SCHEDULER_CONCURRENCY,
     ExecutionScheduler,
+    ExecutionSchedulerError,
     SchedulerBudgetGuard,
     SchedulerRevocationGuard,
 )
@@ -172,7 +173,7 @@ def compose_writer_fenced_execution_runtime(
             checkpoint_repository=checkpoint_repository,
             checkpoint_reapproved_nodes=checkpoint_reapproved_nodes,
         )
-    except Exception as exc:
+    except ExecutionSchedulerError as exc:
         # Never fall back to unfenced persistence. Keeping the claimed generation
         # lets the same durable run_id retry without creating another generation.
         raise ExecutionRuntimeCompositionError(
