@@ -103,12 +103,19 @@ for iteration in {1..20}; do
     # shellcheck source=/dev/null
     source "$lib"
 
+    # These overrides replace dynamically sourced production functions and are invoked by main().
+    # shellcheck disable=SC2317
     check_ubuntu_host() { :; }
+    # shellcheck disable=SC2317
     check_commands() { :; }
+    # shellcheck disable=SC2317
     installation_exists() { return 0; }
+    # shellcheck disable=SC2317
     active_sha() { cat "$RACE_ACTIVE_STATE"; }
+    # shellcheck disable=SC2317
     verify_final_state() { [[ "$(cat "$RACE_ACTIVE_STATE")" == "$1" ]]; }
 
+    # shellcheck disable=SC2317
     resolve_target_sha() {
       local index
       index="$(cat "$RACE_RESOLVER_STATE")"
@@ -119,6 +126,7 @@ for iteration in {1..20}; do
       printf '%s\n' "$((index + 1))" >"$RACE_RESOLVER_STATE"
     }
 
+    # shellcheck disable=SC2317
     download_exact_updater() {
       local pinned="$1"
       TMP_UPDATER="${TMP_DIR}/fake-inner-${iteration}-${pinned}.sh"
