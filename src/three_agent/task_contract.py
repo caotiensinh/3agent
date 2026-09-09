@@ -41,6 +41,7 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "camera.devices.snapshot",
     "storage.io.snapshot",
     "windows.print.driver.snapshot",
+    "vpn.status.local",
     "windows.boot.snapshot",
     "windows.update.history",
 }
