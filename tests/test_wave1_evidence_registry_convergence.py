@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from three_agent.capability_authority import TaskCapabilityAuthority
 from three_agent.diagnostics.backup_status_tools import BACKUP_STATUS_TOOL_ID
 from three_agent.diagnostics.cloud_files_tools import CLOUD_FILES_STATUS_TOOL_ID
 from three_agent.diagnostics.identity_account_state_tools import IDENTITY_ACCOUNT_STATE_TOOL_ID
@@ -11,6 +12,7 @@ from three_agent.diagnostics.runtime_registry import (
     runtime_micro_tool_registry,
 )
 from three_agent.diagnostics.voip_tools import VOIP_CLIENT_STATE_TOOL_ID
+from three_agent.task_contract import DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS
 
 
 WAVE1_TOOL_IDS = (
@@ -56,6 +58,27 @@ class Wave1EvidenceRegistryConvergenceTests(unittest.TestCase):
             for tool_id in tool_ids
         }
         self.assertTrue(set(WAVE1_TOOL_IDS).isdisjoint(bound_tool_ids))
+
+    def test_wave1_runtime_vocabulary_is_staged_and_authority_remains_fail_closed(self) -> None:
+        self.assertEqual(set(WAVE1_TOOL_IDS), DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS)
+        for tool_id in WAVE1_TOOL_IDS:
+            with self.subTest(tool_id=tool_id):
+                authority = TaskCapabilityAuthority._build(
+                    task_id="TASK-WAVE1-STAGED",
+                    sensitivity="internal",
+                    allowed_sources=(),
+                    allowed_tools=(tool_id,),
+                    write_scope="none",
+                    network_scope="deny",
+                )
+                decision = authority.authorize(
+                    tool_id,
+                    resource_kind="staged_runtime_evidence",
+                    resource_ref="local:staged:evidence",
+                    effect="read",
+                )
+                self.assertFalse(decision.allowed)
+                self.assertEqual(decision.reason_code, "CAPABILITY_NOT_INVOCABLE")
 
     def test_wave1_tool_ids_remain_distinct_evidence_primitives(self) -> None:
         self.assertEqual(len(WAVE1_TOOL_IDS), len(set(WAVE1_TOOL_IDS)))
