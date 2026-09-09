@@ -11,6 +11,30 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 CANONICAL_RELATIVE = Path("config/workspace.execution-governance.json")
+SUPPORTED_POLICY_VERSIONS = {"0.0.4"}
+POLICY_TOP_LEVEL_KEYS = {
+    "policy_id",
+    "version",
+    "scope",
+    "applies_to",
+    "repository_default",
+    "canonical_source",
+    "authority",
+    "parallel_execution",
+    "lane_contract",
+    "failure_handling",
+    "canonical_implementation",
+    "main_integration",
+    "state_machine",
+    "adaptive_solver",
+    "acceptance",
+    "session_stop_gate",
+    "progress",
+    "session_effectiveness",
+    "commit_discipline",
+    "harness_principles",
+    "session_receipt",
+}
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 PRODUCTION_EXTENSIONS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".cs",
@@ -27,10 +51,36 @@ def _require(condition: bool, message: str) -> None:
         raise GovernanceError(message)
 
 
+def _reject_duplicate_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise GovernanceError(f"duplicate JSON key is forbidden: {key}")
+        result[key] = value
+    return result
+
+
 def load_json(path: Path) -> dict[str, Any]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_reject_duplicate_object_pairs,
+    )
     _require(isinstance(data, dict), f"{path}: root must be a JSON object")
     return data
+
+
+def _resolve_repo_path(repo_root: Path, raw_path: str | Path, label: str) -> Path:
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = repo_root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(repo_root)
+    except ValueError as exc:
+        raise GovernanceError(
+            f"{label} path must remain inside repository root: {raw_path}"
+        ) from exc
+    return resolved
 
 
 def _git_output(repo_root: Path, *args: str) -> str:
@@ -94,6 +144,16 @@ def _ordered(sequence: list[str], left: str, right: str, message: str) -> None:
 
 
 def validate_policy(policy: dict[str, Any], repo_root: Path | None = None) -> None:
+    actual_keys = set(policy)
+    missing_keys = sorted(POLICY_TOP_LEVEL_KEYS - actual_keys)
+    unknown_keys = sorted(actual_keys - POLICY_TOP_LEVEL_KEYS)
+    _require(not missing_keys, f"missing top-level policy keys: {missing_keys}")
+    _require(not unknown_keys, f"unknown top-level policy keys: {unknown_keys}")
+    _require(
+        policy.get("version") in SUPPORTED_POLICY_VERSIONS,
+        f"unsupported policy version: {policy.get('version')!r}",
+    )
+
     repository_default = policy.get("repository_default", {})
     canonical = policy.get("canonical_source", {})
     parallel = policy.get("parallel_execution", {})
@@ -459,16 +519,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=".")
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
-    policy_path = Path(args.policy)
-    if not policy_path.is_absolute():
-        policy_path = repo_root / policy_path
     try:
+        policy_path = _resolve_repo_path(repo_root, args.policy, "policy")
         policy = load_json(policy_path)
         validate_policy(policy, repo_root=repo_root)
         if args.session:
-            receipt_path = Path(args.session)
-            if not receipt_path.is_absolute():
-                receipt_path = repo_root / receipt_path
+            receipt_path = _resolve_repo_path(repo_root, args.session, "session")
             validate_receipt(policy, load_json(receipt_path))
     except (OSError, json.JSONDecodeError, GovernanceError, ValueError) as exc:
         print(f"EXECUTION_GOVERNANCE: FAIL: {exc}", file=sys.stderr)
