@@ -168,20 +168,42 @@ _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
 }
 
 
+def _normalized_negation_terms() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return (
+        tuple(normalize_text(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES),
+        tuple(normalize_text(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES),
+    )
+
+
+def _match_is_denied(text: str, index: int, normalized_alias: str) -> bool:
+    normalized_prefixes, normalized_suffixes = _normalized_negation_terms()
+    before = text[max(0, index - 32):index].rstrip()
+    after = text[index + len(normalized_alias):index + len(normalized_alias) + 24].lstrip()
+    return any(before.endswith(prefix) for prefix in normalized_prefixes) or any(
+        after.startswith(suffix) for suffix in normalized_suffixes
+    )
+
+
 def _alias_has_non_denied_match(text: str, alias: str) -> bool:
     normalized_alias = normalize_text(alias)
-    normalized_prefixes = tuple(normalize_text(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES)
-    normalized_suffixes = tuple(normalize_text(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES)
     start = 0
     while True:
         index = text.find(normalized_alias, start)
         if index < 0:
             return False
-        before = text[max(0, index - 32):index].rstrip()
-        after = text[index + len(normalized_alias):index + len(normalized_alias) + 24].lstrip()
-        prefix_denied = any(before.endswith(prefix) for prefix in normalized_prefixes)
-        suffix_denied = any(after.startswith(suffix) for suffix in normalized_suffixes)
-        if not prefix_denied and not suffix_denied:
+        if not _match_is_denied(text, index, normalized_alias):
+            return True
+        start = index + max(1, len(normalized_alias))
+
+
+def _alias_has_denied_match(text: str, alias: str) -> bool:
+    normalized_alias = normalize_text(alias)
+    start = 0
+    while True:
+        index = text.find(normalized_alias, start)
+        if index < 0:
+            return False
+        if _match_is_denied(text, index, normalized_alias):
             return True
         start = index + max(1, len(normalized_alias))
 
@@ -203,12 +225,26 @@ def _matched_ids(
     return tuple(sorted(matched))
 
 
+def _matched_denied_ids(
+    text: str,
+    catalog: Mapping[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            concept
+            for concept, aliases in catalog.items()
+            if any(_alias_has_denied_match(text, alias) for alias in aliases)
+        )
+    )
+
+
 @dataclass(frozen=True)
 class ComplaintSemantics:
     raw_text: str
     normalized_text: str
     canonical_symptoms: tuple[str, ...]
     customer_hypotheses: tuple[str, ...]
+    denied_customer_hypotheses: tuple[str, ...] = ()
     schema_version: str = COMPLAINT_SEMANTICS_SCHEMA
 
     def routing_query(self) -> str:
@@ -234,5 +270,9 @@ def normalize_complaint_semantics(value: str) -> ComplaintSemantics:
             normalized,
             _CUSTOMER_HYPOTHESIS_ALIASES,
             suppress_explicit_denials=True,
+        ),
+        denied_customer_hypotheses=_matched_denied_ids(
+            normalized,
+            _CUSTOMER_HYPOTHESIS_ALIASES,
         ),
     )
