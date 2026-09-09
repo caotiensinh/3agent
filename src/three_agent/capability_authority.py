@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from .task_contract import INTERNAL_NETWORK_TOOLS, TOOLS, TaskContract
+from .task_contract import (
+    DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
+    INTERNAL_NETWORK_TOOLS,
+    TOOLS,
+    TaskContract,
+)
 
 CAPABILITY_DECISION_SCHEMA = "workspace-capability-decision/v1"
 CAPABILITY_AUTHORITY_SCHEMA = "workspace-task-capability-authority/v1"
@@ -55,6 +60,7 @@ _EFFECTS = {
     "vpn.status.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
+    **{tool_id: "read" for tool_id in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS},
 }
 _UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
 _STALE_EFFECT_TOOLS = set(_EFFECTS) - TOOLS
@@ -483,6 +489,8 @@ class TaskCapabilityAuthority:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_UNKNOWN")
         if cap not in self.allowed_tools:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_ALLOWED")
+        if cap in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS:
+            return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_INVOCABLE")
         expected_effect = _EFFECTS.get(cap)
         if expected_effect != eff:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_EFFECT_NOT_ALLOWED")
