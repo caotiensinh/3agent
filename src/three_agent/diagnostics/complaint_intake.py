@@ -179,6 +179,22 @@ def extract_explicit_scope_facts(value: str) -> Mapping[str, Any]:
 
     if contains_any(
         (
+            "ca cong ty",
+            "toan cong ty",
+            "ca to chuc",
+            "toan to chuc",
+            "whole company",
+            "entire company",
+            "whole organization",
+            "entire organization",
+            "全社",
+            "会社全体",
+            "組織全体",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.organization_affected": True}
+    if contains_any(
+        (
             "hai chi nhanh",
             "2 chi nhanh",
             "nhieu chi nhanh",
@@ -244,6 +260,47 @@ def extract_explicit_scope_facts(value: str) -> Mapping[str, Any]:
         )
     ):
         return {"scope.others_affected": False}
+    return {}
+
+
+def extract_explicit_context_facts(value: str) -> Mapping[str, Any]:
+    """Preserve explicit context already stated by the user without inferring a cause."""
+    raw = str(value).strip()
+    text = normalize_text(raw)
+    change_markers = (
+        "reboot",
+        "restart",
+        "update",
+        "cap nhat",
+        "doi mat khau",
+        "password change",
+        "chuyen cho",
+        "moved desk",
+        "thay day",
+        "cable change",
+        "thay thiet bi",
+        "hardware change",
+        "再起動",
+        "更新",
+        "パスワード変更",
+        "ケーブル交換",
+        "機器交換",
+    )
+    temporal_markers = (
+        "sau khi",
+        "ngay sau",
+        "sau luc",
+        "after ",
+        "right after",
+        "since ",
+        "直後",
+        "後に",
+        "以降",
+    )
+    if any(normalize_text(marker) in text for marker in temporal_markers) and any(
+        normalize_text(marker) in text for marker in change_markers
+    ):
+        return {"timeline.recent_change": raw}
     return {}
 
 
@@ -347,13 +404,15 @@ def build_complaint_session(value: str, *, max_candidates: int = 5) -> Complaint
     raw = str(value).strip()
     if not raw:
         raise ValueError("complaint text is required")
+    facts = dict(extract_explicit_scope_facts(raw))
+    facts.update(extract_explicit_context_facts(raw))
     return ComplaintSession(
         raw_text=raw,
         normalized_text=normalize_text(raw),
         language_hint=detect_language_hint(raw),
         entities=extract_entities(raw),
         candidates=rank_domain_candidates(raw, max_candidates=max_candidates),
-        facts=extract_explicit_scope_facts(raw),
+        facts=facts,
     )
 
 
@@ -371,12 +430,15 @@ class ScopeAssessment:
 
 
 def classify_scope(facts: Mapping[str, Any]) -> ScopeAssessment:
+    organization_affected = facts.get("scope.organization_affected")
     multiple_sites = facts.get("scope.multiple_sites")
     site_affected = facts.get("scope.site_affected")
     same_area = facts.get("scope.same_area")
     others_affected = facts.get("scope.others_affected")
     affected_count = facts.get("scope.affected_count")
 
+    if organization_affected is True:
+        return ScopeAssessment("organization", 0.98, ("ORGANIZATION_WIDE_REPORTED",))
     if multiple_sites is True:
         return ScopeAssessment("multiple_sites", 0.95, ("MULTIPLE_SITES_REPORTED",))
     if site_affected is True:
@@ -565,7 +627,9 @@ def next_best_questions(
         if question.id == "scope.same_area" and known.get("scope.others_affected") is not True:
             continue
         if question.id == "scope.same_area" and (
-            known.get("scope.site_affected") is True or known.get("scope.multiple_sites") is True
+            known.get("scope.organization_affected") is True
+            or known.get("scope.site_affected") is True
+            or known.get("scope.multiple_sites") is True
         ):
             continue
         if question.id == "context.what_is_affected" and not top_domains and not entities_known:
@@ -725,6 +789,7 @@ __all__ = [
     "evaluate_evidence_sufficiency",
     "evaluate_physical_boundary",
     "extract_entities",
+    "extract_explicit_context_facts",
     "extract_explicit_scope_facts",
     "next_best_questions",
     "normalize_answer",
