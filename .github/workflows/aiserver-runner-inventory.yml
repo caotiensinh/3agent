@@ -1,0 +1,127 @@
+name: Aiserver Runner Inventory
+
+on:
+  push:
+    branches:
+      - ops/aiserver-runner-inventory-v1
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: read-only-runner-inventory
+    runs-on: [self-hosted, Linux, X64, r9]
+    timeout-minutes: 10
+    steps:
+      - name: Inventory runner host read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo '=== EXECUTION IDENTITY ==='
+          echo "runner=${{ runner.name }}"
+          echo "runner_temp=${{ runner.temp }}"
+          echo "workspace=${GITHUB_WORKSPACE}"
+          echo "machine=$(hostname)"
+          echo "user=$(whoami)"
+          id
+          uname -a
+
+          echo '=== KNOWN RUNNER ROOTS ==='
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          roots = [
+              Path('/opt/actions-runner'),
+              Path('/home/aiserver/actions-runner'),
+              Path('/home/aiserver/3agent/actions-runner'),
+          ]
+          safe_identity_fields = ('agentName', 'gitHubUrl', 'workFolder')
+          safe_files = ('.runner', 'svc.sh', 'config.sh', 'run.sh', 'bin/Runner.Listener')
+
+          for root in roots:
+              print(f'ROOT path={root} exists={root.exists()}')
+              try:
+                  st = root.stat()
+                  print(
+                      f'ROOT_STAT path={root} uid={st.st_uid} gid={st.st_gid} '
+                      f'mode={oct(st.st_mode & 0o777)} readable={os.access(root, os.R_OK)}'
+                  )
+              except Exception as exc:
+                  print(f'ROOT_STAT_ERROR path={root} error={type(exc).__name__}')
+
+              for rel in safe_files:
+                  p = root / rel
+                  try:
+                      st = p.stat()
+                      print(
+                          f'FILE path={p} exists=true uid={st.st_uid} gid={st.st_gid} '
+                          f'mode={oct(st.st_mode & 0o777)}'
+                      )
+                  except FileNotFoundError:
+                      print(f'FILE path={p} exists=false')
+                  except Exception as exc:
+                      print(f'FILE_STAT_ERROR path={p} error={type(exc).__name__}')
+
+              registration = root / '.runner'
+              try:
+                  data = json.loads(registration.read_text(encoding='utf-8'))
+                  identity = {key: data.get(key) for key in safe_identity_fields}
+                  print(f'IDENTITY path={root} data={json.dumps(identity, sort_keys=True)}')
+              except FileNotFoundError:
+                  print(f'IDENTITY path={root} status=MISSING')
+              except PermissionError:
+                  print(f'IDENTITY path={root} status=PERMISSION_DENIED')
+              except Exception as exc:
+                  print(f'IDENTITY path={root} status=UNREADABLE error={type(exc).__name__}')
+          PY
+
+          echo '=== SYSTEMD RUNNER UNIT FILES ==='
+          systemctl list-unit-files 'actions.runner.*' --no-pager || true
+
+          echo '=== SYSTEMD RUNNER UNITS ==='
+          systemctl list-units 'actions.runner.*' --all --no-pager || true
+
+          mapfile -t units < <(
+            systemctl list-unit-files 'actions.runner.*' --no-legend 2>/dev/null |
+              awk '{print $1}' |
+              grep '^actions\.runner\.' || true
+          )
+
+          for unit in "${units[@]}"; do
+            echo "=== UNIT ${unit} ==="
+            systemctl show "${unit}" \
+              -p Id \
+              -p LoadState \
+              -p ActiveState \
+              -p SubState \
+              -p UnitFileState \
+              -p FragmentPath \
+              -p User \
+              -p WorkingDirectory \
+              --no-pager || true
+          done
+
+          echo '=== RUNNER LISTENER PROCESSES ==='
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          for proc in sorted(Path('/proc').glob('[0-9]*'), key=lambda p: int(p.name)):
+              try:
+                  exe = os.path.realpath(proc / 'exe')
+              except Exception:
+                  continue
+              if not exe.endswith('/Runner.Listener'):
+                  continue
+              try:
+                  cwd = os.path.realpath(proc / 'cwd')
+              except Exception:
+                  cwd = 'UNREADABLE'
+              print(f'LISTENER pid={proc.name} exe={exe} cwd={cwd}')
+          PY
+
+          echo 'CLASSIFICATION=READ_ONLY_AISERVER_RUNNER_INVENTORY_COMPLETE'
