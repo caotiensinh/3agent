@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any
 
-from .task_contract import INTERNAL_NETWORK_TOOLS, TOOLS, TaskContract
+from .task_contract import (
+    DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
+    INTERNAL_NETWORK_TOOLS,
+    TOOLS,
+    TaskContract,
+)
 
 CAPABILITY_DECISION_SCHEMA = "workspace-capability-decision/v1"
 CAPABILITY_AUTHORITY_SCHEMA = "workspace-task-capability-authority/v1"
@@ -28,6 +33,7 @@ _EFFECTS = {
     "windows.event.security": "read",
     "windows.printer.queue": "read",
     "network.ssh.probe": "network_read",
+    "network.rtsp.probe": "network_read",
     "network.smb.probe": "network_read",
     "network.printer.ipp_probe": "network_read",
     "network.printer.raw_probe": "network_read",
@@ -54,6 +60,7 @@ _EFFECTS = {
     "vpn.status.snapshot": "read",
     "network.reachability.internal": "network_read",
     "network.quality.internal": "network_read",
+    **{tool_id: "read" for tool_id in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS},
 }
 _UNKNOWN_EFFECT_TOOLS = TOOLS - set(_EFFECTS)
 _STALE_EFFECT_TOOLS = set(_EFFECTS) - TOOLS
@@ -66,6 +73,15 @@ if _UNKNOWN_EFFECT_TOOLS or _STALE_EFFECT_TOOLS:
 _COMPACT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-=]{0,255}$")
 _SERVICE_RESOURCE_RE = re.compile(r"^local:service:[A-Za-z0-9_.@-]{1,128}$")
 _NETWORK_SCOPES = frozenset({"deny", "internal_only", "allowlisted_egress"})
+_WAVE1_INVOCABLE_LOCAL_READ_TOOLS = frozenset(
+    {
+        "backup.local_state.snapshot",
+        "cloud_files.client_state.snapshot",
+        "identity.account_state.snapshot",
+        "mail_exchange.client_state.snapshot",
+        "voip.client_state.snapshot",
+    }
+)
 
 # These are authorization policy bindings, not a second runtime registry. Every entry
 # mirrors a resource identifier emitted by reviewed bounded tool implementation code.
@@ -93,6 +109,20 @@ _EXACT_RESOURCE_POLICIES = {
     "windows.boot.snapshot": ("boot_state", "local:windows:boot"),
     "windows.update.history": ("windows_update_history", "local:windows:update-history"),
     "vpn.status.snapshot": ("vpn_status", "local:vpn:status"),
+    "cloud_files.client_state.snapshot": (
+        "cloud_files_client_state",
+        "local:cloud-files:client-state",
+    ),
+    "mail_exchange.client_state.snapshot": (
+        "mail_exchange_client_state",
+        "local:mail-exchange:client-state",
+    ),
+    "voip.client_state.snapshot": ("voip_client_state", "local:voip:client-state"),
+    "identity.account_state.snapshot": (
+        "identity_account_state",
+        "local:identity:account-state",
+    ),
+    "backup.local_state.snapshot": ("backup_local_state", "local:backup:state"),
 }
 _GROUP_POLICY_REFS = frozenset(
     {
@@ -103,6 +133,7 @@ _GROUP_POLICY_REFS = frozenset(
 )
 _NETWORK_RESOURCE_SUFFIXES = {
     "network.ssh.probe": ":22",
+    "network.rtsp.probe": ":554",
     "network.smb.probe": ":445",
     "network.printer.ipp_probe": ":631",
     "network.printer.raw_probe": ":9100",
@@ -481,6 +512,8 @@ class TaskCapabilityAuthority:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_UNKNOWN")
         if cap not in self.allowed_tools:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_ALLOWED")
+        if cap in DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS and cap not in _WAVE1_INVOCABLE_LOCAL_READ_TOOLS:
+            return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_NOT_INVOCABLE")
         expected_effect = _EFFECTS.get(cap)
         if expected_effect != eff:
             return self._decision(cap, kind, ref, eff, allowed=False, reason_code="CAPABILITY_EFFECT_NOT_ALLOWED")

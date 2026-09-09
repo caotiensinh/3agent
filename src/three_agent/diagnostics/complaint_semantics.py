@@ -36,6 +36,32 @@ _SYMPTOM_ALIASES: Mapping[str, tuple[str, ...]] = {
         "no internet", "no network", "internet broken", "cannot connect to the internet",
         "ネット 繋がらない", "ネットが繋がらない", "ネットに接続できない", "ネットに接続できません",
     ),
+    "hostname_resolution_unavailable": (
+        "hostname khong resolve", "khong resolve duoc hostname", "khong phan giai duoc hostname",
+        "ten may khong phan giai", "ten server khong phan giai", "cannot resolve hostname",
+        "hostname not resolving", "hostname does not resolve", "ip works but hostname does not",
+        "vao duoc bang ip nhung khong vao duoc bang ten", "bang ip vao duoc nhung ten khong vao duoc",
+        "ホスト名を解決できない", "名前解決できない", "ipでは繋がるがホスト名では繋がらない",
+    ),
+    "vpn_access_unavailable": (
+        "vpn loi", "khong vao vpn", "khong ket noi vpn", "vpn login fail", "vpn login failed",
+        "cannot connect vpn", "cannot connect to vpn", "vpn connection failed",
+        "vpn 接続できない", "vpn接続できない", "vpn に接続できない", "vpn ログインできない", "vpnログインできない",
+    ),
+    "vpn_internal_resource_unavailable": (
+        "vpn vao duoc nhung", "vpn da vao duoc nhung", "vpn ket noi duoc nhung",
+        "vpn connected but", "connected to vpn but", "vpn works but",
+        "vpn接続できるが", "vpn接続済みだが", "vpnは繋がるが",
+    ),
+    "authorization_denied": (
+        "access denied", "permission denied", "khong co quyen", "bi tu choi truy cap",
+        "quyen truy cap bi tu choi", "アクセス拒否", "アクセスが拒否", "権限がありません",
+    ),
+    "audio_output_unavailable": (
+        "khong co tieng", "mat tieng", "khong nghe thay tieng", "khong co am thanh",
+        "no sound", "no audio", "cannot hear audio", "sound is missing",
+        "音が出ない", "音が聞こえない", "音声が出ない",
+    ),
     "application_unresponsive": (
         "app bi do", "app bi treo", "phan mem bi do", "phan mem bi treo",
         "ung dung khong phan hoi", "excel bi do", "excel khong phan hoi",
@@ -66,6 +92,35 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
         "power supply is broken", "bad psu", "psu is failing", "電源ユニットが壊れ",
         "電源ユニットが故障", "psu is broken",
     ),
+    "router_failure": (
+        "router hong", "router bi hong", "router chet", "router bi loi", "router broken",
+        "router is broken", "router dead", "router is dead", "router may be failing",
+        "ルーターが壊れ", "ルーターが故障", "router 故障",
+    ),
+    "dns_failure": (
+        "dns chet", "dns hong", "dns bi hong", "dns bi loi", "dns server chet",
+        "dns broken", "dns is broken", "dns server down", "dns server is down",
+        "dnsが壊れ", "dnsが故障", "dnsサーバーが落ちている",
+    ),
+    "switch_failure": (
+        "switch hong", "switch bi hong", "switch chet", "switch bi loi", "switch broken",
+        "switch is broken", "switch dead", "switch is dead", "switch may be failing",
+        "スイッチが壊れ", "スイッチが故障", "switch 故障",
+    ),
+    "camera_failure": (
+        "camera hong", "camera bi hong", "camera chet", "camera bi loi", "camera broken",
+        "camera is broken", "camera dead", "camera is dead", "camera may be failing",
+        "カメラが壊れ", "カメラが故障", "camera 故障",
+    ),
+    "duplicate_ip_conflict": (
+        "trung ip", "bi trung ip", "xung dot ip", "duplicate ip", "ip conflict",
+        "same ip address", "重複 ip", "ip アドレスの競合", "ipアドレスの競合",
+    ),
+    "vlan_or_subnet_mismatch": (
+        "sai vlan", "khac vlan", "vlan sai", "vlan mismatch", "wrong vlan",
+        "sai subnet", "khac subnet", "wrong subnet", "subnet mismatch",
+        "vlan が違う", "vlanが違う", "サブネットが違う",
+    ),
     "windows_update_regression": (
         "windows update lam hong", "update lam hong", "windows update broke",
         "update broke", "update caused", "windows update caused",
@@ -86,6 +141,13 @@ _CUSTOMER_HYPOTHESIS_ALIASES: Mapping[str, tuple[str, ...]] = {
 # observed symptom such as "khong phan hoi" / "not responding".
 _HYPOTHESIS_NEGATION_PREFIXES = (
     "khong phai",
+    "khong nghi la",
+    "khong nghi",
+    "khong do",
+    "not caused by",
+    "probably not",
+    "is not",
+    "isn't",
     "not",
 )
 _HYPOTHESIS_NEGATION_SUFFIXES = (
@@ -96,6 +158,17 @@ _HYPOTHESIS_NEGATION_SUFFIXES = (
     "じゃありません",
 )
 
+_WIFI_TERMS = ("wifi", "wi-fi", "wireless", "無線lan", "無線 lan")
+_INTERMITTENT_TERMS = (
+    "chap chon",
+    "luc duoc luc khong",
+    "intermittent",
+    "unstable",
+    "keeps dropping",
+    "途切れる",
+    "不安定",
+)
+
 # Routing terms intentionally describe evidence channels/subsystems, not conclusions.
 _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "perceived_unresponsiveness": ("performance", "cpu", "memory", "system event", "application event", "freeze"),
@@ -103,6 +176,12 @@ _ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "display_blackout": ("operating system", "system event", "display"),
     "blue_screen_observed": ("operating system", "system event", "bsod", "reboot"),
     "expected_network_access_unavailable": ("network adapter", "ip address", "gateway", "dns", "internet"),
+    "intermittent_network_quality": ("network quality", "packet loss", "latency"),
+    "hostname_resolution_unavailable": ("dns", "name resolution", "ip address", "gateway"),
+    "vpn_access_unavailable": ("vpn status", "vpn connection", "remote access vpn"),
+    "vpn_internal_resource_unavailable": ("vpn status", "vpn connection", "vpn route", "route", "gateway"),
+    "authorization_denied": ("current user", "login identity"),
+    "audio_output_unavailable": ("audio device", "no sound", "speaker", "microphone"),
     "application_unresponsive": ("performance", "application event", "app crash"),
 }
 
@@ -111,26 +190,54 @@ _HYPOTHESIS_ROUTING_TERMS: Mapping[str, tuple[str, ...]] = {
     "ram_failure": ("memory", "system event", "bsod"),
     "storage_failure": ("storage", "system event"),
     "power_supply_failure": ("system event", "shutdown", "reboot"),
+    "router_failure": ("network adapter", "ip address", "gateway", "route", "dns"),
+    "dns_failure": ("dns", "name resolution", "ip address", "gateway"),
+    "switch_failure": ("network adapter", "ip address", "gateway"),
+    "camera_failure": ("reachability", "ping"),
+    "duplicate_ip_conflict": ("network adapter", "ip address"),
+    "vlan_or_subnet_mismatch": ("network adapter", "ip address", "gateway", "route"),
     "windows_update_regression": ("operating system", "system event", "reboot"),
     "malware_infection": ("security event",),
     "overheating": ("system event", "shutdown"),
 }
 
 
+def _normalized_negation_terms() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return (
+        tuple(normalize_text(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES),
+        tuple(normalize_text(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES),
+    )
+
+
+def _match_is_denied(text: str, index: int, normalized_alias: str) -> bool:
+    normalized_prefixes, normalized_suffixes = _normalized_negation_terms()
+    before = text[max(0, index - 32):index].rstrip()
+    after = text[index + len(normalized_alias):index + len(normalized_alias) + 24].lstrip()
+    return any(before.endswith(prefix) for prefix in normalized_prefixes) or any(
+        after.startswith(suffix) for suffix in normalized_suffixes
+    )
+
+
 def _alias_has_non_denied_match(text: str, alias: str) -> bool:
     normalized_alias = normalize_text(alias)
-    normalized_prefixes = tuple(normalize_text(prefix) for prefix in _HYPOTHESIS_NEGATION_PREFIXES)
-    normalized_suffixes = tuple(normalize_text(suffix) for suffix in _HYPOTHESIS_NEGATION_SUFFIXES)
     start = 0
     while True:
         index = text.find(normalized_alias, start)
         if index < 0:
             return False
-        before = text[max(0, index - 32):index].rstrip()
-        after = text[index + len(normalized_alias):index + len(normalized_alias) + 24].lstrip()
-        prefix_denied = any(before.endswith(prefix) for prefix in normalized_prefixes)
-        suffix_denied = any(after.startswith(suffix) for suffix in normalized_suffixes)
-        if not prefix_denied and not suffix_denied:
+        if not _match_is_denied(text, index, normalized_alias):
+            return True
+        start = index + max(1, len(normalized_alias))
+
+
+def _alias_has_denied_match(text: str, alias: str) -> bool:
+    normalized_alias = normalize_text(alias)
+    start = 0
+    while True:
+        index = text.find(normalized_alias, start)
+        if index < 0:
+            return False
+        if _match_is_denied(text, index, normalized_alias):
             return True
         start = index + max(1, len(normalized_alias))
 
@@ -152,12 +259,35 @@ def _matched_ids(
     return tuple(sorted(matched))
 
 
+def _matched_denied_ids(
+    text: str,
+    catalog: Mapping[str, tuple[str, ...]],
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            concept
+            for concept, aliases in catalog.items()
+            if any(_alias_has_denied_match(text, alias) for alias in aliases)
+        )
+    )
+
+
+def _derived_symptom_ids(text: str) -> tuple[str, ...]:
+    """Derive bounded symptoms from co-occurring wording without promoting a cause."""
+    wifi_observed = any(normalize_text(term) in text for term in _WIFI_TERMS)
+    intermittent_observed = any(normalize_text(term) in text for term in _INTERMITTENT_TERMS)
+    if wifi_observed and intermittent_observed:
+        return ("intermittent_network_quality",)
+    return ()
+
+
 @dataclass(frozen=True)
 class ComplaintSemantics:
     raw_text: str
     normalized_text: str
     canonical_symptoms: tuple[str, ...]
     customer_hypotheses: tuple[str, ...]
+    denied_customer_hypotheses: tuple[str, ...] = ()
     schema_version: str = COMPLAINT_SEMANTICS_SCHEMA
 
     def routing_query(self) -> str:
@@ -175,13 +305,20 @@ def normalize_complaint_semantics(value: str) -> ComplaintSemantics:
     if not raw:
         raise ValueError("complaint text is required")
     normalized = normalize_text(raw)
+    canonical_symptoms = tuple(
+        sorted(set(_matched_ids(normalized, _SYMPTOM_ALIASES)) | set(_derived_symptom_ids(normalized)))
+    )
     return ComplaintSemantics(
         raw_text=raw,
         normalized_text=normalized,
-        canonical_symptoms=_matched_ids(normalized, _SYMPTOM_ALIASES),
+        canonical_symptoms=canonical_symptoms,
         customer_hypotheses=_matched_ids(
             normalized,
             _CUSTOMER_HYPOTHESIS_ALIASES,
             suppress_explicit_denials=True,
+        ),
+        denied_customer_hypotheses=_matched_denied_ids(
+            normalized,
+            _CUSTOMER_HYPOTHESIS_ALIASES,
         ),
     )

@@ -300,7 +300,7 @@ class MicroToolRegistryTests(unittest.TestCase):
 
         registry = MicroToolRegistry.from_specs(iter_specs())
         metadata = registry.metadata_view()
-        self.assertEqual(len(metadata), 8)
+        self.assertEqual(len(metadata), 9)
         self.assertTrue(all("keywords" in item for item in metadata))
         self.assertTrue(all("fixed_port" not in item for item in metadata))
         result = registry.select(

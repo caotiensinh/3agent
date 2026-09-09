@@ -35,6 +35,7 @@ class OfficeITToolTests(unittest.TestCase):
                 "windows.event.security",
                 "windows.printer.queue",
                 "network.ssh.probe",
+                "network.rtsp.probe",
                 "network.smb.probe",
                 "network.printer.ipp_probe",
                 "network.printer.raw_probe",

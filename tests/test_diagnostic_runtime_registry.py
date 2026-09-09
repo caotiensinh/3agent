@@ -11,6 +11,7 @@ from three_agent.diagnostics.runtime_registry import (
     runtime_tool_metadata,
     unresolved_capability_backlog,
 )
+from three_agent.task_contract import DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS
 
 
 class DiagnosticRuntimeRegistryTests(unittest.TestCase):
@@ -25,11 +26,12 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_thirty_one_atomic_tools(self) -> None:
+    def test_runtime_registry_contains_unique_atomic_tools_and_staged_wave1_evidence(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 31)
-        self.assertEqual(len({tool.id for tool in metadata}), 31)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 31)
+        runtime_ids = {tool.id for tool in metadata}
+        self.assertEqual(len(metadata), len(runtime_ids))
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), len(metadata))
+        self.assertTrue(DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS.issubset(runtime_ids))
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(

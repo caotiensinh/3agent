@@ -101,7 +101,7 @@ class CapabilityRegistrySnapshotTests(unittest.TestCase):
         registry = MicroToolRegistry.from_specs(iter_specs())
         snapshot = snapshot_micro_tool_registry(registry)
 
-        self.assertEqual(len(snapshot.descriptors), 8)
+        self.assertEqual(len(snapshot.descriptors), 9)
         self.assertTrue(
             all(item.namespace == "builtin.tool" for item in snapshot.descriptors)
         )

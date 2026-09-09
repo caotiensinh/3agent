@@ -21,6 +21,7 @@ _EVENT_CHANNELS = {
 }
 _FIXED_PORTS = {
     "network.ssh.probe": 22,
+    "network.rtsp.probe": 554,
     "network.smb.probe": 445,
     "network.printer.ipp_probe": 631,
     "network.printer.raw_probe": 9100,
@@ -108,6 +109,19 @@ _TOOL_SPECS = (
         False,
         "network_read",
         22,
+    ),
+    OfficeITToolSpec(
+        "network.rtsp.probe",
+        "any",
+        "network",
+        ("rtsp", "rtsp stream", "camera stream", "rtsp khong xem duoc", "rtsp unavailable", "rtsp 見られない"),
+        "C1",
+        "read_only",
+        False,
+        "internal_only",
+        True,
+        "network_read",
+        554,
     ),
     OfficeITToolSpec(
         "network.smb.probe",
@@ -302,6 +316,63 @@ def probe_tcp(
                     result["banner"] = banner.decode("utf-8", errors="replace").strip() or None
                 except (TimeoutError, socket.timeout):
                     pass
+    except OSError as exc:
+        result["error_type"] = type(exc).__name__
+    result["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)
+    return result
+
+
+def probe_rtsp_service(
+    host: str,
+    *,
+    authority: TaskCapabilityAuthority,
+    timeout_seconds: float = 2.0,
+) -> dict[str, Any]:
+    """Collect bounded RTSP service evidence from one explicit internal IP without credentials."""
+    tool_id = "network.rtsp.probe"
+    spec = get_tool_spec(tool_id)
+    port = _FIXED_PORTS[tool_id]
+    target = str(host).strip()
+    if spec.fixed_port != port:
+        raise ValueError("RTSP probe fixed-port metadata mismatch")
+    if not is_internal_ip_literal(target):
+        raise ValueError("host must be an internal/private IP literal")
+    timeout = float(timeout_seconds)
+    if not 0.1 <= timeout <= 5.0:
+        raise ValueError("timeout_seconds must be within 0.1..5.0 seconds")
+
+    endpoint = f"{target}:{port}"
+    _require_authority(authority, tool_id, resource_kind="network_endpoint", resource_ref=endpoint)
+    request = b"OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: 3agent-diagnostic\r\n\r\n"
+    started = time.monotonic()
+    result: dict[str, Any] = {
+        "tool_id": tool_id,
+        "target": target,
+        "port": port,
+        "connected": False,
+        "response_received": False,
+        "rtsp_service_observed": False,
+        "authentication_challenge_observed": False,
+        "rtsp_status_line": None,
+        "interpretation": "evidence_only",
+    }
+    try:
+        with socket.create_connection((target, port), timeout=timeout) as sock:
+            result["connected"] = True
+            sock.sendall(request)
+            try:
+                response = sock.recv(4096)
+            except (TimeoutError, socket.timeout):
+                response = b""
+            if response:
+                result["response_received"] = True
+                first_line = response.split(b"\r\n", 1)[0][:512].decode("ascii", errors="replace").strip()
+                if first_line.upper().startswith("RTSP/"):
+                    result["rtsp_service_observed"] = True
+                    result["rtsp_status_line"] = first_line
+                    parts = first_line.split()
+                    if len(parts) >= 2 and parts[1] == "401":
+                        result["authentication_challenge_observed"] = True
     except OSError as exc:
         result["error_type"] = type(exc).__name__
     result["elapsed_ms"] = round((time.monotonic() - started) * 1000, 3)

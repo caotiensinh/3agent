@@ -62,7 +62,9 @@ class ComplaintDiagnosticIntakeTests(unittest.TestCase):
         questions = next_best_questions(session, max_questions=3)
         self.assertLessEqual(len(questions), 3)
         ids = {question.id for question in questions}
-        self.assertIn("scope.others_affected", ids)
+        self.assertEqual(classify_scope(session.facts).scope, "room_or_area")
+        self.assertNotIn("scope.others_affected", ids)
+        self.assertNotIn("scope.same_area", ids)
         for question in questions:
             prompt = question.prompt("vi")
             self.assertTrue(prompt)

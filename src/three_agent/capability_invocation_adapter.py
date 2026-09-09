@@ -16,9 +16,16 @@ from .capability_authority import (
 )
 from .capability_registry_snapshot import snapshot_micro_tool_registry
 from .diagnostics.audio_tools import AUDIO_DEVICES_TOOL_ID, read_audio_devices
+from .diagnostics.backup_status_tools import BACKUP_STATUS_TOOL_ID, read_backup_local_state
 from .diagnostics.camera_device_tools import CAMERA_DEVICES_TOOL_ID, read_camera_devices
+from .diagnostics.cloud_files_tools import CLOUD_FILES_STATUS_TOOL_ID, read_cloud_files_client_state
 from .diagnostics.common_tools import COMMON_TOOL_BY_ID, execute_common_read
+from .diagnostics.identity_account_state_tools import (
+    IDENTITY_ACCOUNT_STATE_TOOL_ID,
+    read_identity_account_state,
+)
 from .diagnostics.identity_tools import IDENTITY_SESSION_TOOL_ID, read_identity_session
+from .diagnostics.mail_exchange_tools import MAIL_EXCHANGE_STATUS_TOOL_ID, read_mail_exchange_client_state
 from .diagnostics.meeting_client_tools import MEETING_CLIENT_TOOL_ID, read_running_meeting_clients
 from .diagnostics.network_tools import (
     NETWORK_QUALITY_TOOL_ID,
@@ -31,12 +38,13 @@ from .diagnostics.process_tools import PROCESS_TOP_TOOL_ID, read_top_processes
 from .diagnostics.runtime_registry import runtime_micro_tool_registry
 from .diagnostics.storage_io_tools import STORAGE_IO_TOOL_ID, read_storage_io
 from .diagnostics.usb_tools import USB_DEVICES_TOOL_ID, read_usb_devices
+from .diagnostics.voip_tools import VOIP_CLIENT_STATE_TOOL_ID, read_voip_client_state
 from .diagnostics.vpn_tools import VPN_STATUS_TOOL_ID, read_vpn_status
 from .diagnostics.windows_boot_tools import WINDOWS_BOOT_TOOL_ID, read_windows_boot
 from .diagnostics.windows_policy_tools import GROUP_POLICY_TOOL_ID, read_group_policy_result
 from .diagnostics.windows_update_tools import WINDOWS_UPDATE_TOOL_ID, read_windows_update_history
 from .invocation_decision_receipt import InvocationDecisionReceipt, receipt_from_capability_decision
-from .office_it_tools import execute_local_read, probe_tcp
+from .office_it_tools import execute_local_read, probe_rtsp_service, probe_tcp
 from .tool_result_boundary import BoundedTextResult, bound_text_result
 
 CAPABILITY_INVOCATION_REQUEST_SCHEMA = "workspace-capability-invocation-request/v1"
@@ -53,6 +61,7 @@ _EVENT_TOOLS = frozenset(
         "windows.event.security",
     }
 )
+_RTSP_SERVICE_PROBE = "network.rtsp.probe"
 _FIXED_PORT_PROBES = frozenset(
     {
         "network.ssh.probe",
@@ -62,6 +71,15 @@ _FIXED_PORT_PROBES = frozenset(
     }
 )
 _COMMON_TOOL_IDS = frozenset(COMMON_TOOL_BY_ID)
+_WAVE1_REVIEWED_HANDLER_IDS = frozenset(
+    {
+        BACKUP_STATUS_TOOL_ID,
+        CLOUD_FILES_STATUS_TOOL_ID,
+        IDENTITY_ACCOUNT_STATE_TOOL_ID,
+        MAIL_EXCHANGE_STATUS_TOOL_ID,
+        VOIP_CLIENT_STATE_TOOL_ID,
+    }
+)
 _TIMEOUT_ONLY_TOOLS = frozenset(
     {
         IDENTITY_SESSION_TOOL_ID,
@@ -235,7 +253,7 @@ def reviewed_runtime_handler_ids() -> tuple[str, ...]:
     """Return the closed source-reviewed handler coverage for the canonical runtime registry."""
     ids = (
         set(_EVENT_TOOLS)
-        | {"windows.printer.queue"}
+        | {"windows.printer.queue", _RTSP_SERVICE_PROBE}
         | set(_FIXED_PORT_PROBES)
         | set(_COMMON_TOOL_IDS)
         | {NETWORK_REACHABILITY_TOOL_ID, NETWORK_QUALITY_TOOL_ID, GROUP_POLICY_TOOL_ID}
@@ -244,13 +262,17 @@ def reviewed_runtime_handler_ids() -> tuple[str, ...]:
     return tuple(sorted(ids))
 
 
+def _is_reviewed_runtime_handler(tool_id: str) -> bool:
+    return tool_id in reviewed_runtime_handler_ids() or tool_id in _WAVE1_REVIEWED_HANDLER_IDS
+
+
 def current_runtime_invocation_identity(tool_id: str) -> tuple[str, str]:
     """Return current immutable snapshot/descriptor fingerprints for one reviewed runtime tool."""
     registry = runtime_micro_tool_registry()
     tool = registry.get(_require_tool_id(tool_id))
     if not tool.implemented:
         raise CapabilityInvocationAdapterError("TOOL_NOT_IMPLEMENTED")
-    if tool.id not in reviewed_runtime_handler_ids():
+    if not _is_reviewed_runtime_handler(tool.id):
         raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
     snapshot = snapshot_micro_tool_registry(registry)
     descriptor = next((item for item in snapshot.descriptors if item.id == tool.id), None)
@@ -264,6 +286,8 @@ def _allowed_parameter_names(tool_id: str) -> frozenset[str]:
         return frozenset({"hours", "max_events", "timeout"})
     if tool_id == "windows.printer.queue":
         return frozenset({"timeout"})
+    if tool_id == _RTSP_SERVICE_PROBE:
+        return frozenset({"host", "timeout"})
     if tool_id in _FIXED_PORT_PROBES:
         return frozenset({"host", "timeout", "max_banner_bytes"})
     if tool_id in {
@@ -286,7 +310,7 @@ def _allowed_parameter_names(tool_id: str) -> frozenset[str]:
         return frozenset({"host", "count", "timeout_ms"})
     if tool_id == GROUP_POLICY_TOOL_ID:
         return frozenset({"scope", "timeout"})
-    if tool_id in _TIMEOUT_ONLY_TOOLS:
+    if tool_id in _TIMEOUT_ONLY_TOOLS or tool_id in _WAVE1_REVIEWED_HANDLER_IDS:
         return frozenset({"timeout"})
     raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
@@ -316,7 +340,7 @@ def _normalized_parameters(tool_id: str, raw: Mapping[str, object]) -> dict[str,
     params: dict[str, object] = {}
 
     if "timeout" in raw:
-        timeout_high = 5.0 if tool_id in _FIXED_PORT_PROBES else 30.0
+        timeout_high = 5.0 if tool_id in _FIXED_PORT_PROBES or tool_id == _RTSP_SERVICE_PROBE else 30.0
         params["timeout"] = _bounded_float(raw["timeout"], field="timeout", low=0.1, high=timeout_high)
     if "hours" in raw:
         params["hours"] = _bounded_int(raw["hours"], field="hours", low=1, high=168)
@@ -331,7 +355,7 @@ def _normalized_parameters(tool_id: str, raw: Mapping[str, object]) -> dict[str,
     if "timeout_ms" in raw:
         params["timeout_ms"] = _bounded_int(raw["timeout_ms"], field="timeout_ms", low=100, high=5000)
 
-    if tool_id in _FIXED_PORT_PROBES or tool_id in {
+    if tool_id in _FIXED_PORT_PROBES or tool_id == _RTSP_SERVICE_PROBE or tool_id in {
         NETWORK_REACHABILITY_TOOL_ID,
         NETWORK_QUALITY_TOOL_ID,
     }:
@@ -397,6 +421,12 @@ def _invoke_reviewed_handler(
 
     if tool_id in _EVENT_TOOLS or tool_id == "windows.printer.queue":
         return execute_local_read(tool_id, authority=authority, **kwargs)
+    if tool_id == _RTSP_SERVICE_PROBE:
+        host = str(kwargs.pop("host"))
+        timeout = kwargs.pop("timeout", None)
+        if timeout is None:
+            return probe_rtsp_service(host, authority=authority)
+        return probe_rtsp_service(host, authority=authority, timeout_seconds=float(timeout))
     if tool_id in _FIXED_PORT_PROBES:
         host = str(kwargs.pop("host"))
         return probe_tcp(tool_id, host, authority=authority, **kwargs)
@@ -432,6 +462,16 @@ def _invoke_reviewed_handler(
         return read_windows_update_history(authority=authority, **kwargs)
     if tool_id == VPN_STATUS_TOOL_ID:
         return read_vpn_status(authority=authority, **kwargs)
+    if tool_id == CLOUD_FILES_STATUS_TOOL_ID:
+        return read_cloud_files_client_state(authority=authority, **kwargs)
+    if tool_id == MAIL_EXCHANGE_STATUS_TOOL_ID:
+        return read_mail_exchange_client_state(authority=authority, **kwargs)
+    if tool_id == VOIP_CLIENT_STATE_TOOL_ID:
+        return read_voip_client_state(authority=authority, **kwargs)
+    if tool_id == IDENTITY_ACCOUNT_STATE_TOOL_ID:
+        return read_identity_account_state(authority=authority, **kwargs)
+    if tool_id == BACKUP_STATUS_TOOL_ID:
+        return read_backup_local_state(authority=authority, **kwargs)
     raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
 
@@ -459,7 +499,7 @@ def invoke_runtime_tool(
         raise CapabilityInvocationAdapterError("UNKNOWN_RUNTIME_TOOL_ID") from exc
     if not tool.implemented:
         raise CapabilityInvocationAdapterError("TOOL_NOT_IMPLEMENTED")
-    if tool.id not in reviewed_runtime_handler_ids():
+    if not _is_reviewed_runtime_handler(tool.id):
         raise CapabilityInvocationAdapterError("UNREVIEWED_RUNTIME_HANDLER")
 
     snapshot = snapshot_micro_tool_registry(registry)

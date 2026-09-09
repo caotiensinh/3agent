@@ -30,6 +30,9 @@ embedding-runtime = [
   "sentence-transformers>=6.0.1,<7",
   "transformers>=5.16.1,<6",
 ]
+mcp = [
+  "mcp==2.0.0",
+]
 
 [project.scripts]
 workspace = "three_agent.cli:main"

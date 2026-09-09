@@ -70,9 +70,9 @@ DOMAIN_PROFILES: tuple[DomainProfile, ...] = (
     DomainProfile("mail_exchange", "Outlook, email and Exchange", ("outlook", "email not sending", "email not received", "mailbox", "mail slow", "khong gui mail", "khong nhan mail", "mail loi", "メール", "Outlook"), ("mail", "outlook")),
     DomainProfile("meeting_collaboration", "Teams, Zoom and conferencing", ("teams no sound", "zoom no sound", "teams camera", "meeting no audio", "screen share", "teams mic", "khong nghe teams", "teams khong co tieng", "会議 音", "Teams"), ("teams", "audio")),
     DomainProfile("cloud_files", "OneDrive, SharePoint and cloud files", ("onedrive", "sharepoint", "sync error", "sync conflict", "cloud file", "khong dong bo", "onedrive loi", "同期できない", "SharePoint"), ("onedrive", "sharepoint")),
-    DomainProfile("file_share_gpo", "SMB, mapped drives, permissions and GPO", ("shared folder", "mapped drive", "network drive", "access denied", "gpo", "group policy", "thu muc chia se", "o mang", "khong vao folder", "共有フォルダ", "ネットワークドライブ"), ("share", "permission")),
+    DomainProfile("file_share_gpo", "SMB, mapped drives, permissions and GPO", ("shared folder", "file share", "mapped drive", "network drive", "access denied", "gpo", "group policy", "thu muc chia se", "o mang", "khong vao folder", "共有フォルダ", "ネットワークドライブ"), ("share", "permission")),
     DomainProfile("business_apps", "Software, browser and business applications", ("app not working", "software error", "browser error", "activation", "install failed", "phan mem loi", "khong mo duoc phan mem", "アプリ エラー", "ソフト 起動しない"), ("application", "browser")),
-    DomainProfile("security", "Security, phishing, EDR and policy", ("phishing", "virus", "malware", "edr", "antivirus", "blocked by security", "bi chan", "bao mat", "virus", "フィッシング", "ウイルス"), ("security", "malware")),
+    DomainProfile("security", "Security, phishing, EDR and policy", ("phishing", "virus", "malware", "edr", "antivirus", "blocked by security", "suspicious connection", "unknown ip connection", "tu ket noi den ip la", "ket noi den ip la", "bi chan", "bao mat", "virus", "フィッシング", "ウイルス"), ("security", "malware")),
     DomainProfile("mobile_mdm", "Mobile, MDM and BYOD", ("iphone work mail", "android work mail", "mdm", "company portal", "mobile enrollment", "dien thoai cong ty", "iphone khong vao mail", "モバイル", "MDM"), ("mobile", "mdm")),
     DomainProfile("server_backup", "Server, virtualization, storage and backup", ("server down", "server slow", "vm down", "backup failed", "restore failed", "storage full", "server loi", "backup loi", "サーバー", "バックアップ"), ("server", "backup")),
     DomainProfile("voip", "VoIP, phones and headsets", ("phone no audio", "one way audio", "softphone", "voip", "headset", "call drop", "dien thoai khong co tieng", "電話 音", "VoIP"), ("voip", "phone")),
@@ -118,11 +118,11 @@ _ENTITY_ALIASES: Mapping[str, tuple[str, ...]] = {
     "audio": ("sound", "audio", "mic", "microphone", "tieng", "音", "マイク"),
     "onedrive": ("onedrive",),
     "sharepoint": ("sharepoint",),
-    "share": ("shared folder", "network drive", "mapped drive", "thu muc chia se", "共有フォルダ"),
+    "share": ("shared folder", "file share", "network drive", "mapped drive", "thu muc chia se", "共有フォルダ"),
     "permission": ("access denied", "permission", "quyen", "アクセス拒否"),
     "application": ("app", "application", "software", "phan mem", "アプリ"),
     "browser": ("browser", "chrome", "edge", "ブラウザ"),
-    "security": ("security", "edr", "antivirus", "bao mat", "セキュリティ"),
+    "security": ("security", "edr", "antivirus", "bao mat", "suspicious connection", "unknown ip connection", "tu ket noi den ip la", "ket noi den ip la", "セキュリティ"),
     "malware": ("virus", "malware", "phishing", "ウイルス"),
     "mobile": ("iphone", "android", "mobile", "dien thoai", "スマホ"),
     "mdm": ("mdm", "company portal", "intune"),
@@ -168,6 +168,140 @@ def extract_entities(value: str) -> tuple[str, ...]:
         if any(normalize_text(alias) in text for alias in aliases):
             found.append(entity)
     return tuple(sorted(set(found)))
+
+
+def extract_explicit_scope_facts(value: str) -> Mapping[str, Any]:
+    """Extract only explicit blast-radius statements so the planner does not re-ask answered scope facts."""
+    text = normalize_text(value)
+
+    def contains_any(phrases: tuple[str, ...]) -> bool:
+        return any(normalize_text(phrase) in text for phrase in phrases)
+
+    if contains_any(
+        (
+            "ca cong ty",
+            "toan cong ty",
+            "ca to chuc",
+            "toan to chuc",
+            "whole company",
+            "entire company",
+            "whole organization",
+            "entire organization",
+            "全社",
+            "会社全体",
+            "組織全体",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.organization_affected": True}
+    if contains_any(
+        (
+            "hai chi nhanh",
+            "2 chi nhanh",
+            "nhieu chi nhanh",
+            "cac chi nhanh",
+            "two branches",
+            "multiple branches",
+            "multiple sites",
+            "several sites",
+            "複数拠点",
+            "2拠点",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.multiple_sites": True}
+    if contains_any(
+        (
+            "ca van phong",
+            "toan van phong",
+            "ca chi nhanh",
+            "toan chi nhanh",
+            "whole office",
+            "entire office",
+            "whole site",
+            "entire site",
+            "オフィス全体",
+            "拠点全体",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.site_affected": True}
+    if contains_any(
+        (
+            "ca phong",
+            "toan phong",
+            "ca tang",
+            "toan tang",
+            "ca khu vuc",
+            "toan khu vuc",
+            "moi nguoi trong phong",
+            "tat ca trong phong",
+            "whole room",
+            "entire room",
+            "whole floor",
+            "everyone in the room",
+            "部屋全体",
+            "フロア全体",
+            "同じ部屋の全員",
+        )
+    ):
+        return {"scope.others_affected": True, "scope.same_area": True}
+    if contains_any(
+        (
+            "chi may toi",
+            "chi may nay",
+            "chi minh toi",
+            "chi toi bi",
+            "moi may toi",
+            "only my pc",
+            "only my computer",
+            "only me",
+            "just my pc",
+            "自分だけ",
+            "このpcだけ",
+            "この端末だけ",
+        )
+    ):
+        return {"scope.others_affected": False}
+    return {}
+
+
+def extract_explicit_context_facts(value: str) -> Mapping[str, Any]:
+    """Preserve explicit context already stated by the user without inferring a cause."""
+    raw = str(value).strip()
+    text = normalize_text(raw)
+    change_markers = (
+        "reboot",
+        "restart",
+        "update",
+        "cap nhat",
+        "doi mat khau",
+        "password change",
+        "chuyen cho",
+        "moved desk",
+        "thay day",
+        "cable change",
+        "thay thiet bi",
+        "hardware change",
+        "再起動",
+        "更新",
+        "パスワード変更",
+        "ケーブル交換",
+        "機器交換",
+    )
+    temporal_markers = (
+        "sau khi",
+        "ngay sau",
+        "sau luc",
+        "after ",
+        "right after",
+        "since ",
+        "直後",
+        "後に",
+        "以降",
+    )
+    if any(normalize_text(marker) in text for marker in temporal_markers) and any(
+        normalize_text(marker) in text for marker in change_markers
+    ):
+        return {"timeline.recent_change": raw}
+    return {}
 
 
 @dataclass(frozen=True)
@@ -270,13 +404,15 @@ def build_complaint_session(value: str, *, max_candidates: int = 5) -> Complaint
     raw = str(value).strip()
     if not raw:
         raise ValueError("complaint text is required")
+    facts = dict(extract_explicit_scope_facts(raw))
+    facts.update(extract_explicit_context_facts(raw))
     return ComplaintSession(
         raw_text=raw,
         normalized_text=normalize_text(raw),
         language_hint=detect_language_hint(raw),
         entities=extract_entities(raw),
         candidates=rank_domain_candidates(raw, max_candidates=max_candidates),
-        facts={},
+        facts=facts,
     )
 
 
@@ -294,12 +430,15 @@ class ScopeAssessment:
 
 
 def classify_scope(facts: Mapping[str, Any]) -> ScopeAssessment:
+    organization_affected = facts.get("scope.organization_affected")
     multiple_sites = facts.get("scope.multiple_sites")
     site_affected = facts.get("scope.site_affected")
     same_area = facts.get("scope.same_area")
     others_affected = facts.get("scope.others_affected")
     affected_count = facts.get("scope.affected_count")
 
+    if organization_affected is True:
+        return ScopeAssessment("organization", 0.98, ("ORGANIZATION_WIDE_REPORTED",))
     if multiple_sites is True:
         return ScopeAssessment("multiple_sites", 0.95, ("MULTIPLE_SITES_REPORTED",))
     if site_affected is True:
@@ -487,6 +626,16 @@ def next_best_questions(
             score += 20 * len(overlap)
         if question.id == "scope.same_area" and known.get("scope.others_affected") is not True:
             continue
+        if question.id == "scope.same_area" and (
+            known.get("scope.organization_affected") is True
+            or known.get("scope.site_affected") is True
+            or known.get("scope.multiple_sites") is True
+        ):
+            continue
+        if question.id == "context.what_is_affected" and not top_domains and not entities_known:
+            score += 40
+        if question.id == "scope.others_affected" and top_domains:
+            score += 1
         ranked.append((-score, question.id, question))
     ranked.sort(key=lambda item: (item[0], item[1]))
     return tuple(item[2] for item in ranked[: int(max_questions)])
@@ -640,6 +789,8 @@ __all__ = [
     "evaluate_evidence_sufficiency",
     "evaluate_physical_boundary",
     "extract_entities",
+    "extract_explicit_context_facts",
+    "extract_explicit_scope_facts",
     "next_best_questions",
     "normalize_answer",
     "normalize_text",
