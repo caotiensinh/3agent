@@ -110,8 +110,8 @@ class LiveMultiturnWorkflowContractTests(unittest.TestCase):
             'workspace-chat-multiturn-acceptance = "three_agent.chat_multiturn_acceptance:main"',
             text,
         )
-        self.assertIn('workspace-chat = "three_agent.chat_gateway:main"', text)
-        self.assertIn('three-agent-chat = "three_agent.chat_gateway:main"', text)
+        self.assertIn('workspace-chat = "three_agent.chat_application:main"', text)
+        self.assertIn('three-agent-chat = "three_agent.chat_application:main"', text)
 
         canonical_acceptance = ROOT / "src/three_agent/chat_multiturn_acceptance.py"
         self.assertTrue(canonical_acceptance.is_file())
