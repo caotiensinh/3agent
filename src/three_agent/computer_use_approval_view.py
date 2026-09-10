@@ -197,16 +197,10 @@ class ComputerApprovalIntent:
 
 
 def build_computer_approval_view(
-    *,
-    action: ComputerActionRequest,
-    policy_decision: ComputerPolicyDecision,
-    current_state_sha256: str,
-    now: str,
-    expires_at: str,
-    allow_session_scope: bool = False,
-    requires_user_takeover: bool = False,
-    takeover_active: bool = False,
-    closed: bool = False,
+    *, action: ComputerActionRequest, policy_decision: ComputerPolicyDecision,
+    current_state_sha256: str, now: str, expires_at: str,
+    allow_session_scope: bool = False, requires_user_takeover: bool = False,
+    takeover_active: bool = False, closed: bool = False,
 ) -> ComputerApprovalView:
     action.validate()
     policy_decision.validate()
@@ -217,7 +211,6 @@ def build_computer_approval_view(
         raise ComputerApprovalViewError("APPROVAL_VIEW_POLICY_ACTION_MISMATCH")
     if policy_decision.outcome != "REQUIRE_APPROVAL":
         raise ComputerApprovalViewError("APPROVAL_VIEW_POLICY_NOT_APPROVAL")
-
     if closed:
         state = "CLOSED"
     elif current_state_sha256 != action.state_precondition_sha256:
@@ -261,11 +254,16 @@ def require_intent_matches_view(*, intent: ComputerApprovalIntent, view: Compute
         raise ComputerApprovalViewError("APPROVAL_INTENT_STATE_MISMATCH")
     if intent.approval_view_fingerprint != view.fingerprint:
         raise ComputerApprovalViewError("APPROVAL_INTENT_VIEW_STALE")
+    if view.view_state in {"STALE", "EXPIRED", "CLOSED"}:
+        raise ComputerApprovalViewError("APPROVAL_VIEW_NOT_ACTIONABLE")
     if intent.decision == "APPROVE":
         if view.view_state != "ACTIONABLE":
             raise ComputerApprovalViewError("APPROVAL_VIEW_NOT_ACTIONABLE")
         if intent.scope not in view.scope_options:
             raise ComputerApprovalViewError("APPROVAL_INTENT_SCOPE_NOT_OFFERED")
+    elif intent.decision == "DENY":
+        if view.view_state not in {"ACTIONABLE", "TAKEOVER_REQUIRED"}:
+            raise ComputerApprovalViewError("APPROVAL_VIEW_NOT_ACTIONABLE")
     elif intent.decision == "BEGIN_TAKEOVER":
         if view.view_state != "TAKEOVER_REQUIRED" or view.takeover_active:
             raise ComputerApprovalViewError("TAKEOVER_ENTRY_NOT_AVAILABLE")
