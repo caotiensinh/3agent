@@ -6,6 +6,7 @@ on:
       - 'src/three_agent/computer_use_windows_observation.py'
       - 'tests/test_computer_use_windows_observation.py'
       - 'tests/test_computer_use_windows_observation_live.py'
+      - 'tests/test_computer_use_windows_powershell_invocation_contract.py'
       - '.github/workflows/computer-use-windows-observation-ci.yml'
   workflow_dispatch:
 
@@ -50,6 +51,9 @@ jobs:
       - name: Run CU-160 bounded and privacy boundary tests
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_computer_use_windows_observation.py' -v
+      - name: Enforce CU-160 PowerShell invocation regression contract
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_computer_use_windows_powershell_invocation_contract.py' -v
       - name: Run CU-160 live Windows UI Automation acceptance
         shell: pwsh
         run: python -m unittest discover -s tests -p 'test_computer_use_windows_observation_live.py' -v
@@ -64,6 +68,7 @@ jobs:
             "head=$env:EXPECTED_HEAD",
             "python=${{ matrix.python }}",
             'runner=windows-latest',
-            'scope=bounded metadata + UI Automation + privacy boundaries + live read-only backend',
+            'scope=bounded metadata + UI Automation + privacy boundaries + PowerShell invocation invariant + live read-only backend',
+            'incident_guard=CU160-PS-ARG-BINDING-20260910',
             'privileged_broker=not_used'
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
