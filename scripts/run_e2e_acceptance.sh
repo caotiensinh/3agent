@@ -37,6 +37,7 @@ command -v jq >/dev/null || fail "jq is required"
 command -v curl >/dev/null || fail "curl is required"
 command -v nvidia-smi >/dev/null || fail "nvidia-smi is required"
 command -v ollama >/dev/null || fail "ollama is required"
+command -v python3 >/dev/null || fail "python3 is required"
 
 [[ -d "$ROOT/.git" ]] || fail "3Agent checkout not found: $ROOT"
 cd "$ROOT"
@@ -83,9 +84,42 @@ fi
 [[ -x "$ROOT/.venv/bin/python" ]] || fail "Python venv is missing: $ROOT/.venv"
 "$ROOT/.venv/bin/python" -m pip install -e . >/dev/null
 
-export THREE_AGENT_CONFIG="${THREE_AGENT_CONFIG:-config/local.json}"
+SOURCE_CONFIG="${THREE_AGENT_CONFIG:-config/local.json}"
+[[ -f "$SOURCE_CONFIG" ]] || fail "Config file not found: $SOURCE_CONFIG"
+E2E_RUNTIME_ROOT="${THREE_AGENT_E2E_RUNTIME_DIR:-${RUNNER_TEMP:-$ROOT/data/acceptance-runtime}/workspace-e2e-${LANGUAGE}-$$}"
+rm -rf "$E2E_RUNTIME_ROOT"
+install -d -m 700 "$E2E_RUNTIME_ROOT" "$ROOT/data" "$ROOT/data/activity"
+E2E_CONFIG="$E2E_RUNTIME_ROOT/config.json"
+"$ROOT/.venv/bin/python" - "$SOURCE_CONFIG" "$E2E_CONFIG" "$E2E_RUNTIME_ROOT" "$ROOT/data" <<'PY'
+import json
+import pathlib
+import sys
+
+source, target, runtime_root, artifact_root = map(pathlib.Path, sys.argv[1:])
+data = json.loads(source.read_text(encoding="utf-8"))
+runtime_root.mkdir(parents=True, exist_ok=True)
+artifact_root.mkdir(parents=True, exist_ok=True)
+
+data["database_path"] = str(runtime_root / "tasks.db")
+data["artifact_root"] = str(artifact_root)
+
+internet = data.get("internet_gateway")
+if isinstance(internet, dict):
+    internet["audit_log"] = str(runtime_root / "internet-egress.jsonl")
+
+execution = data.get("execution_gateway")
+if isinstance(execution, dict):
+    execution["audit_log"] = str(runtime_root / "execution.jsonl")
+
+target.write_text(
+    json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+    encoding="utf-8",
+)
+PY
+chmod 600 "$E2E_CONFIG"
+export THREE_AGENT_CONFIG="$E2E_CONFIG"
 export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-$MODEL}"
-[[ -f "$THREE_AGENT_CONFIG" ]] || fail "Config file not found: $THREE_AGENT_CONFIG"
+log "Prepared isolated writable acceptance config; production config remains unchanged."
 
 log "Running harness smoke"
 "$ROOT/.venv/bin/three-agent" smoke | jq -e '.llm_provider == "ollama" and .llm_model_configured == true and .research_web_enabled == true' >/dev/null
