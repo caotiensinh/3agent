@@ -1,0 +1,70 @@
+name: computer-use-windows-interaction-e2e
+
+on:
+  pull_request:
+    paths:
+      - 'src/three_agent/computer_use_windows_interaction.py'
+      - 'tests/test_computer_use_windows_interaction_e2e.py'
+      - '.github/workflows/computer-use-windows-interaction-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cu170-windows-interaction-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-interaction-e2e:
+    name: E2E (python ${{ matrix.python }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate
+        shell: pwsh
+        run: python -m pip install -e .
+      - name: Verify exact checked-out head
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD | Select-Object -First 1).Trim()
+          if ($actual -ne $env:EXPECTED_HEAD) {
+            throw "Checked out SHA $actual does not match expected $env:EXPECTED_HEAD"
+          }
+      - name: Run governed Windows interaction boundary and live E2E
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_computer_use_windows_interaction_e2e.py' -v
+      - name: Record CU-170 E2E summary
+        if: always()
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          @(
+            'CU-170 Windows interaction E2E',
+            "head=$env:EXPECTED_HEAD",
+            "python=${{ matrix.python }}",
+            'runner=windows-latest',
+            'live_fixture=isolated WinForms window only',
+            'actions=UIA ValuePattern.SetValue + InvokePattern.Invoke',
+            'governance=TaskContract + CapabilityAuthority + approval + writer lease + replay + stale-target inspection + postcondition',
+            'user_takeover=fail_closed',
+            'secure_input=fail_closed',
+            'arbitrary_shell=not_exposed',
+            'privileged_broker=not_used'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
