@@ -9,6 +9,7 @@ from .computer_use import (
     ComputerUseError,
     require_fresh_observation,
 )
+from .computer_use_privacy import ComputerPrivacyError, retain_computer_result
 from .execution_observation import (
     ExecutionEvidenceBinding,
     ExecutionObservation,
@@ -59,10 +60,11 @@ def build_computer_execution_observation(
     evidence_bindings: tuple[ExecutionEvidenceBinding, ...] = (),
     cost: ObservationCost | None = None,
 ) -> ExecutionObservation:
-    """Project bounded computer-use results into canonical WorkSpace observation evidence.
+    """Project privacy-safe computer-use results into canonical WorkSpace evidence.
 
-    This adapter does not authorize execution and does not weaken plan/node evidence rules.
-    It preserves the existing ExecutionObservationBuilder as the final validation gate.
+    This adapter does not authorize execution and does not weaken plan/node evidence
+    rules. Credential redaction and restricted/secret retention happen before the
+    existing ExecutionObservationBuilder remains the final validation gate.
     """
 
     if not isinstance(plan, ExecutionPlan):
@@ -87,6 +89,13 @@ def build_computer_execution_observation(
         raise ComputerEvidenceError("INVALID_COMPUTER_EXECUTION_ROUTE")
     if result is not None and not isinstance(result, Mapping):
         raise ComputerEvidenceError("COMPUTER_RESULT_MUST_BE_OBJECT")
+    try:
+        retained_result = retain_computer_result(
+            result,
+            sensitivity=parent_authority.sensitivity,
+        )
+    except ComputerPrivacyError as exc:
+        raise ComputerEvidenceError("COMPUTER_EVIDENCE_PRIVACY_REJECTED") from exc
 
     normalized_output = {
         "computer_use": {
@@ -107,7 +116,7 @@ def build_computer_execution_observation(
             "pre_screenshot_sha256": pre_observation.screenshot_sha256,
             "post_screenshot_sha256": post_observation.screenshot_sha256,
             "post_active_target_ref": post_observation.active_target_ref,
-            "result": None if result is None else dict(result),
+            "result": None if retained_result is None else dict(retained_result),
         }
     }
 
