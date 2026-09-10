@@ -110,6 +110,15 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
             self.assertIsNotNone(schema, case_id)
             self.assertEqual(schema["required"], ["protocol", "port"], case_id)
 
+        for case_id in (
+            "vi_linux_ip_command_only",
+            "ja_linux_ip_command_only",
+            "en_linux_ip_command_only",
+        ):
+            contract = compile_chat_output_contract(cases[case_id].prompt)
+            self.assertEqual(contract.kind, "code_only", case_id)
+            self.assertIsNotNone(strict_structured_schema(contract), case_id)
+
 
 if __name__ == "__main__":
     unittest.main()
