@@ -123,6 +123,22 @@ This uses `/var/lib/workspace-public`, disables the execution gateway, and enabl
 
 Same security posture and model pool as Confidential Core; only the RAM/VRAM budget and worker-pool wiring are tuned for a host where GPU VRAM is abundant (2× RTX 5090) but system RAM is comparatively scarce (32GB). See `docs/WORKSPACE_LEAN_DUAL_5090_32GB_PROFILE.md` for the reasoning and `scripts/measure_ram_baseline.sh` to validate the effect on the real machine.
 
+## One-command installation
+
+### Ubuntu
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/deploy_ubuntu_pc.sh | bash
+```
+
+### Windows PowerShell
+
+```powershell
+irm https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.ps1 | iex
+```
+
+These entrypoints install or update WorkSpace from the repository while preserving an existing local configuration unless the installer explicitly reports a required migration or validation failure.
+
 ## CLI
 
 Primary commands:
