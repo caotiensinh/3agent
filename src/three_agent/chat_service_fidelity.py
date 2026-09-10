@@ -22,7 +22,7 @@ _STANDARD_OUTPUT_CHARS_PER_PREDICT_TOKEN = 5
 _MIN_STANDARD_NUM_PREDICT = 8
 _STRUCTURED_INTERNAL_MIN_NUM_PREDICT = 32
 _STRUCTURED_PLAIN_FALLBACK_REASONS = frozenset(
-    {"target_language_mismatch", "structured_runtime_error"}
+    {"target_language_mismatch", "structured_runtime_error", "requested_format_mismatch"}
 )
 _EXPLANATORY_FOLLOW_UP_KINDS = frozenset(
     {"single_sentence", "brief_prose", "prose"}
@@ -112,11 +112,12 @@ def _use_structured_attempt(
     """Give the final bounded repair attempt an independent generation path.
 
     Structured decoding remains the preferred first attempt. If it either returns
-    content rejected specifically by the target-language validator or raises a
-    LocalLLMError before a valid internal JSON object is produced, the second and
-    final attempt uses ordinary deterministic generation with the same current-
-    request output contract and authoritative validators. Resource-admission and
-    resource-busy failures are not LocalLLMError and therefore remain fail-closed.
+    content rejected specifically by the target-language or requested-format
+    validator, or raises a LocalLLMError before a valid internal JSON object is
+    produced, the second and final attempt uses ordinary deterministic generation
+    with the same current-request output contract and authoritative validators.
+    Resource-admission and resource-busy failures are not LocalLLMError and
+    therefore remain fail-closed.
     """
 
     if not structured_mode:
@@ -236,6 +237,7 @@ class _ContractAwareProjectChatServiceMixin:
                         "\n\nINTERNAL STRUCTURED DECODING (mandatory for this generation):\n"
                         "- The decoder returns an internal JSON object, not the final user-visible format.\n"
                         "- Fill every required value with only the requested answer content.\n"
+                        "- Execute the current user's semantic task itself. For a translation request, put the translated text itself in the value rather than commentary about translating it.\n"
                         "- Every required string value that contains explanatory prose must itself be clearly written in the TARGET RESPONSE LANGUAGE above.\n"
                         "- For a follow-up that resolves an ordinal or pronoun, preserve a short semantic label or canonical term from the resolved item inside the explanatory string value.\n"
                         "- Technical commands and identifiers may remain unchanged, but do not return only technical identifiers when the current request asks for target-language explanation.\n"
