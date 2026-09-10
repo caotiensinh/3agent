@@ -1,0 +1,83 @@
+name: computer-use-windows-interaction-ci
+
+on:
+  pull_request:
+    paths:
+      - 'src/three_agent/computer_use.py'
+      - 'src/three_agent/task_contract.py'
+      - 'src/three_agent/capability_authority.py'
+      - 'src/three_agent/computer_use_replay.py'
+      - 'src/three_agent/computer_use_windows_interaction.py'
+      - 'src/three_agent/computer_use_windows_interaction_powershell.py'
+      - 'tests/test_computer_use.py'
+      - 'tests/test_computer_use_governance.py'
+      - 'tests/test_computer_use_windows_interaction.py'
+      - 'tests/test_computer_use_windows_interaction_live.py'
+      - '.github/workflows/computer-use-windows-interaction-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cu170-windows-interaction-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-interaction-acceptance:
+    name: acceptance (python ${{ matrix.python }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate
+        shell: pwsh
+        run: python -m pip install -e .
+      - name: Verify exact checked-out head
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD | Select-Object -First 1).Trim()
+          if ($actual -ne $env:EXPECTED_HEAD) {
+            throw "Checked out SHA $actual does not match expected $env:EXPECTED_HEAD"
+          }
+      - name: Run CU-170 canonical contract and governance tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p 'test_computer_use.py' -v
+          python -m unittest discover -s tests -p 'test_computer_use_governance.py' -v
+      - name: Run CU-170 Windows interaction boundary tests
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_computer_use_windows_interaction.py' -v
+      - name: Run CU-170 live Windows UI Automation acceptance
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_computer_use_windows_interaction_live.py' -v
+      - name: Record CU-170 acceptance summary
+        if: always()
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          @(
+            'CU-170 Windows interaction acceptance',
+            "head=$env:EXPECTED_HEAD",
+            "python=${{ matrix.python }}",
+            'runner=windows-latest',
+            'scope=canonical accessibility authority + approval + writer fence + replay/stale target + user takeover + real UIA ValuePattern/InvokePattern',
+            'input_fallback=explicit_only',
+            'powershell_command_payload=fixed_single_argument',
+            'privileged_broker=not_used'
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
