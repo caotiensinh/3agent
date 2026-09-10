@@ -122,6 +122,17 @@ build_release() {
   "${release}/.venv/bin/python" -m pip install -e "$release"
 }
 
+migrate_config() {
+  local release="$1" migration_script
+  migration_script="${release}/scripts/migrate_default_web_search_config.py"
+  if [[ ! -f "$migration_script" ]]; then
+    return 0
+  fi
+  [[ -x "${release}/.venv/bin/python" ]] || die "Candidate Python environment is unavailable for config migration"
+  log "Checking bounded configuration repair before verification"
+  "${release}/.venv/bin/python" "$migration_script" --config "$CONFIG_PATH" --repair-only
+}
+
 verify_release() {
   local release="$1"
   log "Verifying release with policy: ${VERIFY_MODE}"
@@ -241,6 +252,7 @@ main() {
   if current_release_matches "$target_sha"; then
     active="$(current_release)"
     ensure_config "$active"
+    migrate_config "$active"
     verify_release "$active"
     install_launchers "$active"
     THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
@@ -253,6 +265,7 @@ main() {
   release="$CREATED_RELEASE"
   ensure_config "$release"
   build_release "$release"
+  migrate_config "$release"
   verify_release "$release"
   install_launchers "$release"
   activate_release "$release" "$target_sha"
