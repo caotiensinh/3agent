@@ -14,7 +14,7 @@ _SENTENCE_TERMINATOR_RE = re.compile(r"[!?。！？]+|\.(?=\s|$)")
 _BRIEF_PROSE_MAX_CHARS = 600
 _BRIEF_PROSE_NUM_PREDICT = 128
 STRICT_STRUCTURED_OUTPUT_KINDS = frozenset(
-    {"bullets", "single_sentence", "single_number", "code_only", "brief_prose"}
+    {"bullets", "single_sentence", "single_number", "code_only", "json_only", "brief_prose"}
 )
 
 
@@ -44,6 +44,7 @@ class ChatOutputContract:
     num_predict: int = 0
     instruction: str = ""
     structured_decoding: bool = True
+    json_keys: tuple[str, ...] = ()
 
     def validate(self, answer: str) -> tuple[bool, str]:
         body = str(answer or "").strip()
@@ -67,9 +68,14 @@ class ChatOutputContract:
                 return False, "output_contract_multiple_sentences"
         elif self.kind == "json_only":
             try:
-                json.loads(body)
+                payload = json.loads(body)
             except (TypeError, ValueError, json.JSONDecodeError):
                 return False, "output_contract_invalid_json"
+            if self.json_keys:
+                if not isinstance(payload, dict):
+                    return False, "output_contract_json_not_object"
+                if set(payload) != set(self.json_keys):
+                    return False, "output_contract_json_keys"
         elif self.kind == "single_number":
             if re.fullmatch(r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?", body) is None:
                 return False, "output_contract_not_single_number"
@@ -152,12 +158,22 @@ def strict_structured_schema(contract: ChatOutputContract) -> dict[str, Any] | N
             "required": ["code"],
             "additionalProperties": False,
         }
+    if contract.kind == "json_only" and contract.json_keys:
+        properties = {key: {} for key in contract.json_keys}
+        return {
+            "type": "object",
+            "properties": properties,
+            "required": list(contract.json_keys),
+            "additionalProperties": False,
+        }
     return None
 
 
 def strict_structured_schema_id(contract: ChatOutputContract) -> str:
     if contract.kind == "bullets":
         return f"workspace.chat.strict.bullets.{contract.exact_items}.v1"
+    if contract.kind == "json_only" and contract.json_keys:
+        return f"workspace.chat.strict.json_only.keys{len(contract.json_keys)}.v1"
     return f"workspace.chat.strict.{contract.kind}.v1"
 
 
@@ -195,6 +211,8 @@ def render_strict_structured_answer(
         return str(value or "").strip()
     if contract.kind == "code_only":
         return str(payload.get("code") or "").strip()
+    if contract.kind == "json_only":
+        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     raise ValueError(f"Unsupported strict structured output kind: {contract.kind}")
 
 
@@ -224,6 +242,54 @@ def _requests_single_sentence(request: str) -> bool:
         r"(?:一文|1文)(?:で|だけ|のみ|に|。|$)",
     )
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+
+
+def _requested_max_lines(request: str) -> int:
+    """Detect explicit current-request line-count bounds in VI, JA, and EN."""
+
+    text = " ".join(str(request or "").casefold().split())
+    one_line_patterns = (
+        r"\b(?:in\s+)?(?:exactly\s+)?(?:one|1)\s+line(?:\s+only)?\b",
+        r"\bone\s+line\s+only\b",
+        r"(?:chỉ|chi)\s+(?:trả\s+lời|tra\s+loi).{0,20}(?:một|mot|1)\s+dòng\b",
+        r"(?:một|mot|1)\s+dòng\s+(?:thôi|thoi|duy\s+nhất|duy nhat)\b",
+        r"(?:一行|1行)(?:だけ|のみ|で)",
+    )
+    if any(re.search(pattern, text, re.IGNORECASE) for pattern in one_line_patterns):
+        return 1
+
+    patterns = (
+        r"\b(?:at\s+most|no\s+more\s+than)\s+(\d{1,2})\s+lines?\b",
+        r"\b(?:in\s+)?(\d{1,2})\s+lines?\s+(?:max(?:imum)?|or\s+less)\b",
+        r"(?:tối\s+đa|toi\s+da|không\s+quá|khong\s+qua)\s+(\d{1,2})\s+dòng\b",
+        r"(\d{1,2})\s*行以内",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = int(match.group(1))
+            if 1 <= value <= 20:
+                return value
+    return 0
+
+
+def _requested_json_keys(request: str) -> tuple[str, ...]:
+    """Extract explicitly named JSON object keys without inferring extra fields."""
+
+    text = " ".join(str(request or "").split())
+    identifier = r"([A-Za-z_][A-Za-z0-9_-]{0,63})"
+    patterns = (
+        rf"(?:keys?|fields?)\s+{identifier}\s+(?:and|,)\s*{identifier}",
+        rf"(?:khóa|khoa|trường|truong)\s+{identifier}\s+(?:và|va|,)\s*{identifier}",
+        rf"{identifier}\s*と\s*{identifier}\s*の\s*(?:\d+つの)?キー",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            keys = tuple(dict.fromkeys((match.group(1), match.group(2))))
+            if 1 <= len(keys) <= 8:
+                return keys
+    return ()
 
 
 def _requests_brief_response(request: str) -> bool:
@@ -269,11 +335,18 @@ def compile_chat_output_contract(request: str, *, effort: str = "standard") -> C
             instruction="Return only the requested code or command. No explanation, heading, preface, or suffix.",
         )
     if neutral == "json":
+        json_keys = _requested_json_keys(request)
         return ChatOutputContract(
             kind="json_only",
             max_chars=2_000,
             num_predict=512,
-            instruction="Return one valid JSON value only. Do not wrap it in Markdown or add prose.",
+            instruction=(
+                "Return one valid JSON object only with exactly the explicitly requested keys. "
+                "Do not wrap it in Markdown or add prose."
+                if json_keys
+                else "Return one valid JSON value only. Do not wrap it in Markdown or add prose."
+            ),
+            json_keys=json_keys,
         )
 
     bullets = _exact_bullet_count(request)
@@ -298,6 +371,21 @@ def compile_chat_output_contract(request: str, *, effort: str = "standard") -> C
             max_chars=400,
             num_predict=128,
             instruction="Return exactly one concise sentence. Do not add a heading, bullets, notes, or a second sentence.",
+        )
+
+    max_lines = _requested_max_lines(request)
+    if max_lines:
+        max_chars = min(2_800, max(600, 400 * max_lines))
+        num_predict = min(512, max(128, 96 * max_lines))
+        return ChatOutputContract(
+            kind="brief_prose",
+            max_lines=max_lines,
+            max_chars=max_chars,
+            num_predict=num_predict,
+            instruction=(
+                f"Return at most {max_lines} non-empty line{'s' if max_lines != 1 else ''}. "
+                "Answer directly with no heading, preface, or unrelated section."
+            ),
         )
 
     if _requests_brief_response(request):
@@ -350,6 +438,8 @@ def render_output_contract(contract: ChatOutputContract, *, repair_reason: str =
         lines.append(f"- exact_items={contract.exact_items}")
     if contract.max_lines:
         lines.append(f"- max_nonempty_lines={contract.max_lines}")
+    if contract.json_keys:
+        lines.append(f"- exact_json_keys={','.join(contract.json_keys)}")
     lines.append(f"- instruction={contract.instruction}")
     if repair_reason:
         lines.append(f"- previous_attempt_failure={repair_reason}")
