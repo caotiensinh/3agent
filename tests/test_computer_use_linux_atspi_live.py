@@ -144,10 +144,10 @@ class LinuxAtspiLiveAcceptanceTests(unittest.TestCase):
         result = backend.dispatch(command)
         self.assertIn("LINUX_ATSPI_TEXT_SET", result.observed_postconditions)
 
-        _atspi, _window, element = backend._resolve(command)
+        atspi, _window, element = backend._resolve(command)
         text_interface = element.get_text_iface()
         self.assertIsNotNone(text_interface)
-        self.assertEqual(str(text_interface.get_text(0, -1)), VALUE_TEXT)
+        self.assertEqual(str(atspi.Text.get_text(text_interface, 0, -1)), VALUE_TEXT)
 
     def test_live_atspi_semantic_invoke_mutation(self):
         current = capture_linux_observation(
