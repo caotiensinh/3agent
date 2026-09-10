@@ -18,12 +18,13 @@ class FakeBrowserBackend:
         return self.capture
 
 
-def capture(*, screenshot=None, dom=None, target_tab="tab1"):
+def capture(*, screenshot=None, dom=None, target_tab="tab1", profile_id="isolated"):
     return BrowserReadOnlyCapture(
+        profile_id=profile_id,
         window_id="window1",
         tab_id=target_tab,
         metadata={"title": "Example", "url": "https://example.test/read-only"},
-        dom={"nodes": [{"role": "heading", "text": "Hello"}]} if dom is None else dom,
+        dom_snapshot={"nodes": [{"role": "heading", "text": "Hello"}]} if dom is None else dom,
         accessibility_snapshot={"nodes": [{"role": "heading", "name": "Hello"}]},
         captured_at="2026-09-10T00:00:00Z",
         screenshot_bytes=screenshot,
@@ -45,8 +46,29 @@ class BrowserObservationTests(unittest.TestCase):
         self.assertEqual(backend.calls, [("isolated", False)])
         self.assertEqual(observation.surface, "browser")
         self.assertEqual(observation.active_target_ref, "browser:profile:isolated/tab:tab1")
+        self.assertEqual(observation.structured_observation["profile_mode"], "isolated")
         self.assertEqual(observation.structured_observation["storage_identity"], "public_browser")
         self.assertIsNone(observation.screenshot_sha256)
+
+    def test_personal_profile_mode_is_rejected(self):
+        with self.assertRaisesRegex(BrowserObservationError, "BROWSER_PERSONAL_PROFILE_ATTACH_FORBIDDEN"):
+            BrowserObservationConfig(
+                profile_id="Default",
+                control_endpoint="http://127.0.0.1:9222",
+                profile_mode="personal",
+            ).validate()
+
+    def test_backend_profile_attestation_mismatch_is_rejected(self):
+        with self.assertRaisesRegex(BrowserObservationError, "BROWSER_BACKEND_PROFILE_ATTESTATION_MISMATCH"):
+            capture_isolated_browser_observation(
+                config=BrowserObservationConfig(
+                    profile_id="isolated",
+                    control_endpoint="http://127.0.0.1:9222",
+                ),
+                backend=FakeBrowserBackend(capture(profile_id="Default")),
+                session_id="session:browser",
+                task_id="task:browser",
+            )
 
     def test_public_control_endpoint_is_rejected(self):
         with self.assertRaisesRegex(BrowserObservationError, "BROWSER_CONTROL_ENDPOINT_NOT_LOCAL_OR_PRIVATE"):
