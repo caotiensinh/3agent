@@ -360,6 +360,16 @@ class FakeText:
     def get_text(self, _start, _end): return self.editable.value
 
 
+class FakeAtspiTextApi:
+    @staticmethod
+    def get_text(interface, start, end):
+        return interface.get_text(start, end)
+
+
+class FakeAtspiApi:
+    Text = FakeAtspiTextApi
+
+
 class FakeAtspiElement:
     def __init__(self):
         self.action = FakeActionInterface(["show menu", "click"])
@@ -377,15 +387,25 @@ class LinuxAtspiBackendContractTests(unittest.TestCase):
         LinuxAtspiInteractionBackend._invoke(element)
         self.assertEqual(element.action.called, [1])
 
-    def test_value_uses_editable_text_interface_not_keyboard_synthesis(self):
+    def test_value_uses_editable_text_interface_and_explicit_text_readback(self):
         element = FakeAtspiElement()
-        LinuxAtspiInteractionBackend._set_value(element, "semantic-value")
+        LinuxAtspiInteractionBackend._set_value(FakeAtspiApi, element, "semantic-value")
         self.assertEqual(element.editable.value, "semantic-value")
+
+    def test_value_readback_mismatch_fails_closed(self):
+        element = FakeAtspiElement()
+        element.text.get_text = lambda _start, _end: "different"
+        with self.assertRaisesRegex(LinuxInteractionError, "LINUX_ATSPI_TEXT_POSTCONDITION_FAILED"):
+            LinuxAtspiInteractionBackend._set_value(FakeAtspiApi, element, "semantic-value")
 
     def test_module_has_no_shell_or_privilege_surface(self):
         source = inspect.getsource(linux_interaction)
-        for forbidden in ("subprocess", "os.system", "shell=True", "sudo", "pkexec", "generate_mouse_event", "generate_keyboard_event"):
-            self.assertNotIn(forbidden, source.lower() if forbidden in {"sudo", "pkexec"} else source)
+        for forbidden in (
+            "subprocess", "os.system", "shell=True", "sudo", "pkexec",
+            "generate_mouse_event", "generate_keyboard_event",
+        ):
+            haystack = source.lower() if forbidden in {"sudo", "pkexec"} else source
+            self.assertNotIn(forbidden, haystack)
 
 
 if __name__ == "__main__":
