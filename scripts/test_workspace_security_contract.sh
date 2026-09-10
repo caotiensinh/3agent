@@ -48,8 +48,11 @@ grep -Fq 'HARDWARE_PROFILE="${WORKSPACE_HARDWARE_PROFILE:-auto}"' scripts/setup_
 grep -Fq 'MIN_DRIVER_MAJOR="${WORKSPACE_MIN_DRIVER_MAJOR:-}"' scripts/setup_workspace_secure.sh
 # shellcheck disable=SC2016
 grep -Fq 'REQUIRED_RTX5090_COUNT="${WORKSPACE_REQUIRED_RTX5090_COUNT:-}"' scripts/setup_workspace_secure.sh
+grep -Fq 'RESOURCE_CONTROL_ENABLED=false' scripts/setup_workspace_secure.sh
+grep -Fq 'RESOURCE_CONTROL_ENABLED=true' scripts/setup_workspace_secure.sh
+grep -Fq 'resource_control["enabled"] = resource_control_enabled' scripts/setup_workspace_secure.sh
 grep -Fq 'dual-rtx5090)' scripts/setup_workspace_secure.sh
-grep -Fq 'No healthy NVIDIA runtime detected; continuing with CPU/system-RAM model profile' scripts/setup_workspace_secure.sh
+grep -Fq 'No healthy NVIDIA runtime detected; continuing with CPU/system-RAM model profile and NVIDIA resource control disabled' scripts/setup_workspace_secure.sh
 grep -Fq 'Reusing installed Ollama model' scripts/setup_workspace_secure.sh
 grep -Fq 'WORKSPACE_SECURE_CONFIG_SOURCE=' scripts/setup_workspace_secure.sh
 grep -Fq 'WORKSPACE_PUBLIC_CONFIG_SOURCE=' scripts/setup_workspace_secure.sh
@@ -74,15 +77,19 @@ check_profile() {
   }
 }
 
-check_profile 'model=qwen3:1.7b fast_model=qwen3:0.6b' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:4b fast_model=qwen3:1.7b' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=16384
-check_profile 'model=qwen3:8b fast_model=qwen3:4b' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=32768
-check_profile 'model=qwen3:4b fast_model=qwen3:1.7b' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:8b fast_model=qwen3:4b' WORKSPACE_TEST_VRAM_MIB=8192 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:14b fast_model=qwen3:8b' WORKSPACE_TEST_VRAM_MIB=16384 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:14b fast_model=qwen3:8b' WORKSPACE_TEST_VRAM_MIB=24576 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:30b fast_model=qwen3:14b' WORKSPACE_TEST_VRAM_MIB=28672 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=operator-main fast_model=operator-fast' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_LLM_MODEL=operator-main WORKSPACE_FAST_MODEL=operator-fast
+check_profile 'model=qwen3:1.7b fast_model=qwen3:0.6b resource_control_enabled=false' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=0
+check_profile 'model=qwen3:4b fast_model=qwen3:1.7b resource_control_enabled=false' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=16384 WORKSPACE_TEST_NVIDIA_AVAILABLE=0
+check_profile 'model=qwen3:8b fast_model=qwen3:4b resource_control_enabled=false' WORKSPACE_TEST_VRAM_MIB=0 WORKSPACE_TEST_RAM_MIB=32768 WORKSPACE_TEST_NVIDIA_AVAILABLE=0
+check_profile 'model=qwen3:4b fast_model=qwen3:1.7b resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1
+check_profile 'model=qwen3:8b fast_model=qwen3:4b resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=8192 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1
+check_profile 'model=qwen3:14b fast_model=qwen3:8b resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=16384 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1
+check_profile 'model=qwen3:14b fast_model=qwen3:8b resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=24576 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1
+check_profile 'model=qwen3:30b fast_model=qwen3:14b resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=28672 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1
+check_profile 'model=operator-main fast_model=operator-fast resource_control_enabled=true' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=1 WORKSPACE_LLM_MODEL=operator-main WORKSPACE_FAST_MODEL=operator-fast
+
+# Explicit synthetic NVIDIA availability must be able to keep the GPU manager off
+# even when the capacity input is non-zero, proving the toggle follows runtime health.
+check_profile 'model=qwen3:8b fast_model=qwen3:4b resource_control_enabled=false' WORKSPACE_TEST_VRAM_MIB=8192 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_TEST_NVIDIA_AVAILABLE=0
 
 grep -Fq 'workspace-core' scripts/install_workspace_secure_boundary.sh
 grep -Fq 'workspace-public' scripts/install_workspace_secure_boundary.sh
