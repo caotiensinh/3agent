@@ -346,19 +346,22 @@ if ($IncludeScreenshot) {
             max_uia_nodes=max_uia_nodes,
             max_uia_depth=max_uia_depth,
         ).validate()
+        boolean_literal = "$true" if include_screenshot else "$false"
+        invocation = (
+            "& {\n"
+            f"{self._SCRIPT}\n"
+            "} "
+            f"-IncludeScreenshot:{boolean_literal} "
+            f"-MaxNodes {config.max_uia_nodes} "
+            f"-MaxDepth {config.max_uia_depth}"
+        )
         command = [
             self._powershell_executable,
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            self._SCRIPT,
-            "-IncludeScreenshot",
-            "$true" if include_screenshot else "$false",
-            "-MaxNodes",
-            str(config.max_uia_nodes),
-            "-MaxDepth",
-            str(config.max_uia_depth),
+            invocation,
         ]
         try:
             completed = subprocess.run(
