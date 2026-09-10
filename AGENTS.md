@@ -150,3 +150,27 @@ Minimum working law:
 A model or agent never decides by assertion that work is `DONE`. The deterministic acceptance/evidence gate decides.
 
 Detailed composite-strategy guidance remains in `docs/WORKSPACE_COMPOSITE_STRATEGY_POLICY_V0_0_1.md`; it is subordinate to the canonical execution-governance and security policies.
+
+## Difficult failure evidence retention
+
+Difficult failures MUST become durable engineering evidence instead of being discarded after the immediate fix.
+
+All humans, agents, sub-agents, automations, and CI workers MUST apply `docs/FAILURE_EVIDENCE_AND_REGRESSION_POLICY_V0_1.md` when a failure requires non-trivial RCA, crosses a privilege/security/runtime/deployment boundary, has a misleading workaround, recurs, or establishes a reusable engineering invariant.
+
+Minimum law:
+
+- preserve the observed signature, evidence chain, verified root cause, rejected unsafe workarounds, corrective change, and exact verification references;
+- encode the root-cause invariant in a regression test, static contract, CI gate, assertion, or monitor whenever machine enforcement is feasible;
+- a difficult incident is not engineering-complete when only the immediate symptom disappears;
+- if the same signature appears again, load the prior incident record and test its invariant before starting diagnosis from zero;
+- never delete, weaken, skip, or broadly bypass a regression guard merely to make the repeated symptom disappear;
+- if the prior invariant still holds, collect new evidence and establish a distinct root cause rather than forcing the old explanation onto new facts;
+- use immutable evidence such as exact commit SHA, PR number, workflow run ID, and terminal conclusion; queued or in-progress CI is not proof of resolution.
+
+The durable sequence is:
+
+```text
+observe -> collect evidence -> reproduce/narrow -> root cause -> minimal fix -> invariant -> regression -> exact-head verification -> incident record
+```
+
+Known incidents are retained under `docs/incidents/` and are part of future RCA input, not optional historical notes.
