@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'install.sh'
+      - 'install.ps1'
       - 'scripts/**'
       - '.github/workflows/**'
       - 'config/**'
@@ -17,6 +19,8 @@ on:
       - 'AGENTS.md'
   pull_request:
     paths:
+      - 'install.sh'
+      - 'install.ps1'
       - 'scripts/**'
       - '.github/workflows/**'
       - 'config/**'
@@ -44,6 +48,7 @@ jobs:
           persist-credentials: false
       - name: Bash syntax and installer contracts
         run: |
+          bash scripts/test_one_command_entrypoints_contract.sh
           bash scripts/test_installer_contract.sh
           bash scripts/test_ai_stack_contract.sh
           bash scripts/test_model_pool_contract.sh
@@ -61,6 +66,8 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y shellcheck
           shellcheck \
+            install.sh \
+            scripts/test_one_command_entrypoints_contract.sh \
             scripts/install_ubuntu_2404_rtx5090.sh \
             scripts/setup_ai_stack_ubuntu2404.sh \
             scripts/enable_model_pool.sh \

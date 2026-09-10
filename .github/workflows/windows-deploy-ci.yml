@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'install.ps1'
       - 'scripts/bootstrap.ps1'
       - 'scripts/test_bootstrap_windows_contract.ps1'
       - '.github/workflows/windows-deploy-ci.yml'
@@ -16,6 +17,7 @@ on:
       - 'docs/WINDOWS_DEPLOY.md'
   pull_request:
     paths:
+      - 'install.ps1'
       - 'scripts/bootstrap.ps1'
       - 'scripts/test_bootstrap_windows_contract.ps1'
       - '.github/workflows/windows-deploy-ci.yml'
@@ -66,7 +68,7 @@ jobs:
           fi
           changed="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           printf '%s\n' "$changed"
-          if printf '%s\n' "$changed" | grep -Eq '^(scripts/bootstrap\.ps1|scripts/test_bootstrap_windows_contract\.ps1|\.github/workflows/windows-deploy-ci\.yml|\.gitattributes|pyproject\.toml|config/test\.example\.json|README\.md|docs/WINDOWS_DEPLOY\.md)$'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(install\.ps1|scripts/bootstrap\.ps1|scripts/test_bootstrap_windows_contract\.ps1|\.github/workflows/windows-deploy-ci\.yml|\.gitattributes|pyproject\.toml|config/test\.example\.json|README\.md|docs/WINDOWS_DEPLOY\.md)$'; then
             echo "deploy_sensitive=true" >> "$GITHUB_OUTPUT"
           else
             echo "deploy_sensitive=false" >> "$GITHUB_OUTPUT"
@@ -84,10 +86,14 @@ jobs:
           persist-credentials: false
       - name: Windows PowerShell 5.1 syntax and contract
         shell: powershell
-        run: .\scripts\test_bootstrap_windows_contract.ps1
+        run: |
+          .\install.ps1 -SelfTest
+          .\scripts\test_bootstrap_windows_contract.ps1
       - name: PowerShell 7 syntax and contract
         shell: pwsh
-        run: .\scripts\test_bootstrap_windows_contract.ps1
+        run: |
+          .\install.ps1 -SelfTest
+          .\scripts\test_bootstrap_windows_contract.ps1
 
   runtime-smoke:
     needs: classify
@@ -145,9 +151,10 @@ jobs:
         run: |
           if ([string]::IsNullOrWhiteSpace($env:EXPECTED_HEAD)) { throw 'Expected head SHA is empty' }
           "sha=$env:EXPECTED_HEAD" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-      - name: Execute one-command bootstrap downloaded from GitHub
+      - name: Execute one-command WorkSpace entrypoint downloaded from GitHub
         shell: powershell
         env:
+          WORKSPACE_SOURCE_REF: ${{ steps.source.outputs.sha }}
           THREE_AGENT_REPO_URL: https://github.com/${{ github.repository }}.git
           THREE_AGENT_REPO_REF: ${{ steps.source.outputs.sha }}
           THREE_AGENT_INSTALL_DIR: ${{ runner.temp }}\three-agent-install
@@ -167,14 +174,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'python --version failed before bootstrap' }
             & python -m pip --version
             if ($LASTEXITCODE -ne 0) { throw 'python -m pip --version failed before bootstrap' }
-            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/scripts/bootstrap.ps1"
+            $url = "https://raw.githubusercontent.com/${{ github.repository }}/$env:EXPECTED_HEAD/install.ps1"
             Write-Host "Bootstrap diagnostic: source SHA $env:EXPECTED_HEAD"
             $scriptText = Invoke-RestMethod -Uri $url
             & ([ScriptBlock]::Create($scriptText))
             $bootstrapSucceeded = $?
             $bootstrapNativeExit = $LASTEXITCODE
             Write-Host "Bootstrap diagnostic: PowerShell success=$bootstrapSucceeded native_exit=$bootstrapNativeExit"
-            if (-not $bootstrapSucceeded) { throw 'Downloaded bootstrap reported a PowerShell failure' }
+            if (-not $bootstrapSucceeded) { throw 'Downloaded one-command installer reported a PowerShell failure' }
           }
           catch {
             Write-Host "Bootstrap diagnostic failure: $($_.Exception.Message)"
