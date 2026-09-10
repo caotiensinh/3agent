@@ -3293,6 +3293,7 @@ class SecurityAwareProjectChatService(IntelligenceAwareProjectChatService):
     def _direct_prompt(self, job: Any, upload_ids: list[str]) -> str:
         base = super()._direct_prompt(job, upload_ids)
         return base + '\n\n' + _bounded_security_context(str(job.message or ''))
+from .security_monitoring.asset_onboarding import SecurityAssetOnboardingService
 
 class SecurityE2EApplication(WorkflowDraftApplication):
     """V20 application with the hardened current-generation monitoring control plane."""
