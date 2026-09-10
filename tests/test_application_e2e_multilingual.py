@@ -24,6 +24,8 @@ from three_agent.chat_service_fidelity import (
     _internal_instruction_refusal,
     _is_standard_status_code_request,
     _is_translation_request,
+    _render_translation_payload,
+    _translation_structured_schema,
 )
 
 
@@ -116,6 +118,15 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         ):
             self.assertTrue(_is_translation_request(cases[case_id].prompt), case_id)
 
+        translation_schema = _translation_structured_schema()
+        self.assertEqual(translation_schema["required"], ["translation"])
+        self.assertFalse(translation_schema["additionalProperties"])
+        self.assertIn("source text", translation_schema["properties"]["translation"]["description"])
+        self.assertEqual(
+            _render_translation_payload({"translation": "  Dịch vụ   đã khởi động thành công.  "}),
+            "Dịch vụ đã khởi động thành công.",
+        )
+
         for case_id in (
             "vi_http_404_one_sentence",
             "ja_http_404_one_sentence",
@@ -126,7 +137,8 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
         self.assertIn("_TRANSLATION_FIDELITY_INSTRUCTION", source)
         self.assertIn("_STATUS_CODE_FIDELITY_INSTRUCTION", source)
-        self.assertIn("structured_mode = _strict_structured_mode", source)
+        self.assertIn("_translation_structured_schema()", source)
+        self.assertIn('"workspace.chat.strict.translation.v1"', source)
 
     def test_semantic_categories_cover_common_prompt_shapes(self) -> None:
         self.assertEqual(

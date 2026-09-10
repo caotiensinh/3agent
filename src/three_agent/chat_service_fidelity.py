@@ -207,6 +207,30 @@ def _is_translation_request(request: str) -> bool:
     )
 
 
+def _translation_structured_schema() -> dict[str, Any]:
+    """Use a semantic field name so decoder-time constraints reinforce the task."""
+
+    return {
+        "type": "object",
+        "properties": {
+            "translation": {
+                "type": "string",
+                "description": (
+                    "The faithful translation of the source text requested by the user, and nothing else. "
+                    "Translate the source text itself rather than the surrounding instruction or commentary. "
+                    "Preserve the source subject, action/state, and outcome."
+                ),
+            }
+        },
+        "required": ["translation"],
+        "additionalProperties": False,
+    }
+
+
+def _render_translation_payload(payload: dict[str, Any]) -> str:
+    return " ".join(str(payload.get("translation") or "").split()).strip()
+
+
 def _is_standard_status_code_request(request: str) -> bool:
     body = str(request or "")
     return bool(re.search(r"\b(?:HTTP|HTTPS)\s*[1-5][0-9]{2}\b", body, re.IGNORECASE))
@@ -322,12 +346,22 @@ class _ContractAwareProjectChatServiceMixin:
                         "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
                         "- A deterministic local renderer will convert these values to the user's requested final shape."
                     )
+                    schema = (
+                        _translation_structured_schema()
+                        if translation_request
+                        else strict_structured_schema(contract)
+                    )
+                    schema_id = (
+                        "workspace.chat.strict.translation.v1"
+                        if translation_request
+                        else strict_structured_schema_id(contract)
+                    )
                     try:
                         payload = self.orchestrator.llm.generate_json(
                             system_prompt,
                             prompt,
-                            schema=strict_structured_schema(contract),
-                            schema_id=strict_structured_schema_id(contract),
+                            schema=schema,
+                            schema_id=schema_id,
                             think=False,
                             num_predict=structured_num_predict,
                             trust_domain="workspace-local-chat",
@@ -348,7 +382,11 @@ class _ContractAwareProjectChatServiceMixin:
                         if attempt == 0:
                             continue
                         raise
-                    answer = render_strict_structured_answer(contract, payload)
+                    answer = (
+                        _render_translation_payload(payload)
+                        if translation_request
+                        else render_strict_structured_answer(contract, payload)
+                    )
                 else:
                     answer = self.orchestrator.llm.generate(
                         system_prompt,
