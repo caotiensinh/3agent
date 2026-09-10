@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 from typing import Iterable, Protocol
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
-from .gateways import InternetGateway
+from .gateways import InternetGateway, decode_bing_click_redirect
 from .privacy import sanitize_research_query
 from .runtime_efficiency import sanitize_untrusted_payload
 
@@ -166,6 +166,10 @@ def _normalize_result_url(value: str) -> str:
     parsed = urlparse(url)
     if "duckduckgo.com" in parsed.netloc and parsed.path.startswith("/l/"):
         target = parse_qs(parsed.query).get("uddg", [""])[0]
+        if target:
+            url = target
+    elif "bing.com" in parsed.netloc and parsed.path.startswith("/ck/"):
+        target = decode_bing_click_redirect(parse_qs(parsed.query).get("u", [""])[0])
         if target:
             url = target
     if url.startswith(("http://", "https://")):

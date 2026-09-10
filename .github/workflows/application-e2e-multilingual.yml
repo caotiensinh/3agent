@@ -264,7 +264,18 @@ jobs:
         shell: bash
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+          # The live-full-workflow job is the only job in this workflow that runs
+          # the real Research -> Presentation -> Daily Report pipeline, so Agent 1
+          # must be allowed to search the public web. It gets a dedicated override
+          # variable (kept separate from WORKSPACE_ACCEPTANCE_CONFIG, which the
+          # direct-chat jobs above use) and a default that is the repo's existing,
+          # already-tested public-research zone config (config/workspace.public-research.json:
+          # confidentiality_mode=public-research, environment=public-research-zone,
+          # internet_gateway.public_search_enabled=true, execution_gateway disabled,
+          # allowed_search_hosts restricted to the approved provider allowlist). The
+          # production default config/workspace.secure.json (confidentiality_mode=
+          # confidential) is untouched and still governs every non-research job.
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_RESEARCH_ACCEPTANCE_CONFIG }}
         run: |
           set -Eeuo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
@@ -278,8 +289,26 @@ jobs:
           rm -rf .venv
           python3 -m venv .venv
           .venv/bin/python -m pip install -e .
-          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.public-research.json}"
           test -f "$CONFIG_PATH"
+          "$GITHUB_WORKSPACE/.venv/bin/python" - "$CONFIG_PATH" <<'PY'
+          import sys
+          from three_agent.config import load_config
+          # Fail closed here rather than deep inside the workflow: this job must
+          # never run research against a config that cannot grant public web
+          # search (task-scoped, research-only, search-only, approved providers
+          # only), and must never touch the confidential production default.
+          c = load_config(sys.argv[1])
+          assert c.confidentiality_mode == "public-research", (
+              f"live-full-workflow requires confidentiality_mode=public-research, got {c.confidentiality_mode!r}"
+          )
+          assert c.environment == "public-research-zone", (
+              f"live-full-workflow requires environment=public-research-zone, got {c.environment!r}"
+          )
+          assert c.internet_gateway.public_search_enabled, "live-full-workflow requires public_search_enabled=true"
+          assert c.internet_gateway.allowed_search_hosts, "live-full-workflow requires an approved search-host allowlist"
+          assert not c.execution_gateway.enabled, "live-full-workflow research config must not grant shell execution"
+          PY
           echo "FULL_E2E_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
           MODEL="$(.venv/bin/python - "$CONFIG_PATH" <<'PY'
           import sys
