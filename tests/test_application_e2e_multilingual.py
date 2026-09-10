@@ -138,6 +138,19 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         ):
             self.assertTrue(_is_translation_request(cases[case_id].prompt), case_id)
 
+        self.assertFalse(
+            _is_translation_request(cases["vi_summary_two_bullets"].prompt),
+            "Vietnamese noun 'dịch vụ' must not route to translation",
+        )
+        self.assertFalse(
+            _is_translation_request(cases["vi_https_json_only"].prompt),
+            "Vietnamese noun 'dịch vụ' must not route to translation",
+        )
+        self.assertFalse(_is_translation_request("Dịch vụ API vẫn phản hồi HTTP 200."))
+        self.assertFalse(_is_translation_request("dich vu HTTPS mac dinh"))
+        self.assertTrue(_is_translation_request("Dịch câu sau sang tiếng Việt: 'hello'"))
+        self.assertTrue(_is_translation_request("dich cau sau sang tieng Viet: 'hello'"))
+
         translation_schema = _translation_structured_schema()
         self.assertEqual(translation_schema["required"], ["translation"])
         self.assertFalse(translation_schema["additionalProperties"])
