@@ -56,6 +56,21 @@ If a future failure matches an existing incident signature:
 
 A recurring signature must never be "fixed" by deleting, weakening, skipping, or broadly bypassing the regression guard without a new evidence-backed root-cause analysis.
 
+## Regression-guard durability
+
+A prevention rule is not durable if it exists only in prose.
+
+For a known failure mechanism with machine-enforceable structure:
+
+- the production invariant and its regression guard MUST remain in the same canonical repository history;
+- future refactors MUST preserve equivalent detection before deleting or replacing the original guard;
+- a pull request that weakens, removes, skips, or narrows a known regression guard MUST include a new evidence-backed incident or supersession record explaining why the old invariant no longer applies;
+- a test marked skipped, xfail, allow-failure, continue-on-error, or equivalent MUST NOT count as preserving the guard unless the governing incident explicitly documents and verifies the replacement enforcement;
+- changing an error into a warning is not equivalent enforcement when the invariant is fail-closed;
+- regression evidence must be tied to an exact head or immutable build reference before the incident is called resolved.
+
+For the secure installer ownership incident, the machine-enforced invariant is owned by `scripts/test_workspace_security_contract.sh`; the incident record under `docs/incidents/` is the durable RCA context that explains why that guard exists.
+
 ## Security and safety rule
 
 Do not replace a precise boundary fix with a broad exception merely to make a failing workflow pass.
