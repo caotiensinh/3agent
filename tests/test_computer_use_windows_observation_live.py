@@ -7,6 +7,7 @@ from ctypes import wintypes
 
 from three_agent.computer_use_windows_observation import (
     WindowsObservationConfig,
+    WindowsObservationError,
     WindowsPowerShellObservationBackend,
     capture_windows_observation,
 )
@@ -108,13 +109,48 @@ $form.Add_Shown({{ $form.Activate() }})
             time.sleep(0.1)
         raise RuntimeError("CU160_ACCEPTANCE_FOREGROUND_NOT_CONFIRMED")
 
+    @staticmethod
+    def _backend_diagnostic(backend):
+        command = [
+            "powershell.exe",
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            backend._SCRIPT,
+            "-IncludeScreenshot",
+            "$false",
+            "-MaxNodes",
+            "32",
+            "-MaxDepth",
+            "4",
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=25,
+                check=False,
+                shell=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return f"diagnostic_timeout={exc.timeout}"
+        return (
+            f"diagnostic_returncode={completed.returncode}; "
+            f"stderr={completed.stderr[-2000:]!r}; stdout={completed.stdout[-2000:]!r}"
+        )
+
     def test_real_powershell_backend_observes_live_uia_window_without_screenshot(self):
         backend = WindowsPowerShellObservationBackend(timeout_seconds=20)
-        raw_capture = backend.capture_read_only(
-            include_screenshot=False,
-            max_uia_nodes=32,
-            max_uia_depth=4,
-        )
+        try:
+            raw_capture = backend.capture_read_only(
+                include_screenshot=False,
+                max_uia_nodes=32,
+                max_uia_depth=4,
+            )
+        except WindowsObservationError as exc:
+            self.fail(f"{exc}; {self._backend_diagnostic(backend)}")
 
         self.assertEqual(raw_capture.process_id, self._process.pid)
         self.assertEqual(raw_capture.process_name.lower(), "powershell")
