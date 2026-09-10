@@ -19,6 +19,7 @@ SUPPORTED_EVIDENCE_TYPES = frozenset(
         "authentication_event",
         "process_event",
         "correlation_result",
+        "configuration_snapshot",
     }
 )
 MAX_METADATA_ITEMS = 24
