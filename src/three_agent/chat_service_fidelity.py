@@ -226,7 +226,7 @@ def _is_translation_request(request: str) -> bool:
     body = str(request or "")
     return bool(
         re.search(r"\btranslate\b", body, re.IGNORECASE)
-        or re.search(r"(?:^|\s)(?:dịch|dich)(?:\s|$)", body, re.IGNORECASE)
+        or re.search(r"(?:^|\s)(?:dịch\s+(?!vụ\b)|dich\s+(?!vu\b))", body, re.IGNORECASE)
         or "翻訳" in body
     )
 
