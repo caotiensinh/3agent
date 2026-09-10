@@ -1,0 +1,146 @@
+name: application-e2e-structured-diagnostics
+
+on:
+  pull_request:
+    paths:
+      - 'src/three_agent/chat_service_fidelity.py'
+      - 'src/three_agent/chat_output_contract.py'
+      - 'src/three_agent/application_e2e_multilingual.py'
+      - 'src/three_agent/chat_multiturn_acceptance.py'
+      - 'scripts/run_application_structured_diagnostics.py'
+      - '.github/workflows/application-e2e-structured-diagnostics.yml'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type RUN to execute privacy-safe structured diagnostics'
+        required: true
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-application-e2e-structured-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: structured diagnostics contract
+    if: github.event_name != 'workflow_dispatch' || inputs.confirm == 'RUN'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install exact candidate
+        run: python -m pip install -e .
+      - name: Compile diagnostic runner
+        run: python -m py_compile scripts/run_application_structured_diagnostics.py
+      - name: Validate multilingual application contract
+        run: python -m unittest tests.test_application_e2e_multilingual -v
+
+  live:
+    name: live structured diagnostics
+    needs: contract
+    if: >-
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'workflow_dispatch' || inputs.confirm == 'RUN')
+    runs-on: [self-hosted, Linux, X64, workspace-benchmark]
+    timeout-minutes: 45
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          clean: true
+          persist-credentials: false
+      - name: Verify exact source and local GPU host
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          command -v nvidia-smi >/dev/null
+          gpu_count="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
+          printf 'Structured diagnostics: exact_sha=%s NVIDIA_GPU_COUNT=%s\n' "$EXPECTED_SHA" "$gpu_count"
+          test "$gpu_count" -ge 2
+      - name: Create isolated diagnostic environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-structured-diagnostics-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install -e .
+          echo "STRUCTURED_DIAG_VENV=$VENV" >> "$GITHUB_ENV"
+      - name: Resolve acceptance config without printing it
+        shell: bash
+        env:
+          CONFIG_OVERRIDE: ${{ vars.WORKSPACE_ACCEPTANCE_CONFIG }}
+        run: |
+          set -Eeuo pipefail
+          CONFIG_PATH="${CONFIG_OVERRIDE:-$GITHUB_WORKSPACE/config/workspace.secure.json}"
+          test -f "$CONFIG_PATH"
+          echo "STRUCTURED_DIAG_CONFIG=$CONFIG_PATH" >> "$GITHUB_ENV"
+      - name: Run privacy-safe diagnostics for three failing cases
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          REPORT="$RUNNER_TEMP/application-structured-diagnostics-${EXPECTED_SHA}.json"
+          echo "STRUCTURED_DIAG_REPORT=$REPORT" >> "$GITHUB_ENV"
+          "$STRUCTURED_DIAG_VENV/bin/python" scripts/run_application_structured_diagnostics.py \
+            --config "$STRUCTURED_DIAG_CONFIG" \
+            --source-sha "$EXPECTED_SHA" \
+            --output "$REPORT"
+      - name: Publish metadata-only summary
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if test -n "${STRUCTURED_DIAG_REPORT:-}" && test -f "$STRUCTURED_DIAG_REPORT"; then
+            "$STRUCTURED_DIAG_VENV/bin/python" - "$STRUCTURED_DIAG_REPORT" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          p = json.load(open(sys.argv[1], encoding='utf-8'))
+          print('## Structured diagnostic evidence')
+          print()
+          print(f"- source SHA: `{p.get('source_sha', 'unknown')}`")
+          print(f"- diagnostic completed: `{p.get('diagnostic_completed', False)}`")
+          print(f"- acceptance passed: `{p.get('acceptance_passed', False)}`")
+          print('- raw prompts/answers/structured values: `not persisted`')
+          print()
+          for case in p.get('cases', []):
+              print(f"### {case.get('case_id', '')}")
+              print(f"- status: `{case.get('status', '')}`")
+              print(f"- validator: `{case.get('validator_failure_code', '')}`")
+              for index, call in enumerate(case.get('calls', []), 1):
+                  print(
+                      f"- call {index}: kind=`{call.get('call_kind', '')}` "
+                      f"schema=`{call.get('schema_id', '')}` success=`{call.get('succeeded', False)}` "
+                      f"keys=`{call.get('payload_keys', [])}` hits=`{call.get('required_group_hits', [])}`"
+                  )
+          PY
+          else
+            echo '## Structured diagnostic evidence' >> "$GITHUB_STEP_SUMMARY"
+            echo '- result: `NO_REPORT`' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload metadata-only diagnostic evidence
+        if: always() && env.STRUCTURED_DIAG_REPORT != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-structured-diagnostics-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.STRUCTURED_DIAG_REPORT }}
+          if-no-files-found: error
+          retention-days: 14
