@@ -116,6 +116,7 @@ Initial reviewed tool IDs:
 computer.screen.observe
 computer.window.observe
 computer.accessibility.observe
+computer.accessibility.interact
 browser.dom.observe
 browser.navigate
 browser.interact
@@ -358,6 +359,8 @@ Acceptance:
 
 ### CU-170 — Windows interaction adapter
 
+Status: `VERIFIED_PASS` at implementation head `f572c2a59859cde7edc77825c88043807f409553`.
+
 Dependencies: CU-060, CU-070, CU-160.
 
 Implement:
@@ -373,7 +376,16 @@ Acceptance:
 - state-changing action uses approval/writer fence;
 - no arbitrary elevated shell.
 
+Executed evidence:
+
+- `computer-use-windows-interaction-ci` run `34489074180` passed on Python 3.11 and 3.12;
+- live WPF controls verified real `ValuePattern.SetValue` and `InvokePattern.Invoke` behavior;
+- exact-head `canonical-module-ci` `34489074139`, `internet-egress-security-ci` `34489074195`, `windows-deploy-ci` `34489074099`, `installer-ci` `34489074093`, and `harness-ci` `34489074371` all passed;
+- pointer/keyboard remain explicit fallback and CU-210 privileged broker is not used.
+
 ### CU-180 — Linux observation/interaction adapter
+
+Status: `ACTIVE` after CU-170 verification.
 
 Dependencies: browser path stable, CU-060/CU-070.
 
@@ -428,161 +440,80 @@ No arbitrary command execution API is allowed.
 
 ### CU-220 — Prompt-injection red-team suite
 
-Dependencies: CU-100 before browser release; expands continuously.
+Dependencies: provider/browser adapters.
 
-Fixtures:
-
-- hostile web page text;
-- hidden DOM instructions;
-- accessibility-label injection;
-- image/screenshot instruction injection;
-- downloaded document injection;
-- terminal output injection;
-- fake approval text;
-- exfiltration request;
-- request to change tool/network scope.
+Implement adversarial fixtures for pages, files, images, accessibility text, and downloaded content.
 
 Acceptance:
 
-- none can expand authority;
-- state changes still require deterministic admission/approval;
-- confidential data is not moved into public lane.
+- untrusted content cannot expand tools/network/write authority;
+- model proposals remain untrusted until deterministic admission;
+- suspicious content cannot simulate approval;
+- stale/replayed actions remain blocked.
 
-### CU-230 — Replay, stale-state, and concurrency tests
+### CU-230 — Replay/stale/concurrency suite
 
 Dependencies: CU-070.
 
 Acceptance:
 
-- replayed action id rejected;
-- previous writer generation rejected;
-- old DOM/accessibility ref rejected after navigation;
-- coordinate action rejected after state hash change;
-- two simultaneous writers cannot mutate one session.
+- same action replay blocked;
+- stale state/target blocked;
+- writer generation change invalidates prior action;
+- takeover invalidates old action refs;
+- uncertain side effect does not blindly retry.
 
-### CU-240 — Privacy and evidence retention tests
+### CU-240 — Privacy/evidence suite
 
-Dependencies: CU-080.
-
-Acceptance:
-
-- restricted/secret raw logging policy is honored;
-- credentials are absent from retained evidence;
-- continuous video is not silently recorded;
-- screenshot evidence is bounded and optional according to task policy.
-
-### CU-250 — Deployment packaging
-
-Dependencies: platform adapters selected for release.
-
-Deliver:
-
-- service/companion packaging;
-- least-privilege OS identity setup;
-- browser profile setup;
-- health/readiness checks;
-- disable/rollback procedure.
-
-### CU-260 — Enterprise fleet/node identity
-
-Optional until remote node control is a concrete product requirement.
+Dependencies: CU-080 and platform adapters.
 
 Acceptance:
 
-- authenticated node enrollment;
-- encrypted transport;
-- node/profile allowlist;
-- no public unauthenticated control endpoint;
-- revocation/recovery tested.
+- screenshot/tool outputs bounded;
+- secure UI content not retained as normal evidence;
+- secret/restricted logging policy remains deny where configured;
+- evidence remains task/run/action bound.
 
-### CU-270 — Performance and reliability benchmark
+### CU-250 — Packaging and deployment
 
-Measure per verified task, not clicks/second.
+Dependencies: supported platform adapters verified.
 
-Metrics:
+Implement:
 
-- task success rate;
-- actions per verified task;
-- model calls per verified task;
-- stale-ref recovery rate;
-- approval rate;
-- false/unsafe action admission count;
-- wall time;
-- screenshot/token overhead;
-- structured-route percentage vs vision fallback percentage.
+- feature flags default off where actuator risk exists;
+- private/local control binding;
+- deployment profile documentation;
+- upgrade/rollback path.
 
-Target behavior:
+Acceptance:
 
-- structured paths dominate whenever available;
-- visual fallback is bounded;
-- adding computer use does not materially degrade unrelated WorkSpace tasks.
+- clean installation path;
+- safe defaults;
+- no public unauthenticated control surface.
+
+### CU-260 — Remote node control
+
+Status: `OPTIONAL_INACTIVE`.
+
+Activation condition: remote node control becomes a concrete product requirement.
+
+### CU-270 — Benchmark/evaluation
+
+Implement measured:
+
+- action success rate;
+- stale-target rejection rate;
+- approval latency;
+- observation/action latency;
+- token/tool overhead;
+- recovery behavior.
 
 ### CU-280 — Final security/release gate
 
-Required checks:
+Acceptance:
 
-- repository governance validator;
-- canonical-module guard;
-- focused unit tests;
-- integration tests;
-- prompt-injection red-team suite;
-- stale/replay/concurrency suite;
-- trust-zone/egress tests;
-- platform smoke tests for supported release targets;
-- exact-head CI evidence.
-
-## 4. Initial implementation slice for this branch
-
-This branch starts with the smallest coherent governed core:
-
-```text
-CU-000  documentation
-CU-010  provider-neutral contracts
-CU-020  deterministic route selector
-CU-090  focused deterministic tests for contracts/router
-```
-
-If the current repository tests reveal that CU-010 requires immediate vocabulary integration to remain coherent, CU-030/CU-040 may be brought into the same acceptance boundary; otherwise they remain the next slice.
-
-The initial branch must not yet control a real user's mouse/keyboard or attach to a personal signed-in browser.
-
-## 5. Parallel lane decomposition
-
-For substantial sessions, apply the canonical repository lane policy. A useful 20-lane decomposition once implementation broadens is:
-
-| Lane | Goal | Primary write set |
-|---|---|---|
-| L01 | core contracts | `computer_use.py` |
-| L02 | TaskContract vocabulary | `task_contract.py` |
-| L03 | CapabilityAuthority mapping | `capability_authority.py` |
-| L04 | approval contract | canonical auth/approval module |
-| L05 | writer fence integration | existing runtime writer path |
-| L06 | execution observation binding | existing observation path |
-| L07 | fake executor | test/support canonical location |
-| L08 | browser observation | browser adapter |
-| L09 | browser interaction | browser adapter, same writer ownership coordinated with L08 |
-| L10 | OpenAI bridge | provider bridge authority |
-| L11 | Anthropic bridge | provider bridge authority |
-| L12 | local-model bridge | provider bridge authority |
-| L13 | frontend approval | frontend canonical files |
-| L14 | Windows observation | Windows adapter |
-| L15 | Windows interaction | Windows adapter coordinated single writer |
-| L16 | Linux adapter | Linux adapter |
-| L17 | macOS adapter | macOS adapter |
-| L18 | injection/replay security tests | security tests |
-| L19 | deployment/health | deployment canonical files |
-| L20 | release/evidence convergence | verification only; no competing production authority |
-
-Do not execute overlapping write lanes simultaneously. If a canonical file is shared, it has one writer owner and other lanes produce analysis/evidence only until ownership is handed over.
-
-## 6. Progress accounting baseline
-
-At program creation, the complete production program is intentionally not assigned an artificial high percentage. Verified progress is based on mandatory acceptance work actually executed.
-
-For the current branch slice:
-
-- CU-000 counts only after all three documents are present and re-read from the branch.
-- CU-010/CU-020/CU-090 count only after code exists and executed tests pass.
-- planning alone gives zero implementation completion credit.
-
-Checkpoint reports must follow the repository canonical execution-governance metrics rather than subjective estimates.
+- all active packages verified;
+- exact-head mandatory CI green;
+- threat model reviewed;
+- deployment defaults fail closed;
+- release evidence complete.
