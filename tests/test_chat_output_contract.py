@@ -19,6 +19,7 @@ from three_agent.chat_output_contract import (
 from three_agent.chat_service_fidelity import (
     ContractAwareProjectChatService,
     _bounded_generation_num_predict,
+    _use_structured_attempt,
 )
 
 
@@ -196,6 +197,28 @@ class ChatOutputContractTests(unittest.TestCase):
         mode, _, language = classify_context_request("2つ目だけ詳しく説明してください。")
         self.assertEqual(mode, CONTEXT_MODE_FOLLOW_UP)
         self.assertEqual(language, "ja")
+
+    def test_structured_retry_falls_back_on_requested_format_mismatch(self):
+        self.assertTrue(_use_structured_attempt(True, 0, ""))
+        self.assertFalse(
+            _use_structured_attempt(True, 1, "requested_format_mismatch")
+        )
+        self.assertFalse(
+            _use_structured_attempt(True, 1, "target_language_mismatch")
+        )
+        self.assertTrue(
+            _use_structured_attempt(True, 1, "output_contract_lines:2_gt_1")
+        )
+
+    def test_current_service_preserves_task_semantics_and_validation(self):
+        source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
+        self.assertIn(
+            "For a translation request, put the translated text itself in the value",
+            source,
+        )
+        self.assertIn("direct_chat_answer_valid(answer, job.language, job.message)", source)
+        self.assertIn("contract.validate(answer)", source)
+        self.assertIn("for attempt in range(2)", source)
 
     def test_current_service_preserves_high_reasoning_and_bounds_standard_generation(self):
         standard = SimpleNamespace(num_predict=4096, max_chars=2800)
