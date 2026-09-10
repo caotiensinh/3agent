@@ -4,24 +4,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 from urllib.parse import urlparse
 
-from .computer_use import (
-    ComputerActionRequest,
-    ComputerObservation,
-    ComputerPolicyDecision,
-    decide_computer_action,
-)
-from .computer_use_approval import (
-    ComputerApprovalGrant,
-    consume_computer_approval,
-    require_valid_computer_approval,
-)
+from .computer_use import ComputerActionRequest, ComputerObservation, ComputerPolicyDecision, decide_computer_action
+from .computer_use_approval import ComputerApprovalGrant, consume_computer_approval, require_valid_computer_approval
 from .computer_use_replay import ComputerActionReplayLedger, require_target_fresh
 from .computer_use_writer import ComputerWriterBinding, require_current_writer_binding
 from .runtime_writer_lease import RuntimeWriterLease, RuntimeWriterLeaseRepository
 
-BROWSER_INTERACTION_KINDS = frozenset(
-    {"click", "type", "select", "scroll", "form_submit", "download_request"}
-)
+BROWSER_INTERACTION_KINDS = frozenset({"click", "type", "select", "scroll", "form_submit", "download_request"})
 MAX_SELECTOR_CHARS = 512
 MAX_TYPED_TEXT_CHARS = 4096
 MAX_SELECT_VALUE_CHARS = 1024
@@ -52,6 +41,12 @@ class BrowserInteractionCommand:
 
 
 @dataclass(frozen=True)
+class BrowserTargetInspection:
+    state_sha256: str
+    secure_input: bool = False
+
+
+@dataclass(frozen=True)
 class BrowserInteractionBackendResult:
     post_observation: ComputerObservation
     observed_postconditions: tuple[str, ...] = ()
@@ -68,6 +63,9 @@ class GovernedBrowserInteractionResult:
 class BrowserInteractionBackend(Protocol):
     """Constrained backend surface; no arbitrary CDP or shell command passthrough."""
 
+    def inspect_target(self, command: BrowserInteractionCommand) -> BrowserTargetInspection:
+        ...
+
     def dispatch(self, command: BrowserInteractionCommand) -> BrowserInteractionBackendResult:
         ...
 
@@ -81,8 +79,7 @@ def _bounded_text(value: Any, *, field: str, limit: int, allow_empty: bool = Fal
 
 
 def _strict_arguments(arguments: Mapping[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
-    keys = set(arguments)
-    if keys - allowed:
+    if set(arguments) - allowed:
         raise BrowserInteractionError("BROWSER_INTERACTION_ARGUMENT_NOT_ALLOWED")
     return dict(arguments)
 
@@ -123,34 +120,19 @@ def _interaction_arguments(arguments: Mapping[str, Any], kind: str) -> dict[str,
         if isinstance(delta, bool) or not isinstance(delta, int) or not -MAX_SCROLL_DELTA <= delta <= MAX_SCROLL_DELTA:
             raise BrowserInteractionError("INVALID_BROWSER_SCROLL_DELTA")
         return result
-    if kind == "form_submit":
-        result = _strict_arguments(arguments, frozenset({"interaction", "selector"}))
-        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
-        return result
-    if kind == "download_request":
+    if kind in {"form_submit", "download_request"}:
         result = _strict_arguments(arguments, frozenset({"interaction", "selector"}))
         result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
         return result
     raise BrowserInteractionError("UNSUPPORTED_BROWSER_INTERACTION_KIND")
 
 
-def _command_from_action(
-    action: ComputerActionRequest,
-    *,
-    allowed_navigation_hosts: tuple[str, ...],
-    download_quarantine_ref: str | None,
-) -> BrowserInteractionCommand:
+def _command_from_action(action: ComputerActionRequest, *, allowed_navigation_hosts: tuple[str, ...], download_quarantine_ref: str | None) -> BrowserInteractionCommand:
     arguments = dict(action.arguments)
     if action.operation == "browser.navigate":
         arguments = _strict_arguments(arguments, frozenset({"url"}))
         target = _normalized_https_url(arguments.get("url"), allowed_hosts=allowed_navigation_hosts)
-        return BrowserInteractionCommand(
-            operation=action.operation,
-            interaction_kind=None,
-            resource_ref=action.resource_ref,
-            arguments={"url": target},
-            navigation_url=target,
-        )
+        return BrowserInteractionCommand(action.operation, None, action.resource_ref, {"url": target}, navigation_url=target)
     if action.operation != "browser.interact":
         raise BrowserInteractionError("UNSUPPORTED_GOVERNED_BROWSER_OPERATION")
     kind = arguments.get("interaction")
@@ -166,6 +148,18 @@ def _command_from_action(
         arguments=normalized,
         download_quarantine_ref=(download_quarantine_ref if kind == "download_request" else None),
     )
+
+
+def _inspect_interaction_target(*, action: ComputerActionRequest, command: BrowserInteractionCommand, backend: BrowserInteractionBackend) -> None:
+    if action.operation != "browser.interact" or command.interaction_kind == "scroll":
+        return
+    inspection = backend.inspect_target(command)
+    if not isinstance(inspection, BrowserTargetInspection):
+        raise BrowserInteractionError("INVALID_BROWSER_TARGET_INSPECTION")
+    if inspection.state_sha256 != action.state_precondition_sha256:
+        raise BrowserInteractionError("BROWSER_TARGET_INSPECTION_STALE")
+    if command.interaction_kind == "type" and inspection.secure_input:
+        raise BrowserInteractionError("BROWSER_SECURE_INPUT_USER_TAKEOVER_REQUIRED")
 
 
 def execute_governed_browser_action(
@@ -187,12 +181,12 @@ def execute_governed_browser_action(
 ) -> GovernedBrowserInteractionResult:
     """Dispatch one bounded browser action after existing WorkSpace governance passes.
 
-    Freshness/policy/command validation happens first. Approval and writer validity
-    are checked without consuming anything; replay is then fenced; approval is
-    consumed before a possible side effect; the writer generation is rechecked
-    immediately before mutating dispatch; and the declared postcondition must be
-    verified afterwards. Ambiguous dispatch exposes the consumed approval so it
-    cannot be reused.
+    Freshness/policy/command validation and read-only target inspection happen
+    first. Approval and writer validity are checked without consuming anything;
+    replay is then fenced; approval is consumed before a possible side effect; the
+    writer generation is rechecked immediately before mutating dispatch; and the
+    declared postcondition must be verified afterwards. Secure credential inputs
+    require user takeover and are never automated by this coordinator.
     """
 
     action.validate()
@@ -208,11 +202,8 @@ def execute_governed_browser_action(
     if action.expected_postcondition is None:
         raise BrowserInteractionError("BROWSER_EXPECTED_POSTCONDITION_REQUIRED")
 
-    command = _command_from_action(
-        action,
-        allowed_navigation_hosts=allowed_navigation_hosts,
-        download_quarantine_ref=download_quarantine_ref,
-    )
+    command = _command_from_action(action, allowed_navigation_hosts=allowed_navigation_hosts, download_quarantine_ref=download_quarantine_ref)
+    _inspect_interaction_target(action=action, command=command, backend=backend)
 
     if policy_decision.outcome == "REQUIRE_APPROVAL":
         if approval is None:
@@ -230,12 +221,7 @@ def execute_governed_browser_action(
     if action.requires_writer:
         if lease_repository is None or lease is None or writer_binding is None:
             raise BrowserInteractionError("BROWSER_ACTION_WRITER_FENCE_REQUIRED")
-        require_current_writer_binding(
-            action=action,
-            binding=writer_binding,
-            lease_repository=lease_repository,
-            lease=lease,
-        )
+        require_current_writer_binding(action=action, binding=writer_binding, lease_repository=lease_repository, lease=lease)
     elif lease is not None or writer_binding is not None:
         raise BrowserInteractionError("UNEXPECTED_BROWSER_WRITER_BINDING")
 
@@ -252,12 +238,7 @@ def execute_governed_browser_action(
         )
 
     if action.requires_writer:
-        require_current_writer_binding(
-            action=action,
-            binding=writer_binding,
-            lease_repository=lease_repository,
-            lease=lease,
-        )
+        require_current_writer_binding(action=action, binding=writer_binding, lease_repository=lease_repository, lease=lease)
 
     try:
         backend_result = backend.dispatch(command)
@@ -275,7 +256,4 @@ def execute_governed_browser_action(
     if command.interaction_kind == "download_request" and backend_result.download_quarantine_ref != command.download_quarantine_ref:
         raise BrowserDispatchError("DOWNLOAD_NOT_QUARANTINED", consumed_approval=consumed_approval)
 
-    return GovernedBrowserInteractionResult(
-        backend_result=backend_result,
-        consumed_approval=consumed_approval,
-    )
+    return GovernedBrowserInteractionResult(backend_result=backend_result, consumed_approval=consumed_approval)
