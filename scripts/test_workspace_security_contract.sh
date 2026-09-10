@@ -80,7 +80,8 @@ check_profile 'model=qwen3:8b fast_model=qwen3:4b' WORKSPACE_TEST_VRAM_MIB=0 WOR
 check_profile 'model=qwen3:4b fast_model=qwen3:1.7b' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192
 check_profile 'model=qwen3:8b fast_model=qwen3:4b' WORKSPACE_TEST_VRAM_MIB=8192 WORKSPACE_TEST_RAM_MIB=8192
 check_profile 'model=qwen3:14b fast_model=qwen3:8b' WORKSPACE_TEST_VRAM_MIB=16384 WORKSPACE_TEST_RAM_MIB=8192
-check_profile 'model=qwen3:30b fast_model=qwen3:14b' WORKSPACE_TEST_VRAM_MIB=24576 WORKSPACE_TEST_RAM_MIB=8192
+check_profile 'model=qwen3:14b fast_model=qwen3:8b' WORKSPACE_TEST_VRAM_MIB=24576 WORKSPACE_TEST_RAM_MIB=8192
+check_profile 'model=qwen3:30b fast_model=qwen3:14b' WORKSPACE_TEST_VRAM_MIB=28672 WORKSPACE_TEST_RAM_MIB=8192
 check_profile 'model=operator-main fast_model=operator-fast' WORKSPACE_TEST_VRAM_MIB=4096 WORKSPACE_TEST_RAM_MIB=8192 WORKSPACE_LLM_MODEL=operator-main WORKSPACE_FAST_MODEL=operator-fast
 
 grep -Fq 'workspace-core' scripts/install_workspace_secure_boundary.sh
