@@ -28,7 +28,7 @@ _SENSITIVE_KEYS = frozenset(
         "refresh_token",
         "authorization",
         "cookie",
-        "set-cookie",
+        "set_cookie",
         "session_cookie",
         "credential",
         "credentials",
@@ -45,7 +45,7 @@ _SECURE_NODE_MARKERS = frozenset(
         "one-time-code",
     }
 )
-_SECURE_VALUE_KEYS = frozenset({"value", "text", "inner_text", "innerText", "textContent"})
+_SECURE_VALUE_KEYS = frozenset({"value", "text", "inner_text", "innertext", "textcontent"})
 
 
 class BrowserObservationError(ValueError):
@@ -147,12 +147,18 @@ def _target_part(value: str, field_name: str) -> str:
 
 
 def _safe_url(value: str) -> str:
-    parsed = urlparse(value)
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return _REDACTED
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return _REDACTED
     host = parsed.hostname
-    if parsed.port is not None:
-        host = f"{host}:{parsed.port}"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    if port is not None:
+        host = f"{host}:{port}"
     return urlunparse((parsed.scheme, host, parsed.path, "", "", ""))
 
 
@@ -178,7 +184,7 @@ def _sanitize_browser_value(value: Any, *, depth: int = 0, secure_parent: bool =
             if normalized_key in _SENSITIVE_KEYS:
                 sanitized[key] = _REDACTED
                 continue
-            if secure_here and key in _SECURE_VALUE_KEYS:
+            if secure_here and normalized_key in _SECURE_VALUE_KEYS:
                 sanitized[key] = _REDACTED
                 continue
             if normalized_key == "url" and isinstance(raw_value, str):
