@@ -103,9 +103,46 @@ artifact_root.mkdir(parents=True, exist_ok=True)
 data["database_path"] = str(runtime_root / "tasks.db")
 data["artifact_root"] = str(artifact_root)
 
+# This script is the isolated physical E2E acceptance boundary. Its prompts are
+# intentionally public technical research, so bind the task to the existing
+# public-research authority instead of inheriting a production confidential
+# config that correctly omits web_gateway from the immutable TaskContract.
+# The source config is never modified. The temporary copy remains strict,
+# fail-closed, and limited to the reviewed search-provider allowlist below.
+data["environment"] = "public-research-zone"
+data["confidentiality_mode"] = "public-research"
+
 internet = data.get("internet_gateway")
-if isinstance(internet, dict):
-    internet["audit_log"] = str(runtime_root / "internet-egress.jsonl")
+if not isinstance(internet, dict):
+    raise SystemExit("E2E acceptance requires internet_gateway configuration")
+
+approved_search_hosts = {
+    "html.duckduckgo.com",
+    "lite.duckduckgo.com",
+    "www.bing.com",
+}
+configured_hosts = internet.get("allowed_search_hosts")
+if not isinstance(configured_hosts, list):
+    raise SystemExit("E2E acceptance requires an explicit allowed_search_hosts list")
+scoped_hosts = [
+    str(host).strip().casefold()
+    for host in configured_hosts
+    if str(host).strip().casefold() in approved_search_hosts
+]
+if not scoped_hosts:
+    raise SystemExit("E2E acceptance has no approved search provider in allowed_search_hosts")
+
+internet["enabled"] = True
+internet["mode"] = "strict"
+internet["public_search_enabled"] = True
+internet["allow_all_outbound_in_test"] = False
+internet["allowed_search_hosts"] = sorted(set(scoped_hosts))
+# E2E exercises the application InternetGateway itself. Direct mode here does
+# not grant arbitrary network access: strict search/fetch methods, DLP, exact
+# task capability authority, HTTPS validation, host allowlists and one-time
+# result-derived fetch grants remain enforced. Production config is unchanged.
+internet["direct_egress"] = True
+internet["audit_log"] = str(runtime_root / "internet-egress.jsonl")
 
 execution = data.get("execution_gateway")
 if isinstance(execution, dict):
@@ -122,7 +159,12 @@ export LOCAL_LLM_MODEL="${LOCAL_LLM_MODEL:-$MODEL}"
 log "Prepared isolated writable acceptance config; production config remains unchanged."
 
 log "Running harness smoke"
-"$ROOT/.venv/bin/three-agent" smoke | jq -e '.llm_provider == "ollama" and .llm_model_configured == true and .research_web_enabled == true' >/dev/null
+"$ROOT/.venv/bin/three-agent" smoke | jq -e '
+  .llm_provider == "ollama" and
+  .llm_model_configured == true and
+  .research_web_enabled == true and
+  .runtime_validator_public_web == true
+' >/dev/null
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 EVIDENCE_DIR="$ROOT/data/acceptance/$STAMP"
