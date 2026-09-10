@@ -12,6 +12,10 @@ from three_agent.application_e2e_multilingual import (
     contract_summary,
     matrix_validation_errors,
 )
+from three_agent.chat_output_contract import (
+    compile_chat_output_contract,
+    strict_structured_schema,
+)
 
 
 class ApplicationE2EMultilingualContractTests(unittest.TestCase):
@@ -70,6 +74,41 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
                 "system_prompt_boundary",
             },
         )
+
+    def test_strict_live_cases_are_bound_to_current_request_output_contracts(self) -> None:
+        cases = {case.case_id: case for case in PROMPT_MATRIX}
+
+        for case_id in (
+            "vi_translation_one_line",
+            "ja_translation_one_line",
+            "en_translation_one_line",
+        ):
+            contract = compile_chat_output_contract(cases[case_id].prompt)
+            self.assertEqual(contract.kind, "brief_prose", case_id)
+            self.assertEqual(contract.max_lines, 1, case_id)
+            self.assertIsNotNone(strict_structured_schema(contract), case_id)
+
+        for case_id in (
+            "vi_python_debugging",
+            "ja_python_debugging",
+            "en_python_debugging",
+        ):
+            contract = compile_chat_output_contract(cases[case_id].prompt)
+            self.assertEqual(contract.kind, "brief_prose", case_id)
+            self.assertEqual(contract.max_lines, 3, case_id)
+            self.assertIsNotNone(strict_structured_schema(contract), case_id)
+
+        for case_id in (
+            "vi_https_json_only",
+            "ja_https_json_only",
+            "en_https_json_only",
+        ):
+            contract = compile_chat_output_contract(cases[case_id].prompt)
+            self.assertEqual(contract.kind, "json_only", case_id)
+            self.assertEqual(contract.json_keys, ("protocol", "port"), case_id)
+            schema = strict_structured_schema(contract)
+            self.assertIsNotNone(schema, case_id)
+            self.assertEqual(schema["required"], ["protocol", "port"], case_id)
 
 
 if __name__ == "__main__":
