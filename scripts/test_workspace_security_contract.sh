@@ -63,6 +63,26 @@ if grep -Fq 'WORKSPACE_REQUIRED_RTX5090_COUNT:-2' scripts/setup_workspace_secure
   exit 1
 fi
 
+# /opt/workspace is created/updated through as_root. Every Git operation scoped to
+# INSTALL_DIR must keep the same privilege boundary, including read-only rev-parse.
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("scripts/setup_workspace_secure.sh")
+violations = []
+for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    if 'git -C "$INSTALL_DIR"' in line and 'as_root git -C "$INSTALL_DIR"' not in line:
+        violations.append((line_no, line.strip()))
+
+if violations:
+    details = "\n".join(f"line {line_no}: {line}" for line_no, line in violations)
+    raise SystemExit(
+        "secure installer contains unprivileged Git access to root-owned INSTALL_DIR:\n" + details
+    )
+PY
+# shellcheck disable=SC2016
+grep -Fq 'EXACT_HEAD="$(as_root git -C "$INSTALL_DIR" rev-parse HEAD)"' scripts/setup_workspace_secure.sh
+
 check_profile() {
   local expected="$1"
   shift
