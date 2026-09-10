@@ -61,20 +61,23 @@ class WindowsInteractionBoundedDiagnosticTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         script = rf'''
-Add-Type -AssemblyName System.Windows.Forms
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "{WINDOW_TITLE}"
-$form.Width = 500
-$form.Height = 180
-$form.TopMost = $true
-$textbox = New-Object System.Windows.Forms.TextBox
-$textbox.Name = "InputBox"
-$textbox.Left = 24
-$textbox.Top = 35
-$textbox.Width = 320
-$form.Controls.Add($textbox)
-$form.Add_Shown({{ $form.Activate() }})
-[System.Windows.Forms.Application]::Run($form)
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+$window = New-Object System.Windows.Window
+$window.Title = "{WINDOW_TITLE}"
+$window.Width = 500
+$window.Height = 180
+$window.Topmost = $true
+$panel = New-Object System.Windows.Controls.StackPanel
+$panel.Margin = New-Object System.Windows.Thickness(24)
+$textbox = New-Object System.Windows.Controls.TextBox
+$textbox.Height = 32
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($textbox, 'InputBox')
+$panel.Children.Add($textbox) | Out-Null
+$window.Content = $panel
+$window.Add_ContentRendered({{ $window.Activate() }})
+[void]$window.ShowDialog()
 '''
         cls._process = subprocess.Popen(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-STA", "-Command", script],
@@ -144,8 +147,21 @@ $form.Add_Shown({{ $form.Activate() }})
             time.sleep(0.1)
         raise RuntimeError("CU170_DIAGNOSTIC_FOREGROUND_NOT_CONFIRMED")
 
-    def test_fixed_backend_script_inspect_mode_with_bounded_failure_metadata(self):
+    def test_wpf_fixture_exposes_stable_automation_id_and_backend_resolves_it(self):
         self._focus_window(self._hwnd)
+        observation_backend = WindowsPowerShellObservationBackend(timeout_seconds=20)
+        raw = observation_backend.capture_read_only(
+            include_screenshot=False,
+            max_uia_nodes=32,
+            max_uia_depth=4,
+        )
+        selector_metadata = _bounded_selector_metadata(raw.accessibility_snapshot)
+        self.assertIn(
+            "ControlType.Edit:InputBox",
+            selector_metadata,
+            "CU170_SEMANTIC_SELECTOR_NOT_EXPOSED:" + selector_metadata,
+        )
+
         env = os.environ.copy()
         env["WORKSPACE_CU170_MODE"] = "inspect"
         env["WORKSPACE_CU170_WINDOW_ID"] = f"0x{self._hwnd:X}"
@@ -169,19 +185,7 @@ $form.Add_Shown({{ $form.Activate() }})
             env=env,
         )
         if completed.returncode != 0:
-            observation_backend = WindowsPowerShellObservationBackend(timeout_seconds=20)
-            raw = observation_backend.capture_read_only(
-                include_screenshot=False,
-                max_uia_nodes=32,
-                max_uia_depth=4,
-            )
-            selector_metadata = _bounded_selector_metadata(raw.accessibility_snapshot)
-            self.fail(
-                "CU170_BOUNDED_DIAGNOSTIC:"
-                + _safe_powershell_failure(completed.stderr)
-                + ";selectors="
-                + selector_metadata
-            )
+            self.fail("CU170_BOUNDED_DIAGNOSTIC:" + _safe_powershell_failure(completed.stderr))
         self.assertLessEqual(len(completed.stdout.encode("utf-8")), 16 * 1024)
         self.assertIn('"process_id"', completed.stdout)
         self.assertIn('"secure_input"', completed.stdout)
