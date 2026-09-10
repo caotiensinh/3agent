@@ -205,6 +205,12 @@ def _case_diagnostics(
     return output
 
 
+def _focused_matrix_validation_errors(cases: Sequence[Any]) -> tuple[str, ...]:
+    """Validate case integrity while intentionally skipping full 30-case balance rules."""
+
+    return tuple(app.corpus_validation_errors(cases))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run privacy-safe structured diagnostics for failing multilingual E2E cases"
@@ -222,7 +228,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise RuntimeError("diagnostic target matrix drift")
 
     original_recorder = app.DiagnosticRecordingLLM
+    original_matrix_validation = app.matrix_validation_errors
     app.DiagnosticRecordingLLM = RichDiagnosticRecordingLLM  # type: ignore[assignment]
+    app.matrix_validation_errors = _focused_matrix_validation_errors  # type: ignore[assignment]
     try:
         report = app.run_live_suite(
             load_config(args.config),
@@ -230,6 +238,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             source_sha=args.source_sha,
         )
     finally:
+        app.matrix_validation_errors = original_matrix_validation  # type: ignore[assignment]
         app.DiagnosticRecordingLLM = original_recorder  # type: ignore[assignment]
 
     recorder = RichDiagnosticRecordingLLM.latest
