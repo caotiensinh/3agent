@@ -24,9 +24,29 @@ from three_agent.chat_service_fidelity import (
     _internal_instruction_refusal,
     _is_standard_status_code_request,
     _is_translation_request,
+    _preserve_structured_retry,
     _render_translation_payload,
+    _translation_semantic_validation,
     _translation_structured_schema,
+    _translation_verifier_schema,
+    _use_structured_attempt,
 )
+
+
+class _StaticVerifierLLM:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, object]] = []
+
+    def generate_json(self, system_prompt: str, user_prompt: str, **kwargs: object) -> dict[str, object]:
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "kwargs": kwargs,
+            }
+        )
+        return dict(self.payload)
 
 
 class ApplicationE2EMultilingualContractTests(unittest.TestCase):
@@ -127,6 +147,50 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
             "Dịch vụ đã khởi động thành công.",
         )
 
+        verifier_schema = _translation_verifier_schema()
+        self.assertEqual(verifier_schema["required"], ["faithful", "translation_only"])
+        self.assertFalse(verifier_schema["additionalProperties"])
+
+        passing_llm = _StaticVerifierLLM({"faithful": True, "translation_only": True})
+        valid, reason = _translation_semantic_validation(
+            passing_llm,
+            "Translate this into Vietnamese: 'The service started successfully.'",
+            "Dịch vụ đã khởi động thành công.",
+            "vi",
+        )
+        self.assertTrue(valid)
+        self.assertEqual(reason, "ok")
+        self.assertEqual(len(passing_llm.calls), 1)
+        verifier_call = passing_llm.calls[0]
+        self.assertEqual(
+            verifier_call["kwargs"]["schema_id"],
+            "workspace.chat.translation.verifier.v1",
+        )
+        self.assertEqual(
+            verifier_call["kwargs"]["trust_domain"],
+            "workspace-local-chat",
+        )
+
+        failing_llm = _StaticVerifierLLM({"faithful": False, "translation_only": True})
+        valid, reason = _translation_semantic_validation(
+            failing_llm,
+            "Translate this into Vietnamese: 'The service started successfully.'",
+            "Tôi sẽ giải thích cách dịch câu này.",
+            "vi",
+        )
+        self.assertFalse(valid)
+        self.assertEqual(reason, "translation_semantic_mismatch")
+
+        malformed_llm = _StaticVerifierLLM({"faithful": "yes", "translation_only": True})
+        valid, reason = _translation_semantic_validation(
+            malformed_llm,
+            "Translate this into Vietnamese: 'The service started successfully.'",
+            "Dịch vụ đã khởi động thành công.",
+            "vi",
+        )
+        self.assertFalse(valid)
+        self.assertEqual(reason, "translation_verifier_error")
+
         for case_id in (
             "vi_http_404_one_sentence",
             "ja_http_404_one_sentence",
@@ -139,6 +203,35 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertIn("_STATUS_CODE_FIDELITY_INSTRUCTION", source)
         self.assertIn("_translation_structured_schema()", source)
         self.assertIn('"workspace.chat.strict.translation.v1"', source)
+        self.assertIn("_translation_semantic_validation(", source)
+        self.assertIn('last_reason == "translation_semantic_mismatch"', source)
+
+    def test_structured_retry_is_preserved_for_translation_json_and_bullets(self) -> None:
+        self.assertTrue(_preserve_structured_retry("brief_prose", True))
+        self.assertTrue(_preserve_structured_retry("json_only", False))
+        self.assertTrue(_preserve_structured_retry("bullets", False))
+        self.assertFalse(_preserve_structured_retry("code_only", False))
+
+        self.assertTrue(
+            _use_structured_attempt(
+                True,
+                1,
+                "requested_format_mismatch",
+                preserve_structured=True,
+            )
+        )
+        self.assertFalse(
+            _use_structured_attempt(
+                True,
+                1,
+                "requested_format_mismatch",
+                preserve_structured=False,
+            )
+        )
+
+        source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
+        self.assertIn("preserve_structured = _preserve_structured_retry(", source)
+        self.assertIn("preserve_structured=preserve_structured", source)
 
     def test_semantic_categories_cover_common_prompt_shapes(self) -> None:
         self.assertEqual(
