@@ -235,13 +235,10 @@ class _ContractAwareProjectChatServiceMixin:
         generation_temperature = None if high_effort else 0.0
         translation_request = _is_translation_request(job.message)
         status_code_request = _is_standard_status_code_request(job.message)
-        structured_mode = (
-            _strict_structured_mode(
-                self.orchestrator.llm,
-                contract,
-                high_effort,
-            )
-            and not translation_request
+        structured_mode = _strict_structured_mode(
+            self.orchestrator.llm,
+            contract,
+            high_effort,
         )
 
         self._update(job_id, status="running")

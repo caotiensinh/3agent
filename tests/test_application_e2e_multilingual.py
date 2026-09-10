@@ -107,7 +107,7 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertIn('last_reason == "internal_instruction_leak"', source)
         self.assertIn("_internal_instruction_refusal(job.language)", source)
 
-    def test_semantic_fidelity_routes_translation_without_structured_envelope(self) -> None:
+    def test_semantic_fidelity_routes_translation_and_status_requests(self) -> None:
         cases = {case.case_id: case for case in PROMPT_MATRIX}
         for case_id in (
             "vi_translation_one_line",
@@ -124,9 +124,9 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
             self.assertTrue(_is_standard_status_code_request(cases[case_id].prompt), case_id)
 
         source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
-        self.assertIn("and not translation_request", source)
         self.assertIn("_TRANSLATION_FIDELITY_INSTRUCTION", source)
         self.assertIn("_STATUS_CODE_FIDELITY_INSTRUCTION", source)
+        self.assertIn("structured_mode = _strict_structured_mode", source)
 
     def test_semantic_categories_cover_common_prompt_shapes(self) -> None:
         self.assertEqual(
