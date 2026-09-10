@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any
 
@@ -73,6 +74,15 @@ _INTERNAL_INSTRUCTION_REFUSALS = {
     "ja": "システムや内部指示の全文または引用は提供できません。",
     "en": "I cannot provide or quote system or internal instructions.",
 }
+_TRANSLATION_FIDELITY_INSTRUCTION = (
+    "TRANSLATION FIDELITY (mandatory): Identify only the source text the user asked to translate and return a faithful translation of that source text itself. "
+    "Do not translate the surrounding instruction, do not explain the translation task, and do not replace the source meaning with commentary. "
+    "Preserve the source subject, action/state, and outcome even when the requested output is very short."
+)
+_STATUS_CODE_FIDELITY_INSTRUCTION = (
+    "STANDARD STATUS-CODE FIDELITY (mandatory): When the current request asks what a standardized protocol/status/error code means, state the canonical meaning accurately and express that meaning explicitly in the target response language. "
+    "Do not substitute a different status or error condition merely to make the answer shorter."
+)
 
 
 def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
@@ -188,6 +198,20 @@ def _internal_instruction_refusal(language: str) -> str:
     )
 
 
+def _is_translation_request(request: str) -> bool:
+    body = str(request or "")
+    return bool(
+        re.search(r"\btranslate\b", body, re.IGNORECASE)
+        or re.search(r"(?:^|\s)(?:dịch|dich)(?:\s|$)", body, re.IGNORECASE)
+        or "翻訳" in body
+    )
+
+
+def _is_standard_status_code_request(request: str) -> bool:
+    body = str(request or "")
+    return bool(re.search(r"\b(?:HTTP|HTTPS)\s*[1-5][0-9]{2}\b", body, re.IGNORECASE))
+
+
 class _ContractAwareProjectChatServiceMixin:
     """Reference-gated local chat plus deterministic response-shape enforcement."""
 
@@ -209,10 +233,15 @@ class _ContractAwareProjectChatServiceMixin:
             generation_num_predict,
         )
         generation_temperature = None if high_effort else 0.0
-        structured_mode = _strict_structured_mode(
-            self.orchestrator.llm,
-            contract,
-            high_effort,
+        translation_request = _is_translation_request(job.message)
+        status_code_request = _is_standard_status_code_request(job.message)
+        structured_mode = (
+            _strict_structured_mode(
+                self.orchestrator.llm,
+                contract,
+                high_effort,
+            )
+            and not translation_request
         )
 
         self._update(job_id, status="running")
@@ -260,6 +289,10 @@ class _ContractAwareProjectChatServiceMixin:
                         repair_reason=last_reason if attempt > 0 else "",
                     )
                 )
+                if translation_request:
+                    system_prompt += "\n\n" + _TRANSLATION_FIDELITY_INSTRUCTION
+                if status_code_request:
+                    system_prompt += "\n\n" + _STATUS_CODE_FIDELITY_INSTRUCTION
                 if (
                     anchored_follow_up
                     and contract.kind in _EXPLANATORY_FOLLOW_UP_KINDS
