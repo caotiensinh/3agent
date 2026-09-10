@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import unittest
 from collections import Counter
 
@@ -26,7 +27,9 @@ from three_agent.chat_service_fidelity import (
     _is_translation_request,
     _preserve_structured_retry,
     _render_translation_payload,
+    _translation_generation_prompt,
     _translation_semantic_validation,
+    _translation_source_text,
     _translation_structured_schema,
     _translation_verifier_schema,
     _use_structured_attempt,
@@ -151,10 +154,43 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertTrue(_is_translation_request("Dịch câu sau sang tiếng Việt: 'hello'"))
         self.assertTrue(_is_translation_request("dich cau sau sang tieng Viet: 'hello'"))
 
+        self.assertEqual(
+            _translation_source_text(
+                "Dịch câu sau sang tiếng Việt và chỉ trả lời một dòng: 'The service started successfully.'"
+            ),
+            "The service started successfully.",
+        )
+        self.assertEqual(
+            _translation_source_text("Translate 'alpha' and 'beta' into Vietnamese."),
+            "",
+        )
+        self.assertEqual(
+            _translation_source_text("次の文を日本語に翻訳してください: 「The service started successfully.」"),
+            "The service started successfully.",
+        )
+        generation_payload = json.loads(
+            _translation_generation_prompt(cases["vi_translation_one_line"].prompt, "vi")
+        )
+        self.assertEqual(
+            generation_payload,
+            {
+                "source_text": "The service started successfully.",
+                "target_language": "vi",
+            },
+        )
+        self.assertEqual(
+            _translation_generation_prompt(cases["vi_summary_two_bullets"].prompt, "vi"),
+            "",
+        )
+        self.assertEqual(
+            _translation_generation_prompt(cases["vi_https_json_only"].prompt, "vi"),
+            "",
+        )
+
         translation_schema = _translation_structured_schema()
         self.assertEqual(translation_schema["required"], ["translation"])
         self.assertFalse(translation_schema["additionalProperties"])
-        self.assertIn("source text", translation_schema["properties"]["translation"]["description"])
+        self.assertIn("source_text", translation_schema["properties"]["translation"]["description"])
         self.assertEqual(
             _render_translation_payload({"translation": "  Dịch vụ   đã khởi động thành công.  "}),
             "Dịch vụ đã khởi động thành công.",
@@ -218,6 +254,7 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertIn('"workspace.chat.strict.translation.v1"', source)
         self.assertIn("_translation_semantic_validation(", source)
         self.assertIn('last_reason == "translation_semantic_mismatch"', source)
+        self.assertIn("translation_generation_prompt or prompt", source)
 
     def test_structured_retry_is_preserved_for_translation_json_and_bullets(self) -> None:
         self.assertTrue(_preserve_structured_retry("brief_prose", True))
