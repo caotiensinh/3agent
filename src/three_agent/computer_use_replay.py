@@ -75,19 +75,6 @@ def require_target_fresh(
         "browser_document",
         "window",
         "accessibility_tree",
-        "accessibility_target",
-        "pointer_target",
-        "keyboard_target",
     }
-    if action.resource_kind in target_bound_kinds:
-        # Desktop actuator refs intentionally name the window resource while the
-        # canonical observation ref also binds the process identity. The platform
-        # adapter performs the stricter window+PID+process comparison immediately
-        # before dispatch; the generic replay fence must still reject obviously
-        # unrelated non-desktop target refs here.
-        if action.resource_kind in {"accessibility_target", "pointer_target", "keyboard_target"}:
-            expected_prefix = action.resource_ref.replace("local:desktop:window:", "windows:window:", 1)
-            if not observation.active_target_ref.startswith(expected_prefix + "/process:"):
-                raise ComputerReplayError("COMPUTER_ACTION_TARGET_REF_STALE")
-        elif action.resource_ref != observation.active_target_ref:
-            raise ComputerReplayError("COMPUTER_ACTION_TARGET_REF_STALE")
+    if action.resource_kind in target_bound_kinds and action.resource_ref != observation.active_target_ref:
+        raise ComputerReplayError("COMPUTER_ACTION_TARGET_REF_STALE")
