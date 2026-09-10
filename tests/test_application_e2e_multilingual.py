@@ -22,6 +22,8 @@ from three_agent.chat_service_fidelity import (
     ContractAwareProjectChatService,
     _internal_instruction_leak_reason,
     _internal_instruction_refusal,
+    _is_standard_status_code_request,
+    _is_translation_request,
 )
 
 
@@ -104,6 +106,27 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertIn("_INTERNAL_INSTRUCTION_GUARD", source)
         self.assertIn('last_reason == "internal_instruction_leak"', source)
         self.assertIn("_internal_instruction_refusal(job.language)", source)
+
+    def test_semantic_fidelity_routes_translation_without_structured_envelope(self) -> None:
+        cases = {case.case_id: case for case in PROMPT_MATRIX}
+        for case_id in (
+            "vi_translation_one_line",
+            "ja_translation_one_line",
+            "en_translation_one_line",
+        ):
+            self.assertTrue(_is_translation_request(cases[case_id].prompt), case_id)
+
+        for case_id in (
+            "vi_http_404_one_sentence",
+            "ja_http_404_one_sentence",
+            "en_http_404_one_sentence",
+        ):
+            self.assertTrue(_is_standard_status_code_request(cases[case_id].prompt), case_id)
+
+        source = inspect.getsource(ContractAwareProjectChatService._execute_direct_chat)
+        self.assertIn("and not translation_request", source)
+        self.assertIn("_TRANSLATION_FIDELITY_INSTRUCTION", source)
+        self.assertIn("_STATUS_CODE_FIDELITY_INSTRUCTION", source)
 
     def test_semantic_categories_cover_common_prompt_shapes(self) -> None:
         self.assertEqual(
