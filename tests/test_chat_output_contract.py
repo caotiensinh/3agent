@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import unittest
 from types import SimpleNamespace
 
@@ -11,6 +12,8 @@ from three_agent.chat_context import (
 )
 from three_agent.chat_output_contract import (
     compile_chat_output_contract,
+    render_strict_structured_answer,
+    strict_structured_schema,
     tighten_for_missing_reference,
 )
 from three_agent.chat_service_fidelity import (
@@ -81,6 +84,67 @@ class ChatOutputContractTests(unittest.TestCase):
         self.assertEqual(json_only.kind, "json_only")
         self.assertTrue(json_only.validate('{"ok":true}')[0])
         self.assertFalse(json_only.validate("```json\n{}\n```")[0])
+
+    def test_multilingual_explicit_line_bounds_are_compiled(self):
+        prompts = (
+            (
+                "Dịch câu sau sang tiếng Việt và chỉ trả lời một dòng: 'The service started successfully.'",
+                1,
+            ),
+            (
+                "次の文を日本語に翻訳し、一行だけで答えてください: 'The service started successfully.'",
+                1,
+            ),
+            (
+                "Translate the following into English in one line only: 'Dịch vụ đã khởi động thành công.'",
+                1,
+            ),
+            (
+                "Trả lời bằng tiếng Việt trong tối đa 3 dòng: đoạn Python này lỗi vì sao?",
+                3,
+            ),
+            (
+                "日本語で3行以内に答えてください。Python のエラー原因は何ですか。",
+                3,
+            ),
+            (
+                "Reply in English in at most 3 lines: why does this Python fail?",
+                3,
+            ),
+        )
+        for prompt, expected_lines in prompts:
+            with self.subTest(prompt=prompt):
+                contract = compile_chat_output_contract(prompt)
+                self.assertEqual(contract.kind, "brief_prose")
+                self.assertEqual(contract.max_lines, expected_lines)
+                self.assertIsNotNone(strict_structured_schema(contract))
+
+        one_line = compile_chat_output_contract(prompts[0][0])
+        self.assertTrue(one_line.validate("Một dòng.")[0])
+        self.assertFalse(one_line.validate("Dòng một.\nDòng hai.")[0])
+
+    def test_explicit_json_keys_use_structured_decoder_and_exact_renderer(self):
+        prompts = (
+            "Trả lời bằng JSON thuần, không giải thích. Dùng hai khóa protocol và port cho dịch vụ HTTPS mặc định.",
+            "説明文なしのJSONだけで答えてください。標準HTTPSサービスについて protocol と port の2つのキーを使ってください。",
+            "Reply with JSON only, no prose. Use the two keys protocol and port for the default HTTPS service.",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                contract = compile_chat_output_contract(prompt)
+                self.assertEqual(contract.kind, "json_only")
+                self.assertEqual(contract.json_keys, ("protocol", "port"))
+                schema = strict_structured_schema(contract)
+                self.assertIsNotNone(schema)
+                self.assertEqual(schema["required"], ["protocol", "port"])
+                self.assertFalse(schema["additionalProperties"])
+                rendered = render_strict_structured_answer(
+                    contract,
+                    {"protocol": "https", "port": 443},
+                )
+                self.assertEqual(json.loads(rendered), {"protocol": "https", "port": 443})
+                self.assertTrue(contract.validate(rendered)[0])
+                self.assertFalse(contract.validate('{"protocol":"https"}')[0])
 
     def test_missing_reference_forces_one_concise_clarification(self):
         original = compile_chat_output_contract("tiếp theo?")
