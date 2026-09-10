@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from three_agent import cli as cli_module
 from three_agent.application_bootstrap import build_application_runtime, build_orchestrator
 from three_agent.local_ai_composition import LocalAICompositionError
 from three_agent.local_ai_gateway import LocalModelGatewayPolicyError
@@ -106,6 +107,16 @@ class LocalAIApplicationBootstrapTests(unittest.TestCase):
             LocalAICompositionError, "LOCAL_AI_GENERATION_BACKEND_MISSING"
         ):
             build_application_runtime(self.config(self.valid_local_ai()))
+        self.assertEqual(FakeOrchestrator.created, [])
+
+    @patch("three_agent.cli.load_config")
+    @patch("three_agent.application_bootstrap.Orchestrator", FakeOrchestrator)
+    def test_cli_smoke_cannot_bypass_enabled_local_ai_fail_closed(self, load_config_mock):
+        load_config_mock.return_value = self.config(self.valid_local_ai())
+        with self.assertRaisesRegex(
+            LocalAICompositionError, "LOCAL_AI_GENERATION_BACKEND_MISSING"
+        ):
+            cli_module.main(["smoke"])
         self.assertEqual(FakeOrchestrator.created, [])
 
     @patch("three_agent.application_bootstrap.Orchestrator", FakeOrchestrator)
