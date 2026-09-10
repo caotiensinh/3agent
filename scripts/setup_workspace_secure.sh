@@ -241,7 +241,7 @@ elif [[ -e "$INSTALL_DIR" ]]; then
 else
   as_root git clone --branch "$REPO_REF" --single-branch "$REPO_URL" "$INSTALL_DIR"
 fi
-EXACT_HEAD="$(git -C "$INSTALL_DIR" rev-parse HEAD)"
+EXACT_HEAD="$(as_root git -C "$INSTALL_DIR" rev-parse HEAD)"
 log "Source pinned for this installation: ${EXACT_HEAD}"
 
 as_root python3 -m venv "${INSTALL_DIR}/.venv"
