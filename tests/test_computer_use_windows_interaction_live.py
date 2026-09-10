@@ -42,32 +42,38 @@ class WindowsInteractionLiveAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         script = rf'''
-Add-Type -AssemblyName System.Windows.Forms
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "{FORM_TITLE}"
-$form.Width = 680
-$form.Height = 280
-$form.TopMost = $true
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
 
-$text = New-Object System.Windows.Forms.TextBox
-$text.Name = "{VALUE_AUTOMATION_ID}"
+$window = New-Object System.Windows.Window
+$window.Title = "{FORM_TITLE}"
+$window.Width = 680
+$window.Height = 280
+$window.Topmost = $true
+
+$panel = New-Object System.Windows.Controls.StackPanel
+$panel.Margin = New-Object System.Windows.Thickness(24)
+
+$text = New-Object System.Windows.Controls.TextBox
 $text.Text = "before"
-$text.Left = 24
-$text.Top = 36
-$text.Width = 400
-$form.Controls.Add($text)
+$text.Height = 32
+$text.Margin = New-Object System.Windows.Thickness(0,0,0,18)
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($text, "{VALUE_AUTOMATION_ID}")
+$panel.Children.Add($text) | Out-Null
 
-$button = New-Object System.Windows.Forms.Button
-$button.Name = "{BUTTON_AUTOMATION_ID}"
-$button.Text = "Invoke"
-$button.Left = 24
-$button.Top = 90
+$button = New-Object System.Windows.Controls.Button
+$button.Content = "Invoke"
 $button.Width = 160
-$button.Add_Click({{ $form.Text = "{FORM_TITLE} INVOKED" }})
-$form.Controls.Add($button)
+$button.Height = 32
+$button.HorizontalAlignment = "Left"
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($button, "{BUTTON_AUTOMATION_ID}")
+$button.Add_Click({{ $window.Title = "{FORM_TITLE} INVOKED" }})
+$panel.Children.Add($button) | Out-Null
 
-$form.Add_Shown({{ $form.Activate() }})
-[System.Windows.Forms.Application]::Run($form)
+$window.Content = $panel
+$window.Add_ContentRendered({{ $window.Activate() }})
+[void]$window.ShowDialog()
 '''
         cls._process = subprocess.Popen(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-STA", "-Command", script],
@@ -290,7 +296,7 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
         self.assertEqual(result.backend_result.post_observation.surface, "desktop")
         return result
 
-    def test_live_value_pattern_changes_real_winforms_textbox(self):
+    def test_live_value_pattern_changes_real_wpf_textbox(self):
         self._execute(
             interaction="value",
             automation_id=VALUE_AUTOMATION_ID,
@@ -300,7 +306,7 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
         )
         self.assertEqual(self._read_value(self._hwnd), VALUE_TEXT)
 
-    def test_live_invoke_pattern_triggers_real_winforms_button(self):
+    def test_live_invoke_pattern_triggers_real_wpf_button(self):
         self._execute(
             interaction="invoke",
             automation_id=BUTTON_AUTOMATION_ID,
@@ -313,7 +319,7 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
             if self._window_text(self._hwnd) == expected_title:
                 return
             time.sleep(0.1)
-        self.fail(f"InvokePattern did not trigger the WinForms button; title={self._window_text(self._hwnd)!r}")
+        self.fail(f"InvokePattern did not trigger the WPF button; title={self._window_text(self._hwnd)!r}")
 
 
 if __name__ == "__main__":
