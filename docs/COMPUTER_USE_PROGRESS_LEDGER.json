@@ -25,6 +25,13 @@
       "previous_current_pr_slice_total_weight": 74,
       "new_current_pr_slice_total_weight": 79,
       "program_total_active_weight": 114
+    },
+    {
+      "id": "CU-REBASELINE-20260910-03",
+      "reason": "CU-170 Windows interaction was implemented and independently verified through governed live Windows UI Automation acceptance on the same active pull request. Extend only the current PR delivery-slice denominator from 79 to 85; the program denominator remains 114.",
+      "previous_current_pr_slice_total_weight": 79,
+      "new_current_pr_slice_total_weight": 85,
+      "program_total_active_weight": 114
     }
   ],
   "packages": [
@@ -45,7 +52,7 @@
     {"id":"CU-140","weight":3,"status":"VERIFIED_PASS","verified_head":"6d0bb17e54d7372ab92bb159e41f64ab88bd8979","evidence":"5 mandatory exact-head workflows SUCCESS"},
     {"id":"CU-150","weight":5,"status":"VERIFIED_PASS","verified_head":"a93d41140f58add69bd8612dd51374bcd559d18e","evidence":"RCA fixed closed-approval replay validation precedence; exact-head canonical-module-ci run 34443473680, internet-egress-security-ci 34443473678, windows-deploy-ci 34443473823, installer-ci 34443473679, and harness-ci 34443473778 all SUCCESS; harness Python 3.11 and 3.12 passed regression A-Z, full unit tests, Runtime P0, and EV-01 through EV-10"},
     {"id":"CU-160","weight":5,"status":"VERIFIED_PASS","verified_head":"444cfd44caf34bfae7e48ff2d207d11f92c17b64","evidence":"RCA exposed and fixed PowerShell parameter-binding defect in the real Windows observation backend; computer-use-windows-observation-ci run 34479843304 passed bounded/privacy tests and live Windows UI Automation acceptance on Python 3.11 and 3.12; exact-head canonical-module-ci 34479843336, internet-egress-security-ci 34479843325, windows-deploy-ci 34479843352, installer-ci 34479843294, and harness-ci 34479843311 all SUCCESS"},
-    {"id":"CU-170","weight":6,"status":"PLANNED"},
+    {"id":"CU-170","weight":6,"status":"VERIFIED_PASS","verified_head":"f572c2a59859cde7edc77825c88043807f409553","evidence":"RCA kept desktop target fencing in the Windows platform adapter and replaced the unstable WinForms live selector fixture with explicit WPF AutomationProperties.AutomationId semantics; computer-use-windows-interaction-ci run 34489074180 passed canonical/governance, boundary, and real live UI Automation ValuePattern/InvokePattern acceptance on Python 3.11 and 3.12; exact-head computer-use-windows-observation-ci 34489074158, canonical-module-ci 34489074139, internet-egress-security-ci 34489074195, windows-deploy-ci 34489074099, installer-ci 34489074093, and harness-ci 34489074371 all SUCCESS; harness Python 3.11 and 3.12 passed regression A-Z, full unit tests, Runtime P0, and EV-01 through EV-10"},
     {"id":"CU-180","weight":6,"status":"PLANNED"},
     {"id":"CU-190","weight":5,"status":"PLANNED"},
     {"id":"CU-200","weight":4,"status":"PLANNED"},
@@ -60,11 +67,11 @@
   ],
   "computed_baseline": {
     "program_total_active_weight": 114,
-    "program_verified_weight": 79,
-    "program_completion_percent": 69.30,
-    "program_remaining_percent": 30.70,
-    "current_pr_slice_total_weight": 79,
-    "current_pr_slice_verified_weight": 79,
+    "program_verified_weight": 85,
+    "program_completion_percent": 74.56,
+    "program_remaining_percent": 25.44,
+    "current_pr_slice_total_weight": 85,
+    "current_pr_slice_verified_weight": 85,
     "current_pr_slice_completion_percent": 100.0,
     "current_pr_slice_remaining_percent": 0.0
   }
