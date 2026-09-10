@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any, Mapping
 from urllib.parse import urlparse, urlunparse
 
@@ -42,6 +43,17 @@ FORBIDDEN_CONTINUOUS_CAPTURE_KEYS = frozenset(
     }
 )
 SENSITIVITIES = frozenset({"public", "internal", "confidential", "restricted", "secret"})
+_INLINE_AUTH_RE = re.compile(
+    r"(?i)\b(authorization\s*[:=]\s*(?:bearer|basic))\s+[^\s,;]+"
+)
+_INLINE_SECRET_RE = re.compile(
+    r"(?i)\b(password|passwd|token|access[_-]?token|refresh[_-]?token|api[_-]?key|apikey|secret|cookie)\s*[:=]\s*[^\s,;]+"
+)
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}")
+_PRIVATE_KEY_RE = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    re.DOTALL,
+)
 
 
 class ComputerPrivacyError(ValueError):
@@ -79,6 +91,17 @@ def _safe_url(value: str) -> str:
     if port is not None:
         host = f"{host}:{port}"
     return urlunparse((parsed.scheme, host, parsed.path, "", "", ""))
+
+
+def _sanitize_sensitive_string(value: str) -> str:
+    redacted = _PRIVATE_KEY_RE.sub(REDACTED, value)
+    redacted = _INLINE_AUTH_RE.sub(lambda match: f"{match.group(1)} {REDACTED}", redacted)
+    redacted = _INLINE_SECRET_RE.sub(
+        lambda match: f"{match.group(1)}={REDACTED}",
+        redacted,
+    )
+    redacted = _BEARER_RE.sub(f"Bearer {REDACTED}", redacted)
+    return redacted
 
 
 def _secure_node(mapping: Mapping[str, Any]) -> bool:
@@ -134,6 +157,8 @@ def sanitize_computer_content(
             )
             for item in value
         ]
+    if isinstance(value, str):
+        return _sanitize_sensitive_string(value)
     return value
 
 
