@@ -59,6 +59,27 @@ def _safe_audit_url(url: str) -> str:
         return "<invalid-url>"
 
 
+def decode_bing_click_redirect(value: str) -> str:
+    """Decode Bing's ``ck/a?u=`` redirect payload to its real destination URL.
+
+    Bing's own result links are not the destination; they are click-tracking
+    redirects whose ``u`` query parameter is a fixed 2-character prefix
+    (``a1``/``a2``) followed by unpadded base64url of the true https URL. This
+    never fetches or trusts the decoded URL by itself; callers still run it
+    through the same validation/grant path as any other candidate.
+    """
+    text = str(value or "").strip()
+    if len(text) < 3 or text[:2] not in {"a1", "a2"}:
+        return ""
+    payload = text[2:]
+    padded = payload + "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(padded).decode("utf-8", errors="strict")
+    except Exception:
+        return ""
+    return decoded if decoded.startswith(("http://", "https://")) else ""
+
+
 def _validate_public_url(url: str, *, https_only: bool = True) -> None:
     parsed = urlsplit(url)
     allowed_schemes = {"https"} if https_only else {"http", "https"}
@@ -276,6 +297,12 @@ class InternetGateway:
                 uddg = parse_qs(parsed.query).get("uddg", [])
                 if uddg:
                     candidates.add(unquote(uddg[0]))
+                if "bing.com" in parsed.netloc.casefold():
+                    bing_u = parse_qs(parsed.query).get("u", [])
+                    if bing_u:
+                        decoded = decode_bing_click_redirect(bing_u[0])
+                        if decoded:
+                            candidates.add(decoded)
             except Exception:
                 continue
         expiry = time.monotonic() + self.config.grant_ttl_seconds

@@ -1,3 +1,4 @@
+import base64
 import json
 import tempfile
 import unittest
@@ -7,7 +8,12 @@ from three_agent.agents.research import ResearchAgent
 from three_agent.artifacts import ArtifactManager
 from three_agent.models import TaskStatus
 from three_agent.store import TaskStore
-from three_agent.web_research import DuckDuckGoSearchProvider, ResearchSource, WebResearchClient
+from three_agent.web_research import (
+    BingSearchProvider,
+    DuckDuckGoSearchProvider,
+    ResearchSource,
+    WebResearchClient,
+)
 
 
 SEARCH_HTML = b"""
@@ -165,6 +171,28 @@ class WebResearchTests(unittest.TestCase):
 
         sources = client.fetch_sources("research", "TASK-FALLBACK", results)
         self.assertEqual(sources[0].fetch_status, "ok")
+
+    def test_bing_search_unwraps_click_redirect_to_the_real_destination(self):
+        target = "https://ja.wikipedia.org/wiki/Linux"
+        payload = base64.urlsafe_b64encode(target.encode("utf-8")).decode("ascii").rstrip("=")
+        wrapper = f"https://www.bing.com/ck/a?a=1&u=a1{payload}&ntb=1"
+        html = (
+            f'<html><body><ol><li class="b_algo"><h2><a href="{wrapper}">Linux</a></h2>'
+            f"<div class=\"b_caption\"><p>Free and open-source operating system.</p></div>"
+            f"</li></ol></body></html>"
+        ).encode("utf-8")
+
+        class BingOnlyGateway:
+            def get(self, agent_id, task_id, url, timeout=30):
+                del agent_id, task_id, timeout
+                assert "bing.com/search" in url
+                return html
+
+        provider = BingSearchProvider(BingOnlyGateway())
+        results = provider.search("research", "TASK-BING", "linux", 5)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].url, target)
+        self.assertNotIn("bing.com", results[0].url)
 
     def test_live_research_cleans_data_and_creates_presentation_handoff(self):
         with tempfile.TemporaryDirectory() as tmp:
