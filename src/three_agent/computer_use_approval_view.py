@@ -252,9 +252,14 @@ def require_intent_matches_view(*, intent: ComputerApprovalIntent, view: Compute
         raise ComputerApprovalViewError("APPROVAL_INTENT_ACTION_MISMATCH")
     if intent.state_precondition_sha256 != view.state_precondition_sha256:
         raise ComputerApprovalViewError("APPROVAL_INTENT_STATE_MISMATCH")
+    # A terminally closed approval is never revivable. Report lifecycle closure
+    # before comparing a now-obsolete view fingerprint so replayed approvals fail
+    # with the canonical non-actionable result rather than looking refreshable.
+    if view.view_state == "CLOSED":
+        raise ComputerApprovalViewError("APPROVAL_VIEW_NOT_ACTIONABLE")
     if intent.approval_view_fingerprint != view.fingerprint:
         raise ComputerApprovalViewError("APPROVAL_INTENT_VIEW_STALE")
-    if view.view_state in {"STALE", "EXPIRED", "CLOSED"}:
+    if view.view_state in {"STALE", "EXPIRED"}:
         raise ComputerApprovalViewError("APPROVAL_VIEW_NOT_ACTIONABLE")
     if intent.decision == "APPROVE":
         if view.view_state != "ACTIONABLE":
