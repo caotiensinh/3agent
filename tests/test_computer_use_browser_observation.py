@@ -86,10 +86,26 @@ class BrowserObservationTests(unittest.TestCase):
                 accessible_storage_classes=("public_browser", "confidential_core"),
             ).validate()
 
+    def test_screenshot_is_denied_by_default_policy(self):
+        backend = FakeBrowserBackend(capture(screenshot=b"must-not-be-requested"))
+        with self.assertRaisesRegex(BrowserObservationError, "BROWSER_SCREENSHOT_POLICY_DENIED"):
+            capture_isolated_browser_observation(
+                config=BrowserObservationConfig(profile_id="isolated", control_endpoint="http://127.0.0.1:9222"),
+                backend=backend,
+                session_id="session:browser",
+                task_id="task:browser",
+                include_screenshot=True,
+            )
+        self.assertEqual(backend.calls, [])
+
     def test_screenshot_is_on_demand_and_only_hash_is_retained(self):
         raw = b"fake-png-bytes"
         observation = capture_isolated_browser_observation(
-            config=BrowserObservationConfig(profile_id="isolated", control_endpoint="http://10.0.0.2:9222"),
+            config=BrowserObservationConfig(
+                profile_id="isolated",
+                control_endpoint="http://10.0.0.2:9222",
+                screenshot_policy="on_demand",
+            ),
             backend=FakeBrowserBackend(capture(screenshot=raw)),
             session_id="session:browser",
             task_id="task:browser",
