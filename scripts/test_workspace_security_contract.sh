@@ -42,8 +42,11 @@ PY
 
 # Secure bootstrap must be hardware-adaptive by default. GPU/driver requirements are
 # opt-in policy, not universal deployment requirements.
+# shellcheck disable=SC2016
 grep -Fq 'HARDWARE_PROFILE="${WORKSPACE_HARDWARE_PROFILE:-auto}"' scripts/setup_workspace_secure.sh
+# shellcheck disable=SC2016
 grep -Fq 'MIN_DRIVER_MAJOR="${WORKSPACE_MIN_DRIVER_MAJOR:-}"' scripts/setup_workspace_secure.sh
+# shellcheck disable=SC2016
 grep -Fq 'REQUIRED_RTX5090_COUNT="${WORKSPACE_REQUIRED_RTX5090_COUNT:-}"' scripts/setup_workspace_secure.sh
 grep -Fq 'dual-rtx5090)' scripts/setup_workspace_secure.sh
 grep -Fq 'No healthy NVIDIA runtime detected; continuing with CPU/system-RAM model profile' scripts/setup_workspace_secure.sh
