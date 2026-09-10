@@ -28,8 +28,8 @@ from three_agent.task_contract import TaskContractCompiler
 
 
 FORM_TITLE = "WorkSpace CU-170 Acceptance Window"
-VALUE_NAME = "CU170 Value Box"
-BUTTON_NAME = "CU170 Invoke Button"
+VALUE_AUTOMATION_ID = "ValueBox"
+BUTTON_AUTOMATION_ID = "InvokeButton"
 VALUE_TEXT = "workspace-cu170-live-value"
 
 
@@ -50,8 +50,7 @@ $form.Height = 280
 $form.TopMost = $true
 
 $text = New-Object System.Windows.Forms.TextBox
-$text.Name = "ValueBox"
-$text.AccessibleName = "{VALUE_NAME}"
+$text.Name = "{VALUE_AUTOMATION_ID}"
 $text.Text = "before"
 $text.Left = 24
 $text.Top = 36
@@ -59,8 +58,7 @@ $text.Width = 400
 $form.Controls.Add($text)
 
 $button = New-Object System.Windows.Forms.Button
-$button.Name = "InvokeButton"
-$button.AccessibleName = "{BUTTON_NAME}"
+$button.Name = "{BUTTON_AUTOMATION_ID}"
 $button.Text = "Invoke"
 $button.Left = 24
 $button.Top = 90
@@ -177,8 +175,8 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $root = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{hwnd})
 $condition = [System.Windows.Automation.PropertyCondition]::new(
-  [System.Windows.Automation.AutomationElement]::NameProperty,
-  '{VALUE_NAME}'
+  [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
+  '{VALUE_AUTOMATION_ID}'
 )
 $matches = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition)
 if ($matches.Count -ne 1) {{ throw 'CU170_VALUE_TARGET_NOT_UNIQUE' }}
@@ -210,12 +208,12 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
             task_id=self.task.task_id,
         )
 
-    def _execute(self, *, interaction: str, name: str, control_type: str, value: str | None = None, action_id: str):
+    def _execute(self, *, interaction: str, automation_id: str, control_type: str, value: str | None = None, action_id: str):
         pre = self._observe()
         window_id = pre.structured_observation["window_id"]
         arguments = {
             "interaction": interaction,
-            "name": name,
+            "automation_id": automation_id,
             "control_type": control_type,
         }
         if value is not None:
@@ -295,7 +293,7 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
     def test_live_value_pattern_changes_real_winforms_textbox(self):
         self._execute(
             interaction="value",
-            name=VALUE_NAME,
+            automation_id=VALUE_AUTOMATION_ID,
             control_type="ControlType.Edit",
             value=VALUE_TEXT,
             action_id="action:cu170-live-value",
@@ -305,7 +303,7 @@ if (-not $element.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]:
     def test_live_invoke_pattern_triggers_real_winforms_button(self):
         self._execute(
             interaction="invoke",
-            name=BUTTON_NAME,
+            automation_id=BUTTON_AUTOMATION_ID,
             control_type="ControlType.Button",
             action_id="action:cu170-live-invoke",
         )
