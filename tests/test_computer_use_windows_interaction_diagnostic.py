@@ -9,6 +9,7 @@ import unittest
 from ctypes import wintypes
 
 from three_agent.computer_use_windows_interaction import WindowsPowerShellInteractionBackend
+from three_agent.computer_use_windows_observation import WindowsPowerShellObservationBackend
 
 
 WINDOW_TITLE = "WorkSpace CU-170 Diagnostic Window"
@@ -33,6 +34,26 @@ def _safe_powershell_failure(stderr: str) -> str:
     if location:
         return f"class={error_class};line={location.group(1)};char={location.group(2)}"
     return f"class={error_class};location=unavailable"
+
+
+def _bounded_selector_metadata(node, *, limit: int = 16) -> str:
+    items: list[str] = []
+
+    def walk(value) -> None:
+        if len(items) >= limit or not isinstance(value, dict):
+            return
+        automation_id = value.get("automation_id")
+        control_type = value.get("control_type")
+        safe_id = automation_id if isinstance(automation_id, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", automation_id) else "EMPTY"
+        safe_type = control_type if isinstance(control_type, str) and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", control_type) else "UNKNOWN"
+        items.append(f"{safe_type}:{safe_id}")
+        children = value.get("children")
+        if isinstance(children, list):
+            for child in children:
+                walk(child)
+
+    walk(node)
+    return ",".join(items)
 
 
 @unittest.skipUnless(os.name == "nt", "bounded CU-170 diagnostic requires Windows")
@@ -148,7 +169,19 @@ $form.Add_Shown({{ $form.Activate() }})
             env=env,
         )
         if completed.returncode != 0:
-            self.fail("CU170_BOUNDED_DIAGNOSTIC:" + _safe_powershell_failure(completed.stderr))
+            observation_backend = WindowsPowerShellObservationBackend(timeout_seconds=20)
+            raw = observation_backend.capture_read_only(
+                include_screenshot=False,
+                max_uia_nodes=32,
+                max_uia_depth=4,
+            )
+            selector_metadata = _bounded_selector_metadata(raw.accessibility_snapshot)
+            self.fail(
+                "CU170_BOUNDED_DIAGNOSTIC:"
+                + _safe_powershell_failure(completed.stderr)
+                + ";selectors="
+                + selector_metadata
+            )
         self.assertLessEqual(len(completed.stdout.encode("utf-8")), 16 * 1024)
         self.assertIn('"process_id"', completed.stdout)
         self.assertIn('"secure_input"', completed.stdout)
