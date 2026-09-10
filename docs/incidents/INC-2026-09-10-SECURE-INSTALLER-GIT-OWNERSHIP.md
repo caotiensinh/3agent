@@ -1,6 +1,6 @@
 # INC-2026-09-10-SECURE-INSTALLER-GIT-OWNERSHIP
 
-**Status:** RESOLVED_IN_PR / PENDING_MERGE  
+**Status:** RESOLVED_IN_PR / READY_TO_MERGE  
 **Date:** 2026-09-10  
 **Component:** `scripts/setup_workspace_secure.sh`  
 **Related PR:** #513 — `fix(installer): prevent secure checkout ownership failure`  
@@ -101,7 +101,7 @@ Read-only Git commands are included in this invariant.
 
 ## Regression enforcement
 
-`scripts/test_workspace_security_contract.sh` now statically scans the secure installer for any occurrence of:
+`scripts/test_workspace_security_contract.sh` statically scans the secure installer for any occurrence of:
 
 ```text
 git -C "$INSTALL_DIR"
@@ -115,72 +115,50 @@ as_root git -C "$INSTALL_DIR"
 
 The contract also explicitly asserts the privileged exact-head form.
 
-Therefore, reintroducing the known-bad unprivileged pattern should fail the installer security contract in CI.
+Therefore, reintroducing the known-bad unprivileged pattern fails the installer security contract in CI.
 
-## Exact-head verification
+## Verification evidence
 
-For exact head `6ad8f3344ae50b453cfb64a23931e74ebdd1312b`, the pull-request workflows reached terminal SUCCESS:
+PR #513 exact head:
 
-- `canonical-module-ci` — run `34478728682` — SUCCESS
-- `installer-ci` — run `34478728680` — SUCCESS
-  - Bash syntax and installer contracts — SUCCESS
+`6ad8f3344ae50b453cfb64a23931e74ebdd1312b`
+
+Terminal pull-request workflows:
+
+- `canonical-module-ci` — SUCCESS
+- `installer-ci` — SUCCESS
+  - shell-contract — SUCCESS
   - ShellCheck — SUCCESS
   - existing harness regression — SUCCESS
   - harness smoke — SUCCESS
-- `harness-ci` — run `34478728677` — SUCCESS
-  - Python 3.11 — SUCCESS through Unit tests, Runtime P0, and EV-01 through EV-10
-  - Python 3.12 — SUCCESS through Unit tests, Runtime P0, and EV-01 through EV-10
+- `harness-ci` — SUCCESS
+  - Python 3.11 — Unit tests SUCCESS, Runtime P0 SUCCESS, EV-01 through EV-10 SUCCESS
+  - Python 3.12 — Unit tests SUCCESS, Runtime P0 SUCCESS, EV-01 through EV-10 SUCCESS
 
-At verification time PR #513 was open, non-draft, and mergeable. This record must not claim the fix is present on `main` until the PR is actually merged and `main` is re-read after merge.
+Relevant workflow run IDs:
 
-## Concurrent-main convergence evidence
+- harness-ci: `34478728677`
+- installer-ci: `34478728680`
+- canonical-module-ci: `34478728682`
 
-While the fix branch was being prepared, `main` advanced from:
-
-```text
-1c30bccbd7c54cbb54fd934ae589c0f8b466b605
-```
-
-to:
-
-```text
-fd4084c2927dfc3490e0498bd20d756cfe25ee5a
-```
-
-The intervening change was checked for overlap with the two-file incident write-set. No overlap was found. The branch was then converged using a non-force two-parent merge commit:
-
-```text
-6ad8f3344ae50b453cfb64a23931e74ebdd1312b
-```
-
-This preserved concurrent work and retained the exact incident fix without force-pushing.
-
-## CI evidence interpretation lesson
-
-A log request against the still-running Python 3.12 job returned an Azure-backed `BlobNotFound` response. The authoritative job state still reported `in_progress` with no failing conclusion.
-
-Rule retained from this incident:
-
-> Missing/unpublished logs for an in-progress GitHub Actions job are not evidence of test failure. Use job/run status and terminal conclusion as the primary state. Diagnose logs as a failure source only after GitHub reports an actual failed/cancelled terminal state or other direct failure evidence exists.
+PR #514 governance/evidence head before this terminal-state refresh was `1a00de0bd81351951a7d5096a8844755bf186c99`; all three of its pull-request workflows were also terminal SUCCESS before this documentation-only status refresh. Because this file update changes the exact PR head, the new head must be re-verified before PR #514 is called release-ready.
 
 ## Recurrence procedure
 
-If the same or similar Git ownership signature appears again:
+If Git again reports `dubious ownership` for the secure WorkSpace checkout:
 
-1. Open this incident record before changing code.
-2. Confirm the effective user and owner of `WORKSPACE_INSTALL_DIR`.
-3. Enumerate every `git -C "$INSTALL_DIR"` call in the secure installer.
-4. Verify every such call is wrapped by `as_root`.
-5. Run `scripts/test_workspace_security_contract.sh` and confirm the regression guard is active.
-6. Check whether the guard was removed, skipped, bypassed, or made too narrow.
-7. Do **not** add a global `safe.directory` exception or ownership broadening as the first response.
-8. If the invariant still holds, collect new evidence and treat the event as a distinct root-cause investigation rather than assuming this incident explains it.
+1. Do not add a broad `safe.directory` exception.
+2. Read this incident first.
+3. Run or inspect `scripts/test_workspace_security_contract.sh`.
+4. Enumerate every Git operation scoped to `WORKSPACE_INSTALL_DIR` and verify it crosses the `as_root` boundary.
+5. Verify filesystem ownership and the effective identity of the failing Git command.
+6. If the invariant still holds, collect fresh evidence and investigate a new root cause; do not force this historical explanation onto contradictory facts.
 
 ## Lessons retained
 
-- A read-only operation still participates in the security/ownership boundary of the resource it accesses.
-- Fix the inconsistent caller identity; do not weaken a correct platform protection.
-- Preserve provenance (`EXACT_HEAD`) rather than bypassing it.
-- When `main` moves concurrently, verify write-set overlap before convergence and avoid force-push when a safe merge preserves both histories.
-- Do not classify missing in-progress CI logs as a failed test.
-- Difficult RCA work is not complete until its invariant is encoded into a regression guard and its evidence is retained.
+- Privilege consistency applies to read-only operations as well as mutations.
+- Security mechanisms such as Git safe-directory checks should not be weakened to compensate for application boundary mistakes.
+- A one-line production fix can require substantial RCA; retain the reasoning and the machine guard, not just the line change.
+- Concurrent `main` movement requires explicit convergence and exact-head re-verification.
+- Missing logs for an in-progress CI job are not equivalent to a failing job.
+- A difficult incident is not durable until its root-cause invariant has a regression mechanism and an evidence record.
