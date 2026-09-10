@@ -478,7 +478,7 @@ class LinuxAtspiInteractionBackend:
             raise LinuxInteractionError("LINUX_ATSPI_ACTION_FAILED")
 
     @staticmethod
-    def _set_value(element: Any, value: str) -> None:
+    def _set_value(atspi: Any, element: Any, value: str) -> None:
         try:
             interface = element.get_editable_text_iface()
         except Exception as exc:
@@ -491,18 +491,18 @@ class LinuxAtspiInteractionBackend:
             raise LinuxInteractionError("LINUX_ATSPI_TEXT_SET_FAILED") from exc
         if succeeded is not True:
             raise LinuxInteractionError("LINUX_ATSPI_TEXT_SET_FAILED")
+
         try:
             text_interface = element.get_text_iface()
-            if text_interface is not None:
-                observed = text_interface.get_text(0, -1)
-                if observed is not None and str(observed) != value:
-                    raise LinuxInteractionError("LINUX_ATSPI_TEXT_POSTCONDITION_FAILED")
-        except LinuxInteractionError:
-            raise
-        except Exception:
-            # Some editable controls intentionally do not expose readable text.
-            # Dispatch success is still followed by a fresh semantic observation.
-            pass
+        except Exception as exc:
+            raise LinuxInteractionError("LINUX_ATSPI_TEXT_POSTCONDITION_UNREADABLE") from exc
+        if text_interface is not None:
+            try:
+                observed = atspi.Text.get_text(text_interface, 0, -1)
+            except Exception as exc:
+                raise LinuxInteractionError("LINUX_ATSPI_TEXT_POSTCONDITION_UNREADABLE") from exc
+            if observed is None or str(observed) != value:
+                raise LinuxInteractionError("LINUX_ATSPI_TEXT_POSTCONDITION_FAILED")
 
     def dispatch(self, command: LinuxInteractionCommand) -> LinuxInteractionBackendResult:
         atspi, _window, element = self._resolve(command)
@@ -514,7 +514,7 @@ class LinuxAtspiInteractionBackend:
         if command.interaction_kind == "invoke":
             self._invoke(element)
         elif command.interaction_kind == "value":
-            self._set_value(element, str(command.arguments["value"]))
+            self._set_value(atspi, element, str(command.arguments["value"]))
         else:
             raise LinuxInteractionError("UNSUPPORTED_LINUX_ATSPI_INTERACTION")
 
