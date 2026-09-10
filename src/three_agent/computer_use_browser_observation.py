@@ -17,6 +17,7 @@ MAX_BROWSER_METADATA_BYTES = 8 * 1024
 MAX_BROWSER_SCREENSHOT_BYTES = 8 * 1024 * 1024
 _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TARGET_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_SCREENSHOT_POLICIES = frozenset({"deny", "on_demand"})
 
 
 class BrowserObservationError(ValueError):
@@ -30,6 +31,7 @@ class BrowserObservationConfig:
     profile_mode: str = "isolated"
     storage_identity: str = "public_browser"
     accessible_storage_classes: tuple[str, ...] = ("public_browser",)
+    screenshot_policy: str = "deny"
 
     def validate(self) -> "BrowserObservationConfig":
         if not _PROFILE_ID_RE.fullmatch(self.profile_id):
@@ -40,6 +42,8 @@ class BrowserObservationConfig:
             raise BrowserObservationError("BROWSER_PROFILE_IDENTITY_NOT_ISOLATED")
         if self.accessible_storage_classes != ("public_browser",):
             raise BrowserObservationError("BROWSER_CONFIDENTIAL_STORAGE_ACCESS_FORBIDDEN")
+        if self.screenshot_policy not in _SCREENSHOT_POLICIES:
+            raise BrowserObservationError("INVALID_BROWSER_SCREENSHOT_POLICY")
         _require_private_control_endpoint(self.control_endpoint)
         return self
 
@@ -135,11 +139,14 @@ def capture_isolated_browser_observation(
 ) -> ComputerObservation:
     """Capture one bounded and privacy-sanitized isolated browser observation.
 
-    This adapter has no navigation, click, typing, clipboard-write, download, or
-    arbitrary CDP command surface. Sensitive values are removed before retention.
+    Screenshot capture is explicit and denied unless trusted configuration permits
+    on-demand evidence. No navigation, click, typing, download, or arbitrary CDP
+    command surface is exposed here.
     """
 
     config.validate()
+    if include_screenshot and config.screenshot_policy != "on_demand":
+        raise BrowserObservationError("BROWSER_SCREENSHOT_POLICY_DENIED")
     capture = backend.capture_read_only(
         profile_id=config.profile_id,
         include_screenshot=include_screenshot,
@@ -162,10 +169,7 @@ def capture_isolated_browser_observation(
         error_code="BROWSER_DOM_SNAPSHOT",
     )
     accessibility_bytes = _canonical_bytes(
-        _sanitize_mapping(
-            capture.accessibility_snapshot,
-            error_code="BROWSER_ACCESSIBILITY_PRIVACY_REJECTED",
-        ),
+        _sanitize_mapping(capture.accessibility_snapshot, error_code="BROWSER_ACCESSIBILITY_PRIVACY_REJECTED"),
         limit=MAX_BROWSER_ACCESSIBILITY_BYTES,
         error_code="BROWSER_ACCESSIBILITY_SNAPSHOT",
     )
@@ -192,11 +196,7 @@ def capture_isolated_browser_observation(
         "accessibility": json.loads(accessibility_bytes.decode("utf-8")),
     }
     state_payload = json.dumps(
-        {
-            "target_ref": target_ref,
-            "structured": structured,
-            "screenshot_sha256": screenshot_sha256,
-        },
+        {"target_ref": target_ref, "structured": structured, "screenshot_sha256": screenshot_sha256},
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
