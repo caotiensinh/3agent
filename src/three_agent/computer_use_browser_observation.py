@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from .computer_use import ComputerObservation
 
@@ -14,12 +14,42 @@ MAX_BROWSER_DOM_BYTES = 24 * 1024
 MAX_BROWSER_ACCESSIBILITY_BYTES = 24 * 1024
 MAX_BROWSER_METADATA_BYTES = 8 * 1024
 MAX_BROWSER_SCREENSHOT_BYTES = 8 * 1024 * 1024
+MAX_BROWSER_SANITIZE_DEPTH = 12
 _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TARGET_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_REDACTED = "[REDACTED]"
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "session_cookie",
+        "credential",
+        "credentials",
+        "api_key",
+        "apikey",
+        "private_key",
+    }
+)
+_SECURE_NODE_MARKERS = frozenset(
+    {
+        "password",
+        "current-password",
+        "new-password",
+        "one-time-code",
+    }
+)
+_SECURE_VALUE_KEYS = frozenset({"value", "text", "inner_text", "innerText", "textContent"})
 
 
 class BrowserObservationError(ValueError):
-    """Read-only browser observation violated isolation, locality, or size rules."""
+    """Read-only browser observation violated isolation, locality, privacy, or size rules."""
 
 
 @dataclass(frozen=True)
@@ -116,6 +146,58 @@ def _target_part(value: str, field_name: str) -> str:
     return value
 
 
+def _safe_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return _REDACTED
+    host = parsed.hostname
+    if parsed.port is not None:
+        host = f"{host}:{parsed.port}"
+    return urlunparse((parsed.scheme, host, parsed.path, "", "", ""))
+
+
+def _secure_node(mapping: Mapping[str, Any]) -> bool:
+    if any(mapping.get(key) is True for key in ("secure", "protected", "is_password", "password_field")):
+        return True
+    for key in ("type", "autocomplete", "role"):
+        value = mapping.get(key)
+        if isinstance(value, str) and value.strip().lower() in _SECURE_NODE_MARKERS:
+            return True
+    return False
+
+
+def _sanitize_browser_value(value: Any, *, depth: int = 0, secure_parent: bool = False) -> Any:
+    if depth > MAX_BROWSER_SANITIZE_DEPTH:
+        raise BrowserObservationError("BROWSER_OBSERVATION_SANITIZE_DEPTH_EXCEEDED")
+    if isinstance(value, Mapping):
+        secure_here = secure_parent or _secure_node(value)
+        sanitized: dict[str, Any] = {}
+        for raw_key, raw_value in value.items():
+            key = str(raw_key)
+            normalized_key = key.strip().lower().replace("-", "_")
+            if normalized_key in _SENSITIVE_KEYS:
+                sanitized[key] = _REDACTED
+                continue
+            if secure_here and key in _SECURE_VALUE_KEYS:
+                sanitized[key] = _REDACTED
+                continue
+            if normalized_key == "url" and isinstance(raw_value, str):
+                sanitized[key] = _safe_url(raw_value)
+                continue
+            sanitized[key] = _sanitize_browser_value(
+                raw_value,
+                depth=depth + 1,
+                secure_parent=secure_here,
+            )
+        return sanitized
+    if isinstance(value, (list, tuple)):
+        return [
+            _sanitize_browser_value(item, depth=depth + 1, secure_parent=secure_parent)
+            for item in value
+        ]
+    return value
+
+
 def capture_isolated_browser_observation(
     *,
     config: BrowserObservationConfig,
@@ -124,10 +206,11 @@ def capture_isolated_browser_observation(
     task_id: str,
     include_screenshot: bool = False,
 ) -> ComputerObservation:
-    """Capture one bounded observation from an isolated browser profile.
+    """Capture one bounded and sanitized observation from an isolated browser profile.
 
     The adapter is deliberately read-only. It has no navigation, click, typing,
-    clipboard-write, download, or arbitrary CDP command surface.
+    clipboard-write, download, or arbitrary CDP command surface. Sensitive values
+    are removed before the canonical observation is constructed.
     """
 
     config.validate()
@@ -142,18 +225,21 @@ def capture_isolated_browser_observation(
 
     window_id = _target_part(capture.window_id, "window_id")
     tab_id = _target_part(capture.tab_id, "tab_id")
+    sanitized_metadata = _sanitize_browser_value(capture.metadata)
+    sanitized_dom = _sanitize_browser_value(capture.dom_snapshot)
+    sanitized_accessibility = _sanitize_browser_value(capture.accessibility_snapshot)
     metadata_bytes = _canonical_bytes(
-        capture.metadata,
+        sanitized_metadata,
         limit=MAX_BROWSER_METADATA_BYTES,
         error_code="BROWSER_METADATA",
     )
     dom_bytes = _canonical_bytes(
-        capture.dom_snapshot,
+        sanitized_dom,
         limit=MAX_BROWSER_DOM_BYTES,
         error_code="BROWSER_DOM_SNAPSHOT",
     )
     accessibility_bytes = _canonical_bytes(
-        capture.accessibility_snapshot,
+        sanitized_accessibility,
         limit=MAX_BROWSER_ACCESSIBILITY_BYTES,
         error_code="BROWSER_ACCESSIBILITY_SNAPSHOT",
     )
