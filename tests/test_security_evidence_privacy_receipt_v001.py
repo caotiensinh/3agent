@@ -23,9 +23,11 @@ class EvidencePrivacyReceiptTests(unittest.TestCase):
         first = self._receipt()
         second = self._receipt()
         self.assertEqual(first.receipt_id, second.receipt_id)
+        self.assertEqual(first.public_dict(), second.public_dict())
         self.assertFalse(first.raw_payload_retained)
         self.assertFalse(first.credentials_retained)
         self.assertFalse(first.secrets_retained)
+        self.assertNotIn("raw_payload", first.public_dict())
 
     def test_raw_payload_or_secret_retention_fails_closed(self):
         receipt = self._receipt()
@@ -36,11 +38,20 @@ class EvidencePrivacyReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(MonitoringContractError, "forbids"):
             replace(receipt, secrets_retained=True).validate()
 
-    def test_invalid_sensitivity_and_hash_fail_closed(self):
+    def test_false_like_non_boolean_values_are_rejected(self):
+        receipt = self._receipt()
+        with self.assertRaisesRegex(MonitoringContractError, "exact boolean False"):
+            replace(receipt, raw_payload_retained=0).validate()  # type: ignore[arg-type]
+        with self.assertRaisesRegex(MonitoringContractError, "exact boolean False"):
+            replace(receipt, credentials_retained="").validate()  # type: ignore[arg-type]
+
+    def test_invalid_sensitivity_hash_and_evidence_ref_fail_closed(self):
         with self.assertRaisesRegex(MonitoringContractError, "sensitivity"):
             replace(self._receipt(), sensitivity="unclassified-custom").validate()
         with self.assertRaisesRegex(MonitoringContractError, "redaction_policy_sha256"):
             replace(self._receipt(), redaction_policy_sha256="bad").validate()
+        with self.assertRaisesRegex(MonitoringContractError, "canonical evidence"):
+            replace(self._receipt(), evidence_ref="finding:123").validate()
 
 
 if __name__ == "__main__":
