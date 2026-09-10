@@ -16,10 +16,7 @@ from .computer_use_approval import (
     require_valid_computer_approval,
 )
 from .computer_use_replay import ComputerActionReplayLedger, require_target_fresh
-from .computer_use_writer import (
-    ComputerWriterBinding,
-    require_current_writer_binding,
-)
+from .computer_use_writer import ComputerWriterBinding, require_current_writer_binding
 from .runtime_writer_lease import RuntimeWriterLease, RuntimeWriterLeaseRepository
 
 BROWSER_INTERACTION_KINDS = frozenset(
@@ -82,7 +79,7 @@ def _normalized_https_url(value: Any, *, allowed_hosts: tuple[str, ...]) -> str:
     parsed = urlparse(value)
     if parsed.scheme != "https" or not parsed.hostname:
         raise BrowserInteractionError("BROWSER_NAVIGATION_HTTPS_REQUIRED")
-    if parsed.username or parsed.password or parsed.fragment:
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise BrowserInteractionError("BROWSER_NAVIGATION_URL_UNSAFE")
     host = parsed.hostname.lower().rstrip(".")
     normalized_hosts = tuple(item.lower().rstrip(".") for item in allowed_hosts)
@@ -146,11 +143,12 @@ def execute_governed_browser_action(
 ) -> GovernedBrowserInteractionResult:
     """Dispatch one browser action only after existing WorkSpace governance passes.
 
-    Ordering is intentional: stale target and deterministic admission are checked
-    first; action replay is fenced; approval is consumed before side effect; the
-    current writer generation is revalidated immediately before mutating dispatch;
-    backend postconditions are verified afterwards. A failed/ambiguous dispatch
-    returns the consumed approval in BrowserDispatchError so it cannot be replayed.
+    Ordering is intentional: freshness/policy/command validation happens first;
+    approval and writer validity are checked without consuming anything; replay is
+    then fenced; approval is consumed before the possible side effect; the writer
+    generation is rechecked immediately before mutating dispatch; and a declared
+    postcondition must be verified afterwards. Ambiguous dispatch returns the
+    consumed approval so callers cannot replay it.
     """
 
     action.validate()
@@ -163,6 +161,8 @@ def execute_governed_browser_action(
         raise BrowserInteractionError("BROWSER_POLICY_DECISION_MISMATCH")
     if policy_decision.outcome == "DENY":
         raise BrowserInteractionError("BROWSER_ACTION_POLICY_DENIED")
+    if action.expected_postcondition is None:
+        raise BrowserInteractionError("BROWSER_EXPECTED_POSTCONDITION_REQUIRED")
 
     command = _command_from_action(
         action,
@@ -170,9 +170,6 @@ def execute_governed_browser_action(
         download_quarantine_ref=download_quarantine_ref,
     )
 
-    replay_ledger.admit_once(action=action, observation=pre_observation)
-
-    consumed_approval: ComputerApprovalGrant | None = None
     if policy_decision.outcome == "REQUIRE_APPROVAL":
         if approval is None:
             raise BrowserInteractionError("BROWSER_ACTION_APPROVAL_REQUIRED")
@@ -183,22 +180,11 @@ def execute_governed_browser_action(
             approver_session_ref=approver_session_ref,
             now=now,
         )
-        consumed_approval = consume_computer_approval(
-            grant=approval,
-            action=action,
-            policy_decision=policy_decision,
-            approver_session_ref=approver_session_ref,
-            now=now,
-        )
     elif approval is not None:
         raise BrowserInteractionError("UNEXPECTED_BROWSER_ACTION_APPROVAL")
 
     if action.requires_writer:
-        if (
-            lease_repository is None
-            or lease is None
-            or writer_binding is None
-        ):
+        if lease_repository is None or lease is None or writer_binding is None:
             raise BrowserInteractionError("BROWSER_ACTION_WRITER_FENCE_REQUIRED")
         require_current_writer_binding(
             action=action,
@@ -208,6 +194,26 @@ def execute_governed_browser_action(
         )
     elif lease is not None or writer_binding is not None:
         raise BrowserInteractionError("UNEXPECTED_BROWSER_WRITER_BINDING")
+
+    replay_ledger.admit_once(action=action, observation=pre_observation)
+
+    consumed_approval: ComputerApprovalGrant | None = None
+    if policy_decision.outcome == "REQUIRE_APPROVAL":
+        consumed_approval = consume_computer_approval(
+            grant=approval,
+            action=action,
+            policy_decision=policy_decision,
+            approver_session_ref=approver_session_ref,
+            now=now,
+        )
+
+    if action.requires_writer:
+        require_current_writer_binding(
+            action=action,
+            binding=writer_binding,
+            lease_repository=lease_repository,
+            lease=lease,
+        )
 
     try:
         backend_result = backend.dispatch(command)
@@ -229,12 +235,11 @@ def execute_governed_browser_action(
             "BROWSER_POST_OBSERVATION_IDENTITY_MISMATCH",
             consumed_approval=consumed_approval,
         )
-    if action.expected_postcondition is not None:
-        if action.expected_postcondition not in backend_result.observed_postconditions:
-            raise BrowserDispatchError(
-                "BROWSER_POSTCONDITION_NOT_SATISFIED",
-                consumed_approval=consumed_approval,
-            )
+    if action.expected_postcondition not in backend_result.observed_postconditions:
+        raise BrowserDispatchError(
+            "BROWSER_POSTCONDITION_NOT_SATISFIED",
+            consumed_approval=consumed_approval,
+        )
     if command.interaction_kind == "download_request":
         if backend_result.download_quarantine_ref != command.download_quarantine_ref:
             raise BrowserDispatchError(
