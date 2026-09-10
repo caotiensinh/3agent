@@ -18,14 +18,34 @@ class FakeBrowserBackend:
         return self.capture
 
 
-def capture(*, screenshot=None, dom=None, target_tab="tab1", profile_id="isolated"):
+def capture(
+    *,
+    screenshot=None,
+    dom=None,
+    accessibility=None,
+    metadata=None,
+    target_tab="tab1",
+    profile_id="isolated",
+):
     return BrowserReadOnlyCapture(
         profile_id=profile_id,
         window_id="window1",
         tab_id=target_tab,
-        metadata={"title": "Example", "url": "https://example.test/read-only"},
-        dom_snapshot={"nodes": [{"role": "heading", "text": "Hello"}]} if dom is None else dom,
-        accessibility_snapshot={"nodes": [{"role": "heading", "name": "Hello"}]},
+        metadata=(
+            {"title": "Example", "url": "https://example.test/read-only"}
+            if metadata is None
+            else metadata
+        ),
+        dom_snapshot=(
+            {"nodes": [{"role": "heading", "text": "Hello"}]}
+            if dom is None
+            else dom
+        ),
+        accessibility_snapshot=(
+            {"nodes": [{"role": "heading", "name": "Hello"}]}
+            if accessibility is None
+            else accessibility
+        ),
         captured_at="2026-09-10T00:00:00Z",
         screenshot_bytes=screenshot,
     )
@@ -113,7 +133,80 @@ class BrowserObservationTests(unittest.TestCase):
                 include_screenshot=False,
             )
 
-    def test_oversized_dom_snapshot_is_rejected(self):
+    def test_password_and_secure_field_values_are_redacted(self):
+        observation = capture_isolated_browser_observation(
+            config=BrowserObservationConfig(
+                profile_id="isolated",
+                control_endpoint="http://127.0.0.1:9222",
+            ),
+            backend=FakeBrowserBackend(
+                capture(
+                    dom={
+                        "nodes": [
+                            {"type": "password", "value": "hunter2", "textContent": "hunter2"},
+                            {"role": "textbox", "password": "dom-secret"},
+                        ]
+                    },
+                    accessibility={
+                        "nodes": [
+                            {"role": "password", "value": "a11y-secret", "text": "a11y-secret"},
+                            {"protected": True, "value": "protected-secret"},
+                        ]
+                    },
+                )
+            ),
+            session_id="session:browser",
+            task_id="task:browser",
+        )
+        retained = str(observation.structured_observation)
+        for secret in ("hunter2", "dom-secret", "a11y-secret", "protected-secret"):
+            self.assertNotIn(secret, retained)
+        self.assertIn("[REDACTED]", retained)
+
+    def test_cookie_token_and_authorization_keys_are_redacted(self):
+        observation = capture_isolated_browser_observation(
+            config=BrowserObservationConfig(
+                profile_id="isolated",
+                control_endpoint="http://127.0.0.1:9222",
+            ),
+            backend=FakeBrowserBackend(
+                capture(
+                    metadata={
+                        "title": "Account",
+                        "cookie": "sid=super-secret",
+                        "Set-Cookie": "sid=another-secret",
+                        "authorization": "Bearer top-secret",
+                        "access-token": "token-secret",
+                    }
+                )
+            ),
+            session_id="session:browser",
+            task_id="task:browser",
+        )
+        retained = str(observation.structured_observation)
+        for secret in ("super-secret", "another-secret", "top-secret", "token-secret"):
+            self.assertNotIn(secret, retained)
+
+    def test_url_credentials_query_and_fragment_are_removed(self):
+        observation = capture_isolated_browser_observation(
+            config=BrowserObservationConfig(
+                profile_id="isolated",
+                control_endpoint="http://127.0.0.1:9222",
+            ),
+            backend=FakeBrowserBackend(
+                capture(
+                    metadata={
+                        "url": "https://user:password@example.test/account?token=secret#private"
+                    }
+                )
+            ),
+            session_id="session:browser",
+            task_id="task:browser",
+        )
+        retained_url = observation.structured_observation["metadata"]["url"]
+        self.assertEqual(retained_url, "https://example.test/account")
+
+    def test_oversized_dom_snapshot_is_rejected_after_sanitization(self):
         with self.assertRaisesRegex(BrowserObservationError, "BROWSER_DOM_SNAPSHOT_BOUND_EXCEEDED"):
             capture_isolated_browser_observation(
                 config=BrowserObservationConfig(
