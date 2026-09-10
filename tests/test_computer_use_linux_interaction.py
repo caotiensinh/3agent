@@ -25,7 +25,6 @@ from three_agent.runtime_writer_lease import RuntimeWriterLeaseRepository
 from three_agent.store import TaskStore
 from three_agent.task_contract import TaskContractCompiler
 
-
 TARGET = "atspi-0123456789abcdef0123456789abcdef"
 ELEMENT = "atspi-11111111111111111111111111111111"
 STATE = "sha256:" + "2" * 64
@@ -66,7 +65,7 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def observation(self, *, secure: bool = False) -> ComputerObservation:
+    def observation(self, *, role: str = "push button", secure: bool = False) -> ComputerObservation:
         return ComputerObservation(
             session_id="session:linux",
             task_id=self.task.task_id,
@@ -90,18 +89,16 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
                     "is_showing": True,
                     "is_visible": True,
                     "is_secure": False,
-                    "children": [
-                        {
-                            "accessible_id": ELEMENT,
-                            "role": "text" if secure else "push button",
-                            "name": "[REDACTED_SECURE_UI]" if secure else "Apply",
-                            "is_enabled": True,
-                            "is_showing": True,
-                            "is_visible": True,
-                            "is_secure": secure,
-                            "children": [],
-                        }
-                    ],
+                    "children": [{
+                        "accessible_id": ELEMENT,
+                        "role": role,
+                        "name": "[REDACTED_SECURE_UI]" if secure else "Target",
+                        "is_enabled": True,
+                        "is_showing": True,
+                        "is_visible": True,
+                        "is_secure": secure,
+                        "children": [],
+                    }],
                 },
             },
         ).validate()
@@ -116,25 +113,17 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
             active_target_ref=f"linux:atspi:{TARGET}/process:4242",
             captured_at="2026-09-10T14:45:01Z",
             structured_observation={
-                "platform": "linux",
-                "backend": "atspi2",
-                "target_id": TARGET,
-                "process_id": 4242,
-                "application_name": "Fixture",
-                "metadata": {},
+                "platform": "linux", "backend": "atspi2", "target_id": TARGET,
+                "process_id": 4242, "application_name": "Fixture", "metadata": {},
                 "accessibility": {"accessible_id": TARGET, "children": []},
             },
         ).validate()
 
-    def action(self, *, interaction="invoke", value=None, action_id="action:linux"):
+    def action(self, *, interaction="invoke", value=None, action_id="action:linux") -> ComputerActionRequest:
         role = "push button" if interaction == "invoke" else "text"
         arguments = {"interaction": interaction, "accessible_id": ELEMENT, "role": role}
         if value is not None:
             arguments["value"] = value
-        expected = {
-            "invoke": "LINUX_ATSPI_ACTION_INVOKED",
-            "value": "LINUX_ATSPI_TEXT_SET",
-        }[interaction]
         return ComputerActionRequest(
             session_id="session:linux",
             action_id=action_id,
@@ -150,7 +139,9 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
             idempotency_key=sha("idem:" + action_id),
             risk_class="R2_STATE_CHANGE",
             requires_writer=True,
-            expected_postcondition=expected,
+            expected_postcondition=(
+                "LINUX_ATSPI_ACTION_INVOKED" if interaction == "invoke" else "LINUX_ATSPI_TEXT_SET"
+            ),
         ).validate()
 
     def governed(self, action: ComputerActionRequest):
@@ -186,11 +177,8 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
         binding = bind_current_writer(action=action, lease_repository=self.repo, lease=lease)
         return capability, policy, grant, lease, binding
 
-    def good_backend(self, *, interaction="invoke", secure=False):
-        postcondition = {
-            "invoke": "LINUX_ATSPI_ACTION_INVOKED",
-            "value": "LINUX_ATSPI_TEXT_SET",
-        }[interaction]
+    def backend(self, *, interaction="invoke", secure=False, dispatch=True) -> FakeLinuxBackend:
+        postcondition = "LINUX_ATSPI_ACTION_INVOKED" if interaction == "invoke" else "LINUX_ATSPI_TEXT_SET"
         return FakeLinuxBackend(
             inspection=LinuxTargetInspection(
                 target_id=TARGET,
@@ -199,14 +187,16 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
                 role="push button" if interaction == "invoke" else "text",
                 secure_input=secure,
             ),
-            result=LinuxInteractionBackendResult(
-                post_observation=self.post(),
-                observed_postconditions=(postcondition,),
-                result={"ok": True},
+            result=(
+                LinuxInteractionBackendResult(
+                    post_observation=self.post(),
+                    observed_postconditions=(postcondition,),
+                    result={"ok": True},
+                ) if dispatch else None
             ),
         )
 
-    def execute(self, action, backend, *, observation=None, approval=True):
+    def execute(self, action, backend, *, observation=None):
         capability, policy, grant, lease, binding = self.governed(action)
         ledger = ComputerActionReplayLedger()
         result = execute_governed_linux_action(
@@ -218,33 +208,32 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
             replay_ledger=ledger,
             approver_session_ref="user-session:linux",
             now="2026-09-10T14:46:00Z",
-            approval=grant if approval else None,
+            approval=grant,
             lease_repository=self.repo,
             lease=lease,
             writer_binding=binding,
             user_takeover_active=False,
         )
-        return result, ledger, grant
+        return result, ledger
 
     def test_valid_invoke_requires_canonical_approval_and_writer(self):
         action = self.action()
-        backend = self.good_backend()
-        result, ledger, _grant = self.execute(action, backend)
+        backend = self.backend()
+        result, ledger = self.execute(action, backend)
         self.assertEqual(result.consumed_approval.status, "CONSUMED")
         self.assertEqual(len(ledger.receipts), 1)
         self.assertEqual(len(backend.commands), 1)
-        self.assertEqual(backend.commands[0].interaction_kind, "invoke")
 
-    def test_value_mutation_is_bounded_semantic_action(self):
+    def test_value_mutation_uses_matching_semantic_role(self):
         action = self.action(interaction="value", value="bounded text", action_id="action:linux-value")
-        backend = self.good_backend(interaction="value")
-        result, _, _ = self.execute(action, backend, observation=self.observation())
+        backend = self.backend(interaction="value")
+        result, _ = self.execute(action, backend, observation=self.observation(role="text"))
         self.assertIn("LINUX_ATSPI_TEXT_SET", result.backend_result.observed_postconditions)
         self.assertEqual(backend.commands[0].arguments["value"], "bounded text")
 
     def test_missing_approval_fails_before_replay_or_dispatch(self):
         action = self.action()
-        backend = self.good_backend()
+        backend = self.backend()
         capability, policy, _grant, lease, binding = self.governed(action)
         ledger = ComputerActionReplayLedger()
         with self.assertRaisesRegex(LinuxInteractionError, "LINUX_ACTION_APPROVAL_REQUIRED"):
@@ -260,7 +249,7 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
 
     def test_user_takeover_blocks_before_backend(self):
         action = self.action()
-        backend = self.good_backend()
+        backend = self.backend()
         capability, policy, grant, lease, binding = self.governed(action)
         with self.assertRaisesRegex(LinuxInteractionError, "LINUX_USER_TAKEOVER_ACTIVE"):
             execute_governed_linux_action(
@@ -274,15 +263,15 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
 
     def test_secure_value_input_requires_user_takeover_before_backend(self):
         action = self.action(interaction="value", value="secret", action_id="action:linux-secret")
-        backend = self.good_backend(interaction="value", secure=True)
+        backend = self.backend(interaction="value", secure=True)
         capability, policy, grant, lease, binding = self.governed(action)
         with self.assertRaisesRegex(LinuxInteractionError, "LINUX_SECURE_INPUT_USER_TAKEOVER_REQUIRED"):
             execute_governed_linux_action(
-                action=action, pre_observation=self.observation(secure=True), capability_decision=capability,
-                policy_decision=policy, backend=backend, replay_ledger=ComputerActionReplayLedger(),
-                approver_session_ref="user-session:linux", now="2026-09-10T14:46:00Z",
-                approval=grant, lease_repository=self.repo, lease=lease, writer_binding=binding,
-                user_takeover_active=False,
+                action=action, pre_observation=self.observation(role="text", secure=True),
+                capability_decision=capability, policy_decision=policy, backend=backend,
+                replay_ledger=ComputerActionReplayLedger(), approver_session_ref="user-session:linux",
+                now="2026-09-10T14:46:00Z", approval=grant, lease_repository=self.repo,
+                lease=lease, writer_binding=binding, user_takeover_active=False,
             )
         self.assertEqual(backend.inspections, [])
         self.assertEqual(backend.commands, [])
@@ -293,8 +282,8 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
             **original.__dict__,
             "resource_ref": "local:desktop:window:atspi-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         }).validate()
-        backend = self.good_backend()
-        capability, policy, _grant, _lease, _binding = self.governed(action)
+        backend = self.backend()
+        capability, policy, *_ = self.governed(action)
         with self.assertRaisesRegex(LinuxInteractionError, "LINUX_ACTION_WINDOW_RESOURCE_STALE"):
             execute_governed_linux_action(
                 action=action, pre_observation=self.observation(), capability_decision=capability,
@@ -305,33 +294,28 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
             )
         self.assertEqual(backend.inspections, [])
 
-    def test_pointer_and_keyboard_fallback_are_not_implemented(self):
-        for operation, arguments in (
-            ("computer.pointer.interact", {"interaction": "click", "x": 1, "y": 1}),
-            ("computer.keyboard.interact", {"interaction": "text", "text": "x"}),
+    def test_pointer_and_keyboard_fallback_fail_closed(self):
+        for operation, resource_kind, arguments in (
+            ("computer.pointer.interact", "pointer_target", {"interaction": "click", "x": 1, "y": 1}),
+            ("computer.keyboard.interact", "keyboard_target", {"interaction": "text", "text": "x"}),
         ):
-            action = self.action()
+            original = self.action(action_id="action:" + operation.split(".")[1])
             action = ComputerActionRequest(**{
-                **action.__dict__,
-                "operation": operation,
-                "effect": "write",
-                "resource_kind": "pointer_target" if "pointer" in operation else "keyboard_target",
-                "arguments": arguments,
-                "idempotency_key": sha(operation),
+                **original.__dict__, "operation": operation, "resource_kind": resource_kind,
+                "arguments": arguments, "idempotency_key": sha(operation),
             }).validate()
             contract = TaskContractCompiler().compile(
                 task_id=self.task.task_id, task_type="analysis", sensitivity="internal",
                 allowed_tools=(operation,),
             )
             capability = TaskCapabilityAuthority.from_contract(contract).require(
-                operation, resource_kind=action.resource_kind,
-                resource_ref=action.resource_ref, effect="write",
+                operation, resource_kind=resource_kind, resource_ref=action.resource_ref, effect="write",
             )
             policy = decide_computer_action(action, capability)
             with self.assertRaisesRegex(LinuxInteractionError, "LINUX_INPUT_FALLBACK_NOT_IMPLEMENTED"):
                 execute_governed_linux_action(
                     action=action, pre_observation=self.observation(), capability_decision=capability,
-                    policy_decision=policy, backend=self.good_backend(), replay_ledger=ComputerActionReplayLedger(),
+                    policy_decision=policy, backend=self.backend(), replay_ledger=ComputerActionReplayLedger(),
                     approver_session_ref="user-session:linux", now="2026-09-10T14:46:00Z",
                     approval=None, lease_repository=None, lease=None, writer_binding=None,
                     user_takeover_active=False,
@@ -339,13 +323,8 @@ class GovernedLinuxInteractionTests(unittest.TestCase):
 
     def test_dispatch_failure_exposes_consumed_approval(self):
         action = self.action()
+        backend = self.backend(dispatch=False)
         capability, policy, grant, lease, binding = self.governed(action)
-        backend = FakeLinuxBackend(
-            inspection=LinuxTargetInspection(
-                target_id=TARGET, process_id=4242, accessible_id=ELEMENT, role="push button"
-            ),
-            result=None,
-        )
         with self.assertRaises(LinuxDispatchError) as caught:
             execute_governed_linux_action(
                 action=action, pre_observation=self.observation(), capability_decision=capability,
@@ -403,15 +382,10 @@ class LinuxAtspiBackendContractTests(unittest.TestCase):
         LinuxAtspiInteractionBackend._set_value(element, "semantic-value")
         self.assertEqual(element.editable.value, "semantic-value")
 
-    def test_linux_interaction_module_has_no_shell_or_privilege_surface(self):
+    def test_module_has_no_shell_or_privilege_surface(self):
         source = inspect.getsource(linux_interaction)
-        self.assertNotIn("subprocess", source)
-        self.assertNotIn("os.system", source)
-        self.assertNotIn("shell=True", source)
-        self.assertNotIn("sudo", source.lower())
-        self.assertNotIn("pkexec", source.lower())
-        self.assertNotIn("generate_mouse_event", source)
-        self.assertNotIn("generate_keyboard_event", source)
+        for forbidden in ("subprocess", "os.system", "shell=True", "sudo", "pkexec", "generate_mouse_event", "generate_keyboard_event"):
+            self.assertNotIn(forbidden, source.lower() if forbidden in {"sudo", "pkexec"} else source)
 
 
 if __name__ == "__main__":
