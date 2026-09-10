@@ -103,6 +103,30 @@ _CAPABILITY_TAGS: dict[str, tuple[str, ...]] = {
     "wan_remote": ("wan.interface", "wan.route", "wan.dns", "wan.latency", "isp.reachability"),
 }
 
+# Domain profiles are conservative defaults. A small number of catalog issues have a
+# materially narrower evidence question than their domain peers. These overrides remove
+# only requirements that are provably unrelated to the canonical symptom; they do not
+# grant execution authority or make a root-cause claim.
+_ISSUE_CAPABILITY_OVERRIDES: dict[str, tuple[str, ...]] = {
+    "IT-0017": ("vpn.status", "network.route", "network.dns", "time.sync"),
+    "IT-0075": ("camera.devices",),
+    "IT-0076": ("audio.devices",),
+    "IT-0088": ("hardware.usb", "network.interface"),
+    "IT-0090": ("hardware.usb", "audio.devices"),
+    "IT-0097": ("hardware.usb",),
+    "IT-0230": ("network.dns",),
+    "IT-0243": ("group_policy",),
+    "IT-0260": ("vpn.status", "network.route", "network.dns", "network.reachability"),
+    "IT-0303": ("service.status",),
+    "IT-0304": ("server.resources", "process.top"),
+    "IT-0305": ("server.resources", "process.top"),
+    "IT-0306": ("storage.capacity",),
+    "IT-0320": ("time.sync",),
+    "IT-0325": ("audio.devices", "network.quality"),
+    "IT-0330": ("audio.devices",),
+    "IT-0331": ("audio.devices",),
+}
+
 _PHYSICAL_DOMAINS = {
     "hardware_power",
     "dock_display",
@@ -233,7 +257,7 @@ def _question_ids_for_domain(domain_id: str) -> tuple[str, ...]:
 
 def planned_route_from_issue(issue: CatalogIssue) -> PlannedDiagnosticRoute:
     try:
-        tags = _CAPABILITY_TAGS[issue.domain_id]
+        tags = _ISSUE_CAPABILITY_OVERRIDES.get(issue.issue_id, _CAPABILITY_TAGS[issue.domain_id])
     except KeyError as exc:
         raise ValueError(f"missing capability tags for domain: {issue.domain_id}") from exc
     return PlannedDiagnosticRoute(

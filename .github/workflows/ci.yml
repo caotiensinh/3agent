@@ -31,7 +31,92 @@ jobs:
       - name: Install project dependencies including monitoring SNMP extra
         run: python -m pip install -e ".[monitoring-snmp]"
       - name: Execution governance canonical gate
-        run: python scripts/validate_execution_governance.py
+        shell: bash
+        run: |
+          set -o pipefail
+          result="$RUNNER_TEMP/execution-governance.json"
+          log="$RUNNER_TEMP/execution-governance.log"
+          rm -f "$result" "$log"
+
+          set +e
+          python scripts/validate_execution_governance.py \
+            --json-output "$result" 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          if [ ! -f "$result" ]; then
+            cat > "$result" <<JSON
+          {
+            "valid": false,
+            "classification": "INFRA_FAILURE",
+            "violations": [
+              {
+                "rule_id": "GOV-CI-EVIDENCE-MISSING",
+                "severity": "error",
+                "message": "validator did not produce the requested machine-readable evidence"
+              }
+            ]
+          }
+          JSON
+          fi
+
+          python - "$result" "$rc" "$(git rev-parse HEAD)" <<'PY'
+          import json
+          import sys
+
+          path, exit_code, head_sha = sys.argv[1:]
+          with open(path, "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          data["validator_exit_code"] = int(exit_code)
+          data["head_sha"] = head_sha
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(data, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+          classification="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          print(data.get("classification", "VALIDATOR_ERROR"))
+          PY
+          )"
+          rule_id="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          violations = data.get("violations") or []
+          print(violations[0].get("rule_id", "GOV-CI-PASS") if violations else "GOV-CI-PASS")
+          PY
+          )"
+
+          case "$classification" in
+            PASS|POLICY_INVALID|CONFIG_ERROR|VALIDATOR_ERROR|TEST_FAILURE|DUPLICATE_FAILURE|INFRA_FAILURE) ;;
+            *)
+              classification="VALIDATOR_ERROR"
+              rule_id="GOV-CI-CLASSIFICATION-UNKNOWN"
+              ;;
+          esac
+
+          echo "governance_ci_classification=${classification}"
+          echo "governance_ci_rule_id=${rule_id}"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Execution governance ${classification}::rule=${rule_id}; read execution-governance evidence artifact"
+          fi
+          exit "$rc"
+      - name: Upload execution governance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-governance-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/execution-governance.json
+            ${{ runner.temp }}/execution-governance.log
+          if-no-files-found: error
+          retention-days: 14
       - name: Skill security admission
         run: python scripts/scan_skills.py
       - name: Canonical module health
@@ -97,10 +182,11 @@ jobs:
           set -e
           echo "unit_test_exit_code=${rc}"
           if [ "${rc}" -ne 0 ]; then
+            echo "ci_classification=TEST_FAILURE"
             echo "::group::Full unittest failure log"
             cat unittest.log
             echo "::endgroup::"
-            echo "::error::Unit tests failed with exit code ${rc}"
+            echo "::error title=TEST_FAILURE::Unit tests failed with exit code ${rc}"
           fi
           exit "${rc}"
       - name: Upload unit test log
@@ -156,5 +242,6 @@ jobs:
       - name: Enforce canonical module gate
         if: always() && steps.canonical_guard.outcome != 'success'
         run: |
+          echo "ci_classification=DUPLICATE_FAILURE"
           echo "Single Canonical Module gate failed. Read canonical-module-health evidence."
           exit 64

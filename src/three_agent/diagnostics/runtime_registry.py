@@ -6,10 +6,17 @@ from typing import Iterable
 from ..micro_tool_registry import MicroToolRegistry, ToolMetadata
 from ..office_it_tools import iter_specs
 from .audio_tools import AUDIO_DEVICES_TOOL_ID, AUDIO_TOOL_METADATA
+from .backup_status_tools import BACKUP_STATUS_METADATA
 from .camera_device_tools import CAMERA_DEVICES_TOOL_ID, CAMERA_DEVICE_TOOL_METADATA
 from .capability_promotion import CapabilityBinding, default_office_it_bindings
+from .cloud_files_tools import CLOUD_FILES_STATUS_METADATA
 from .common_tools import common_tool_metadata
+from .display_tools import DISPLAY_TOOL_ID, DISPLAY_TOOL_METADATA
+from .dock_tools import DOCK_TOOL_ID, DOCK_TOOL_METADATA
+from .driver_inventory_tools import DRIVER_INVENTORY_METADATA, DRIVER_INVENTORY_TOOL_ID
+from .identity_account_state_tools import IDENTITY_ACCOUNT_STATE_METADATA
 from .identity_tools import IDENTITY_SESSION_TOOL_ID, IDENTITY_TOOL_METADATA
+from .mail_exchange_tools import MAIL_EXCHANGE_STATUS_METADATA
 from .meeting_client_tools import MEETING_CLIENT_TOOL_ID, MEETING_CLIENT_TOOL_METADATA
 from .network_tools import (
     NETWORK_QUALITY_TOOL_ID,
@@ -20,6 +27,8 @@ from .print_driver_tools import PRINT_DRIVER_TOOL_ID, PRINT_DRIVER_TOOL_METADATA
 from .process_tools import PROCESS_TOP_TOOL_ID, PROCESS_TOOL_METADATA
 from .storage_io_tools import STORAGE_IO_TOOL_ID, STORAGE_IO_TOOL_METADATA
 from .usb_tools import USB_DEVICES_TOOL_ID, USB_TOOL_METADATA
+from .voip_tools import VOIP_CLIENT_STATE_METADATA
+from .vpn_tools import VPN_STATUS_TOOL_ID, VPN_STATUS_TOOL_METADATA
 from .windows_boot_tools import WINDOWS_BOOT_TOOL_ID, WINDOWS_BOOT_TOOL_METADATA
 from .windows_policy_tools import GROUP_POLICY_TOOL_ID, GROUP_POLICY_TOOL_METADATA
 from .windows_update_tools import WINDOWS_UPDATE_TOOL_ID, WINDOWS_UPDATE_TOOL_METADATA
@@ -40,15 +49,24 @@ def runtime_tool_metadata() -> tuple[ToolMetadata, ...]:
         + NETWORK_TOOL_METADATA
         + GROUP_POLICY_TOOL_METADATA
         + IDENTITY_TOOL_METADATA
+        + IDENTITY_ACCOUNT_STATE_METADATA
         + AUDIO_TOOL_METADATA
         + MEETING_CLIENT_TOOL_METADATA
         + PROCESS_TOOL_METADATA
         + USB_TOOL_METADATA
+        + DISPLAY_TOOL_METADATA
+        + DOCK_TOOL_METADATA
+        + DRIVER_INVENTORY_METADATA
         + CAMERA_DEVICE_TOOL_METADATA
         + STORAGE_IO_TOOL_METADATA
         + PRINT_DRIVER_TOOL_METADATA
         + WINDOWS_BOOT_TOOL_METADATA
         + WINDOWS_UPDATE_TOOL_METADATA
+        + VPN_STATUS_TOOL_METADATA
+        + CLOUD_FILES_STATUS_METADATA
+        + MAIL_EXCHANGE_STATUS_METADATA
+        + VOIP_CLIENT_STATE_METADATA
+        + BACKUP_STATUS_METADATA
     )
     ids = tuple(item.id for item in items)
     if len(ids) != len(set(ids)):
@@ -91,10 +109,14 @@ def default_runtime_capability_bindings() -> tuple[CapabilityBinding, ...]:
             CapabilityBinding("meeting.client", (MEETING_CLIENT_TOOL_ID,)),
             CapabilityBinding("process.top", (PROCESS_TOP_TOOL_ID,)),
             CapabilityBinding("hardware.usb", (USB_DEVICES_TOOL_ID,)),
+            CapabilityBinding("hardware.display", (DISPLAY_TOOL_ID,)),
+            CapabilityBinding("hardware.dock", (DOCK_TOOL_ID,)),
+            CapabilityBinding("driver.inventory", (DRIVER_INVENTORY_TOOL_ID,)),
             CapabilityBinding("camera.devices", (CAMERA_DEVICES_TOOL_ID,)),
             CapabilityBinding("print.driver", (PRINT_DRIVER_TOOL_ID,)),
             CapabilityBinding("windows.boot", (WINDOWS_BOOT_TOOL_ID,)),
             CapabilityBinding("windows.update", (WINDOWS_UPDATE_TOOL_ID,)),
+            CapabilityBinding("vpn.status", (VPN_STATUS_TOOL_ID,)),
         )
     )
     seen: set[str] = set()

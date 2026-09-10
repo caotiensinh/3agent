@@ -114,6 +114,7 @@ active_sha() {
 
 download_exact_updater() {
   local sha="$1" url
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || die "Pinned updater SHA is invalid"
   url="https://raw.githubusercontent.com/caotiensinh/3agent/${sha}/scripts/update_code_safe.sh"
   [[ -z "$TMP_UPDATER" ]] || rm -f "$TMP_UPDATER"
   TMP_UPDATER="$(mktemp)"
@@ -125,8 +126,14 @@ download_exact_updater() {
 }
 
 run_safe_update() {
+  local exact_sha="$1"
+  [[ "$exact_sha" =~ ^[0-9a-f]{40}$ ]] || die "Exact update target SHA is invalid"
+
   export THREE_AGENT_REPO_URL="$REPO_URL"
-  export THREE_AGENT_REPO_REF="$REPO_REF"
+  # One outer attempt is immutable: the inner updater may only activate this exact SHA.
+  export THREE_AGENT_REPO_REF="$exact_sha"
+  # Preserve the operator-selected moving ref only for the next trusted outer attempt.
+  export THREE_AGENT_UPDATE_TRACKING_REF="$REPO_REF"
   export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"
   export THREE_AGENT_BIN_DIR="$BIN_DIR"
   export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"
@@ -150,6 +157,8 @@ verify_final_state() {
   active="$(active_sha)"
   [[ "$active" == "$expected" ]] || return 1
   [[ -x "${BIN_DIR}/3agent" ]] || die "Installed command is missing: ${BIN_DIR}/3agent"
+  [[ -x "${BIN_DIR}/3agent-update" ]] || die "Installed updater launcher is missing: ${BIN_DIR}/3agent-update"
+  [[ -f "${BIN_DIR}/3agent-update.sh" ]] || die "Trusted local updater payload is missing: ${BIN_DIR}/3agent-update.sh"
   [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
   migrate_generated_default_config
   THREE_AGENT_CONFIG="$CONFIG_PATH" "${BIN_DIR}/3agent" smoke >/dev/null
@@ -180,7 +189,7 @@ main() {
     expected="$(resolve_target_sha)"
     log "Attempt ${attempt}/${MAX_ATTEMPTS}: ${REPO_REF} -> ${expected}"
     download_exact_updater "$expected"
-    run_safe_update
+    run_safe_update "$expected"
 
     active="$(active_sha)"
     latest="$(resolve_target_sha)"

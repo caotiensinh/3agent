@@ -18,6 +18,7 @@ RISK_LEVELS = {"low", "medium", "high", "critical"}
 MODEL_TIERS = {"none", "small", "specialist", "strong"}
 OFFICE_IT_NETWORK_TOOLS = {
     "network.ssh.probe",
+    "network.rtsp.probe",
     "network.smb.probe",
     "network.printer.ipp_probe",
     "network.printer.raw_probe",
@@ -38,11 +39,22 @@ DIAGNOSTIC_LOCAL_READ_TOOLS = {
     "meeting.client.snapshot",
     "process.top.snapshot",
     "hardware.usb.snapshot",
+    "hardware.display.snapshot",
+    "hardware.dock.snapshot",
+    "driver.inventory.snapshot",
     "camera.devices.snapshot",
     "storage.io.snapshot",
     "windows.print.driver.snapshot",
     "windows.boot.snapshot",
     "windows.update.history",
+    "vpn.status.snapshot",
+}
+DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS = {
+    "backup.local_state.snapshot",
+    "cloud_files.client_state.snapshot",
+    "identity.account_state.snapshot",
+    "mail_exchange.client_state.snapshot",
+    "voip.client_state.snapshot",
 }
 DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
     "network.reachability.internal",
@@ -66,6 +78,7 @@ TOOLS = {
     "windows.printer.queue",
     *OFFICE_IT_NETWORK_TOOLS,
     *DIAGNOSTIC_LOCAL_READ_TOOLS,
+    *DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
     *DIAGNOSTIC_INTERNAL_NETWORK_TOOLS,
 }
 VALIDATORS = {

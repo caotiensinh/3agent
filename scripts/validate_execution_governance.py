@@ -1,27 +1,615 @@
 #!/usr/bin/env python3
-"""Canonical execution-governance entrypoint with CI evidence compatibility."""
+"""Validate the canonical WorkSpace execution-governance policy and session receipts."""
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
+import re
+import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-_CORE_PATH = Path(__file__).with_name("_execution_governance_core.py")
-_CORE_SPEC = importlib.util.spec_from_file_location("workspace_execution_governance_core", _CORE_PATH)
-if _CORE_SPEC is None or _CORE_SPEC.loader is None:
-    raise RuntimeError(f"unable to load execution governance core: {_CORE_PATH}")
-_core = importlib.util.module_from_spec(_CORE_SPEC)
-sys.modules[_CORE_SPEC.name] = _core
-_CORE_SPEC.loader.exec_module(_core)
+CANONICAL_RELATIVE = Path("config/workspace.execution-governance.json")
+SUPPORTED_POLICY_VERSIONS = {"0.0.4"}
+POLICY_TOP_LEVEL_KEYS = {
+    "policy_id",
+    "version",
+    "scope",
+    "applies_to",
+    "repository_default",
+    "canonical_source",
+    "authority",
+    "parallel_execution",
+    "lane_contract",
+    "failure_handling",
+    "canonical_implementation",
+    "main_integration",
+    "state_machine",
+    "adaptive_solver",
+    "acceptance",
+    "session_stop_gate",
+    "progress",
+    "session_effectiveness",
+    "commit_discipline",
+    "harness_principles",
+    "session_receipt",
+}
+SHA40 = re.compile(r"^[0-9a-f]{40}$")
+PRODUCTION_EXTENSIONS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".cs",
+    ".sh", ".ps1", ".yml", ".yaml", ".json",
+}
+DEFAULT_RULE_ID = "GOV-POLICY-CONTRACT"
 
-# Preserve the canonical module API used by unit tests and internal callers.
-for _name in dir(_core):
-    if _name.startswith("__") or _name == "main":
-        continue
-    globals()[_name] = getattr(_core, _name)
+
+class GovernanceError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        rule_id: str = DEFAULT_RULE_ID,
+        classification: str = "POLICY_INVALID",
+        path: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.rule_id = rule_id
+        self.classification = classification
+        self.path = path
+
+
+def _require(
+    condition: bool,
+    message: str,
+    *,
+    rule_id: str = DEFAULT_RULE_ID,
+    classification: str = "POLICY_INVALID",
+    path: str | None = None,
+) -> None:
+    if not condition:
+        raise GovernanceError(
+            message,
+            rule_id=rule_id,
+            classification=classification,
+            path=path,
+        )
+
+
+def _reject_duplicate_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise GovernanceError(
+                f"duplicate JSON key is forbidden: {key}",
+                rule_id="GOV-JSON-DUPLICATE",
+                classification="DUPLICATE_FAILURE",
+                path=key,
+            )
+        result[key] = value
+    return result
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    data = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_reject_duplicate_object_pairs,
+    )
+    _require(
+        isinstance(data, dict),
+        f"{path}: root must be a JSON object",
+        rule_id="GOV-JSON-ROOT",
+        path=str(path),
+    )
+    return data
+
+
+def _resolve_repo_path(repo_root: Path, raw_path: str | Path, label: str) -> Path:
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = repo_root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(repo_root)
+    except ValueError as exc:
+        raise GovernanceError(
+            f"{label} path must remain inside repository root: {raw_path}",
+            rule_id="GOV-PATH-BOUNDARY",
+            classification="CONFIG_ERROR",
+            path=str(raw_path),
+        ) from exc
+    return resolved
+
+
+def _git_output(repo_root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown git failure"
+        raise GovernanceError(
+            f"git {' '.join(args)} failed: {detail}",
+            rule_id="GOV-GIT-COMMAND",
+            classification="INFRA_FAILURE",
+            path=str(repo_root),
+        )
+    return completed.stdout
+
+
+def _is_git_repo(repo_root: Path) -> bool:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
+def _is_under_protected_root(path: str, roots: list[str]) -> bool:
+    candidate = PurePosixPath(path)
+    return any(candidate == PurePosixPath(root) or PurePosixPath(root) in candidate.parents for root in roots)
+
+
+def _new_parallel_implementation_paths(policy: dict[str, Any], repo_root: Path) -> list[str]:
+    canonical = policy["canonical_implementation"]
+    baseline = str(canonical["legacy_baseline_commit"])
+    _require(SHA40.fullmatch(baseline) is not None, "legacy baseline commit must be a 40-char lowercase SHA")
+
+    _git_output(repo_root, "cat-file", "-e", f"{baseline}^{{commit}}")
+    changed = _git_output(repo_root, "diff", "--name-status", "--diff-filter=A", f"{baseline}..HEAD", "--")
+    protected_roots = [str(root).strip("/") for root in canonical["protected_roots"]]
+    patterns = [re.compile(pattern, re.IGNORECASE) for pattern in canonical["forbidden_new_file_name_patterns"]]
+    exceptions = {str(path) for path in canonical.get("explicit_compatibility_exceptions", [])}
+
+    violations: list[str] = []
+    for raw_line in changed.splitlines():
+        parts = raw_line.split("\t")
+        if len(parts) < 2:
+            continue
+        path = parts[-1]
+        if path in exceptions or not _is_under_protected_root(path, protected_roots):
+            continue
+        candidate = PurePosixPath(path)
+        if candidate.suffix.lower() not in PRODUCTION_EXTENSIONS:
+            continue
+        if any(pattern.search(candidate.stem) for pattern in patterns):
+            violations.append(path)
+    return sorted(set(violations))
+
+
+def _ordered(sequence: list[str], left: str, right: str, message: str) -> None:
+    _require(left in sequence and right in sequence, f"required sequence missing {left!r} or {right!r}")
+    _require(sequence.index(left) < sequence.index(right), message)
+
+
+def validate_policy(policy: dict[str, Any], repo_root: Path | None = None) -> None:
+    actual_keys = set(policy)
+    missing_keys = sorted(POLICY_TOP_LEVEL_KEYS - actual_keys)
+    unknown_keys = sorted(actual_keys - POLICY_TOP_LEVEL_KEYS)
+    _require(not missing_keys, f"missing top-level policy keys: {missing_keys}")
+    _require(not unknown_keys, f"unknown top-level policy keys: {unknown_keys}")
+    _require(
+        policy.get("version") in SUPPORTED_POLICY_VERSIONS,
+        f"unsupported policy version: {policy.get('version')!r}",
+    )
+
+    repository_default = policy.get("repository_default", {})
+    canonical = policy.get("canonical_source", {})
+    parallel = policy.get("parallel_execution", {})
+    lane_contract = policy.get("lane_contract", {})
+    failure = policy.get("failure_handling", {})
+    canonical_impl = policy.get("canonical_implementation", {})
+    integration = policy.get("main_integration", {})
+    state = policy.get("state_machine", {})
+    adaptive = policy.get("adaptive_solver", {})
+    acceptance = policy.get("acceptance", {})
+    stop_gate = policy.get("session_stop_gate", {})
+    progress = policy.get("progress", {})
+    effectiveness = policy.get("session_effectiveness", {})
+    receipt = policy.get("session_receipt", {})
+
+    _require(policy.get("policy_id") == "workspace_execution_governance", "stable policy_id required")
+    _require(policy.get("scope") == "project_wide", "execution governance must be project-wide")
+    _require(
+        set(policy.get("applies_to", [])) == {"human", "agent", "sub_agent", "automation", "ci_worker"},
+        "execution governance must cover every repository actor class",
+    )
+    for field in (
+        "mandatory_for_all_repository_work",
+        "no_actor_self_exemption",
+        "local_remote_and_ci_execution_equally_bound",
+        "policy_change_required_to_change_or_disable",
+    ):
+        _require(repository_default.get(field) is True, f"repository default requires {field}=true")
+
+    _require(canonical.get("path") == CANONICAL_RELATIVE.as_posix(), "canonical path drift")
+    _require(canonical.get("single_source_of_truth") is True, "single source of truth must be enabled")
+    _require(canonical.get("duplicate_policy_files_forbidden") is True, "duplicate policy files must be forbidden")
+
+    _require(parallel.get("preferred_active_lanes_min") == 20, "preferred lane minimum must be 20")
+    _require(parallel.get("target_active_lanes") == 20, "target lanes must be 20")
+    _require(parallel.get("maximum_active_lanes") == 20, "maximum lanes must be 20")
+    _require(parallel.get("lanes_must_be_independent_or_dependency_isolated") is True, "lanes must be independent or dependency isolated")
+    _require(parallel.get("shared_write_set_requires_single_owner") is True, "shared write sets need one owner")
+    _require(parallel.get("overlapping_lane_write_sets_forbidden") is True, "overlapping write sets must be forbidden")
+    _require(parallel.get("duplicate_functional_authority_across_lanes_forbidden") is True, "duplicate functional authority must be forbidden")
+    _require(parallel.get("canonical_target_requires_single_writer_lane") is True, "canonical target requires one writer")
+
+    required_lane_fields = set(lane_contract.get("required_fields", []))
+    _require("functional_authority" in required_lane_fields, "lane contract must declare functional_authority")
+    _require("attempts" in required_lane_fields, "lane contract must declare attempts")
+    _require(set(lane_contract.get("attempt_outcomes", [])) == {"PASS", "FAIL"}, "attempt outcomes must be PASS/FAIL")
+    _require(set(lane_contract.get("log_states", [])) == {"AVAILABLE", "MISSING"}, "log states must be AVAILABLE/MISSING")
+    _require(lane_contract.get("later_attempt_after_fail_requires_prior_failure_diagnosis_ref") is True, "rerun must reference prior failure diagnosis")
+    for field in ("log_state", "failure_signature", "failed_check", "diagnosis", "next_action_reason"):
+        _require(field in lane_contract.get("failed_attempt_required_fields", []), f"failed attempts must require {field}")
+    for field in ("instrumentation_target", "instrumentation_plan", "instrumentation_safety"):
+        _require(field in lane_contract.get("missing_log_required_fields", []), f"missing-log contract must require {field}")
+    for field in ("instrumentation_evidence", "captured_log_evidence"):
+        _require(field in lane_contract.get("instrumented_attempt_required_fields", []), f"instrumented attempt must require {field}")
+    for field in ("logic_analysis_evidence", "syntax_analysis_evidence"):
+        _require(field in lane_contract.get("post_instrumentation_failure_required_fields", []), f"post-instrumentation failure must require {field}")
+
+    for field in (
+        "failed_verification_requires_log_inspection_before_edit_or_rerun",
+        "missing_log_requires_targeted_instrumentation",
+        "instrumentation_must_target_failure_boundary",
+        "instrumentation_must_be_bounded_redacted_and_reversible",
+        "instrumented_rerun_required_before_logic_change",
+        "instrumented_logs_must_be_read_before_next_edit",
+        "unresolved_after_instrumented_rerun_requires_logic_and_syntax_analysis",
+        "logic_analysis_must_trace_inputs_state_branches_outputs",
+        "syntax_analysis_requires_parser_or_static_check_when_applicable",
+        "multiple_debug_strategies_required_before_hard_failed",
+        "blind_rerun_forbidden",
+        "edit_before_failure_evidence_review_forbidden",
+        "same_attempt_rerun_without_new_evidence_forbidden",
+    ):
+        _require(failure.get(field) is True, f"failure handling requires {field}=true")
+
+    required_sequence = failure.get("required_sequence", [])
+    _ordered(required_sequence, "capture_failure", "read_failed_logs_if_available", "failure must be captured before logs are read")
+    _ordered(required_sequence, "read_failed_logs_if_available", "instrument_if_logs_missing", "existing logs must be checked before instrumentation")
+    _ordered(required_sequence, "instrument_if_logs_missing", "rerun_instrumented_path", "instrumentation must precede instrumented rerun")
+    _ordered(required_sequence, "rerun_instrumented_path", "read_instrumented_logs", "instrumented rerun must precede reading instrumented logs")
+    _ordered(required_sequence, "read_instrumented_logs", "analyze_logic", "instrumented logs must be read before logic analysis")
+    _ordered(required_sequence, "analyze_logic", "analyze_syntax", "logic analysis must precede syntax analysis")
+    _ordered(required_sequence, "analyze_syntax", "record_diagnosis", "logic/syntax analysis must precede diagnosis")
+    _ordered(required_sequence, "record_diagnosis", "edit_if_justified", "diagnosis must precede edits")
+    _ordered(required_sequence, "record_diagnosis", "rerun_targeted_verifier", "diagnosis must precede rerun")
+
+    _require(adaptive.get("strategy_change_required_after_repeated_failure") is True, "repeated failure must change strategy")
+    _require(int(adaptive.get("repeated_failure_threshold", 0)) >= 2, "repeated failure threshold must be at least two")
+    _require(int(adaptive.get("minimum_distinct_strategy_families_before_hard_failed", 0)) >= 3, "HARD_FAILED requires multiple strategy families")
+    allowed_strategies = set(adaptive.get("allowed_strategy_changes", []))
+    for strategy in ("targeted_instrumentation", "logic_trace", "syntax_static_analysis", "minimal_reproduction"):
+        _require(strategy in allowed_strategies, f"adaptive solver must allow {strategy}")
+
+    _require(canonical_impl.get("single_functional_authority_required") is True, "single functional authority must be required")
+    _require(canonical_impl.get("new_version_sibling_files_forbidden") is True, "new version sibling files must be forbidden")
+    _require(canonical_impl.get("canonical_merge_required_before_main") is True, "canonical reconciliation before main must be required")
+    _require(canonical_impl.get("transient_lane_artifacts_must_be_removed_before_main") is True, "transient lane artifacts must be removed before main")
+    _require(integration.get("merge_requires_canonical_reconciliation") is True, "main merge must require canonical reconciliation")
+    _require(integration.get("merge_requires_no_new_versioned_functional_files") is True, "main merge must reject new versioned functional files")
+    _require(integration.get("merge_requires_governance_validator_pass") is True, "main merge must require governance validation")
+
+    _require(state.get("successful_terminal_state") == "VERIFIED_PASS", "VERIFIED_PASS must be the only success state")
+    unsuccessful = set(state.get("unsuccessful_terminal_states", []))
+    _require(unsuccessful == {"BLOCKED_EXTERNAL", "HARD_FAILED", "ABORTED_BY_OPERATOR"}, "unexpected unsuccessful terminal states")
+    _require(state.get("failed_retryable_must_reenter_solver_loop") is True, "retryable failure must loop")
+    _require(acceptance.get("mandatory_pass_requires_executed_verifier") is True, "executed verifier required")
+    _require(acceptance.get("mandatory_pass_requires_evidence") is True, "evidence required")
+    _require(acceptance.get("explicit_pass_or_fail_status_required") is True, "explicit PASS/FAIL status must be required")
+    _require(stop_gate.get("may_stop_false_while_retryable_failure_exists") is True, "retryable failures must prevent stop")
+
+    _require(progress.get("measurement_required_every_session") is True, "progress measurement is mandatory every session")
+    _require(progress.get("report_start_completed_percent") is True, "start completion must be reported")
+    _require(progress.get("report_completed_percent") is True, "completion must be reported")
+    _require(progress.get("report_remaining_percent") is True, "remaining must be reported")
+    _require(progress.get("report_progress_delta_percent") is True, "progress delta must be reported")
+    _require(progress.get("report_session_progress_summary") is True, "session progress summary must be reported")
+    _require(progress.get("negative_progress_delta_requires_rebaseline_evidence") is True, "negative progress must require rebaseline evidence")
+    for field in ("start_completion_percent", "completion_percent", "remaining_percent", "progress_delta_percent", "session_progress_summary"):
+        _require(field in receipt.get("required_fields", []), f"session receipt must require {field}")
+
+    thresholds = effectiveness.get("successful_thresholds", {})
+    for metric in ("goal_coverage_percent", "verified_completion_percent", "evidence_coverage_percent"):
+        _require(thresholds.get(metric) == 100, f"{metric} threshold must be 100")
+    for metric in ("failed_required_lanes", "blocked_required_lanes", "canonical_drift_count", "new_parallel_implementation_count", "stale_reference_count", "transient_lane_artifact_count"):
+        _require(thresholds.get(metric) == 0, f"{metric} threshold must be 0")
+
+    if repo_root is not None:
+        candidates = sorted(repo_root.glob("config/workspace.execution-governance*.json"))
+        _require(
+            candidates == [repo_root / CANONICAL_RELATIVE],
+            f"canonical policy duplication/drift: {candidates}",
+            rule_id="GOV-CANONICAL-DUPLICATE",
+            classification="DUPLICATE_FAILURE",
+            path="config",
+        )
+        if _is_git_repo(repo_root):
+            violations = _new_parallel_implementation_paths(policy, repo_root)
+            _require(
+                not violations,
+                f"new parallel/versioned implementation files are forbidden: {violations}",
+                rule_id="GOV-CANONICAL-PARALLEL-AUTHORITY",
+                classification="DUPLICATE_FAILURE",
+            )
+
+
+def _evidence_present(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value) and all(_evidence_present(item) for item in value)
+    if isinstance(value, dict):
+        return bool(value)
+    return False
+
+
+def _normalise_write_path(value: Any) -> str:
+    return str(value).strip().replace("\\", "/").strip("/")
+
+
+def _write_paths_overlap(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+
+
+def _validate_lane_independence(lanes: list[dict[str, Any]]) -> None:
+    authorities: dict[str, str] = {}
+    owned_paths: list[tuple[str, str]] = []
+    for lane in lanes:
+        lane_id = str(lane.get("lane_id", "")).strip()
+        authority = str(lane.get("functional_authority", "")).strip()
+        _require(lane_id, "lane_id must be non-empty")
+        _require(authority, f"lane {lane_id} requires functional_authority")
+        if authority in authorities:
+            raise GovernanceError(f"functional authority {authority!r} is owned by both {authorities[authority]} and {lane_id}")
+        authorities[authority] = lane_id
+        write_set = lane.get("write_set")
+        _require(isinstance(write_set, list), f"lane {lane_id} write_set must be a list")
+        for raw_path in write_set:
+            path = _normalise_write_path(raw_path)
+            _require(path, f"lane {lane_id} contains an empty write_set entry")
+            for prior_path, prior_lane in owned_paths:
+                if _write_paths_overlap(path, prior_path):
+                    raise GovernanceError(f"write-set overlap: lane {lane_id} path {path!r} conflicts with lane {prior_lane} path {prior_path!r}")
+            owned_paths.append((path, lane_id))
+
+
+def _require_failed_fields(policy: dict[str, Any], lane_id: str, attempt: dict[str, Any]) -> None:
+    required = policy["lane_contract"]["failed_attempt_required_fields"]
+    missing = [field for field in required if field not in attempt]
+    _require(not missing, f"lane {lane_id} failed attempt {attempt['attempt_id']} missing failure fields: {missing}")
+    for field in required:
+        if field == "log_state":
+            continue
+        _require(_evidence_present(attempt.get(field)), f"lane {lane_id} failed attempt {attempt['attempt_id']} lacks {field}")
+    log_state = attempt.get("log_state")
+    _require(log_state in set(policy["lane_contract"]["log_states"]), f"lane {lane_id} failed attempt {attempt['attempt_id']} has invalid log_state")
+    if log_state == "AVAILABLE":
+        _require(_evidence_present(attempt.get("log_evidence")), f"lane {lane_id} failed attempt {attempt['attempt_id']} lacks log_evidence")
+    else:
+        for field in policy["lane_contract"]["missing_log_required_fields"]:
+            _require(_evidence_present(attempt.get(field)), f"lane {lane_id} missing-log attempt {attempt['attempt_id']} lacks {field}")
+
+
+def _validate_attempts(policy: dict[str, Any], lane: dict[str, Any]) -> None:
+    lane_id = str(lane["lane_id"])
+    attempts = lane.get("attempts")
+    _require(isinstance(attempts, list), f"lane {lane_id} attempts must be a list")
+    required = policy["lane_contract"]["attempt_required_fields"]
+    allowed_outcomes = set(policy["lane_contract"]["attempt_outcomes"])
+    seen_attempt_ids: set[str] = set()
+    threshold = int(policy["adaptive_solver"]["repeated_failure_threshold"])
+    previous: dict[str, Any] | None = None
+    consecutive_failures = 0
+    for attempt in attempts:
+        _require(isinstance(attempt, dict), f"lane {lane_id} attempt must be an object")
+        missing = [field for field in required if field not in attempt]
+        _require(not missing, f"lane {lane_id} attempt missing fields: {missing}")
+        attempt_id = str(attempt["attempt_id"]).strip()
+        _require(attempt_id and attempt_id not in seen_attempt_ids, f"lane {lane_id} attempt_id must be unique and non-empty")
+        seen_attempt_ids.add(attempt_id)
+        outcome = attempt["outcome"]
+        _require(outcome in allowed_outcomes, f"lane {lane_id} attempt {attempt_id} outcome must be PASS/FAIL")
+        _require(_evidence_present(attempt.get("verification_evidence")), f"lane {lane_id} attempt {attempt_id} lacks verification evidence")
+        if previous is not None and previous.get("outcome") == "FAIL":
+            prior_ref = str(attempt.get("prior_failure_diagnosis_ref", "")).strip()
+            _require(prior_ref == str(previous["attempt_id"]), f"lane {lane_id} attempt {attempt_id} must reference prior failed attempt diagnosis {previous['attempt_id']}")
+            if consecutive_failures >= threshold:
+                _require(attempt.get("strategy_family") != previous.get("strategy_family"), f"lane {lane_id} attempt {attempt_id} must change strategy after {threshold} consecutive failures")
+            elif attempt.get("strategy_family") == previous.get("strategy_family"):
+                _require(bool(str(attempt.get("rerun_justification", "")).strip()), f"lane {lane_id} attempt {attempt_id} repeats a strategy without rerun_justification")
+            if previous.get("log_state") == "MISSING":
+                _require(attempt.get("strategy_family") == "targeted_instrumentation", f"lane {lane_id} attempt {attempt_id} must use targeted_instrumentation after missing logs")
+                for field in policy["lane_contract"]["instrumented_attempt_required_fields"]:
+                    _require(_evidence_present(attempt.get(field)), f"lane {lane_id} instrumented attempt {attempt_id} lacks {field}")
+                if outcome == "FAIL":
+                    _require(attempt.get("log_state") == "AVAILABLE", f"lane {lane_id} instrumented failed attempt {attempt_id} must capture readable logs")
+                    for field in policy["lane_contract"]["post_instrumentation_failure_required_fields"]:
+                        _require(_evidence_present(attempt.get(field)), f"lane {lane_id} post-instrumentation failure {attempt_id} lacks {field}")
+        if outcome == "FAIL":
+            _require_failed_fields(policy, lane_id, attempt)
+            consecutive_failures += 1
+        else:
+            consecutive_failures = 0
+        previous = attempt
+    success = policy["state_machine"]["successful_terminal_state"]
+    if lane["status"] == success:
+        _require(attempts, f"PASS lane {lane_id} requires at least one executed attempt")
+        _require(attempts[-1].get("outcome") == "PASS", f"PASS lane {lane_id} must end with a PASS attempt")
+    if lane["status"] == "HARD_FAILED":
+        _require(attempts and attempts[-1].get("outcome") == "FAIL", f"HARD_FAILED lane {lane_id} must end with a failed attempt")
+        minimum = int(policy["adaptive_solver"]["minimum_distinct_strategy_families_before_hard_failed"])
+        families = {str(attempt.get("strategy_family")) for attempt in attempts}
+        _require(len(families) >= minimum, f"HARD_FAILED lane {lane_id} requires at least {minimum} distinct strategy families")
+
+
+def _as_percent(value: Any, field: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise GovernanceError(f"{field} must be numeric") from exc
+    _require(0.0 <= number <= 100.0, f"{field} must be between 0 and 100")
+    return number
+
+
+def validate_receipt(policy: dict[str, Any], receipt: dict[str, Any]) -> None:
+    required_fields = policy["session_receipt"]["required_fields"]
+    missing = [field for field in required_fields if field not in receipt]
+    _require(not missing, f"session receipt missing fields: {missing}")
+    _require(SHA40.fullmatch(str(receipt["base_sha"])) is not None, "base_sha must be 40 lowercase hex")
+    _require(SHA40.fullmatch(str(receipt["head_sha"])) is not None, "head_sha must be 40 lowercase hex")
+    lanes = receipt["lanes"]
+    _require(isinstance(lanes, list) and lanes, "lanes must be a non-empty list")
+    max_lanes = int(policy["parallel_execution"]["maximum_active_lanes"])
+    _require(len(lanes) <= max_lanes, f"lane count {len(lanes)} exceeds maximum {max_lanes}")
+    if receipt["substantial"]:
+        target = int(policy["parallel_execution"]["target_active_lanes"])
+        if len(lanes) < target:
+            limit = receipt.get("dependency_limit")
+            _require(isinstance(limit, dict) and _evidence_present(limit.get("evidence")), f"substantial session below {target} lanes requires dependency_limit evidence")
+    _validate_lane_independence(lanes)
+    required_lane_fields = policy["lane_contract"]["required_fields"]
+    criterion_fields = policy["lane_contract"]["acceptance_criterion_required_fields"]
+    verification_fields = policy["lane_contract"]["verification_check_required_fields"]
+    allowed_non_terminal = set(policy["state_machine"]["non_terminal_states"])
+    success = policy["state_machine"]["successful_terminal_state"]
+    unsuccessful = set(policy["state_machine"]["unsuccessful_terminal_states"])
+    all_states = allowed_non_terminal | {success} | unsuccessful
+    required_lanes = []
+    for lane in lanes:
+        missing_lane = [field for field in required_lane_fields if field not in lane]
+        _require(not missing_lane, f"lane missing fields: {missing_lane}")
+        _require(lane["status"] in all_states, f"lane {lane['lane_id']} has invalid status {lane['status']}")
+        if lane.get("required"):
+            required_lanes.append(lane)
+        criteria = lane["acceptance_criteria"]
+        checks = lane["verification_checks"]
+        _require(isinstance(criteria, list) and criteria, f"lane {lane['lane_id']} requires acceptance criteria")
+        _require(isinstance(checks, list) and checks, f"lane {lane['lane_id']} requires verification checks")
+        for criterion in criteria:
+            missing_criterion = [field for field in criterion_fields if field not in criterion]
+            _require(not missing_criterion, f"lane {lane['lane_id']} acceptance criterion missing fields: {missing_criterion}")
+            _require(criterion.get("status") in {"PASS", "FAIL", "PENDING"}, f"lane {lane['lane_id']} has invalid acceptance status")
+        for check in checks:
+            missing_check = [field for field in verification_fields if field not in check]
+            _require(not missing_check, f"lane {lane['lane_id']} verification check missing fields: {missing_check}")
+            _require(check.get("status") in {"PASS", "FAIL", "PENDING"}, f"lane {lane['lane_id']} has invalid verification status")
+        _validate_attempts(policy, lane)
+        if lane["status"] == success:
+            _require(_evidence_present(lane["evidence"]), f"PASS lane {lane['lane_id']} lacks lane evidence")
+            for criterion in criteria:
+                if criterion.get("required", True):
+                    _require(criterion.get("status") == "PASS", f"lane {lane['lane_id']} required criterion did not PASS")
+                    _require(bool(str(criterion.get("verifier", "")).strip()), f"lane {lane['lane_id']} required criterion lacks verifier")
+                    _require(_evidence_present(criterion.get("evidence")), f"lane {lane['lane_id']} required criterion lacks evidence")
+            for check in checks:
+                _require(check.get("status") == "PASS", f"lane {lane['lane_id']} verification check did not PASS")
+                _require(_evidence_present(check.get("evidence")), f"lane {lane['lane_id']} verification check lacks evidence")
+    _require(required_lanes, "at least one required lane is mandatory")
+    outcome = receipt["outcome"]
+    _require(outcome in ({success} | unsuccessful), f"session outcome {outcome} is not terminal")
+    _require(not any(lane["status"] == "FAILED_RETRYABLE" for lane in lanes), "FAILED_RETRYABLE prevents session stop")
+    effectiveness = receipt["effectiveness"]
+    for metric in policy["session_effectiveness"]["required_metrics"]:
+        _require(metric in effectiveness, f"effectiveness missing {metric}")
+    start_completion = _as_percent(receipt["start_completion_percent"], "start_completion_percent")
+    completion = _as_percent(receipt["completion_percent"], "completion_percent")
+    remaining = _as_percent(receipt["remaining_percent"], "remaining_percent")
+    try:
+        delta = float(receipt["progress_delta_percent"])
+    except (TypeError, ValueError) as exc:
+        raise GovernanceError("progress_delta_percent must be numeric") from exc
+    _require(abs((completion + remaining) - 100.0) < 1e-9, "completion + remaining must equal 100")
+    _require(abs(delta - (completion - start_completion)) < 1e-9, "progress delta must equal completion - start completion")
+    _require(_evidence_present(receipt["session_progress_summary"]), "session_progress_summary must describe verified session progress")
+    if delta < 0:
+        _require(_evidence_present(receipt.get("rebaseline_evidence")), "negative progress delta requires rebaseline_evidence")
+    if outcome == success:
+        _require(all(lane["status"] == success for lane in required_lanes), "all required lanes must be VERIFIED_PASS")
+        thresholds = policy["session_effectiveness"]["successful_thresholds"]
+        for metric, expected in thresholds.items():
+            _require(effectiveness.get(metric) == expected, f"successful session requires {metric}={expected}")
+        _require(completion == 100.0 and remaining == 0.0, "VERIFIED_PASS requires 100/0 completion")
+        _require(not receipt["blockers"], "VERIFIED_PASS cannot contain blockers")
+        if receipt["repository_mutation"]:
+            commits = receipt["commits"]
+            _require(isinstance(commits, list) and commits, "repository mutation requires commit evidence")
+            _require(all(SHA40.fullmatch(str(sha)) for sha in commits), "commit evidence must contain 40-char SHAs")
+            _require(_evidence_present(receipt.get("canonical_reconciliation_evidence")), "repository mutation PASS requires canonical_reconciliation_evidence")
+    else:
+        _require(completion < 100.0, "unsuccessful terminal state cannot claim 100% completion")
+        if outcome == "BLOCKED_EXTERNAL":
+            blockers = receipt["blockers"]
+            _require(isinstance(blockers, list) and blockers, "BLOCKED_EXTERNAL requires blockers")
+            for blocker in blockers:
+                _require(blocker.get("external") is True, "BLOCKED_EXTERNAL blocker must be external")
+                _require(_evidence_present(blocker.get("evidence")), "blocker requires evidence")
+                _require(bool(str(blocker.get("owner", "")).strip()), "blocker requires owner")
+                _require(bool(str(blocker.get("next_action", "")).strip()), "blocker requires next_action")
+        elif outcome == "HARD_FAILED":
+            minimum = int(policy["adaptive_solver"]["minimum_distinct_strategy_families_before_hard_failed"])
+            hard_failed_lanes = [lane for lane in lanes if lane["status"] == "HARD_FAILED"]
+            _require(hard_failed_lanes, "HARD_FAILED session requires at least one HARD_FAILED lane")
+            families = {attempt["strategy_family"] for lane in hard_failed_lanes for attempt in lane["attempts"]}
+            _require(len(families) >= minimum, f"HARD_FAILED requires at least {minimum} strategy families in lane evidence")
+            _require(_evidence_present(receipt.get("failure_evidence")), "HARD_FAILED requires failure evidence")
+        elif outcome == "ABORTED_BY_OPERATOR":
+            _require(_evidence_present(receipt.get("operator_abort_evidence")), "operator abort requires explicit evidence")
+
+
+def _failure_payload(exc: Exception) -> dict[str, Any]:
+    if isinstance(exc, GovernanceError):
+        classification = exc.classification
+        rule_id = exc.rule_id
+        path = exc.path
+    elif isinstance(exc, FileNotFoundError):
+        classification = "CONFIG_ERROR"
+        rule_id = "GOV-CONFIG-MISSING"
+        path = exc.filename
+    elif isinstance(exc, json.JSONDecodeError):
+        classification = "POLICY_INVALID"
+        rule_id = "GOV-JSON-MALFORMED"
+        path = None
+    elif isinstance(exc, OSError):
+        classification = "INFRA_FAILURE"
+        rule_id = "GOV-IO-ERROR"
+        path = getattr(exc, "filename", None)
+    elif isinstance(exc, (ValueError, TypeError, KeyError)):
+        classification = "POLICY_INVALID"
+        rule_id = "GOV-POLICY-TYPE"
+        path = None
+    else:
+        classification = "VALIDATOR_ERROR"
+        rule_id = "GOV-VALIDATOR-EXCEPTION"
+        path = None
+    violation: dict[str, Any] = {
+        "rule_id": rule_id,
+        "severity": "error",
+        "message": str(exc),
+    }
+    if path:
+        violation["path"] = str(path)
+    return {
+        "valid": False,
+        "classification": classification,
+        "violations": [violation],
+    }
+
+
+def _success_payload() -> dict[str, Any]:
+    return {
+        "valid": True,
+        "classification": "PASS",
+        "violations": [],
+    }
 
 
 def _write_json_output(raw_path: str | None, payload: dict[str, Any]) -> None:
@@ -31,52 +619,51 @@ def _write_json_output(raw_path: str | None, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _print_machine_result(payload: dict[str, Any], *, stream: Any) -> None:
+    print(
+        "EXECUTION_GOVERNANCE_JSON: " + json.dumps(payload, sort_keys=True),
+        file=stream,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--json-output")
-    compatibility, remaining = parser.parse_known_args(argv)
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--policy", default=str(CANONICAL_RELATIVE))
+    parser.add_argument("--session", help="Optional session receipt JSON")
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--json-output", help="Optional machine-readable result JSON path")
+    args = parser.parse_args(argv)
+    repo_root = Path(args.repo_root).resolve()
     try:
-        rc = int(_core.main(remaining))
-    except SystemExit:
-        raise
+        policy_path = _resolve_repo_path(repo_root, args.policy, "policy")
+        policy = load_json(policy_path)
+        validate_policy(policy, repo_root=repo_root)
+        if args.session:
+            receipt_path = _resolve_repo_path(repo_root, args.session, "session")
+            validate_receipt(policy, load_json(receipt_path))
     except Exception as exc:
-        payload = {
-            "valid": False,
-            "classification": "VALIDATOR_ERROR",
-            "violations": [
-                {
-                    "rule_id": "GOV-VALIDATOR-EXCEPTION",
-                    "severity": "error",
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
-            ],
-        }
+        payload = _failure_payload(exc)
         try:
-            _write_json_output(compatibility.json_output, payload)
+            _write_json_output(args.json_output, payload)
         except OSError as output_exc:
-            print(f"EXECUTION_GOVERNANCE: FAIL: {output_exc}", file=sys.stderr)
-        raise
-
-    payload = {
-        "valid": rc == 0,
-        "classification": "PASS" if rc == 0 else "VALIDATOR_ERROR",
-        "violations": []
-        if rc == 0
-        else [
-            {
-                "rule_id": "GOV-VALIDATOR-FAILED",
-                "severity": "error",
-                "message": "canonical execution governance validation failed; read validator log",
-            }
-        ],
-    }
-    try:
-        _write_json_output(compatibility.json_output, payload)
-    except OSError as exc:
+            output_payload = _failure_payload(output_exc)
+            output_payload["violations"].append(payload["violations"][0])
+            payload = output_payload
         print(f"EXECUTION_GOVERNANCE: FAIL: {exc}", file=sys.stderr)
+        _print_machine_result(payload, stream=sys.stderr)
         return 1
-    return rc
+
+    payload = _success_payload()
+    try:
+        _write_json_output(args.json_output, payload)
+    except OSError as exc:
+        payload = _failure_payload(exc)
+        print(f"EXECUTION_GOVERNANCE: FAIL: {exc}", file=sys.stderr)
+        _print_machine_result(payload, stream=sys.stderr)
+        return 1
+    print("EXECUTION_GOVERNANCE: PASS")
+    _print_machine_result(payload, stream=sys.stdout)
+    return 0
 
 
 if __name__ == "__main__":

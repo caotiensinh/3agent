@@ -11,6 +11,7 @@ from three_agent.diagnostics.runtime_registry import (
     runtime_tool_metadata,
     unresolved_capability_backlog,
 )
+from three_agent.task_contract import DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS
 
 
 class DiagnosticRuntimeRegistryTests(unittest.TestCase):
@@ -25,11 +26,12 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             )
         )
 
-    def test_runtime_registry_combines_thirty_atomic_tools(self) -> None:
+    def test_runtime_registry_contains_unique_atomic_tools_and_staged_wave1_evidence(self) -> None:
         metadata = runtime_tool_metadata()
-        self.assertEqual(len(metadata), 30)
-        self.assertEqual(len({tool.id for tool in metadata}), 30)
-        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), 30)
+        runtime_ids = {tool.id for tool in metadata}
+        self.assertEqual(len(metadata), len(runtime_ids))
+        self.assertEqual(len(runtime_micro_tool_registry().metadata_view()), len(metadata))
+        self.assertTrue(DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS.issubset(runtime_ids))
 
     def test_runtime_registry_contains_no_external_egress_capability(self) -> None:
         self.assertTrue(
@@ -74,23 +76,24 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertEqual(mapping["print.driver"], ("windows.print.driver.snapshot",))
         self.assertEqual(mapping["windows.boot"], ("windows.boot.snapshot",))
         self.assertEqual(mapping["windows.update"], ("windows.update.history",))
+        self.assertEqual(mapping["vpn.status"], ("vpn.status.snapshot",))
 
-    def test_650_route_coverage_report_reaches_one_hundred_five_fully_promotable_routes(self) -> None:
+    def test_650_route_coverage_report_reaches_one_hundred_fifty_nine_fully_promotable_routes(self) -> None:
         report = build_coverage_report(
             self.routes,
             runtime_micro_tool_registry(),
             bindings=default_runtime_capability_bindings(),
         )
         self.assertEqual(report.total_routes, 650)
-        self.assertEqual(report.fully_promotable_routes, 105)
+        self.assertEqual(report.fully_promotable_routes, 159)
+        self.assertEqual(report.partially_covered_routes, 144)
+        self.assertEqual(report.uncovered_routes, 347)
         self.assertEqual(
             report.fully_promotable_routes
             + report.partially_covered_routes
             + report.uncovered_routes,
             650,
         )
-        self.assertGreater(report.partially_covered_routes, 0)
-        self.assertGreater(report.uncovered_routes, 0)
         self.assertLess(report.fully_promotable_routes, 650)
         self.assertTrue(report.unresolved_capability_counts)
 
@@ -115,6 +118,7 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
             "print.driver",
             "windows.boot",
             "windows.update",
+            "vpn.status",
         ):
             self.assertNotIn(capability, missing)
         self.assertIn("service.health", missing)
@@ -134,24 +138,21 @@ class DiagnosticRuntimeRegistryTests(unittest.TestCase):
         self.assertGreater(selected.get("network.ipconfig.snapshot", 0), 0)
         self.assertGreater(selected.get("network.dns.snapshot", 0), 0)
         self.assertGreater(selected.get("windows.printer.queue", 0), 0)
-        self.assertEqual(selected.get("network.reachability.internal"), 100)
-        self.assertEqual(selected.get("windows.group_policy.result"), 45)
-        self.assertEqual(selected.get("identity.session.snapshot"), 35)
-        self.assertEqual(selected.get("network.quality.internal"), 35)
-        self.assertEqual(selected.get("audio.devices.snapshot"), 35)
+        self.assertEqual(selected.get("network.reachability.internal"), 101)
+        self.assertEqual(selected.get("windows.group_policy.result"), 44)
+        self.assertEqual(selected.get("identity.session.snapshot"), 34)
+        self.assertEqual(selected.get("network.quality.internal"), 33)
+        self.assertEqual(selected.get("audio.devices.snapshot"), 37)
         self.assertEqual(selected.get("meeting.client.snapshot"), 20)
-        self.assertEqual(selected.get("process.top.snapshot"), 20)
+        self.assertEqual(selected.get("process.top.snapshot"), 22)
         self.assertEqual(selected.get("hardware.usb.snapshot"), 20)
-        self.assertEqual(selected.get("camera.devices.snapshot"), 20)
+        self.assertEqual(selected.get("camera.devices.snapshot"), 21)
         self.assertEqual(selected.get("storage.io.snapshot"), 20)
         self.assertEqual(selected.get("windows.print.driver.snapshot"), 20)
         self.assertEqual(selected.get("windows.boot.snapshot"), 20)
         self.assertEqual(selected.get("windows.update.history"), 20)
+        self.assertEqual(selected.get("vpn.status.snapshot"), 22)
 
     def test_backlog_limit_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
             unresolved_capability_backlog((("x", 1),), limit=0)
-
-
-if __name__ == "__main__":
-    unittest.main()
