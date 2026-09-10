@@ -1,0 +1,45 @@
+name: computer-use-windows-interaction-diagnostic
+
+on:
+  pull_request:
+    paths:
+      - 'src/three_agent/computer_use_windows_interaction.py'
+      - 'tests/test_computer_use_windows_interaction_diagnostic.py'
+      - '.github/workflows/computer-use-windows-interaction-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-diagnostic:
+    name: diagnostic (python ${{ matrix.python }})
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install exact candidate
+        shell: pwsh
+        run: python -m pip install -e .
+      - name: Verify exact checked-out head
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD | Select-Object -First 1).Trim()
+          if ($actual -ne $env:EXPECTED_HEAD) {
+            throw "Checked out SHA $actual does not match expected $env:EXPECTED_HEAD"
+          }
+      - name: Run bounded CU-170 PowerShell diagnostic
+        shell: pwsh
+        run: python -m unittest discover -s tests -p 'test_computer_use_windows_interaction_diagnostic.py' -v
