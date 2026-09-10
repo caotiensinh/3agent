@@ -22,6 +22,10 @@ from .runtime_writer_lease import RuntimeWriterLease, RuntimeWriterLeaseReposito
 BROWSER_INTERACTION_KINDS = frozenset(
     {"click", "type", "select", "scroll", "form_submit", "download_request"}
 )
+MAX_SELECTOR_CHARS = 512
+MAX_TYPED_TEXT_CHARS = 4096
+MAX_SELECT_VALUE_CHARS = 1024
+MAX_SCROLL_DELTA = 10_000
 
 
 class BrowserInteractionError(RuntimeError):
@@ -31,12 +35,7 @@ class BrowserInteractionError(RuntimeError):
 class BrowserDispatchError(BrowserInteractionError):
     """Backend dispatch failed after approval/replay consumption may have occurred."""
 
-    def __init__(
-        self,
-        reason_code: str,
-        *,
-        consumed_approval: ComputerApprovalGrant | None,
-    ) -> None:
+    def __init__(self, reason_code: str, *, consumed_approval: ComputerApprovalGrant | None) -> None:
         self.reason_code = reason_code
         self.consumed_approval = consumed_approval
         super().__init__(reason_code)
@@ -73,6 +72,21 @@ class BrowserInteractionBackend(Protocol):
         ...
 
 
+def _bounded_text(value: Any, *, field: str, limit: int, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or value != value.strip() or (not value and not allow_empty):
+        raise BrowserInteractionError(f"INVALID_BROWSER_{field.upper()}")
+    if len(value) > limit or "\x00" in value:
+        raise BrowserInteractionError(f"INVALID_BROWSER_{field.upper()}")
+    return value
+
+
+def _strict_arguments(arguments: Mapping[str, Any], allowed: frozenset[str]) -> dict[str, Any]:
+    keys = set(arguments)
+    if keys - allowed:
+        raise BrowserInteractionError("BROWSER_INTERACTION_ARGUMENT_NOT_ALLOWED")
+    return dict(arguments)
+
+
 def _normalized_https_url(value: Any, *, allowed_hosts: tuple[str, ...]) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise BrowserInteractionError("BROWSER_NAVIGATION_URL_REQUIRED")
@@ -88,6 +102,38 @@ def _normalized_https_url(value: Any, *, allowed_hosts: tuple[str, ...]) -> str:
     return value
 
 
+def _interaction_arguments(arguments: Mapping[str, Any], kind: str) -> dict[str, Any]:
+    if kind == "click":
+        result = _strict_arguments(arguments, frozenset({"interaction", "selector"}))
+        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
+        return result
+    if kind == "type":
+        result = _strict_arguments(arguments, frozenset({"interaction", "selector", "text"}))
+        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
+        result["text"] = _bounded_text(result.get("text"), field="typed_text", limit=MAX_TYPED_TEXT_CHARS, allow_empty=True)
+        return result
+    if kind == "select":
+        result = _strict_arguments(arguments, frozenset({"interaction", "selector", "value"}))
+        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
+        result["value"] = _bounded_text(result.get("value"), field="select_value", limit=MAX_SELECT_VALUE_CHARS)
+        return result
+    if kind == "scroll":
+        result = _strict_arguments(arguments, frozenset({"interaction", "delta_y"}))
+        delta = result.get("delta_y")
+        if isinstance(delta, bool) or not isinstance(delta, int) or not -MAX_SCROLL_DELTA <= delta <= MAX_SCROLL_DELTA:
+            raise BrowserInteractionError("INVALID_BROWSER_SCROLL_DELTA")
+        return result
+    if kind == "form_submit":
+        result = _strict_arguments(arguments, frozenset({"interaction", "selector"}))
+        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
+        return result
+    if kind == "download_request":
+        result = _strict_arguments(arguments, frozenset({"interaction", "selector"}))
+        result["selector"] = _bounded_text(result.get("selector"), field="selector", limit=MAX_SELECTOR_CHARS)
+        return result
+    raise BrowserInteractionError("UNSUPPORTED_BROWSER_INTERACTION_KIND")
+
+
 def _command_from_action(
     action: ComputerActionRequest,
     *,
@@ -96,15 +142,13 @@ def _command_from_action(
 ) -> BrowserInteractionCommand:
     arguments = dict(action.arguments)
     if action.operation == "browser.navigate":
-        target = _normalized_https_url(
-            arguments.get("url"),
-            allowed_hosts=allowed_navigation_hosts,
-        )
+        arguments = _strict_arguments(arguments, frozenset({"url"}))
+        target = _normalized_https_url(arguments.get("url"), allowed_hosts=allowed_navigation_hosts)
         return BrowserInteractionCommand(
             operation=action.operation,
             interaction_kind=None,
             resource_ref=action.resource_ref,
-            arguments=arguments,
+            arguments={"url": target},
             navigation_url=target,
         )
     if action.operation != "browser.interact":
@@ -112,14 +156,14 @@ def _command_from_action(
     kind = arguments.get("interaction")
     if kind not in BROWSER_INTERACTION_KINDS:
         raise BrowserInteractionError("UNSUPPORTED_BROWSER_INTERACTION_KIND")
-    if kind == "download_request":
-        if not isinstance(download_quarantine_ref, str) or not download_quarantine_ref:
-            raise BrowserInteractionError("DOWNLOAD_QUARANTINE_REQUIRED")
+    normalized = _interaction_arguments(arguments, kind)
+    if kind == "download_request" and (not isinstance(download_quarantine_ref, str) or not download_quarantine_ref):
+        raise BrowserInteractionError("DOWNLOAD_QUARANTINE_REQUIRED")
     return BrowserInteractionCommand(
         operation=action.operation,
         interaction_kind=kind,
         resource_ref=action.resource_ref,
-        arguments=arguments,
+        arguments=normalized,
         download_quarantine_ref=(download_quarantine_ref if kind == "download_request" else None),
     )
 
@@ -141,14 +185,14 @@ def execute_governed_browser_action(
     allowed_navigation_hosts: tuple[str, ...] = (),
     download_quarantine_ref: str | None = None,
 ) -> GovernedBrowserInteractionResult:
-    """Dispatch one browser action only after existing WorkSpace governance passes.
+    """Dispatch one bounded browser action after existing WorkSpace governance passes.
 
-    Ordering is intentional: freshness/policy/command validation happens first;
-    approval and writer validity are checked without consuming anything; replay is
-    then fenced; approval is consumed before the possible side effect; the writer
-    generation is rechecked immediately before mutating dispatch; and a declared
-    postcondition must be verified afterwards. Ambiguous dispatch returns the
-    consumed approval so callers cannot replay it.
+    Freshness/policy/command validation happens first. Approval and writer validity
+    are checked without consuming anything; replay is then fenced; approval is
+    consumed before a possible side effect; the writer generation is rechecked
+    immediately before mutating dispatch; and the declared postcondition must be
+    verified afterwards. Ambiguous dispatch exposes the consumed approval so it
+    cannot be reused.
     """
 
     action.validate()
@@ -218,34 +262,18 @@ def execute_governed_browser_action(
     try:
         backend_result = backend.dispatch(command)
     except Exception as exc:
-        raise BrowserDispatchError(
-            "BROWSER_BACKEND_DISPATCH_FAILED",
-            consumed_approval=consumed_approval,
-        ) from exc
+        raise BrowserDispatchError("BROWSER_BACKEND_DISPATCH_FAILED", consumed_approval=consumed_approval) from exc
     if not isinstance(backend_result, BrowserInteractionBackendResult):
-        raise BrowserDispatchError(
-            "INVALID_BROWSER_BACKEND_RESULT",
-            consumed_approval=consumed_approval,
-        )
+        raise BrowserDispatchError("INVALID_BROWSER_BACKEND_RESULT", consumed_approval=consumed_approval)
 
     post = backend_result.post_observation
     post.validate()
     if post.task_id != action.task_id or post.session_id != action.session_id:
-        raise BrowserDispatchError(
-            "BROWSER_POST_OBSERVATION_IDENTITY_MISMATCH",
-            consumed_approval=consumed_approval,
-        )
+        raise BrowserDispatchError("BROWSER_POST_OBSERVATION_IDENTITY_MISMATCH", consumed_approval=consumed_approval)
     if action.expected_postcondition not in backend_result.observed_postconditions:
-        raise BrowserDispatchError(
-            "BROWSER_POSTCONDITION_NOT_SATISFIED",
-            consumed_approval=consumed_approval,
-        )
-    if command.interaction_kind == "download_request":
-        if backend_result.download_quarantine_ref != command.download_quarantine_ref:
-            raise BrowserDispatchError(
-                "DOWNLOAD_NOT_QUARANTINED",
-                consumed_approval=consumed_approval,
-            )
+        raise BrowserDispatchError("BROWSER_POSTCONDITION_NOT_SATISFIED", consumed_approval=consumed_approval)
+    if command.interaction_kind == "download_request" and backend_result.download_quarantine_ref != command.download_quarantine_ref:
+        raise BrowserDispatchError("DOWNLOAD_NOT_QUARANTINED", consumed_approval=consumed_approval)
 
     return GovernedBrowserInteractionResult(
         backend_result=backend_result,
