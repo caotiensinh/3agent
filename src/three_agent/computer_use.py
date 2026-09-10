@@ -34,6 +34,7 @@ _OPERATION_POLICY = {
     "computer.screen.observe": ("read", "R0_OBSERVE", False),
     "computer.window.observe": ("read", "R0_OBSERVE", False),
     "computer.accessibility.observe": ("read", "R0_OBSERVE", False),
+    "computer.accessibility.interact": ("write", "R2_STATE_CHANGE", True),
     "browser.dom.observe": ("read", "R0_OBSERVE", False),
     "browser.navigate": ("network_read", "R1_REVERSIBLE_INTERACTION", False),
     "browser.interact": ("write", "R2_STATE_CHANGE", True),
