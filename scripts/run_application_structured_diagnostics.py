@@ -14,6 +14,8 @@ from three_agent.config import load_config
 
 TARGET_CASE_IDS = (
     "vi_translation_one_line",
+    "ja_translation_one_line",
+    "en_translation_one_line",
     "vi_summary_two_bullets",
     "vi_https_json_only",
 )
