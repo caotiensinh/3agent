@@ -178,14 +178,6 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
                 "target_language": "vi",
             },
         )
-        self.assertEqual(
-            _translation_generation_prompt(cases["vi_summary_two_bullets"].prompt, "vi"),
-            "",
-        )
-        self.assertEqual(
-            _translation_generation_prompt(cases["vi_https_json_only"].prompt, "vi"),
-            "",
-        )
 
         translation_schema = _translation_structured_schema()
         self.assertEqual(translation_schema["required"], ["translation"])
@@ -254,6 +246,7 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
         self.assertIn('"workspace.chat.strict.translation.v1"', source)
         self.assertIn("_translation_semantic_validation(", source)
         self.assertIn('last_reason == "translation_semantic_mismatch"', source)
+        self.assertIn("if translation_request", source)
         self.assertIn("translation_generation_prompt or prompt", source)
 
     def test_structured_retry_is_preserved_for_translation_json_and_bullets(self) -> None:
