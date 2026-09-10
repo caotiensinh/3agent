@@ -116,3 +116,68 @@ class ParallelLaneManifest:
             if wanted in lane.owned_paths:
                 return lane.lane_id
         return None
+
+
+CURRENT_PARALLEL_LANE_MANIFEST = ParallelLaneManifest.build(
+    (
+        LaneWriteSet(
+            "L01",
+            "feat/security-device-config-history-20260910",
+            10,
+            (
+                ".github/workflows/security-normalized-evidence-cross-platform.yml",
+                "src/three_agent/security_monitoring/device_config_history.py",
+                "src/three_agent/security_monitoring/device_config_normalization.py",
+                "src/three_agent/security_monitoring/normalized_evidence.py",
+                "tests/test_security_device_config_history_v001.py",
+                "tests/test_security_device_config_normalization_v001.py",
+            ),
+            "tests/test_security_device_config_history_v001.py",
+        ),
+        LaneWriteSet(
+            "L02", "feat/security-observed-network-path-20260910", 10,
+            ("src/three_agent/security_monitoring/observed_network_path.py", "tests/test_security_observed_network_path_v001.py"),
+            "tests/test_security_observed_network_path_v001.py",
+        ),
+        LaneWriteSet(
+            "L03", "feat/security-endpoint-state-snapshot-20260910", 10,
+            ("src/three_agent/security_monitoring/endpoint_state_snapshot.py", "tests/test_security_endpoint_state_snapshot_v001.py"),
+            "tests/test_security_endpoint_state_snapshot_v001.py",
+        ),
+        LaneWriteSet(
+            "L04", "feat/security-rca-evidence-quorum-20260910", 10,
+            ("src/three_agent/security_monitoring/rca_evidence_quorum.py", "tests/test_security_rca_evidence_quorum_v001.py"),
+            "tests/test_security_rca_evidence_quorum_v001.py",
+        ),
+        LaneWriteSet(
+            "L05", "feat/security-rca-uncertainty-20260910", 10,
+            ("src/three_agent/security_monitoring/rca_uncertainty.py", "tests/test_security_rca_uncertainty_v001.py"),
+            "tests/test_security_rca_uncertainty_v001.py",
+        ),
+        LaneWriteSet(
+            "L06", "test/security-connectivity-rca-corpus-20260910", 10,
+            ("src/three_agent/security_monitoring/connectivity_rca_cases.py", "tests/test_security_connectivity_rca_cases_v001.py"),
+            "tests/test_security_connectivity_rca_cases_v001.py",
+        ),
+        LaneWriteSet(
+            "L07", "feat/security-evidence-resource-budget-20260910", 10,
+            ("src/three_agent/security_monitoring/evidence_resource_budget.py", "tests/test_security_evidence_resource_budget_v001.py"),
+            "tests/test_security_evidence_resource_budget_v001.py",
+        ),
+        LaneWriteSet(
+            "L08", "feat/security-evidence-privacy-receipt-20260910", 10,
+            ("src/three_agent/security_monitoring/evidence_privacy_receipt.py", "tests/test_security_evidence_privacy_receipt_v001.py"),
+            "tests/test_security_evidence_privacy_receipt_v001.py",
+        ),
+        LaneWriteSet(
+            "L09", "chore/security-lane-write-set-manifest-20260910", 10,
+            ("src/three_agent/security_monitoring/lane_write_set_manifest.py", "tests/test_security_lane_write_set_manifest_v001.py"),
+            "tests/test_security_lane_write_set_manifest_v001.py",
+        ),
+        LaneWriteSet(
+            "L10", "feat/security-release-transport-readiness-20260910", 10,
+            ("src/three_agent/security_monitoring/release_transport_readiness.py", "tests/test_security_release_transport_readiness_v001.py"),
+            "tests/test_security_release_transport_readiness_v001.py",
+        ),
+    )
+)
