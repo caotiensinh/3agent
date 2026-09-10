@@ -36,7 +36,7 @@
     {"id":"CU-120","weight":3,"status":"VERIFIED_PASS","verified_head":"9cace6c4f763597388453337b846c180118168b8","evidence":"5 mandatory exact-head workflows SUCCESS"},
     {"id":"CU-130","weight":3,"status":"VERIFIED_PASS","verified_head":"59db70567f5bb7eef69938c14ae0f2f169606ad6","evidence":"5 mandatory exact-head workflows SUCCESS"},
     {"id":"CU-140","weight":3,"status":"VERIFIED_PASS","verified_head":"6d0bb17e54d7372ab92bb159e41f64ab88bd8979","evidence":"5 mandatory exact-head workflows SUCCESS"},
-    {"id":"CU-150","weight":5,"status":"DIAGNOSING","evidence":"contract/renderer sub-boundary verified at bcc235258ed5b63e9e84b88c89854e8bec722ef0; live inbox exact head be23d2a121ce81925bce9a8c86ffea3abea25cf5 has installer-ci and harness-ci failures"},
+    {"id":"CU-150","weight":5,"status":"VERIFIED_PASS","verified_head":"a93d41140f58add69bd8612dd51374bcd559d18e","evidence":"RCA fixed closed-approval replay validation precedence; exact-head canonical-module-ci run 34443473680, internet-egress-security-ci 34443473678, windows-deploy-ci 34443473823, installer-ci 34443473679, and harness-ci 34443473778 all SUCCESS; harness Python 3.11 and 3.12 passed regression A-Z, full unit tests, Runtime P0, and EV-01 through EV-10"},
     {"id":"CU-160","weight":5,"status":"PLANNED"},
     {"id":"CU-170","weight":6,"status":"PLANNED"},
     {"id":"CU-180","weight":6,"status":"PLANNED"},
@@ -53,12 +53,12 @@
   ],
   "computed_baseline": {
     "program_total_active_weight": 114,
-    "program_verified_weight": 69,
-    "program_completion_percent": 60.53,
-    "program_remaining_percent": 39.47,
+    "program_verified_weight": 74,
+    "program_completion_percent": 64.91,
+    "program_remaining_percent": 35.09,
     "current_pr_slice_total_weight": 74,
-    "current_pr_slice_verified_weight": 69,
-    "current_pr_slice_completion_percent": 93.24,
-    "current_pr_slice_remaining_percent": 6.76
+    "current_pr_slice_verified_weight": 74,
+    "current_pr_slice_completion_percent": 100.0,
+    "current_pr_slice_remaining_percent": 0.0
   }
 }
