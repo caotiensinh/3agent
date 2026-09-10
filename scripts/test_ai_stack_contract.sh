@@ -30,6 +30,12 @@ grep -q 'THREE_AGENT_RESEARCH_MODEL' "$SCRIPT"
 grep -q 'THREE_AGENT_PRESENTATION_MODEL' "$SCRIPT"
 grep -q 'THREE_AGENT_REPORT_MODEL' "$SCRIPT"
 grep -q 'THREE_AGENT_DEEP_MODEL' "$SCRIPT"
+grep -q 'THREE_AGENT_VISION_MODEL' "$SCRIPT"
+# shellcheck disable=SC2016 # literal installer contract, not shell expansion
+grep -q 'VISION_MODEL="${THREE_AGENT_VISION_MODEL:-qwen3.6:35b}"' "$SCRIPT"
+grep -q 'THREE_AGENT_VISION_BASE_URL=http://127.0.0.1:11434' "$SCRIPT"
+# shellcheck disable=SC2016 # literal installer contract, not shell expansion
+grep -q 'ollama show "$VISION_MODEL"' "$SCRIPT"
 grep -q 'deep_escalation: true' "$SCRIPT"
 grep -q 'pull_models' "$SCRIPT"
 

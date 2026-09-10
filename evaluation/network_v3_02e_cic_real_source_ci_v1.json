@@ -1,0 +1,234 @@
+{
+  "schema_version": "workspace-network-v3-02e-cic-real-source-ci/v1",
+  "phase": "V3-02E-CIC-REAL-SOURCE",
+  "status": "HARNESS_AND_FIXTURE_MATRIX_RE_FROZEN_BEFORE_REAL_EXECUTION",
+  "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_CIC_REAL_SOURCE_CI_SPEC_V1.md",
+  "prerequisite_main_sha": "033b67b7531d4cd24adaa5f258c5aa42b71bdc11",
+  "source": {
+    "dataset_id": "cse-cic-ids2018",
+    "variant": "processed-ml",
+    "bucket": "cse-cic-ids2018",
+    "region": "ca-central-1",
+    "object_key": "Processed Traffic Data for ML Algorithms/Thursday-01-03-2018_TrafficForML_CICFlowMeter.csv",
+    "acquisition_mode": "public_s3_unsigned",
+    "credentials_allowed": false,
+    "mirrors_allowed": false,
+    "signed_urls_allowed": false,
+    "max_parent_source_bytes": 268435456
+  },
+  "bounded_derivation": {
+    "method": "record_aligned_slice",
+    "maximum_data_records": 250000,
+    "selection_rule": "header_plus_first_250000_logical_data_records_in_original_order",
+    "record_boundary_rule": "python_csv_reader_logical_records_then_csv_writer_lineterminator_lf",
+    "label_aware_selection_allowed": false,
+    "random_selection_allowed": false,
+    "shuffle_allowed": false,
+    "wall_clock_selection_allowed": false
+  },
+  "production_binding": {
+    "runner": "three_agent.network_real_source_runner.OfflineRealSourceRunner",
+    "adapter_id": "cse-cic-ids2018-processed-ml",
+    "adapter_version": "cse-cic-ids2018-processed-ml/0.1",
+    "expected_lane": "cic_processed_ml",
+    "registry_path": "config/network-datasets.registry.json",
+    "policy_path": "config/network-data-policy.json",
+    "acceptance_profile_path": "evaluation/network_real_source_acceptance_v1.json",
+    "runner_profile_path": "evaluation/network_real_source_runner_v1.json",
+    "runner_binding_path": "evaluation/network_real_source_runner_binding_v1.json"
+  },
+  "acquisition_receipt": {
+    "required_fields": [
+      "schema_version",
+      "dataset_id",
+      "variant",
+      "bucket",
+      "region",
+      "object_key",
+      "acquisition_mode",
+      "parent_source_size_bytes",
+      "parent_source_sha256",
+      "bounded_source_size_bytes",
+      "bounded_source_sha256",
+      "bounded_data_record_count",
+      "derivation",
+      "s3_etag",
+      "s3_last_modified",
+      "exact_head_sha",
+      "registry_fingerprint",
+      "policy_fingerprint",
+      "receipt_fingerprint"
+    ],
+    "forbidden_fields": [
+      "raw_line",
+      "raw_record",
+      "raw_payload",
+      "csv_row",
+      "label_values",
+      "credential",
+      "password",
+      "token",
+      "signed_url",
+      "cookie"
+    ],
+    "wall_clock_fields_in_identity": false
+  },
+  "coverage": {
+    "minimum_valid_records": 1000,
+    "maximum_visible_records": 250000,
+    "requires_benign_truth": true,
+    "requires_non_benign_truth": true,
+    "hidden_truth_leakage_count": 0,
+    "deterministic_replay_percent": 100
+  },
+  "runner_authority": {
+    "network_calls": 0,
+    "model_calls": 0,
+    "subprocess_calls": 0,
+    "linux_peak_rss_required": true
+  },
+  "cleanup": {
+    "delete_parent_source_always": true,
+    "delete_bounded_source_always": true,
+    "delete_runner_scratch_always": true,
+    "raw_source_artifact_allowed": false,
+    "bounded_source_artifact_allowed": false,
+    "normalized_corpus_artifact_allowed": false,
+    "truth_corpus_artifact_allowed": false
+  },
+  "durable_artifact_allowlist": [
+    "acquisition-receipt.json",
+    "acceptance-manifest.json",
+    "runner-receipt.json",
+    "evidence-summary.json"
+  ],
+  "verdicts": [
+    "PASS",
+    "FAIL_SCHEMA",
+    "FAIL_INTEGRITY",
+    "FAIL_SECURITY",
+    "FAIL_PROVENANCE",
+    "FAIL_LICENSE",
+    "FAIL_RESOURCE",
+    "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+  ],
+  "zero_tolerance_gates": [
+    "WRONG_BUCKET_OR_OBJECT",
+    "CREDENTIAL_OR_SIGNED_SOURCE_USED",
+    "MIRROR_SOURCE_USED",
+    "SOURCE_TOO_LARGE",
+    "SOURCE_PATH_ESCAPE",
+    "SOURCE_DIGEST_OR_SIZE_BINDING_FAILED",
+    "BOUNDED_DERIVATION_INVALID",
+    "BOUNDED_RECORD_LIMIT_EXCEEDED",
+    "LABEL_AWARE_SELECTION_ATTEMPT",
+    "REGISTRY_FINGERPRINT_MISMATCH",
+    "POLICY_FINGERPRINT_MISMATCH",
+    "ADAPTER_BINDING_DRIFT",
+    "SCHEMA_DRIFT_GUESSED",
+    "HIDDEN_TRUTH_LEAKAGE",
+    "DETERMINISTIC_REPLAY_MISMATCH",
+    "RUNNER_NETWORK_AUTHORITY_NONZERO",
+    "RUNNER_MODEL_AUTHORITY_NONZERO",
+    "RUNNER_SUBPROCESS_AUTHORITY_NONZERO",
+    "LINUX_RSS_UNAVAILABLE_OR_FABRICATED",
+    "RAW_SOURCE_IN_DURABLE_ARTIFACT",
+    "RAW_SOURCE_LEFT_AFTER_CLEANUP",
+    "BOTS_DIRECT_ADAPTER_ATTEMPT",
+    "EXACT_HEAD_LINEAGE_MISMATCH"
+  ],
+  "fixture_matrix": [
+    {
+      "id": "valid_official_parent_metadata_and_deterministic_bounded_shard",
+      "expected": "PASS_CONTRACT_AND_MANIFEST_BUILD"
+    },
+    {
+      "id": "wrong_bucket",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "wrong_object_key",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "mirror_or_signed_source",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "parent_larger_than_256_mib",
+      "expected": "FAIL_RESOURCE"
+    },
+    {
+      "id": "parent_digest_changes_after_binding",
+      "expected": "FAIL_INTEGRITY"
+    },
+    {
+      "id": "bounded_digest_changes_after_derivation",
+      "expected": "FAIL_INTEGRITY"
+    },
+    {
+      "id": "missing_required_s3_metadata",
+      "expected": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "adapter_id_or_version_drift",
+      "expected": "FAIL_SCHEMA"
+    },
+    {
+      "id": "derivation_selection_rule_drift",
+      "expected": "FAIL_PROVENANCE"
+    },
+    {
+      "id": "label_aware_or_random_selection_enabled",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "bounded_record_count_above_250000",
+      "expected": "FAIL_RESOURCE"
+    },
+    {
+      "id": "forbidden_raw_content_key_in_receipt_or_summary",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "executor_source_contains_network_client_authority",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "workflow_missing_always_cleanup",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "workflow_artifact_includes_parent_or_bounded_csv",
+      "expected": "FAIL_SECURITY"
+    },
+    {
+      "id": "runner_pass",
+      "expected": "PASS"
+    },
+    {
+      "id": "runner_valid_but_coverage_insufficient",
+      "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+    }
+  ],
+  "promotion_gate": {
+    "required_ci_families": [
+      "cic-real-source-evidence",
+      "harness-ci",
+      "installer-ci",
+      "portable-deploy-ci",
+      "windows-deploy-ci"
+    ],
+    "all_must_succeed_on_same_exact_head": true,
+    "main_reconcile_required_if_advanced": true,
+    "pass_with_warning_allowed": false
+  },
+  "lanl": {
+    "authorized": false,
+    "reason": "operator_enrollment_required; separate publisher-access evidence plan required"
+  },
+  "bots": {
+    "direct_adapter_authorized": false,
+    "runtime_verdict": "BLOCKED_DEPENDENCY_COST"
+  }
+}

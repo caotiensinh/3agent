@@ -1,0 +1,18 @@
+{
+  "schema_version": "workspace-external-evidence-record/v1",
+  "status": "accepted",
+  "corpus_class": "edge_large_context",
+  "baseline_ref": "38cd80c7c4ebe36bf5a22bc4a7cec625d66695c4",
+  "candidate_ref": "303749d5021c409ba099a4cdf46240e4254c1abe",
+  "actions_run_id": 33265310271,
+  "actions_job_id": 99134228336,
+  "artifact_id": 9718460647,
+  "artifact_digest": "sha256:8dfc62e839850553cb842616f165be69e7552807ea15a1f7d79787cc3d1a0681",
+  "profile_sha256": "sha256:96541dfe066fd660a3d216f8a1320258c6a91745ae6380a288af4c64dfdad3e1",
+  "metric_registry_sha256": "sha256:e17c52598f1df2d9984854280ccc588b387853d8910f0b602aaa6804ff98172c",
+  "label_commitment_sha256": "sha256:ac4c7a824ca73e6b3f5aba8db8d89a9777f9e22728986c77fd58f6ef0a911700",
+  "all_required_checks_passed": true,
+  "raw_holdout_labels_published": false,
+  "promotion_evidence_path": "evidence_records/d7-05/303749d5021c409ba099a4cdf46240e4254c1abe/promotion-evidence.json",
+  "tracking_issue": 65
+}

@@ -1,0 +1,72 @@
+name: lanl-operator-handoff-contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/lanl-operator-handoff-contract.yml"
+      - "docs/WORKSPACE_NETWORK_V3_02E_LANL_OPERATOR_HANDOFF_SPEC_V1.md"
+      - "evaluation/network_v3_02e_lanl_operator_handoff_v1.json"
+      - "evaluation/network_v3_02e_lanl_publisher_access_v1.json"
+      - "src/three_agent/network_lanl_operator_handoff.py"
+      - "src/three_agent/network_lanl_publisher_access.py"
+      - "tests/test_network_lanl_operator_handoff.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  handoff-contract:
+    runs-on: ubuntu-24.04
+    env:
+      EXACT_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact feature head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify exact checkout lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXACT_HEAD"
+
+      - name: Run LANL operator-handoff adversarial harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=src python -m unittest tests.test_network_lanl_operator_handoff -v
+
+      - name: Verify CI non-TTY fails closed before prompting
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_file="$(mktemp)"
+          trap 'rm -f "$status_file"' EXIT
+          set +e
+          PYTHONPATH=src python -m three_agent.network_lanl_operator_handoff \
+            --profile evaluation/network_v3_02e_lanl_publisher_access_v1.json \
+            >"$status_file"
+          rc=$?
+          set -e
+          test "$rc" -eq 1
+          python - "$status_file" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert payload == {
+              "gate_id": "LANL_OPERATOR_HANDOFF_TTY_REQUIRED",
+              "phase": "V3-02E-LANL-OPERATOR-HANDOFF",
+              "readiness": "FAIL_SECURITY",
+          }
+          assert "NOT_ENOUGH_REAL_SOURCE_EVIDENCE" not in pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          PY

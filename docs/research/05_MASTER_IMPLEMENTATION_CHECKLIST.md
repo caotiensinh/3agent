@@ -45,6 +45,45 @@ D12   Specialist/fine-tuning/internalization
 
 A later phase may not become production-critical merely because it is interesting. Security defects may always preempt this order.
 
+## Current closure baseline
+
+Authoritative implementation lineage at this checklist sync starts from main:
+
+`704955f8efba430b1a57b661bc5d03b7e92d2d76`
+
+The deterministic control plane is now closed at baseline level. The following recent work is merged and regression-protected:
+
+- PICO-03 / D0-03 typed task capability authority + persistent monotonic revocation — `DONE` baseline
+- D0-04 persistent hard execution limits for steps, tool calls, retries, escalations and wall time — `DONE`
+- D0-05 authoritative deterministic failure taxonomy driving current automatic recovery — `DONE`
+- D7-03 regression replay pins the complete immutable execution-budget envelope — `DONE` baseline
+- D1 Handoff Trust Boundaries — `DONE`
+- D2 Structured Output + Semantic Validation — `DONE`
+- D3 Verified Work Metrics foundation — `DONE`
+- Evidence Packing Rank v1 — `DONE`
+- Authoritative Packing Receipt v1 — `DONE`
+- Runtime Validator Bridge — `DONE`
+- Benchmark Isolation v1 — `DONE`
+- Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+- D4 Durable Prefix Reuse Measurement — `DONE`
+- D5-01 Structural-first Context Retrieval Trace — `DONE` baseline
+- D5-03 Hard Evidence Budget — `DONE` baseline
+- D5-04 Atomic Provenance / Critical-span Protection — `DONE` baseline
+- D6-01 Deterministic Route Reason Codes — `DONE`
+- D6-02 Verified `NO_LLM` Retrieval — `DONE`
+- D6-03 Persistent Hard Retry/Escalation Budget — `DONE`
+- D6-04 Security Monotonicity — `DONE`
+- D7-01 Versioned Golden Corpus — `DONE`
+- D7-02 Deterministic Replay — `DONE`
+- D7-03 Regression Corpus — `DONE` baseline
+- D7-04 Adversarial/Security Corpus — `DONE` baseline
+- D7-07 Metric Version Registry — `DONE`
+- D7-08 Fail-closed Promotion Pipeline — `DONE` infrastructure
+
+D7-05 edge/large-context and D7-06 efficiency/cache/concurrency profiles/adapters are implemented, but representative external results are not yet materialized. They remain `EVIDENCE-PENDING`; implementation alone is not evaluation acceptance.
+
+The fixed benchmark harness is implemented, but the real dual-RTX5090 48k/40k/32k comparison remains pending execution. No context-budget candidate is promoted by implementation alone.
+
 ---
 
 # Current authoritative closure
@@ -197,6 +236,19 @@ Important observed decisions:
 - `ranked-32k` — `NO-GO`; aggregate optimization metrics were acceptable, but a required schema-validator PASS was lost, so required-validator acceptance correctly blocked promotion.
 
 A verified negative result is a completed engineering decision. Do not repeatedly rerun the same unchanged candidate expecting a different governance outcome.
+
+## Fixed-task Benchmark Execution + Required-validator Acceptance v1 — `DONE`
+
+The repository owns a versioned local-evidence task set and `workspace-benchmark` execution harness for:
+
+- `legacy_v1 / 48000` baseline;
+- `quality_ranked_v1 / 48000`;
+- `quality_ranked_v1 / 40000`;
+- `quality_ranked_v1 / 32000`.
+
+Each variant uses isolated runtime state, exact Git lineage, deterministic fixture corpus identity and the real Runtime Validator Bridge. Candidate efficiency is not evaluated until exact required-validator parity/PASS non-regression and verified-quality gates pass. The RTX5090 workflow requires the preinstalled local model and two RTX5090 GPUs and does not silently download a missing model.
+
+Implementation readiness does not equal benchmark acceptance. Representative hardware evidence remains pending.
 
 ---
 

@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPO_URL="${THREE_AGENT_REPO_URL:-https://github.com/caotiensinh/3agent.git}"
+REPO_REF="${THREE_AGENT_REPO_REF:-main}"
+INSTALL_DIR="${THREE_AGENT_INSTALL_DIR:-${HOME}/3agent}"
+BIN_DIR="${THREE_AGENT_BIN_DIR:-${HOME}/.local/bin}"
+CONFIG_PATH="${THREE_AGENT_CONFIG_PATH:-${INSTALL_DIR}/config/local.json}"
+RELEASES_DIR="${THREE_AGENT_RELEASES_DIR:-${HOME}/.local/share/workspace/releases}"
+STATE_DIR="${THREE_AGENT_STATE_DIR:-${HOME}/.local/state/workspace}"
+ACTIVATION_LOG="${THREE_AGENT_ACTIVATION_LOG:-${STATE_DIR}/active-releases.log}"
+MODEL="${THREE_AGENT_MODEL:-}"
+INSTALL_OLLAMA="${THREE_AGENT_INSTALL_OLLAMA:-0}"
+PULL_MODEL="${THREE_AGENT_PULL_MODEL:-0}"
+SKIP_SYSTEM_PACKAGES="${THREE_AGENT_SKIP_SYSTEM_PACKAGES:-0}"
+ALLOW_ROOT="${THREE_AGENT_ALLOW_ROOT:-0}"
+BOOTSTRAP_URL_OVERRIDE="${THREE_AGENT_BOOTSTRAP_URL:-}"
+SELF_TEST=0
+TMP_BOOTSTRAP=""
+BOOTSTRAP_PATH=""
+CANONICAL_REPO_URL="https://github.com/caotiensinh/3agent.git"
+
+for arg in "$@"; do
+  case "$arg" in
+    --self-test) SELF_TEST=1 ;;
+    *) printf '[WorkSpace Ubuntu][ERROR] Unknown argument: %s\n' "$arg" >&2; exit 2 ;;
+  esac
+done
+
+log() { printf '[WorkSpace Ubuntu] %s\n' "$*"; }
+warn() { printf '[WorkSpace Ubuntu][WARN] %s\n' "$*" >&2; }
+die() { printf '[WorkSpace Ubuntu][ERROR] %s\n' "$*" >&2; exit 1; }
+
+is_true() {
+  case "${1,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cleanup() {
+  if [[ -n "$TMP_BOOTSTRAP" && -f "$TMP_BOOTSTRAP" ]]; then
+    rm -f "$TMP_BOOTSTRAP"
+  fi
+}
+trap cleanup EXIT
+
+validate_inputs() {
+  [[ -n "$REPO_URL" ]] || die "Repository URL is empty"
+  [[ -n "$REPO_REF" ]] || die "Repository ref is empty"
+  [[ -n "$INSTALL_DIR" ]] || die "Install directory is empty"
+  [[ -n "$BIN_DIR" ]] || die "Binary directory is empty"
+  [[ -n "$CONFIG_PATH" ]] || die "Configuration path is empty"
+  [[ -n "$RELEASES_DIR" ]] || die "Release directory is empty"
+  [[ -n "$STATE_DIR" ]] || die "State directory is empty"
+  [[ -n "$ACTIVATION_LOG" ]] || die "Activation log is empty"
+
+  if [[ ! "$REPO_REF" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+    die "Repository ref contains unsupported characters: ${REPO_REF}"
+  fi
+}
+
+check_ubuntu_host() {
+  [[ "$(uname -s)" == "Linux" ]] || die "This entrypoint supports Ubuntu Linux only"
+  [[ -r /etc/os-release ]] || die "/etc/os-release is unavailable"
+
+  # shellcheck disable=SC1091
+  source /etc/os-release
+  [[ "${ID:-}" == "ubuntu" ]] || die "Unsupported Linux distribution: ${ID:-unknown}. Ubuntu is required."
+
+  case "${VERSION_ID:-}" in
+    22.04|24.04)
+      log "Detected Ubuntu ${VERSION_ID}"
+      ;;
+    *)
+      die "Unsupported Ubuntu version: ${VERSION_ID:-unknown}. Validated versions are 22.04 and 24.04."
+      ;;
+  esac
+}
+
+resolve_bootstrap() {
+  local source_path="${BASH_SOURCE[0]:-}"
+  if [[ -n "$source_path" && -f "$source_path" ]]; then
+    local script_dir
+    script_dir="$(cd "$(dirname "$source_path")" && pwd)"
+    if [[ -f "${script_dir}/bootstrap.sh" ]]; then
+      BOOTSTRAP_PATH="${script_dir}/bootstrap.sh"
+      log "Using repository-local bootstrap: ${BOOTSTRAP_PATH}"
+      return 0
+    fi
+  fi
+
+  command -v curl >/dev/null 2>&1 || die "curl is required to download bootstrap.sh"
+
+  local bootstrap_url
+  if [[ -n "$BOOTSTRAP_URL_OVERRIDE" ]]; then
+    bootstrap_url="$BOOTSTRAP_URL_OVERRIDE"
+  else
+    if [[ "$REPO_URL" != "$CANONICAL_REPO_URL" ]]; then
+      die "A custom THREE_AGENT_REPO_URL requires THREE_AGENT_BOOTSTRAP_URL to avoid mixing repositories"
+    fi
+    bootstrap_url="https://raw.githubusercontent.com/caotiensinh/3agent/${REPO_REF}/scripts/bootstrap.sh"
+  fi
+
+  TMP_BOOTSTRAP="$(mktemp)"
+  BOOTSTRAP_PATH="$TMP_BOOTSTRAP"
+  log "Downloading canonical bootstrap for ref ${REPO_REF}"
+  curl -fsSL --retry 3 --connect-timeout 15 "$bootstrap_url" -o "$BOOTSTRAP_PATH"
+  bash -n "$BOOTSTRAP_PATH" || die "Downloaded bootstrap.sh failed Bash syntax validation"
+}
+
+run_bootstrap() {
+  resolve_bootstrap
+  [[ -n "$BOOTSTRAP_PATH" && -f "$BOOTSTRAP_PATH" ]] || die "bootstrap.sh could not be resolved"
+
+  export THREE_AGENT_REPO_URL="$REPO_URL"
+  export THREE_AGENT_REPO_REF="$REPO_REF"
+  export THREE_AGENT_INSTALL_DIR="$INSTALL_DIR"
+  export THREE_AGENT_BIN_DIR="$BIN_DIR"
+  export THREE_AGENT_CONFIG_PATH="$CONFIG_PATH"
+  export THREE_AGENT_RELEASES_DIR="$RELEASES_DIR"
+  export THREE_AGENT_STATE_DIR="$STATE_DIR"
+  export THREE_AGENT_ACTIVATION_LOG="$ACTIVATION_LOG"
+  export THREE_AGENT_MODEL="$MODEL"
+  export THREE_AGENT_INSTALL_OLLAMA="$INSTALL_OLLAMA"
+  export THREE_AGENT_PULL_MODEL="$PULL_MODEL"
+  export THREE_AGENT_SKIP_SYSTEM_PACKAGES="$SKIP_SYSTEM_PACKAGES"
+
+  bash "$BOOTSTRAP_PATH"
+}
+
+install_trusted_update_entrypoint() {
+  local source trusted tmp_launcher
+  source="${INSTALL_DIR}/scripts/update_workspace_ubuntu.sh"
+  trusted="${BIN_DIR}/3agent-update.sh"
+  tmp_launcher="${trusted}.tmp.$$"
+
+  [[ -d "${INSTALL_DIR}/.git" ]] || die "Verified Git checkout is missing after bootstrap: ${INSTALL_DIR}"
+  [[ -f "$source" ]] || die "Trusted Ubuntu updater source is missing from installed checkout: ${source}"
+  bash -n "$source" || die "Trusted Ubuntu updater source failed Bash syntax validation"
+
+  mkdir -p "$BIN_DIR"
+  cp -p "$source" "$tmp_launcher"
+  chmod 0755 "$tmp_launcher"
+  mv -f "$tmp_launcher" "$trusted"
+  cmp -s "$source" "$trusted" || die "Trusted updater payload does not match the exact installed checkout"
+
+  cat >"${BIN_DIR}/3agent-update" <<EOF_UPDATER
+#!/usr/bin/env bash
+set -euo pipefail
+export THREE_AGENT_REPO_URL=$(printf '%q' "$REPO_URL")
+export THREE_AGENT_REPO_REF=$(printf '%q' "$REPO_REF")
+export THREE_AGENT_UPDATE_TRACKING_REF=$(printf '%q' "$REPO_REF")
+export THREE_AGENT_INSTALL_DIR=$(printf '%q' "$INSTALL_DIR")
+export THREE_AGENT_BIN_DIR=$(printf '%q' "$BIN_DIR")
+export THREE_AGENT_CONFIG_PATH=$(printf '%q' "$CONFIG_PATH")
+export THREE_AGENT_RELEASES_DIR=$(printf '%q' "$RELEASES_DIR")
+export THREE_AGENT_STATE_DIR=$(printf '%q' "$STATE_DIR")
+export THREE_AGENT_ACTIVATION_LOG=$(printf '%q' "$ACTIVATION_LOG")
+exec bash $(printf '%q' "$trusted") "\$@"
+EOF_UPDATER
+  chmod 0755 "${BIN_DIR}/3agent-update"
+}
+
+verify_result() {
+  local command_path="${BIN_DIR}/3agent"
+  local security_ui_path="${BIN_DIR}/workspace-security-ui"
+  local update_path="${BIN_DIR}/3agent-update"
+  local trusted_update_path="${BIN_DIR}/3agent-update.sh"
+  local exec_lines exec_count
+  [[ -x "$command_path" ]] || die "Installed command is missing: ${command_path}"
+  [[ -x "$security_ui_path" ]] || die "Installed security UI launcher is missing: ${security_ui_path}"
+  [[ -x "$update_path" ]] || die "Installed updater launcher is missing: ${update_path}"
+  [[ -f "$trusted_update_path" ]] || die "Trusted local updater payload is missing: ${trusted_update_path}"
+  [[ -f "$CONFIG_PATH" ]] || die "Configuration file is missing: ${CONFIG_PATH}"
+
+  exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$update_path" || true)"
+  exec_count="$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)"
+  [[ "$exec_count" -eq 1 ]] || die "Installed updater must expose exactly one execution line"
+  printf '%s\n' "$exec_lines" | grep -Fq "$trusted_update_path" \
+    || die "Installed updater does not execute the trusted local updater payload"
+  if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+    die "Installed updater execution line contains a remote execution primitive"
+  fi
+  if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$update_path"; then
+    die "Installed updater contains a remote-fetch command"
+  fi
+  cmp -s "${INSTALL_DIR}/scripts/update_workspace_ubuntu.sh" "$trusted_update_path" \
+    || die "Installed trusted updater is not identical to the exact installed checkout"
+
+  "$command_path" smoke >/dev/null
+  "$security_ui_path" --help >/dev/null
+
+  if [[ -d "${INSTALL_DIR}/.git" ]] && command -v git >/dev/null 2>&1; then
+    log "Installed commit: $(git -C "$INSTALL_DIR" rev-parse HEAD)"
+  fi
+
+  log "FINAL PASS: WorkSpace is deployed on this Ubuntu PC"
+  log "Install directory: ${INSTALL_DIR}"
+  log "Command: ${command_path}"
+  log "Security UI: ${security_ui_path}"
+  log "Update: ${update_path}"
+  if [[ -z "$MODEL" ]]; then
+    warn "No local LLM model was selected. Core CLI/smoke is ready; live AI agents require a configured model."
+  fi
+}
+
+main() {
+  validate_inputs
+
+  if [[ "$SELF_TEST" == "1" ]]; then
+    log "Ubuntu deployment entrypoint self-test PASS"
+    exit 0
+  fi
+
+  if [[ "$EUID" -eq 0 ]] && ! is_true "$ALLOW_ROOT"; then
+    die "Run this script as the normal Ubuntu user, not with sudo. The installer will request sudo only for required system packages."
+  fi
+
+  check_ubuntu_host
+  run_bootstrap
+  # Bootstrap completion proves the checkout before its updater entrypoint is trusted.
+  # Replace the convenience launcher only after that verification has succeeded.
+  install_trusted_update_entrypoint
+  verify_result
+}
+
+main "$@"

@@ -1,0 +1,198 @@
+{
+  "schema_version": "workspace-network-dataset-registry/v1",
+  "reviewed_at": "2026-09-01",
+  "datasets": [
+    {
+      "id": "lanl-comprehensive",
+      "name": "LANL Comprehensive Multi-Source Cyber-Security Events",
+      "status": "enterprise_approved",
+      "license": {
+        "commercial_use": true,
+        "source": "https://csr.lanl.gov/data/cyber1/",
+        "summary": "LANL waives copyright and related rights for the dataset; preserve source/citation metadata."
+      },
+      "acquisition": {
+        "mode": "operator_enrollment_required",
+        "allowlisted_hosts": ["csr.lanl.gov"],
+        "allowlisted_path_prefixes": ["/data/"],
+        "credentials": false
+      },
+      "variants": {
+        "events": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": true
+        }
+      },
+      "formats": ["gzip", "text"],
+      "notes": "Primary WorkSpace use is evidence-chain and incident-experience extraction. Direct file URLs may require an operator-provided link obtained through the publisher's access workflow."
+    },
+    {
+      "id": "cse-cic-ids2018",
+      "name": "CSE-CIC-IDS2018",
+      "status": "enterprise_approved",
+      "license": {
+        "commercial_use": true,
+        "source": "https://www.unb.ca/cic/datasets/",
+        "summary": "CIC permits use by private companies and redistribution/mirroring with required dataset/paper citation."
+      },
+      "acquisition": {
+        "mode": "public_s3_unsigned",
+        "allowlisted_hosts": ["s3.amazonaws.com", "cse-cic-ids2018.s3.amazonaws.com"],
+        "allowlisted_path_prefixes": ["/cse-cic-ids2018/", "/"],
+        "credentials": false,
+        "bucket": "cse-cic-ids2018"
+      },
+      "variants": {
+        "processed-ml": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": true
+        },
+        "raw": {
+          "purpose": ["experience_extraction", "evaluation", "research"],
+          "recommended": false
+        }
+      },
+      "formats": ["csv", "pcap", "logs"],
+      "notes": "Prefer processed traffic for evidence-pattern extraction. Fetch raw PCAP only when packet-level evidence is necessary to validate a case or extractor."
+    },
+    {
+      "id": "ctu-13",
+      "name": "CTU-13 Botnet Dataset",
+      "status": "enterprise_approved",
+      "license": {
+        "commercial_use": true,
+        "source": "https://www.stratosphereips.org/datasets-overview/",
+        "summary": "CTU-13 is published under Creative Commons CC-BY; preserve attribution and dataset/paper citation in provenance."
+      },
+      "acquisition": {
+        "mode": "public_https",
+        "allowlisted_hosts": ["mcfp.felk.cvut.cz"],
+        "allowlisted_path_prefixes": ["/publicDatasets/CTU-Malware-Capture-Botnet-"],
+        "allowlisted_source_suffixes": [".binetflow"],
+        "credentials": false
+      },
+      "variants": {
+        "bidirectional-netflow": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": true
+        }
+      },
+      "formats": ["binetflow"],
+      "notes": "Phase v0.0.2 admits labelled bidirectional flow text only. Original malware executables, archive-wide synchronization and executable extraction are forbidden. Labels are scorer-only truth and never visible evidence."
+    },
+    {
+      "id": "splunk-bots-v2",
+      "name": "Splunk Boss of the SOC v2",
+      "status": "enterprise_approved",
+      "license": {
+        "commercial_use": true,
+        "source": "https://github.com/splunk/botsv2",
+        "summary": "Dataset is published with CC0/public-domain dedication."
+      },
+      "acquisition": {
+        "mode": "public_https",
+        "allowlisted_hosts": ["s3.amazonaws.com"],
+        "allowlisted_path_prefixes": ["/botsdataset/botsv2/"],
+        "credentials": false
+      },
+      "variants": {
+        "attack-only": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": true
+        },
+        "full": {
+          "purpose": ["experience_extraction", "training", "evaluation", "research"],
+          "recommended": false
+        }
+      },
+      "formats": ["splunk-index", "archive"],
+      "runtime_feasibility": {
+        "spec": "docs/WORKSPACE_NETWORK_V3_02D_BOTS_V2_FEASIBILITY_SPEC_V1.md",
+        "evaluator_version": "bots-v2-feasibility/0.1",
+        "verdict": "BLOCKED_DEPENDENCY_COST",
+        "direct_adapter_authorized": false,
+        "blocker_codes": [
+          "NO_DOCUMENTED_VENDOR_FREE_EVENT_SCHEMA",
+          "NO_VENDOR_FREE_STREAMING_READER",
+          "PREINDEXED_VENDOR_FORMAT",
+          "SEPARATELY_LICENSED_ADDONS_REQUIRED",
+          "UNBOUNDED_CONVERSION",
+          "VENDOR_RUNTIME_REQUIRED"
+        ],
+        "attack_only_profile_fingerprint": "sha256:e527319511b0bd40d72625da107502c09d11a62a57664f6c22420428db53c058",
+        "attack_only_receipt_fingerprint": "sha256:bba34f408e9e42a0d622870abce5149431596576b505ef3278f306525b04cbd8",
+        "full_profile_fingerprint": "sha256:671e4df8052fddc767ba03a42a3f3d148e94fb730329b6ceddbf6411e3a2aaa4",
+        "full_receipt_fingerprint": "sha256:c043de1e6bd8b31dfda91962f88d870e811ecf641a3ae47093c534d3d8b5d414",
+        "future_derived_export_requires_separate_review": true
+      },
+      "notes": "High-value CC0 incident corpus, but the official v2 distributions are pre-indexed Splunk and are not authorized for direct WorkSpace parsing. A future vendor-runtime-free derived export requires separate schema, provenance and feasibility review before adapter admission."
+    },
+    {
+      "id": "mawi",
+      "name": "MAWI Working Group Traffic Archive",
+      "status": "research_only",
+      "license": {
+        "commercial_use": false,
+        "source": "https://mawi.wide.ad.jp/mawi/",
+        "summary": "Registry classifies this source as research-only pending explicit commercial permission."
+      },
+      "acquisition": {
+        "mode": "public_https",
+        "allowlisted_hosts": ["mawi.wide.ad.jp"],
+        "allowlisted_path_prefixes": ["/mawi/"],
+        "credentials": false
+      },
+      "variants": {
+        "sampled": {
+          "purpose": ["research"],
+          "recommended": true
+        }
+      },
+      "formats": ["pcap"],
+      "notes": "Research-only baseline studies. Never promote derived enterprise experience or skills under this registry state."
+    },
+    {
+      "id": "ton-iot",
+      "name": "TON_IoT",
+      "status": "research_only",
+      "license": {
+        "commercial_use": false,
+        "source": "https://research.unsw.edu.au/projects/toniot-datasets",
+        "summary": "Free academic/research use; commercial use requires publisher permission."
+      },
+      "acquisition": {
+        "mode": "operator_enrollment_required",
+        "allowlisted_hosts": ["research.unsw.edu.au"],
+        "allowlisted_path_prefixes": ["/projects/toniot-datasets"],
+        "credentials": false
+      },
+      "variants": {
+        "research": {
+          "purpose": ["research"],
+          "recommended": true
+        }
+      },
+      "formats": ["pcap", "csv", "zeek", "telemetry"],
+      "notes": "Research store only until commercial permission is recorded; no enterprise experience/skill promotion."
+    },
+    {
+      "id": "ugr16",
+      "name": "UGR'16",
+      "status": "review_required",
+      "license": {
+        "commercial_use": null,
+        "source": "https://nesg.ugr.es/nesg-ugr16/",
+        "summary": "Usage terms must be reviewed and recorded before acquisition or promotion."
+      },
+      "acquisition": {
+        "mode": "blocked_until_review",
+        "allowlisted_hosts": [],
+        "allowlisted_path_prefixes": [],
+        "credentials": false
+      },
+      "variants": {},
+      "formats": ["netflow"],
+      "notes": "Fail closed."
+    }
+  ]
+}

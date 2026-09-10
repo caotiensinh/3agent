@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENTRYPOINT="${ROOT}/scripts/update_workspace_ubuntu.sh"
+TMP_DIR=""
+
+fail() {
+  printf '[ubuntu-update-contract][FAIL] %s\n' "$*" >&2
+  exit 1
+}
+
+pass() {
+  printf '[ubuntu-update-contract][PASS] %s\n' "$*"
+}
+
+cleanup() {
+  if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+trap cleanup EXIT
+
+[[ -f "$ENTRYPOINT" ]] || fail "update_workspace_ubuntu.sh is missing"
+bash -n "$ENTRYPOINT" || fail "bash syntax"
+bash "$ENTRYPOINT" --self-test >/dev/null || fail "self-test"
+if bash "$ENTRYPOINT" --unknown-option >/dev/null 2>&1; then
+  fail "unknown options must fail closed"
+fi
+if THREE_AGENT_REPO_REF='main;unexpected' bash "$ENTRYPOINT" --self-test >/dev/null 2>&1; then
+  fail "unsupported repository-ref characters must fail closed"
+fi
+if THREE_AGENT_REPO_URL='https://example.invalid/untrusted.git' bash "$ENTRYPOINT" --self-test >/dev/null 2>&1; then
+  fail "non-canonical repository must fail closed"
+fi
+if THREE_AGENT_UPDATE_MAX_ATTEMPTS=0 bash "$ENTRYPOINT" --self-test >/dev/null 2>&1; then
+  fail "zero update attempts must fail closed"
+fi
+if THREE_AGENT_UPDATE_VERIFY=unsupported bash "$ENTRYPOINT" --self-test >/dev/null 2>&1; then
+  fail "unsupported verification mode must fail closed"
+fi
+
+grep -Fq 'scripts/update_code_safe.sh' "$ENTRYPOINT" || fail "safe updater delegation missing"
+# shellcheck disable=SC2016
+grep -Fq 'raw.githubusercontent.com/caotiensinh/3agent/${sha}/scripts/update_code_safe.sh' "$ENTRYPOINT" \
+  || fail "updater must be downloaded by exact source SHA"
+grep -Fq 'git ls-remote' "$ENTRYPOINT" || fail "remote ref resolution missing"
+grep -Fq 'active_sha' "$ENTRYPOINT" || fail "active source lineage verification missing"
+grep -Fq 'THREE_AGENT_UPDATE_VERIFY' "$ENTRYPOINT" || fail "verification mode forwarding missing"
+grep -Fq 'Run this updater as the normal Ubuntu user, not with sudo.' "$ENTRYPOINT" || fail "normal-user safety boundary missing"
+grep -Fq 'No existing WorkSpace installation was detected' "$ENTRYPOINT" || fail "update-only boundary missing"
+grep -Fq 'Prior releases preserved at:' "$ENTRYPOINT" || fail "release preservation evidence missing"
+# shellcheck disable=SC2016
+grep -Fq 'run_safe_update "$expected"' "$ENTRYPOINT" || fail "outer attempt must delegate its exact resolved SHA"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_REPO_REF="$exact_sha"' "$ENTRYPOINT" || fail "inner updater must receive exact attempt SHA"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_UPDATE_TRACKING_REF="$REPO_REF"' "$ENTRYPOINT" || fail "moving tracking ref must be separated from exact attempt target"
+
+if grep -Eq 'git[[:space:]]+pull|git[[:space:]].*(clean|reset[[:space:]]+--hard)|rsync[[:space:]].*--delete|find[[:space:]].*[[:space:]]-delete' "$ENTRYPOINT"; then
+  fail "unsafe in-place update primitive detected"
+fi
+
+if grep -Eq 'rm[[:space:]]+-rf[[:space:]].*(INSTALL_DIR|RELEASES_DIR|STATE_DIR|CONFIG_PATH)' "$ENTRYPOINT"; then
+  fail "destructive removal of persistent WorkSpace state detected"
+fi
+
+# Deterministic A -> B race fixture. The production run_safe_update() is kept intact;
+# only remote resolution, host checks, download and state I/O are isolated in-process.
+TMP_DIR="$(mktemp -d)"
+lib="${TMP_DIR}/update_workspace_lib.sh"
+resolver_state="${TMP_DIR}/resolver-state"
+active_state="${TMP_DIR}/active-state"
+observed="${TMP_DIR}/observed-inner-targets"
+
+# Remove only the terminal main invocation so the production functions can be exercised.
+sed '${/^main "\$@"$/d;}' "$ENTRYPOINT" >"$lib"
+
+A_SHA="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+B_SHA="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+export A_SHA B_SHA
+
+for iteration in {1..20}; do
+  printf '0\n' >"$resolver_state"
+  printf 'old\n' >"$active_state"
+  : >"$observed"
+
+  (
+    export THREE_AGENT_REPO_URL="https://github.com/caotiensinh/3agent.git"
+    export THREE_AGENT_REPO_REF="main"
+    export THREE_AGENT_INSTALL_DIR="${TMP_DIR}/install-${iteration}"
+    export THREE_AGENT_BIN_DIR="${TMP_DIR}/bin-${iteration}"
+    export THREE_AGENT_CONFIG_PATH="${TMP_DIR}/config-${iteration}/local.json"
+    export THREE_AGENT_RELEASES_DIR="${TMP_DIR}/releases-${iteration}"
+    export THREE_AGENT_STATE_DIR="${TMP_DIR}/state-${iteration}"
+    export THREE_AGENT_ACTIVATION_LOG="${TMP_DIR}/state-${iteration}/active-releases.log"
+    export THREE_AGENT_UPDATE_MAX_ATTEMPTS=3
+    export THREE_AGENT_ALLOW_ROOT=1
+    export RACE_RESOLVER_STATE="$resolver_state"
+    export RACE_ACTIVE_STATE="$active_state"
+    export RACE_OBSERVED="$observed"
+
+    # shellcheck source=/dev/null
+    source "$lib"
+
+    # These overrides replace dynamically sourced production functions and are invoked by main().
+    # shellcheck disable=SC2317
+    check_ubuntu_host() { :; }
+    # shellcheck disable=SC2317
+    check_commands() { :; }
+    # shellcheck disable=SC2317
+    installation_exists() { return 0; }
+    # shellcheck disable=SC2317
+    active_sha() { cat "$RACE_ACTIVE_STATE"; }
+    # shellcheck disable=SC2317
+    verify_final_state() { [[ "$(cat "$RACE_ACTIVE_STATE")" == "$1" ]]; }
+
+    # shellcheck disable=SC2317
+    resolve_target_sha() {
+      local index
+      index="$(cat "$RACE_RESOLVER_STATE")"
+      case "$index" in
+        0) printf '%s\n' "$A_SHA" ;;
+        *) printf '%s\n' "$B_SHA" ;;
+      esac
+      printf '%s\n' "$((index + 1))" >"$RACE_RESOLVER_STATE"
+    }
+
+    # shellcheck disable=SC2317
+    download_exact_updater() {
+      local pinned="$1"
+      TMP_UPDATER="${TMP_DIR}/fake-inner-${iteration}-${pinned}.sh"
+      cat >"$TMP_UPDATER" <<'EOF_INNER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf '%s\t%s\n' "$THREE_AGENT_REPO_REF" "$THREE_AGENT_UPDATE_TRACKING_REF" >>"$RACE_OBSERVED"
+printf '%s\n' "$THREE_AGENT_REPO_REF" >"$RACE_ACTIVE_STATE"
+printf 'FINAL PASS: code updated without deleting prior installation or releases\n'
+EOF_INNER
+      chmod 0755 "$TMP_UPDATER"
+    }
+
+    main >/dev/null
+  )
+
+  mapfile -t race_lines <"$observed"
+  [[ "${#race_lines[@]}" -eq 2 ]] || fail "moving-ref fixture iteration ${iteration} expected exactly two inner attempts"
+  [[ "${race_lines[0]}" == "${A_SHA}"$'\t'"main" ]] \
+    || fail "iteration ${iteration}: A attempt was not pinned to A while preserving main as tracking ref"
+  [[ "${race_lines[1]}" == "${B_SHA}"$'\t'"main" ]] \
+    || fail "iteration ${iteration}: B must activate only in the subsequent outer attempt"
+  [[ "$(cat "$active_state")" == "$B_SHA" ]] || fail "iteration ${iteration}: stable retry did not finish on B"
+done
+
+pass "20/20 moving-ref stress iterations preserved exact A-attempt atomicity; invalid trust inputs fail closed"

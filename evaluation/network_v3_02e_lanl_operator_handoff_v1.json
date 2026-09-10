@@ -1,0 +1,108 @@
+{
+  "schema_version": "workspace-network-v3-02e-lanl-operator-handoff/v1",
+  "phase": "V3-02E-LANL-OPERATOR-HANDOFF",
+  "status": "HARNESS_FROZEN_BEFORE_IMPLEMENTATION",
+  "spec_path": "docs/WORKSPACE_NETWORK_V3_02E_LANL_OPERATOR_HANDOFF_SPEC_V1.md",
+  "main_prerequisite": "c9263e8e71b6b63f0cacb3d9471ac86e97507c13",
+  "source_order": [
+    {"source_family": "auth", "filename": "auth.txt.gz"},
+    {"source_family": "process", "filename": "proc.txt.gz"},
+    {"source_family": "flow", "filename": "flows.txt.gz"},
+    {"source_family": "dns", "filename": "dns.txt.gz"},
+    {"source_family": "redteam", "filename": "redteam.txt.gz"}
+  ],
+  "input_contract": {
+    "interactive_tty_required": true,
+    "no_echo_prompt_required": true,
+    "raw_handle_cli_arguments_allowed": false,
+    "raw_handle_environment_allowed": false,
+    "raw_handle_input_file_allowed": false,
+    "partial_handle_validation_allowed": false,
+    "operator_form_content_allowed": false
+  },
+  "authority_contract": {
+    "network_calls": 0,
+    "subprocess_calls": 0,
+    "model_calls": 0,
+    "browser_calls": 0,
+    "form_submission_calls": 0,
+    "download_calls": 0,
+    "corpus_parse_calls": 0,
+    "acquisition_authorized": false,
+    "v3_03_authorized": false
+  },
+  "validation_contract": {
+    "validator_module": "three_agent.network_lanl_publisher_access",
+    "validator_function": "evaluate_access_handles",
+    "ready_state": "READY_FOR_LANL_EXECUTION_SPEC",
+    "cancel_state": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE",
+    "all_five_required": true
+  },
+  "output_contract": {
+    "raw_handle_stdout_allowed": false,
+    "raw_handle_stderr_allowed": false,
+    "raw_handle_durable_allowed": false,
+    "operator_email_durable_allowed": false,
+    "operator_purpose_durable_allowed": false,
+    "new_handle_bearing_receipt_schema_allowed": false,
+    "success_output": "existing_safe_access_receipt",
+    "cancel_failure_output": "readiness_and_gate_ids_only"
+  },
+  "memory_contract": {
+    "process_lifetime_only": true,
+    "delete_container_references_in_finally": true,
+    "physical_zeroization_claim_allowed": false
+  },
+  "exit_codes": {
+    "ready": 0,
+    "not_enough": 2,
+    "hard_failure": 1
+  },
+  "zero_tolerance_gates": [
+    "LANL_HANDOFF_NON_INTERACTIVE_INPUT_ACCEPTED",
+    "LANL_HANDOFF_RAW_HANDLE_IN_CLI",
+    "LANL_HANDOFF_RAW_HANDLE_FROM_ENV",
+    "LANL_HANDOFF_RAW_HANDLE_FROM_FILE",
+    "LANL_HANDOFF_RAW_HANDLE_ECHOED",
+    "LANL_HANDOFF_RAW_HANDLE_LOGGED",
+    "LANL_HANDOFF_RAW_HANDLE_DURABLE",
+    "LANL_HANDOFF_OPERATOR_FORM_CONTENT_PERSISTED",
+    "LANL_HANDOFF_VALIDATOR_BYPASSED",
+    "LANL_HANDOFF_NETWORK_AUTHORITY",
+    "LANL_HANDOFF_SUBPROCESS_AUTHORITY",
+    "LANL_HANDOFF_FORM_AUTOMATION_AUTHORITY",
+    "LANL_HANDOFF_DOWNLOAD_AUTHORITY",
+    "LANL_HANDOFF_READY_WITH_PARTIAL_SOURCE_SET"
+  ],
+  "fixture_matrix": [
+    {"id": "valid_exact_five_handles", "expected": "READY_FOR_LANL_EXECUTION_SPEC"},
+    {"id": "non_tty", "expected": "FAIL_SECURITY"},
+    {"id": "eof_before_first", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"},
+    {"id": "eof_after_partial", "expected": "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"},
+    {"id": "mirror_handle", "expected": "FAIL_PROVENANCE"},
+    {"id": "embedded_userinfo", "expected": "FAIL_SECURITY"},
+    {"id": "query_fragment", "expected": "FAIL_SECURITY"},
+    {"id": "wrong_family_filename", "expected": "FAIL_PROVENANCE"},
+    {"id": "success_no_raw_output", "expected": "PASS"},
+    {"id": "failure_no_raw_output", "expected": "PASS"},
+    {"id": "no_raw_handle_cli_surface", "expected": "PASS"},
+    {"id": "ast_authority_audit", "expected": "PASS"},
+    {"id": "getpass_no_echo_prompt", "expected": "PASS"},
+    {"id": "finally_reference_release", "expected": "PASS"},
+    {"id": "workflow_no_network_or_acquisition", "expected": "PASS"}
+  ],
+  "promotion_gate": [
+    "lanl-operator-handoff-contract",
+    "harness-ci",
+    "installer-ci",
+    "portable-deploy-ci",
+    "windows-deploy-ci"
+  ],
+  "verdicts": [
+    "PASS",
+    "FAIL_SECURITY",
+    "FAIL_PROVENANCE",
+    "FAIL_SCHEMA",
+    "NOT_ENOUGH_REAL_SOURCE_EVIDENCE"
+  ]
+}

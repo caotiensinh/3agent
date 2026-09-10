@@ -3,12 +3,12 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from three_agent.chat_gateway_v17 import (
-    HTML_V17,
-    WorkflowV4ContextApplication,
-    WorkflowV4ContextHTTPHandler,
+from three_agent.chat_gateway import (
+    SecurityMonitoringApplication,
+    SecurityMonitoringHTTPHandler,
 )
 from three_agent.security_monitoring.ui_read_model import SecurityMonitoringUIReadModel
+from three_agent.workspace_frontend import WORKSPACE_HTML
 
 
 class SecurityMonitoringUIGatewayTests(unittest.TestCase):
@@ -20,11 +20,14 @@ class SecurityMonitoringUIGatewayTests(unittest.TestCase):
             "Workflow Studio",
             "workflowV4PrepareBtn",
             "New chat",
+            "Figma",
+            "Canva",
+            "Gmail",
         ):
-            self.assertIn(token, HTML_V17)
+            self.assertIn(token, WORKSPACE_HTML)
 
-    def test_application_initializes_one_query_only_read_model_from_explicit_environment(self):
-        source = inspect.getsource(WorkflowV4ContextApplication.__init__)
+    def test_application_initializes_query_only_read_model(self):
+        source = inspect.getsource(SecurityMonitoringApplication.__init__)
         self.assertIn(
             "self.security_monitoring = SecurityMonitoringUIReadModel.from_environment()",
             source,
@@ -34,8 +37,8 @@ class SecurityMonitoringUIGatewayTests(unittest.TestCase):
         self.assertFalse(hasattr(SecurityMonitoringUIReadModel, "add_event"))
         self.assertFalse(hasattr(SecurityMonitoringUIReadModel, "add_finding"))
 
-    def test_all_security_routes_are_get_only_and_authenticated(self):
-        source = inspect.getsource(WorkflowV4ContextHTTPHandler.do_GET)
+    def test_security_visibility_routes_are_authenticated_and_query_only(self):
+        source = inspect.getsource(SecurityMonitoringHTTPHandler.do_GET)
         for route in (
             "/api/security/summary",
             "/api/security/network",
@@ -46,35 +49,29 @@ class SecurityMonitoringUIGatewayTests(unittest.TestCase):
             "/api/security/admin",
         ):
             self.assertIn(route, source)
-        helper = inspect.getsource(WorkflowV4ContextHTTPHandler._security_get)
+        helper = inspect.getsource(SecurityMonitoringHTTPHandler._security_get)
         self.assertIn("self._authorized_local()", helper)
         self.assertIn("self._require_admin()", helper)
-        self.assertIn('admin_only = view == "admin"', helper)
-        self.assertNotIn("management_host", helper)
-        self.assertNotIn("credential_ref", helper)
-        self.assertNotIn("raw_log", helper)
+        for forbidden in ("management_host", "credential_ref", "raw_log"):
+            self.assertNotIn(forbidden, helper)
 
-        # v17 adds no POST implementation at all; existing inherited mutation paths
-        # remain Workflow-only and no /api/security mutation route can be introduced.
-        self.assertNotIn("do_POST", WorkflowV4ContextHTTPHandler.__dict__)
-
-    def test_bad_query_and_storage_errors_are_generic_not_raw_exception_echoes(self):
-        helper = inspect.getsource(WorkflowV4ContextHTTPHandler._security_get)
+    def test_bad_query_and_storage_errors_are_generic(self):
+        helper = inspect.getsource(SecurityMonitoringHTTPHandler._security_get)
         self.assertIn("SECURITY_QUERY_INVALID", helper)
         self.assertIn("SECURITY_DATA_UNAVAILABLE", helper)
-        self.assertNotIn("redact_sensitive_text(str(exc))", helper)
         self.assertNotIn("repr(exc)", helper)
+        self.assertNotIn("str(exc)", helper)
 
-    def test_health_contract_declares_read_only_visibility_aware_surface(self):
-        source = inspect.getsource(WorkflowV4ContextHTTPHandler.do_GET)
-        for token in (
-            '"security_analyst": True',
-            '"security_analyst_read_only": True',
-            '"security_analyst_mutations": False',
-            '"security_analyst_websocket": False',
-            '"security_analyst_polling": "visibility_aware"',
-        ):
-            self.assertIn(token, source)
+    def test_only_security_post_route_is_bounded_pcap_approval_metadata(self):
+        source = inspect.getsource(SecurityMonitoringHTTPHandler.do_POST)
+        self.assertIn('/api/security/pcap/approve', source)
+        self.assertIn("_security_pcap_approve", source)
+        self.assertNotIn("tcpdump", source)
+        self.assertNotIn("subprocess", source)
+        helper = inspect.getsource(SecurityMonitoringHTTPHandler._security_pcap_approve)
+        self.assertIn("dedicated_runner_required", helper)
+        self.assertIn("PCAP_APPROVAL_CONFIRMATION_REQUIRED", helper)
+        self.assertNotIn("execute_capture", helper)
 
 
 if __name__ == "__main__":

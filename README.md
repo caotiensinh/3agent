@@ -17,6 +17,21 @@ The canonical posture is **local and confidential**:
 - Confidential Core has no Internet/LAN egress and no access to the public egress broker;
 - public research, when required, runs in a separate OS/data zone that cannot read confidential WorkSpace data.
 
+## Verified current state
+
+The authoritative as-built project status is maintained in `docs/PROJECT_CURRENT_STATE.md`. Repository cleanup and retirement candidates are tracked separately in `docs/PROJECT_CLEANUP_INVENTORY.md`.
+
+As of the audited `main` baseline `7c7290f8e595edafe024083c6fced7c64be3357b`:
+
+- the core CLI, Orchestrator, research/presentation/report agents, evidence/store layers, approved-skill loader, security monitoring, diagnostics, deployment tooling and acceptance gates are implemented rather than merely planned;
+- Local AI runtime/gateway/composition/bootstrap v0.1-v0.4 is merged, with `build_application_runtime()` as the trusted composition root and the primary CLI routed through its backward-compatible facade;
+- the packaged chat entrypoint on this baseline still constructs `Orchestrator` directly and ordinary direct-chat inference still belongs to the legacy orchestrator model path;
+- Local AI application/chat convergence beyond v0.4 is therefore **not** part of this baseline. Work in open pull requests must not be documented as production until it is merged and reverified on `main`;
+- `skill_candidates/` and `network_skills/` are intentional staging/quarantine areas and are not approved runtime authority;
+- one-shot evidence/reconciliation workflows, campaign tools and historical artifacts are not production runtime surfaces even when retained for provenance.
+
+When documentation conflicts with the executable tree, tests or exact-head CI, the executable tree and verified evidence win. Update `docs/PROJECT_CURRENT_STATE.md` in the same change that materially changes production architecture.
+
 ## Security architecture
 
 ```text
@@ -102,6 +117,12 @@ See `docs/WORKSPACE_DESIGN_PRINCIPLES.md`.
 
 This uses `/var/lib/workspace-public`, disables the execution gateway, and enables only brokered public research. It is never a substitute for the confidential config.
 
+### Lean profile — dual RTX 5090 + 32GB system RAM
+
+`config/workspace.lean-dual5090-32gb.json`
+
+Same security posture and model pool as Confidential Core; only the RAM/VRAM budget and worker-pool wiring are tuned for a host where GPU VRAM is abundant (2× RTX 5090) but system RAM is comparatively scarce (32GB). See `docs/WORKSPACE_LEAN_DUAL_5090_32GB_PROFILE.md` for the reasoning and `scripts/measure_ram_baseline.sh` to validate the effect on the real machine.
+
 ## CLI
 
 Primary commands:
@@ -137,6 +158,24 @@ Configuration prefers:
 export WORKSPACE_CONFIG=config/workspace.secure.json
 ```
 
+## Security monitoring and diagnostics
+
+The security/network subsystem is **implemented**. It is not only a future design proposal.
+
+Installed command surfaces include:
+
+```text
+workspace-security-monitor
+workspace-security-pcap
+workspace-security-report
+workspace-security-scheduler
+workspace-security-ui
+```
+
+The implementation includes the `three_agent.security_monitoring` package, read-only/advisory chat context, approved-asset configuration boundaries, evidence normalization/correlation, monitoring/reporting surfaces and autonomous diagnostic services bounded by policy. Security and diagnostics remain capability- and evidence-constrained; chat does not gain arbitrary shell, scanning, packet-capture or remediation authority merely because the subsystem is installed.
+
+`docs/SECURITY_ANALYST_HACKINGTOOL_DISTILLATION.md` is the original architecture/integration blueprint and should be read as design provenance, not as the authoritative statement of current implementation status. Use `docs/PROJECT_CURRENT_STATE.md` for the as-built state.
+
 ## Secure Ubuntu deployment
 
 For the dual-RTX5090 workstation with an existing healthy NVIDIA driver/local Ollama stack:
@@ -153,9 +192,15 @@ If the package is already installed, install only the OS boundary:
 sudo WORKSPACE_INSTALL_DIR=/opt/workspace bash scripts/install_workspace_secure_boundary.sh
 ```
 
+## CI runner pool
+
+`scripts/setup_runner_pool.sh` registers a pool of GitHub Actions self-hosted runner instances on the workstation, split into a `general` lane (lightweight lint/test CI, parallel-safe) and an exclusive `gpu` lane (live-Ollama/benchmark CI, always serialized). See `docs/WORKSPACE_RUNNER_POOL.md`.
+
 ## Current capability model
 
-WorkSpace grows by **capabilities and reviewed skills**, not by adding a fixed number of agents. Current areas include research/evidence synthesis, data quality, presentation/report generation, daily reporting, coding/software-development guidance, language quality, local file/Office/PDF safety, skill approval, model/resource routing, dual RTX 5090 scheduling and deterministic citation/evidence validation.
+WorkSpace grows by **capabilities and reviewed skills**, not by adding a fixed number of agents. Current implemented areas include research/evidence synthesis, data quality, presentation/report generation, daily reporting, local file/Office/PDF handling, skill approval, model/resource routing, deterministic citation/evidence validation, security monitoring, network/host diagnostics, PCAP/evidence processing and deployment/acceptance governance.
+
+Capabilities described in design documents are not automatically production capabilities. Runtime status requires an executable path, authority binding, tests/evidence and inclusion in the current-state inventory.
 
 ## Repository transition
 

@@ -1,11 +1,11 @@
 # 3Agent Product Specification
 
-Version: 0.1
-Status: Initial implementation baseline
+Version: 0.2
+Status: Agent 1 research V1 + Agent 2 presentation V1 implementation baseline
 
 ## 1. Purpose
 
-Build a local-first multi-agent system for R&D work that can research a subject, transform research into presentation/report material, and automatically reconstruct the day's work into a Japanese-style daily report.
+Build a local-first multi-agent system for R&D work that can research a subject, transform evidence into presentation/report artifacts, and reconstruct the day's work into a Japanese-style daily report.
 
 The primary execution environment is a test workstation with two RTX 5090 GPUs, 32 GB system RAM and an Intel Core Ultra 7 CPU.
 
@@ -18,16 +18,18 @@ The primary execution environment is a test workstation with two RTX 5090 GPUs, 
 5. Store runtime state in SQLite and auditable results in JSON/Markdown.
 6. Use GitHub as the versioned repository for source and curated results.
 7. Support broad authority on the designated test machine while keeping an upgrade path to least-privilege production deployment.
+8. Keep presentation facts evidence-bounded to Agent 1 rather than allowing slide-generation prompts to create a second truth source.
 
-## 3. Non-goals for V1
+## 3. Non-goals for current V1
 
 - production-grade sandboxing
 - enterprise identity/RBAC
 - multi-user web application
 - distributed worker cluster
 - mandatory cloud LLM usage
-- automatic PowerPoint visual design engine
 - autonomous production-system modification
+- claim of pixel-perfect visual QA
+- fully automatic arbitrary company-template adaptation
 
 ## 4. Functional requirements
 
@@ -45,7 +47,18 @@ Research output shall explicitly represent verified facts, inference, unresolved
 
 ### FR-004 Presentation role
 
-The Presentation Agent shall read source research metadata and preserve source lineage in its output.
+Presentation Agent shall:
+
+- locate the latest research artifact for the task even when it was generated on a previous day;
+- preserve source research path, status and SHA-256;
+- create stable presentation evidence claim IDs for Agent 1 verified facts/inferences;
+- use the local LLM for narrative planning/claim selection rather than as a new factual source;
+- reject unknown evidence claim IDs;
+- preserve verified-fact vs inference distinction;
+- classify new recommendations as proposals rather than facts;
+- generate deterministic source and limitation appendices;
+- generate JSON/Markdown and optionally PPTX/PDF artifacts;
+- persist QA metadata and generated artifact paths.
 
 ### FR-005 Daily report role
 
@@ -71,6 +84,10 @@ Gateway requests, execution requests and major agent lifecycle events shall supp
 
 The repository shall ignore runtime SQLite/secrets while allowing selected JSON, Markdown and generated report artifacts to be versioned.
 
+### FR-011 Presentation accessibility baseline
+
+Generated PPTX shall target unique slide titles, deterministic object order, body fonts at or above 20 pt, visible source IDs and no meaning conveyed by color alone.
+
 ## 5. Agent contracts
 
 ### Research Agent input
@@ -83,28 +100,36 @@ The repository shall ignore runtime SQLite/secrets while allowing selected JSON,
 
 - task ID
 - status
-- findings
-- verified facts
-- inference
+- objective/search queries
+- source inventory
+- verified facts with source IDs
+- inferences with source IDs
 - unresolved items
-- sources
 - conclusion
-- next actions
+- recommended next actions
 - timestamp/artifact metadata
 
 ### Presentation Agent input
 
 - task ID
-- source research artifact
-- audience/purpose/output constraints
+- latest source research artifact
+- audience
+- purpose
+- language
+- slide budget
+- output format
+- optional explicit incomplete-research override
 
 ### Presentation Agent output
 
-- task ID
-- source research artifact reference
-- presentation/report content
-- limitations
-- artifact metadata
+- `presentation-artifact/v1` JSON
+- presentation Markdown
+- source research path/status/SHA-256
+- validated deck plan
+- `presentation-qa/v1`
+- optional PPTX
+- optional PDF
+- generated artifact paths
 
 ### Daily Report Agent input
 
@@ -135,15 +160,18 @@ V1 uses a capability policy with these conceptual capabilities:
 - `internet_outbound`
 - `local_llm`
 
-When `test_mode_full_access=true`, all are permitted by default to all three agents. Later production profiles can deny capabilities without changing agent identities or artifact contracts.
+When `test_mode_full_access=true`, all are permitted by default to all three agents. Broad permission does not weaken evidence contracts: Presentation Agent must still not add unsourced external facts.
 
 ## 7. Reliability requirements
 
-- A failed model call must not be recorded as successful research.
-- A presentation must reference the research artifact it used.
+- A failed model call must not be recorded as successful research/presentation.
+- A presentation must fingerprint and reference the exact research artifact it used.
+- Unknown presentation claim references must hard-fail validation.
 - A dry-run must be visibly labeled as dry-run.
 - State transitions and artifact writes must be persisted before reporting success.
-- Missing configuration or model name must yield a clear error for live runs.
+- Missing configuration/model name must yield a clear error for live runs.
+- Insufficient research for Agent 2 moves the task to `WAITING_HUMAN` unless an explicit scaffold override is supplied.
+- Rendering/conversion failures move the task to `FAILED`.
 
 ## 8. Storage model
 
@@ -153,49 +181,85 @@ SQLite tables:
 - `activities`
 - `artifacts`
 
-JSON/Markdown artifacts use task ID and date-based directories.
+Artifact conventions:
+
+```text
+data/
+  research/YYYY-MM-DD/TASK-ID.{json,md}
+  presentations/YYYY-MM-DD/TASK-ID.{json,md,pptx,pdf?}
+  daily_reports/YYYY-MM-DD.{json,md}
+  activity/*.jsonl
+  tasks.db
+```
 
 ## 9. Hardware utilization strategy
 
-V1 treats the inference server as an external local service. Model loading and GPU sharding are controlled by the inference runtime. This avoids coupling orchestration logic to one GPU runtime.
+The inference server remains an external local service. Model loading and GPU sharding are controlled by the inference runtime rather than Agent code.
 
-Recommended initial strategy:
+Recommended current strategy:
 
-- one capable primary local model rather than three duplicate models
-- three agent profiles reuse that model
-- add a second specialized model only when measured workload justifies it
-- keep system RAM usage conservative because 32 GB host RAM is smaller than total GPU capacity
+- one capable primary local model shared by agents;
+- deterministic Python code performs validation/rendering after LLM planning;
+- add specialized model routing only when measured workloads justify it;
+- keep host RAM usage conservative because 32 GB system RAM is smaller than total GPU VRAM.
 
-## 10. GitHub workflow
+## 10. Presentation renderer baseline
+
+- implementation: `python-pptx` 1.x
+- slide size: 16:9 widescreen
+- title target: 30–36 pt
+- body target: 20 pt
+- source IDs in footer
+- speaker notes contain evidence source IDs
+- source and limitation appendices are deterministic
+- PDF conversion uses LibreOffice/`soffice` when explicitly requested
+
+Structural QA is not the same as pixel-level visual QA. A future renderer-review loop may render slides to images and perform image-level review.
+
+## 11. GitHub workflow
 
 - Source/spec/profile changes are committed normally.
 - Runtime database is never committed.
-- Curated task results can be committed after validation.
+- Curated task results may be committed after validation.
 - Git credentials/tokens remain external to the repository.
+- CI must install project dependencies before running Presentation Agent renderer tests.
 
-## 11. Acceptance criteria for initial harness
+## 12. Acceptance criteria
 
-The initial harness is accepted when:
+Core harness acceptance:
 
 1. package installs/imports on Python 3.11+
 2. database initializes
 3. task can be created/listed/read
-4. dry-run research artifact can be generated without pretending to research
-5. dry-run presentation artifact preserves research lineage
-6. daily report can be generated from recorded activity
-7. unit tests pass without network/model dependency
-8. live local-LLM path validates required model configuration
+4. dry-run research does not pretend to research
+5. daily report reconstructs recorded activity
+6. unit tests pass without live network/model dependency
 
-## 12. Next implementation milestones
+Presentation Agent V1 acceptance:
 
-### M1 — Harness baseline
+1. research evidence becomes stable `F*`/`I*` claim IDs
+2. unknown claim refs and duplicate slide titles are rejected
+3. latest cross-day research artifact can be located
+4. visible factual slide text is materialized from Agent 1 evidence
+5. sources/limitations are appended deterministically
+6. source research SHA-256 is persisted
+7. PPTX opens and title sequence matches validated plan
+8. speaker notes can be generated
+9. dry-run stays non-factual
+10. legacy harness dry-run remains compatible
+
+## 13. Implementation milestones
+
+### M1 — Harness baseline — IMPLEMENTED
 Task store, activity store, artifact manager, local LLM adapter, gateway abstractions, CLI, tests.
 
-### M2 — Real research tool loop
+### M2 — Real research tool loop — V1 IMPLEMENTED
 Search-provider adapter, page retrieval, source normalization, citation/evidence validation.
 
-### M3 — Presentation renderer
-PPTX/PDF generation, company template/theme support, visual QA.
+### M3 — Presentation renderer — V1 IMPLEMENTED
+Evidence Gate, evidence-ID planning, deterministic validation, JSON/Markdown, PPTX renderer, optional PDF conversion and structural QA.
+
+Remaining M3 advanced work: company template/theme adaptation, charts from structured numeric evidence and pixel-level visual QA.
 
 ### M4 — Automated daily operations
 Scheduler, daily report generation, GitHub artifact commit/push gateway.

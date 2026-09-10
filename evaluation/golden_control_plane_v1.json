@@ -148,10 +148,29 @@
       }
     },
     {
-      "case_id": "reject-confidential-public-web",
+      "case_id": "confidential-analysis-brokered-public-web",
       "inputs": {
         "task_type": "analysis",
         "sensitivity": "confidential",
+        "risk_level": "low",
+        "public_web": true
+      },
+      "expected": {
+        "accepted": true,
+        "network_scope": "allowlisted_egress",
+        "allowed_tools": ["search_docs", "read_file", "web_gateway"],
+        "validators": ["policy", "evidence"],
+        "route": "MODEL",
+        "initial_model_tier": "specialist",
+        "max_model_tier": "strong",
+        "escalation_allowed": true
+      }
+    },
+    {
+      "case_id": "reject-secret-public-web",
+      "inputs": {
+        "task_type": "analysis",
+        "sensitivity": "secret",
         "risk_level": "low",
         "public_web": true
       },

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from three_agent.chat_history_v3 import ProjectConversationStore
+from three_agent.chat_history import ProjectConversationStore
 
 
 class ProjectConversationStoreTests(unittest.TestCase):

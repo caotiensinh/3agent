@@ -1,0 +1,145 @@
+name: read-only-lan-probe-deep
+
+on:
+  push:
+    branches:
+      - test/read-only-lan-probe-20260901
+    paths:
+      - '.github/workflows/read-only-lan-probe-deep.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-deep-read-only:
+    name: Ubuntu bounded deep read-only probe
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Collect protocol metadata without login or mutation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/deep-read-only-probe.txt"
+          python3 - <<'PY' | tee "$OUT"
+          import http.client
+          import random
+          import socket
+          import ssl
+          import struct
+          import time
+          from datetime import datetime, timezone
+
+          CISCO = '192.168.11.116'
+          ROUTER = '192.168.11.1'
+
+          print('WORKSPACE BOUNDED DEEP READ-ONLY LAN PROBE')
+          print('timestamp_utc=', datetime.now(timezone.utc).isoformat())
+          print('policy=NO_LOGIN NO_CREDENTIALS NO_REBOOT NO_SHUTDOWN NO_CONFIG_WRITE NO_SNMP_WRITE NO_POST_PUT_DELETE')
+
+          def banner(host, port, wait=1.0):
+              try:
+                  with socket.create_connection((host, port), timeout=2.0) as s:
+                      s.settimeout(wait)
+                      try:
+                          data = s.recv(512)
+                      except socket.timeout:
+                          data = b''
+                      return data.decode('utf-8', 'replace').replace('\r', '\\r').replace('\n', '\\n')[:400]
+              except Exception as exc:
+                  return f'ERROR:{type(exc).__name__}'
+
+          def get_page(host, port, path, tls=False):
+              try:
+                  if tls:
+                      ctx = ssl.create_default_context()
+                      ctx.check_hostname = False
+                      ctx.verify_mode = ssl.CERT_NONE
+                      conn = http.client.HTTPSConnection(host, port, timeout=4, context=ctx)
+                  else:
+                      conn = http.client.HTTPConnection(host, port, timeout=4)
+                  conn.request('GET', path, headers={
+                      'Host': host,
+                      'User-Agent': 'WorkSpace-readonly-probe/1',
+                      'Connection': 'close',
+                  })
+                  r = conn.getresponse()
+                  body = r.read(4096).decode('utf-8', 'replace')
+                  headers = {k.lower(): v for k, v in r.getheaders()}
+                  conn.close()
+                  compact = ' '.join(body.split())[:1200]
+                  return r.status, r.reason, headers, compact
+              except Exception as exc:
+                  return 0, f'ERROR:{type(exc).__name__}:{exc}', {}, ''
+
+          def dns_query(server, qname='example.com'):
+              txid = random.SystemRandom().randrange(0, 65536)
+              flags = 0x0100
+              header = struct.pack('!HHHHHH', txid, flags, 1, 0, 0, 0)
+              q = b''.join(bytes([len(label)]) + label.encode('ascii') for label in qname.split('.')) + b'\x00'
+              packet = header + q + struct.pack('!HH', 1, 1)
+              try:
+                  with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                      s.settimeout(3)
+                      started = time.monotonic()
+                      s.sendto(packet, (server, 53))
+                      data, peer = s.recvfrom(4096)
+                      elapsed = (time.monotonic() - started) * 1000
+                  if len(data) < 12:
+                      return {'ok': False, 'reason': 'short_response'}
+                  rid, rflags, qd, an, ns, ar = struct.unpack('!HHHHHH', data[:12])
+                  return {
+                      'ok': rid == txid,
+                      'peer': peer[0],
+                      'rcode': rflags & 0x000F,
+                      'truncated': bool(rflags & 0x0200),
+                      'answers': an,
+                      'authority': ns,
+                      'additional': ar,
+                      'bytes': len(data),
+                      'latency_ms': round(elapsed, 3),
+                  }
+              except Exception as exc:
+                  return {'ok': False, 'reason': f'{type(exc).__name__}:{exc}'}
+
+          print('\n=== CISCO SSH BANNER (READ ONLY, NO LOGIN) ===')
+          print(banner(CISCO, 22))
+
+          print('\n=== ROUTER TELNET BANNER (READ ONLY, NO INPUT SENT) ===')
+          print(banner(ROUTER, 23))
+
+          print('\n=== ROUTER DNS READ QUERY ===')
+          print(dns_query(ROUTER, 'example.com'))
+
+          print('\n=== CISCO HTTP LOGIN PAGE SAMPLE ===')
+          status, reason, headers, body = get_page(CISCO, 80, '/cs9cba3d6/cbs/config/log_off_page.htm')
+          print('status=', status, reason)
+          print('server=', headers.get('server', ''))
+          print('content_type=', headers.get('content-type', ''))
+          print('body_sample=', body)
+
+          print('\n=== CISCO HTTPS LOGIN PAGE SAMPLE ===')
+          status, reason, headers, body = get_page(CISCO, 443, '/cs9cba3d6/cbs/config/log_off_page.htm', tls=True)
+          print('status=', status, reason)
+          print('server=', headers.get('server', ''))
+          print('content_type=', headers.get('content-type', ''))
+          print('body_sample=', body)
+
+          print('\n=== ROUTER HTTP LOGIN PAGE SAMPLE ===')
+          status, reason, headers, body = get_page(ROUTER, 80, '/login_main.html')
+          print('status=', status, reason)
+          print('server=', headers.get('server', ''))
+          print('content_type=', headers.get('content-type', ''))
+          print('body_sample=', body)
+
+          print('\nDEEP_READ_ONLY_PROBE_COMPLETE=TRUE')
+          PY
+
+      - name: Upload deep read-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: read-only-lan-probe-deep-ubuntu
+          path: ${{ runner.temp }}/deep-read-only-probe.txt
+          if-no-files-found: error
+          retention-days: 7

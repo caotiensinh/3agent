@@ -16,6 +16,51 @@ TASK_TYPES = {
 SENSITIVITIES = {"public", "internal", "confidential", "restricted", "secret"}
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 MODEL_TIERS = {"none", "small", "specialist", "strong"}
+OFFICE_IT_NETWORK_TOOLS = {
+    "network.ssh.probe",
+    "network.rtsp.probe",
+    "network.smb.probe",
+    "network.printer.ipp_probe",
+    "network.printer.raw_probe",
+}
+DIAGNOSTIC_LOCAL_READ_TOOLS = {
+    "system.platform.identify",
+    "system.resource.snapshot",
+    "system.storage.capacity",
+    "network.interface.snapshot",
+    "network.ipconfig.snapshot",
+    "network.route.snapshot",
+    "network.dns.snapshot",
+    "time.sync.status",
+    "service.status.read",
+    "windows.group_policy.result",
+    "identity.session.snapshot",
+    "audio.devices.snapshot",
+    "meeting.client.snapshot",
+    "process.top.snapshot",
+    "hardware.usb.snapshot",
+    "hardware.display.snapshot",
+    "hardware.dock.snapshot",
+    "driver.inventory.snapshot",
+    "camera.devices.snapshot",
+    "storage.io.snapshot",
+    "windows.print.driver.snapshot",
+    "windows.boot.snapshot",
+    "windows.update.history",
+    "vpn.status.snapshot",
+}
+DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS = {
+    "backup.local_state.snapshot",
+    "cloud_files.client_state.snapshot",
+    "identity.account_state.snapshot",
+    "mail_exchange.client_state.snapshot",
+    "voip.client_state.snapshot",
+}
+DIAGNOSTIC_INTERNAL_NETWORK_TOOLS = {
+    "network.reachability.internal",
+    "network.quality.internal",
+}
+INTERNAL_NETWORK_TOOLS = OFFICE_IT_NETWORK_TOOLS | DIAGNOSTIC_INTERNAL_NETWORK_TOOLS
 TOOLS = {
     "read_file",
     "search_repo",
@@ -27,6 +72,14 @@ TOOLS = {
     "query_db_readonly",
     "calculator",
     "web_gateway",
+    "windows.event.system",
+    "windows.event.application",
+    "windows.event.security",
+    "windows.printer.queue",
+    *OFFICE_IT_NETWORK_TOOLS,
+    *DIAGNOSTIC_LOCAL_READ_TOOLS,
+    *DIAGNOSTIC_STAGED_LOCAL_READ_TOOLS,
+    *DIAGNOSTIC_INTERNAL_NETWORK_TOOLS,
 }
 VALIDATORS = {
     "policy",
@@ -140,6 +193,11 @@ class TaskContract:
             raise TaskContractError(f"unknown validators: {sorted(unknown_validators)}")
         if self.network_scope not in {"deny", "internal_only", "allowlisted_egress"}:
             raise TaskContractError(f"unsupported network_scope: {self.network_scope}")
+        internal_network_tools = set(self.allowed_tools) & INTERNAL_NETWORK_TOOLS
+        if internal_network_tools and self.network_scope != "internal_only":
+            raise TaskContractError(
+                f"Internal diagnostic network tools require network_scope=internal_only: {sorted(internal_network_tools)}"
+            )
         if self.model_policy.initial_tier not in MODEL_TIERS or self.model_policy.max_tier not in MODEL_TIERS:
             raise TaskContractError("invalid model tier")
         tier_order = {"none": 0, "small": 1, "specialist": 2, "strong": 3}
@@ -180,15 +238,18 @@ class TaskContract:
         if self.logging_policy.raw_tool_output not in {"deny", "redacted", "allow"}:
             raise TaskContractError("invalid raw_tool_output logging policy")
 
-        # Security invariants are authoritative; model/routing decisions cannot weaken them.
-        if self.sensitivity in {"confidential", "restricted", "secret"} and self.network_scope == "allowlisted_egress":
-            raise TaskContractError("confidential-or-higher tasks cannot use external egress")
+        # Public Internet access is a capability, never a declassification. Internal,
+        # confidential and restricted tasks may use it only through web_gateway with
+        # allowlisted egress; the four-level Internet Egress Policy still decides the
+        # actual outbound query. Secret tasks remain fully network denied in v1.
         if self.sensitivity == "secret" and self.network_scope != "deny":
             raise TaskContractError("secret tasks require network_scope=deny")
-        if "web_gateway" in self.allowed_tools and (
-            self.sensitivity != "public" or self.network_scope != "allowlisted_egress"
-        ):
-            raise TaskContractError("web_gateway is permitted only for public allowlisted-egress tasks")
+        if self.network_scope == "allowlisted_egress" and "web_gateway" not in self.allowed_tools:
+            raise TaskContractError("allowlisted egress requires web_gateway")
+        if "web_gateway" in self.allowed_tools and self.network_scope != "allowlisted_egress":
+            raise TaskContractError("web_gateway requires network_scope=allowlisted_egress")
+        if self.sensitivity == "secret" and "web_gateway" in self.allowed_tools:
+            raise TaskContractError("secret tasks cannot use web_gateway")
         if self.sensitivity in {"restricted", "secret"}:
             if self.logging_policy.raw_prompt != "deny" or self.logging_policy.raw_tool_output != "deny":
                 raise TaskContractError("restricted/secret tasks cannot log raw content")
@@ -269,15 +330,15 @@ class TaskContractCompiler:
         # Network/data placement is resolved before capability/model selection.
         network_scope = "deny"
         if public_web:
-            if sensitivity != "public":
-                raise TaskContractError("public_web can only be enabled for sensitivity=public")
+            if sensitivity == "secret":
+                raise TaskContractError(
+                    "secret tasks remain network-denied; use restricted with sanitized research when abstraction is permitted"
+                )
             network_scope = "allowlisted_egress"
             if "web_gateway" not in tools:
                 tools.append("web_gateway")
-            reasons.append("PUBLIC_ALLOWLISTED_EGRESS")
-        elif sensitivity == "restricted":
-            network_scope = "internal_only"
-        elif sensitivity == "internal":
+            reasons.append(f"SANITIZED_{sensitivity.upper()}_ALLOWLISTED_EGRESS")
+        elif sensitivity in {"restricted", "internal"}:
             network_scope = "internal_only"
 
         if deterministic_only:
@@ -331,7 +392,7 @@ class TaskContractCompiler:
         # Hard budgets are conservative v1 defaults and must be tuned by evaluation.
         if deterministic_only:
             context = ContextBudget(12_000, 8_000, 4_000, 1_000)
-            generation = GenerationBudget(1)  # structurally required, unused by NO_LLM
+            generation = GenerationBudget(1)
             execution = ExecutionBudget(4, 6, 0, 0, 120_000)
         elif task_type in {"doc_summary", "analysis", "sensitive_query"}:
             context = ContextBudget(16_000, 10_000, 4_000, 1_500)

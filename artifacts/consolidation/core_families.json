@@ -1,0 +1,32 @@
+{
+  "schema": "workspace-source-consolidation/v2",
+  "families": {
+    "chat_context": [
+      "src/three_agent/chat_context.py"
+    ],
+    "chat_history": [
+      "src/three_agent/chat_history.py"
+    ]
+  },
+  "removed": [
+    "src/three_agent/chat_context_v2.py",
+    "src/three_agent/chat_context_v3.py",
+    "src/three_agent/chat_history_v2.py",
+    "src/three_agent/chat_history_v3.py"
+  ],
+  "baseline_returncode": 2,
+  "final_returncode": 2,
+  "baseline_failures": [
+    "ERROR tests/test_chat_gateway_v15_contract.py",
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py"
+  ],
+  "final_failures": [
+    "ERROR tests/test_chat_gateway_v15_contract.py",
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "ERROR tests/test_chat_memory_attachments_v3.py"
+  ],
+  "new_failures": [],
+  "removed_failures": [],
+  "remaining_core_variant_files": []
+}

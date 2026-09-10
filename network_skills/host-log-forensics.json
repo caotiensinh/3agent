@@ -1,0 +1,84 @@
+{
+  "schema_version": "workspace-network-skill-blueprint/v1",
+  "skill_id": "host-log-forensics",
+  "name": "Host Log Forensics",
+  "stage": "candidate_blueprint",
+  "authority": "advisory",
+  "auto_promotable": false,
+  "objective": "Perform read-only forensic reconstruction from host logs after suspected compromise, identifying attacker traces, persistence, credential use, execution, privilege activity, lateral movement and evidence tampering while preserving provenance and uncertainty.",
+  "evidence_domains": [
+    "windows-security",
+    "sysmon",
+    "powershell",
+    "wmi",
+    "scheduled-task",
+    "service-control-manager",
+    "windows-firewall",
+    "registry-event",
+    "file-event",
+    "linux-auth",
+    "linux-auditd",
+    "linux-journal",
+    "process-execution",
+    "network-connection"
+  ],
+  "method": [
+    "establish evidence provenance, host identity, clock assumptions and analysis window",
+    "construct a host-centric event timeline before interpreting intent",
+    "identify unusual logons, privilege changes, process ancestry and script execution",
+    "trace persistence mechanisms through services, scheduled tasks, registry, WMI and startup-related evidence when logged",
+    "trace credential access and credential reuse indicators without assuming credential theft from authentication alone",
+    "correlate host execution with outbound and lateral network connections",
+    "search for defense-evasion and log-clearing/tampering indicators and record resulting visibility gaps",
+    "map evidence-supported behavior to reviewed ATT&CK references when useful",
+    "distinguish observed artifacts from forensic hypotheses",
+    "emit compromise scope and likely sequence only to the depth supported by evidence"
+  ],
+  "required_output": [
+    "forensic_timeline",
+    "observed_artifacts",
+    "suspicious_process_chains",
+    "authentication_findings",
+    "persistence_findings",
+    "credential_access_findings",
+    "lateral_movement_findings",
+    "defense_evasion_findings",
+    "log_tampering_or_visibility_gaps",
+    "attack_technique_refs",
+    "supporting_evidence_ids",
+    "contradicting_evidence_ids",
+    "compromise_assessment",
+    "confidence",
+    "recommended_next_evidence"
+  ],
+  "stop_conditions": [
+    "required host logs are absent or provenance cannot be established",
+    "clock/timestamp inconsistency prevents a defensible timeline",
+    "evidence does not distinguish malicious activity from expected administration",
+    "a conclusion would require disk/memory artifacts that are not available in the current log-only scope"
+  ],
+  "source_curriculum": {
+    "enterprise_approved": [
+      "splunk-bots-v2",
+      "lanl-comprehensive"
+    ],
+    "license_gated_high_value": [
+      "otrf-security-datasets",
+      "atomic-evtx"
+    ],
+    "authoritative_reference": [
+      "mitre-attack-stix-data"
+    ],
+    "future_high_value": [
+      "verified-local-enterprise-incidents"
+    ]
+  },
+  "promotion_gate": {
+    "requires_multiple_independent_cases": true,
+    "requires_held_out_evaluation": true,
+    "requires_provenance_for_all_material_artifacts": true,
+    "requires_observed_vs_inferred_separation": true,
+    "requires_visibility_gap_reporting": true,
+    "requires_independent_skill_review": true
+  }
+}

@@ -1,0 +1,54 @@
+name: canonical-module-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-module-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canonical-module-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Guard regression tests
+        run: python -m unittest tests.test_canonical_module_guard -v
+      - name: Scan canonical module health
+        id: canonical_guard
+        continue-on-error: true
+        run: |
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/canonical-module-health.json" \
+            --markdown-output "$RUNNER_TEMP/canonical-module-health.md"
+      - name: Publish health summary
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/canonical-module-health.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload canonical health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-module-health
+          path: |
+            ${{ runner.temp }}/canonical-module-health.json
+            ${{ runner.temp }}/canonical-module-health.md
+          if-no-files-found: error
+          retention-days: 30
+      - name: Enforce zero new canonical debt
+        if: always() && steps.canonical_guard.outcome != 'success'
+        run: |
+          echo "Canonical module debt detected. Read the canonical-module-health artifact and PR live scoreboard."
+          exit 64

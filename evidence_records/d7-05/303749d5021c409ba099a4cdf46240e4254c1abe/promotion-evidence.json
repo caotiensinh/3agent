@@ -1,0 +1,32 @@
+{
+  "schema_version": "workspace-promotion-evidence/v1",
+  "evidence_id": "d7-edge-external-33265310271",
+  "corpus_class": "edge_large_context",
+  "corpus_id": "workspace-edge-large-context-v1",
+  "corpus_sha256": "sha256:96541dfe066fd660a3d216f8a1320258c6a91745ae6380a288af4c64dfdad3e1",
+  "metric_registry_id": "workspace-d3-core-metrics-v1",
+  "metric_registry_sha256": "sha256:e17c52598f1df2d9984854280ccc588b387853d8910f0b602aaa6804ff98172c",
+  "baseline_ref": "38cd80c7c4ebe36bf5a22bc4a7cec625d66695c4",
+  "candidate_ref": "303749d5021c409ba099a4cdf46240e4254c1abe",
+  "checks": {
+    "CONTEXT_RECALL_NON_DECREASE": true,
+    "CRITICAL_SPAN_LOSS_ZERO": true,
+    "EVIDENCE_COVERAGE_NON_DECREASE": true,
+    "EXACT_SOURCE_ID_PRESERVED": true,
+    "FIRST_PASS_VERIFIED_SUCCESS_NON_DECREASE": true,
+    "PROVENANCE_ATOMICITY_PASS": true,
+    "UNTRUSTED_INSTRUCTION_REMAINS_DATA": true,
+    "VERIFIED_TASK_SUCCESS_NON_DECREASE": true
+  },
+  "security_passed": true,
+  "evidence_refs": [
+    "github-actions-run:33265310271",
+    "sha256:f094411cdf53b9fa77adde605afab928c9f52f44ae8c82a80d2b8c7e87afe976",
+    "sha256:f504bf304b1f5bc86b96de6f9e5b6a6511628b45b530481754319ea90ba6997b",
+    "sha256:94a3397bef65ed3fee38dedcf1f4f297ad48ac449acfd5c3de091d05e0cbd525",
+    "sha256:754b07d2ae3066621d9384aff84303a9a2a9dab07d3a7ae6e0270e26870acc73",
+    "sha256:f3164047f61d2fd118f59e626da0c739e05056cfc34b3513356d91f2fd623ebd"
+  ],
+  "label_commitment_sha256": "sha256:ac4c7a824ca73e6b3f5aba8db8d89a9777f9e22728986c77fd58f6ef0a911700",
+  "evaluator_attested": true
+}

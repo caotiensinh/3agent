@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import socket
 import subprocess
@@ -81,20 +82,36 @@ class TcpConnectCollector:
 
 
 class IcmpCollector:
-    _RTT_RE = re.compile(r"time[=<]([0-9.]+)\s*ms", re.IGNORECASE)
+    """Bounded ICMP liveness collector with native Linux and Windows ping argv."""
+
+    _RTT_RE = re.compile(r"(?:time|時間)\s*[=<]\s*([0-9.]+)\s*ms", re.IGNORECASE)
 
     def __init__(
         self,
         policy_engine: MonitoringPolicyEngine,
         *,
         executor: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+        platform_name: str | None = None,
     ):
         self.policy_engine = policy_engine
         self._executor = executor or subprocess.run
+        self._platform_name = str(platform_name or os.name).lower()
 
     def _argv(self, host: str) -> list[str]:
-        seconds = max(1, int(round(self.policy_engine.policy.timeout_seconds)))
+        timeout_seconds = float(self.policy_engine.policy.timeout_seconds)
+        if self._platform_name == "nt":
+            milliseconds = max(1, int(round(timeout_seconds * 1000.0)))
+            return ["ping", "-n", "1", "-w", str(milliseconds), host]
+        seconds = max(1, int(round(timeout_seconds)))
         return ["ping", "-n", "-c", "1", "-W", str(seconds), host]
+
+    @classmethod
+    def _parse_rtt_ms(cls, stdout: str) -> float | None:
+        for line in str(stdout or "").splitlines():
+            match = cls._RTT_RE.search(line)
+            if match:
+                return float(match.group(1))
+        return None
 
     def collect(
         self,
@@ -122,8 +139,7 @@ class IcmpCollector:
             )
             stdout = str(result.stdout or "")
             reachable = result.returncode == 0
-            match = self._RTT_RE.search(stdout)
-            rtt = float(match.group(1)) if match else None
+            rtt = self._parse_rtt_ms(stdout)
             observations = [
                 ObservationRecord(
                     run_id=run_id,

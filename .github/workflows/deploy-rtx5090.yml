@@ -15,14 +15,18 @@ on:
 permissions:
   contents: read
 
+# Shared across every GPU-bound workflow in this repo (see
+# docs/WORKSPACE_RUNNER_POOL.md): only one job that touches the RTX 5090s may run at a
+# time, regardless of how many `gpu`-labeled runner instances exist, so benchmark/
+# resource evidence is never measured under contention.
 concurrency:
-  group: deploy-rtx5090-test-pc
+  group: gpu-rtx5090-exclusive
   cancel-in-progress: false
 
 jobs:
   deploy:
     if: ${{ inputs.confirm == 'DEPLOY' }}
-    runs-on: [self-hosted, Linux, X64, rtx5090]
+    runs-on: [self-hosted, gpu]
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from three_agent.chat_context import CONTEXT_MODE_FOLLOW_UP, CONTEXT_MODE_STANDALONE
-from three_agent.chat_gateway_v16 import ContextAwareProjectChatService
+from three_agent.chat_gateway import ContextAwareProjectChatService
 from three_agent.chat_multiturn_acceptance import (
     CORPUS,
     MultiTurnCase,

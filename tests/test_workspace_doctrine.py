@@ -40,14 +40,20 @@ def payload(text="NVIDIA released a public technical note about GPU inference ef
 
 
 class TaskContractTests(unittest.TestCase):
-    def test_internal_task_cannot_enable_public_web(self):
+    def test_internal_confidential_and_restricted_tasks_use_sanitized_web_gateway(self):
         compiler = TaskContractCompiler()
-        with self.assertRaises(TaskContractError):
-            compiler.compile(
-                task_id="TASK-20260829-0001",
+        for sensitivity in ("internal", "confidential", "restricted"):
+            contract = compiler.compile(
+                task_id=f"TASK-20260829-{sensitivity}",
                 task_type="analysis",
-                sensitivity="confidential",
+                sensitivity=sensitivity,
                 public_web=True,
+            )
+            self.assertEqual(contract.network_scope, "allowlisted_egress")
+            self.assertIn("web_gateway", contract.allowed_tools)
+            self.assertIn(
+                f"SANITIZED_{sensitivity.upper()}_ALLOWLISTED_EGRESS",
+                contract.policy_reason_codes,
             )
 
     def test_public_web_contract_is_bounded(self):
@@ -73,6 +79,14 @@ class TaskContractTests(unittest.TestCase):
         self.assertEqual(contract.cache_policy.mode, "deny")
         self.assertEqual(contract.logging_policy.raw_prompt, "deny")
         self.assertIn("human", contract.validators)
+        with self.assertRaises(TaskContractError):
+            TaskContractCompiler().compile(
+                task_id="TASK-20260829-0003-WEB",
+                task_type="sensitive_query",
+                sensitivity="secret",
+                risk_level="critical",
+                public_web=True,
+            )
 
 
 class KnowledgePlaneTests(unittest.TestCase):

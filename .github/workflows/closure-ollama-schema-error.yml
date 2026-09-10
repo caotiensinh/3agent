@@ -1,0 +1,43 @@
+name: closure-ollama-schema-error
+
+on:
+  push:
+    branches: [evidence/closure-rtx5090-20260830]
+    paths: ['.github/workflows/closure-ollama-schema-error.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Capture synthetic schema rejection detail
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+          from src.three_agent.research_schemas import RESEARCH_SYNTHESIS_SCHEMA_V1
+          body={
+            'model':'qwen3:30b','prompt':'Synthetic schema probe only. Return empty arrays and a short conclusion.',
+            'stream':False,'think':False,'keep_alive':'20m','format':RESEARCH_SYNTHESIS_SCHEMA_V1,
+            'options':{'num_predict':64,'temperature':0}
+          }
+          req=Request('http://127.0.0.1:11434/api/generate',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'},method='POST')
+          try:
+              with urlopen(req,timeout=120) as r:
+                  print(json.dumps({'http_status':r.status,'success':True}))
+          except HTTPError as exc:
+              raw=exc.read().decode(errors='replace')[:1200]
+              print(json.dumps({'http_status':exc.code,'success':False,'synthetic_error_body':raw}))
+              raise SystemExit(3)
+          PY

@@ -1,0 +1,164 @@
+name: d4-reuse-observation-one-shot
+
+on:
+  push:
+    branches:
+      - evidence/d4-reuse-20260830
+    paths:
+      - '.github/workflows/d4-reuse-observation-one-shot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-d4-reuse-observation-one-shot
+  cancel-in-progress: true
+
+jobs:
+  observe:
+    runs-on: [self-hosted]
+    timeout-minutes: 30
+    env:
+      SOURCE_REF: 0cf95cfc0126856b932414967a61ec0e0af5722e
+    steps:
+      - name: Checkout exact product source
+        uses: actions/checkout@v4
+        with:
+          ref: 0cf95cfc0126856b932414967a61ec0e0af5722e
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify exact source and representative host class
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_REF"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          test "$(uname -s)" = Linux
+          case "$(uname -m)" in x86_64|amd64) ;; *) exit 3 ;; esac
+          test "$(nvidia-smi --query-gpu=name --format=csv,noheader | grep -c 'RTX 5090')" -eq 2
+
+      - name: Create isolated Python environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV="$RUNNER_TEMP/workspace-d4-reuse-venv-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV"
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          python3 -m pip --version >/dev/null
+
+      - name: Install exact source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -e . >/dev/null
+          workspace reuse-report --help >/dev/null
+
+      - name: Collect metadata-only representative reuse report
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="$RUNNER_TEMP/workspace-d4-reuse-$GITHUB_RUN_ID"
+          mkdir -p "$OUT"
+
+          TELEMETRY=""
+          SOURCE_KIND="not-found"
+
+          if [[ -n "${WORKSPACE_INFERENCE_TELEMETRY:-}" && -r "${WORKSPACE_INFERENCE_TELEMETRY}" ]]; then
+            TELEMETRY="${WORKSPACE_INFERENCE_TELEMETRY}"
+            SOURCE_KIND="runner-env"
+          fi
+
+          if [[ -z "$TELEMETRY" && -r "$HOME/3agent/config/local.json" ]]; then
+            CANDIDATE="$(python - "$HOME/3agent/config/local.json" "$HOME/3agent" <<'PY'
+          import json
+          import pathlib
+          import sys
+          config = pathlib.Path(sys.argv[1])
+          root = pathlib.Path(sys.argv[2])
+          data = json.loads(config.read_text(encoding='utf-8'))
+          artifact = pathlib.Path(str(data.get('artifact_root') or 'data')).expanduser()
+          if not artifact.is_absolute():
+              artifact = root / artifact
+          print(artifact / 'activity' / 'inference.jsonl')
+          PY
+          )"
+            if [[ -r "$CANDIDATE" ]]; then
+              TELEMETRY="$CANDIDATE"
+              SOURCE_KIND="installed-local-config"
+            fi
+          fi
+
+          if [[ -z "$TELEMETRY" && -r "$HOME/3agent/data/activity/inference.jsonl" ]]; then
+            TELEMETRY="$HOME/3agent/data/activity/inference.jsonl"
+            SOURCE_KIND="installed-default"
+          fi
+
+          if [[ -z "$TELEMETRY" && -r "/var/lib/workspace/data/activity/inference.jsonl" ]]; then
+            TELEMETRY="/var/lib/workspace/data/activity/inference.jsonl"
+            SOURCE_KIND="secure-default"
+          fi
+
+          if [[ -z "$TELEMETRY" ]]; then
+            TELEMETRY="$RUNNER_TEMP/workspace-d4-no-telemetry-$GITHUB_RUN_ID.jsonl"
+          fi
+
+          workspace reuse-report \
+            --days 7 \
+            --min-events 20 \
+            --reuse-threshold-pct 30 \
+            --telemetry "$TELEMETRY" \
+            > "$OUT/reuse-report.json"
+
+          SOURCE_REF="$SOURCE_REF" SOURCE_KIND="$SOURCE_KIND" OUT="$OUT" python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path(os.environ['OUT'])
+          report = json.loads((out / 'reuse-report.json').read_text(encoding='utf-8'))
+          privacy = report.get('privacy') or {}
+          gate = report.get('decision_gate') or {}
+          if report.get('schema_version') != 'workspace-prefix-reuse-report/v1':
+              raise SystemExit('unexpected report schema')
+          if privacy.get('raw_content_emitted') is not False:
+              raise SystemExit('raw content privacy boundary failed')
+          if privacy.get('prefix_hashes_emitted') is not False:
+              raise SystemExit('prefix hash privacy boundary failed')
+          if gate.get('production_serving_change_authorized') is not False:
+              raise SystemExit('D4 may not authorize production serving change')
+          if gate.get('backend_cache_hit_claimed') is not False:
+              raise SystemExit('D4 may not claim backend cache hit')
+
+          receipt = {
+              'schema_version': 'workspace-d4-representative-observation/v1',
+              'source_ref': os.environ['SOURCE_REF'],
+              'telemetry_discovery': os.environ['SOURCE_KIND'],
+              'report': report,
+              'raw_telemetry_uploaded': False,
+          }
+          canonical = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+          receipt['receipt_sha256'] = 'sha256:' + hashlib.sha256(canonical).hexdigest()
+          (out / 'observation.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'telemetry_discovery': receipt['telemetry_discovery'],
+              'eligible_events': report['observation']['eligible_events'],
+              'reuse_opportunity_rate': report['observation']['reuse_opportunity_rate'],
+              'prompt_eval_duration_share': report['prefill']['prompt_eval_duration_share'],
+              'decision': gate['decision'],
+              'allowed_action': gate['allowed_action'],
+              'production_serving_change_authorized': gate['production_serving_change_authorized'],
+              'receipt_sha256': receipt['receipt_sha256'],
+          }, sort_keys=True))
+          PY
+
+      - name: Publish metadata-only D4 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-d4-reuse-${{ env.SOURCE_REF }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-d4-reuse-${{ github.run_id }}/reuse-report.json
+            ${{ runner.temp }}/workspace-d4-reuse-${{ github.run_id }}/observation.json

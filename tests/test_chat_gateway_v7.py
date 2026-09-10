@@ -1,6 +1,6 @@
 import unittest
 
-from three_agent.chat_gateway_v7 import HTML_V7
+from three_agent.chat_gateway import HTML_V7
 
 
 class ChatGatewayV7FrontendTests(unittest.TestCase):

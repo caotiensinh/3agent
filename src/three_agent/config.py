@@ -39,6 +39,11 @@ class ModelPolicyConfig:
     model_ram_overhead_factor: float = 0.15
     serialize_generation: bool = True
     reservation_ttl_seconds: int = 900
+    residency_enabled: bool = True
+    residency_strategy: str = "on_demand"
+    residency_idle_ttl_seconds: float = 120.0
+    residency_eviction_policy: str = "idle_lru"
+    runtime_model_download: bool = False
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,7 @@ def load_config(path: str | None = None) -> AppConfig:
     base_model = _env("WORKSPACE_LLM_MODEL", "LOCAL_LLM_MODEL", llm_raw.get("model", ""))
     policy_raw = data.get("model_policy", {})
     resource_raw = policy_raw.get("resource_control", {})
+    residency_raw = resource_raw.get("residency", {}) if isinstance(resource_raw, dict) else {}
     internet_raw = data.get("internet_gateway", {})
     execution_raw = data.get("execution_gateway", {})
 
@@ -141,6 +147,33 @@ def load_config(path: str | None = None) -> AppConfig:
     presentation_model = _env("WORKSPACE_PRESENTATION_MODEL", "THREE_AGENT_PRESENTATION_MODEL", policy_raw.get("presentation_model", ""), fast_model or base_model)
     report_model = _env("WORKSPACE_REPORT_MODEL", "THREE_AGENT_REPORT_MODEL", policy_raw.get("report_model", ""), fast_model or base_model)
     deep_model = _env("WORKSPACE_DEEP_MODEL", "THREE_AGENT_DEEP_MODEL", policy_raw.get("deep_model", ""), research_model)
+
+    residency_strategy = _env(
+        "WORKSPACE_MODEL_RESIDENCY_STRATEGY",
+        None,
+        residency_raw.get("strategy", "on_demand"),
+        "on_demand",
+    ).lower()
+    residency_eviction_policy = _env(
+        "WORKSPACE_MODEL_EVICTION_POLICY",
+        None,
+        residency_raw.get("eviction_policy", "idle_lru"),
+        "idle_lru",
+    ).lower()
+    runtime_model_download = _bool_env(
+        "WORKSPACE_RUNTIME_MODEL_DOWNLOAD",
+        None,
+        residency_raw.get("runtime_download"),
+        False,
+    )
+    if residency_strategy != "on_demand":
+        raise ValueError("model residency strategy must be on_demand")
+    if residency_eviction_policy != "idle_lru":
+        raise ValueError("model residency eviction_policy must be idle_lru")
+    if runtime_model_download:
+        raise ValueError(
+            "runtime model download is forbidden; provision approved models during deployment"
+        )
 
     llm = LLMConfig(
         provider=llm_raw.get("provider", "ollama"),
@@ -171,6 +204,24 @@ def load_config(path: str | None = None) -> AppConfig:
         model_ram_overhead_factor=min(1.0, max(0.0, _float_env("WORKSPACE_MODEL_RAM_OVERHEAD_FACTOR", "THREE_AGENT_MODEL_RAM_OVERHEAD_FACTOR", resource_raw.get("model_ram_overhead_factor"), 0.15))),
         serialize_generation=_bool_env("WORKSPACE_SERIALIZE_GENERATION", "THREE_AGENT_SERIALIZE_GENERATION", resource_raw.get("serialize_generation"), True),
         reservation_ttl_seconds=max(30, int(resource_raw.get("reservation_ttl_seconds", 900))),
+        residency_enabled=_bool_env(
+            "WORKSPACE_MODEL_RESIDENCY",
+            None,
+            residency_raw.get("enabled"),
+            True,
+        ),
+        residency_strategy=residency_strategy,
+        residency_idle_ttl_seconds=max(
+            0.0,
+            _float_env(
+                "WORKSPACE_MODEL_IDLE_TTL_SECONDS",
+                None,
+                residency_raw.get("idle_ttl_seconds"),
+                120.0,
+            ),
+        ),
+        residency_eviction_policy=residency_eviction_policy,
+        runtime_model_download=runtime_model_download,
     )
 
     gateway_mode = str(internet_raw.get("mode", "strict")).strip().lower()

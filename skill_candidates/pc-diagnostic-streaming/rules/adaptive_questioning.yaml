@@ -1,0 +1,93 @@
+version: 1
+mode: streaming_diagnosis
+
+principles:
+  - never_wait_for_full_questionnaire
+  - analyze_each_new_observation_immediately
+  - combine_human_and_machine_evidence
+  - questions_are_discriminators_not_forms
+  - machine_readable_evidence_before_customer_burden
+  - preserve_raw_observations
+  - contradictions_trigger_discriminators
+  - stop_questions_when_evidence_is_sufficient
+
+question_budget:
+  default_max_per_turn: 3
+  preferred_per_turn: 1
+  allow_more_when:
+    - user_requests_checklist
+    - machine_evidence_unavailable
+    - safety_critical_context_requires_immediate_clarification
+
+next_action_ranking:
+  maximize:
+    - information_gain
+    - evidence_reliability
+    - hypothesis_separation
+    - time_to_useful_result
+  minimize:
+    - customer_effort
+    - system_risk
+    - state_change
+    - repeated_questions
+
+source_preferences:
+  exact_timestamp:
+    prefer: machine_record
+  stop_code_or_bugcheck:
+    prefer: dump_or_event_record
+  physical_symptom:
+    prefer: human_observation
+  reachability:
+    prefer: continuous_external_monitoring
+  visible_screen_behavior:
+    prefer: human_observation_or_capture
+
+on_new_evidence:
+  - normalize
+  - correlate_timeline
+  - map_subsystem
+  - update_hypotheses
+  - detect_contradictions
+  - cancel_irrelevant_questions
+  - select_next_best_action
+
+on_unanswered_question:
+  behavior: continue_with_other_evidence
+  do_not:
+    - block_case
+    - repeat_immediately
+    - assume_negative_answer
+
+on_contradiction:
+  - preserve_both_sources
+  - lower_confidence_if_unresolved
+  - generate_targeted_discriminator
+  - never_silently_overwrite
+
+stop_asking_when:
+  - root_cause_confirmed
+  - safe_targeted_repair_is_justified
+  - one_hypothesis_strongly_supported_and_next_test_is_machine_based
+  - customer_input_no_longer_changes_decision
+
+examples:
+  freeze_remote_alive:
+    evidence: remote_access_alive_during_gui_freeze
+    increase: [GPU_DISPLAY_STACK, USER_SESSION, COMPOSITOR]
+    decrease: [FULL_KERNEL_LOCK, TOTAL_POWER_LOSS]
+    next_question_candidates:
+      - "Does audio continue during the freeze?"
+    next_machine_actions:
+      - inspect_gpu_display_events
+      - inspect_session_logs
+
+  reboot_dump_found:
+    evidence: bugcheck_dump_present
+    increase: [KERNEL_DRIVER, HARDWARE_WHEA]
+    decrease: [PURE_POWER_LOSS]
+    cancel_questions:
+      - generic_power_off_memory_question
+    next_machine_actions:
+      - analyze_dump
+      - correlate_bugcheck_whea_driver_events

@@ -1,0 +1,251 @@
+name: canonical-autoheal-safe
+
+on:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: canonical-autoheal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  autoheal-safe-reexports:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project runtime dependencies
+        run: python -m pip install -e .
+      - name: Guard regression tests
+        run: python -m unittest tests.test_canonical_module_guard -v
+      - name: Consolidate known semantic canonical boundary
+        run: python scripts/consolidate_workspace_frontend_security.py --apply
+      - name: Validate frontend security canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
+      - name: Consolidate workspace frontend generation chain
+        run: python scripts/consolidate_workspace_frontend.py --apply
+      - name: Preserve canonical enterprise governance UI composition
+        run: python scripts/repair_canonical_frontend_governance.py
+      - name: Preserve canonical Dispatch UI boundary
+        run: python scripts/repair_canonical_dispatch_ui.py
+      - name: Validate canonical Dispatch UI boundary
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_dispatch_ui -v
+      - name: Preserve canonical integration menu order
+        run: python scripts/repair_canonical_frontend_menu_order.py
+      - name: Validate canonical V13 frontend contract
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_v13 -v
+      - name: Validate workspace frontend canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_canonicalization -v
+      - name: Revalidate frontend security against canonical frontend
+        run: PYTHONPATH=src python -m unittest tests.test_workspace_frontend_security_canonicalization -v
+      - name: Consolidate chat gateway generation chain
+        run: python scripts/consolidate_chat_gateway.py --apply
+      - name: Preserve canonical security UI composition
+        run: python scripts/repair_canonical_chat_security_ui.py
+      - name: Validate chat gateway canonicalization
+        run: PYTHONPATH=src python -m unittest tests.test_chat_gateway_canonicalization -v
+      - name: Migrate simple-chat stage suppression acceptance
+        run: python scripts/repair_simple_chat_acceptance.py
+      - name: Validate simple-chat stage suppression acceptance
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_simple_chat_e2e_acceptance -v
+      - name: Preserve DFIR custody chain diagnostic ordering
+        run: python scripts/repair_dfir_custody_validation_order.py
+      - name: Validate DFIR custody chain contract
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_dfir_case_evidence -v
+      - name: Migrate golden sanitized-egress expectations
+        run: python scripts/repair_evaluation_golden_egress.py
+      - name: Validate evaluation golden policy outcomes
+        run: PYTHONPATH="$PWD:$PWD/src" python -m unittest tests.test_evaluation_lab -v
+      - name: Commit validated canonical consolidation
+        shell: bash
+        run: |
+          if git diff --quiet --exit-code; then
+            echo "No canonical consolidation found."
+            exit 0
+          fi
+          git diff --check
+          python -m compileall -q src
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --name-only | grep -Eq '^src/three_agent/chat_gateway\.py$|^src/three_agent/chat_gateway_v|test_chat_gateway_canonicalization'; then
+            message="refactor(chat): consolidate canonical chat gateway"
+          elif git diff --cached --name-only | grep -Eq '^src/three_agent/workspace_frontend\.py$|^src/three_agent/workspace_frontend_v|test_workspace_frontend_canonicalization'; then
+            message="refactor(frontend): consolidate canonical workspace frontend"
+          elif git diff --cached --name-only | grep -Eq 'workspace_frontend_security|test_workspace_frontend_security_canonicalization'; then
+            message="refactor(security): consolidate canonical frontend security"
+          elif git diff --cached --name-only | grep -Eq 'chat_simple_e2e_acceptance'; then
+            message="test(chat): validate canonical stage suppression semantics"
+          elif git diff --cached --name-only | grep -Eq 'dfir_case_evidence'; then
+            message="fix(dfir): preserve custody chain diagnostics"
+          elif git diff --cached --name-only | grep -Eq 'evaluation/golden_control_plane_v1\.json|tests/test_evaluation_lab\.py'; then
+            message="test(eval): align golden egress policy outcomes"
+          else
+            message="chore(governance): consolidate validated canonical modules"
+          fi
+          git commit -m "$message"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Install canonical validation test runner
+        run: python -m pip install pytest
+      - name: Run focused chat security workflow regression suite
+        shell: bash
+        run: |
+          mapfile -t focused < <(find tests -maxdepth 1 -type f \( \
+            -name 'test_chat*.py' -o \
+            -name 'test_*chat*.py' -o \
+            -name 'test_workspace*.py' -o \
+            -name 'test_security*.py' -o \
+            -name 'test_workflow*.py' \
+          \) | sort -u)
+          if [ "${#focused[@]}" -eq 0 ]; then
+            echo "No focused regression tests discovered." >&2
+            exit 2
+          fi
+
+          echo "Focused regression test files (${#focused[@]}):"
+          printf ' - %s\n' "${focused[@]}"
+          focused_log="$RUNNER_TEMP/focused-regression.log"
+          echo "git_head=$(git rev-parse HEAD)" | tee "$focused_log"
+
+          set +e
+          PYTHONPATH="$PWD:$PWD/src" python -m pytest "${focused[@]}" \
+            -vv --tb=long -rA --disable-warnings --maxfail=1 2>&1 | tee -a "$focused_log"
+          pytest_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$pytest_status" -ne 0 ]; then
+            echo "::group::Focused regression failure diagnostics"
+            echo "pytest_exit_code=$pytest_status"
+            echo "git_head=$(git rev-parse HEAD)"
+            echo "python_version=$(python --version 2>&1)"
+            echo "Selected test files:"
+            printf ' - %s\n' "${focused[@]}"
+            echo "Last 500 log lines:"
+            tail -n 500 "$focused_log" || true
+            echo "::endgroup::"
+          fi
+
+          exit "$pytest_status"
+      - name: Upload focused regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: focused-regression-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/focused-regression.log
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Run strict canonical module census
+        if: always()
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/canonical-head.txt"
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/canonical-census.json" \
+            --markdown-output "$RUNNER_TEMP/canonical-census.md"
+      - name: Audit deprecated and versioned production imports
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path("src")
+          versioned_component = re.compile(r"(?i)^(?:[a-z][a-z0-9_]*_v\d+|[a-z][a-z0-9_]*_(?:legacy|deprecated|old|backup|bak|copy))$")
+          findings = []
+          parse_errors = []
+          for path in sorted(root.rglob("*.py")):
+              try:
+                  tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+                  parse_errors.append({"path": str(path), "error": f"{type(exc).__name__}: {exc}"})
+                  continue
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      modules = [alias.name for alias in node.names]
+                  elif isinstance(node, ast.ImportFrom):
+                      modules = [node.module] if node.module else []
+                  else:
+                      continue
+                  for module in modules:
+                      for component in module.split("."):
+                          if versioned_component.fullmatch(component):
+                              findings.append({
+                                  "path": str(path),
+                                  "line": getattr(node, "lineno", None),
+                                  "reference": module,
+                                  "component": component,
+                              })
+          report = {
+              "status": "PASS" if not findings and not parse_errors else "FAIL",
+              "deprecated_versioned_production_import_reference_count": len(findings),
+              "parse_error_count": len(parse_errors),
+              "findings": findings,
+              "parse_errors": parse_errors,
+          }
+          output = Path(__import__("os").environ["RUNNER_TEMP"]) / "canonical-reference-audit.json"
+          output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(report, sort_keys=True))
+          raise SystemExit(0 if report["status"] == "PASS" else 64)
+          PY
+      - name: Upload canonical census evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-census-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/canonical-head.txt
+            ${{ runner.temp }}/canonical-census.json
+            ${{ runner.temp }}/canonical-census.md
+            ${{ runner.temp }}/canonical-reference-audit.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Validate canonical source compilation
+        if: success()
+        run: python -m compileall -q src tests
+      - name: Run full repository regression suite
+        if: success()
+        shell: bash
+        run: |
+          full_log="$RUNNER_TEMP/full-regression.log"
+          echo "git_head=$(git rev-parse HEAD)" | tee "$full_log"
+          set +e
+          PYTHONPATH="$PWD:$PWD/src" python -m pytest tests/ \
+            -q --tb=long -rA --disable-warnings --maxfail=1 2>&1 | tee -a "$full_log"
+          pytest_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$pytest_status" -ne 0 ]; then
+            echo "::group::Full regression failure diagnostics"
+            echo "pytest_exit_code=$pytest_status"
+            echo "git_head=$(git rev-parse HEAD)"
+            echo "python_version=$(python --version 2>&1)"
+            echo "Last 500 log lines:"
+            tail -n 500 "$full_log" || true
+            echo "::endgroup::"
+          fi
+          exit "$pytest_status"
+      - name: Upload full regression diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-regression-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/full-regression.log
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Publish canonical summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/canonical-census.md" ]; then
+            cat "$RUNNER_TEMP/canonical-census.md" >> "$GITHUB_STEP_SUMMARY"
+          fi

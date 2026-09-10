@@ -1,0 +1,51 @@
+{
+  "schema_version": "workspace-workflow-studio-oss-provenance/v1",
+  "reviewed_at": "2026-09-01",
+  "policy": "clean_room_inspiration_only",
+  "sources": [
+    {
+      "name": "diagrams.net / draw.io",
+      "repository": "https://github.com/jgraph/drawio",
+      "license": "Apache-2.0",
+      "license_source": "https://github.com/jgraph/drawio/blob/dev/LICENSE",
+      "usage": "UX and interaction-pattern research only",
+      "code_imported": false,
+      "assets_imported": false,
+      "dependency_added": false,
+      "trademark_reused": false
+    },
+    {
+      "name": "xyflow / React Flow",
+      "repository": "https://github.com/xyflow/xyflow",
+      "license": "MIT",
+      "license_source": "https://github.com/xyflow/xyflow/blob/main/LICENSE",
+      "usage": "node-edge model and canvas interaction research only",
+      "code_imported": false,
+      "assets_imported": false,
+      "dependency_added": false,
+      "trademark_reused": false
+    },
+    {
+      "name": "LogicFlow",
+      "repository": "https://github.com/didi/LogicFlow",
+      "license": "Apache-2.0",
+      "license_source": "https://github.com/didi/LogicFlow/blob/master/LICENSE",
+      "usage": "business workflow editor interaction research only",
+      "code_imported": false,
+      "assets_imported": false,
+      "dependency_added": false,
+      "trademark_reused": false
+    },
+    {
+      "name": "Rete.js",
+      "repository": "https://github.com/retejs/rete",
+      "license": "MIT",
+      "license_source": "https://github.com/retejs/rete/blob/master/LICENSE",
+      "usage": "visual graph versus execution-semantics separation research only",
+      "code_imported": false,
+      "assets_imported": false,
+      "dependency_added": false,
+      "trademark_reused": false
+    }
+  ]
+}

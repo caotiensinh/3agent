@@ -1,6 +1,6 @@
 import unittest
 
-from three_agent.chat_gateway_v5 import HTML_V5, _conversation_title, _history_owner_key
+from three_agent.chat_gateway import HTML_V5, _conversation_title, _history_owner_key
 
 
 class ChatGatewayV5Tests(unittest.TestCase):

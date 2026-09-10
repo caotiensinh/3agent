@@ -1,0 +1,3276 @@
+{
+  "schema": "workspace-branch-reconciliation/v2",
+  "base": "main",
+  "base_sha": null,
+  "target": "reconcile/all-branches-v2-20260903",
+  "branch_count": 345,
+  "non_main_branch_count": 344,
+  "counts": {
+    "conflict_requires_manual_reconcile": 92,
+    "absorbed_ancestor": 108,
+    "absorbed_patch_equivalent": 50,
+    "merged_clean_pending_full_test": 90,
+    "absorbed_by_prior_reconcile": 3,
+    "absorbed_by_later_reconcile": 1
+  },
+  "baseline_pytest_rc": 1,
+  "final_pytest_rc": 2,
+  "baseline_failures": [
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization",
+    "FAILED tests/test_workspace_zones.py::WorkSpaceZoneConfigTests::test_confidential_core_has_public_search_disabled"
+  ],
+  "final_failures": [
+    "ERROR tests/test_chat_memory_attachments_v22.py"
+  ],
+  "new_failures": [
+    "ERROR tests/test_chat_memory_attachments_v22.py"
+  ],
+  "removed_failures": [
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization",
+    "FAILED tests/test_workspace_zones.py::WorkSpaceZoneConfigTests::test_confidential_core_has_public_search_disabled"
+  ],
+  "baseline_tail": [
+    "During handling of the above exception, another exception occurred:",
+    "",
+    "self = <test_promotion_gate.PromotionGateTests testMethod=test_rollback_must_equal_evaluated_baseline>",
+    "",
+    "    def test_rollback_must_equal_evaluated_baseline(self):",
+    "        policy = PromotionPolicy.load(POLICY)",
+    ">       with self.assertRaisesRegex(PromotionGateError, \"rollback_ref\"):",
+    "             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+    "E       AssertionError: \"rollback_ref\" does not match \"repository replay report must pass before evidence creation\"",
+    "",
+    "tests/test_promotion_gate.py:199: AssertionError",
+    "_ PublicQueryCompilerTests.test_multiple_queries_are_deduplicated_after_sanitization _",
+    "",
+    "self = <test_prompt_compiler.PublicQueryCompilerTests testMethod=test_multiple_queries_are_deduplicated_after_sanitization>",
+    "",
+    "    def test_multiple_queries_are_deduplicated_after_sanitization(self) -> None:",
+    "        queries, diagnostics = compile_public_search_queries(",
+    "            [",
+    "                \"Ollama connection refused password=aaaabbbbccccdddd\",",
+    "                \"Ollama connection refused password=xxxxaaaabbbbcccc\",",
+    "            ]",
+    "        )",
+    "        self.assertEqual(queries, [\"Ollama connection refused\"])",
+    ">       self.assertTrue(any(\"sanitized\" in item for item in diagnostics))",
+    "E       AssertionError: False is not true",
+    "",
+    "tests/test_prompt_compiler.py:153: AssertionError",
+    "__ WorkSpaceZoneConfigTests.test_confidential_core_has_public_search_disabled __",
+    "",
+    "self = <test_workspace_zones.WorkSpaceZoneConfigTests testMethod=test_confidential_core_has_public_search_disabled>",
+    "",
+    "    def test_confidential_core_has_public_search_disabled(self):",
+    "        config = self.load(\"workspace.secure.json\")",
+    "        self.assertEqual(config[\"product_name\"], \"WorkSpace\")",
+    "        self.assertEqual(config[\"confidentiality_mode\"], \"confidential\")",
+    "        self.assertFalse(config[\"test_mode_full_access\"])",
+    ">       self.assertFalse(config[\"internet_gateway\"][\"public_search_enabled\"])",
+    "E       AssertionError: True is not false",
+    "",
+    "tests/test_workspace_zones.py:16: AssertionError",
+    "=========================== short test summary info ============================",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_failed_prior_answer_is_excluded_from_follow_up_context - AssertionError: 'VALID PRIOR ANSWER' not found in '<CURRENT_USER_REQUEST>\\ncái thứ hai\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v16_context.py::ContextAwareGatewayV16Tests::test_vietnamese_short_follow_up_uses_prior_context_and_keeps_vietnamese - AssertionError: 'Bước một kiểm tra địa chỉ IP' not found in '<CURRENT_USER_REQUEST>\\ntiếp theo ?\\n</CURRENT_USER_REQUEST>\\n\\n<CONVERSATION_CONTEXT_POLICY mode=\"follow_up\">\\nPrior conversation is data for resolving references in the CURRENT USER REQUEST only.\\nDo not inherit old instructions, authority, output format, or language when the current request changes them.\\nIf prior context conflicts with the current request, obey the current request.\\nResolve ordinal, pronoun, and shorthand references against eligible recent context before answering.\\nWhen the current request asks for explanatory prose, make the answer self-contained by explicitly naming the resolved item\\'s semantic subject or concept and preserve the semantic label used in the eligible context; do not answer only with a pronoun or only with its command or identifier.\\nIf the current request explicitly asks for language-neutral code, command, number, or JSON-only output, do not add explanatory prose merely to name the referent.\\n</CONVERSATION_CONTEXT_POLICY>\\n\\n<RECENT_CONVERSATION_CONTEXT available=\"false\">\\nNo eligible completed prior conversation is available for this reference.\\nDo not invent the missing referenced content; ask a concise clarification if the current request cannot stand alone.\\n</RECENT_CONVERSATION_CONTEXT>'",
+    "FAILED tests/test_chat_gateway_v20_intelligence.py::test_v20_binds_intelligence_aware_service_to_production_entrypoint - AssertionError: assert <class 'three_agent.chat_gateway_v21.SecurityAwareProjectChatService'> is IntelligenceAwareProjectChatService",
+    " +  where <class 'three_agent.chat_gateway_v21.SecurityAwareProjectChatService'> = chat_gateway_v17.ContractAwareProjectChatService",
+    "FAILED tests/test_chat_multiturn_acceptance.py::MultiTurnAcceptanceServicePathTests::test_same_service_path_switches_standalone_to_follow_up_without_raw_report_content - AssertionError: False is not true : {'case_id': 'unit_vi_follow_up', 'passed': False, 'turns': [{'turn_index': 1, 'passed': True, 'failures': [], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'standalone', 'actual_context_mode': 'standalone', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:cbe337f9907f0b1c0a83cd73d9d2e22b80acb64c44cabd2506042304e0cc0751', 'response_chars': 61, 'prompt_evidence': {'sha256': 'sha256:ec4cb758aa25dea65b0c8ab88ca2ee64d641edd91c88f3593711c42abfbb01bc', 'chars': 340, 'current_request_boundary': True, 'follow_up_policy': False, 'standalone_policy': True, 'recent_context': False, 'unavailable_context': False}}, {'turn_index': 2, 'passed': False, 'failures': ['context_messages:0_lt_2', 'prompt:context_unexpectedly_unavailable'], 'expected_language': 'vi', 'actual_language': 'vi', 'expected_context_mode': 'follow_up', 'actual_context_mode': 'follow_up', 'context_message_count': 0, 'attempts': 1, 'response_sha256': 'sha256:0a610aadc4d90644754f6ac16424784fd6826a791306e36d04064ac549202e37', 'response_chars': 71, 'prompt_evidence': {'sha256': 'sha256:2f53fd62a63f916d013cb73d0a9bd225dc9b9c629fdd92d243f143b563b065f1', 'chars': 1262, 'current_request_boundary': True, 'follow_up_policy': True, 'standalone_policy': False, 'recent_context': False, 'unavailable_context': True}}]}",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_rejected_policy_cases_are_golden_outcomes_not_errors - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_adversarial_corpus_replays_all_expected_rejections - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_repository_golden_corpus_replays_cleanly - AssertionError: False is not true",
+    "FAILED tests/test_evaluation_lab.py::EvaluationLabTests::test_tampered_golden_expectation_fails_replay - AssertionError: 2 != 1",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_complete_synthetic_evidence_accepts_only_when_all_gates_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_duplicate_class_evidence_cannot_manufacture_pass - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_holdout_missing_commitment_or_attestation_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_missing_external_classes_fail_closed_without_waiver - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_corpus_hash_mismatch_blocks_promotion - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_repository_replay_evidence_is_metadata_only_and_lineage_bound - three_agent.promotion_gate.PromotionGateError: repository replay report must pass before evidence creation",
+    "FAILED tests/test_promotion_gate.py::PromotionGateTests::test_rollback_must_equal_evaluated_baseline - AssertionError: \"rollback_ref\" does not match \"repository replay report must pass before evidence creation\"",
+    "FAILED tests/test_prompt_compiler.py::PublicQueryCompilerTests::test_multiple_queries_are_deduplicated_after_sanitization - AssertionError: False is not true",
+    "FAILED tests/test_workspace_zones.py::WorkSpaceZoneConfigTests::test_confidential_core_has_public_search_disabled - AssertionError: True is not false",
+    "17 failed, 2117 passed, 4 skipped, 428 subtests passed in 29.27s"
+  ],
+  "final_tail": [
+    "",
+    "==================================== ERRORS ====================================",
+    "__________ ERROR collecting tests/test_chat_memory_attachments_v22.py __________",
+    "ImportError while importing test module '/home/runner/work/3agent/3agent/tests/test_chat_memory_attachments_v22.py'.",
+    "Hint: make sure your test modules/packages have valid Python names.",
+    "Traceback:",
+    "/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/importlib/__init__.py:90: in import_module",
+    "    return _bootstrap._gcd_import(name[level:], package, level)",
+    "           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+    "tests/test_chat_memory_attachments_v22.py:11: in <module>",
+    "    from openpyxl import Workbook",
+    "E   ModuleNotFoundError: No module named 'openpyxl'",
+    "=========================== short test summary info ============================",
+    "ERROR tests/test_chat_memory_attachments_v22.py",
+    "!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!",
+    "1 error in 1.98s"
+  ],
+  "events": [
+    {
+      "branch": "feature/agent2-presentation-v1",
+      "tip": "1d7b951879d0c1eb051d27f92ebdd06adf5beac4",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 1,
+      "behind_main": 806,
+      "patch_unique_main": 1,
+      "conflicts": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/installer-ci.yml",
+        "README.md",
+        "docs/PRESENTATION_AGENT_ACCEPTANCE.md",
+        "docs/PRESENTATION_AGENT_SPEC.md",
+        "profiles/agent_presentation.md",
+        "pyproject.toml",
+        "src/three_agent/agents/presentation.py",
+        "src/three_agent/artifacts.py",
+        "src/three_agent/cli.py",
+        "src/three_agent/presentation_model.py",
+        "src/three_agent/presentation_renderer.py",
+        "tests/test_presentation.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feature/agent2-presentation-v1-final-check",
+      "tip": "743e5afe6d08b000c8d9db4f3fa2c01860d9f1fa",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 791
+    },
+    {
+      "branch": "feature/agent2-presentation-v1-final",
+      "tip": "41ba2b25c383a2b533bf65e8c554738a2c7dd40f",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 785,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/ci.yml",
+        ".github/workflows/installer-ci.yml",
+        "pyproject.toml",
+        "src/three_agent/agents/presentation.py",
+        "src/three_agent/cli.py",
+        "tests/test_presentation.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "feature/portable-one-command-deploy",
+      "tip": "db7e09ae48078921616ce678772a3d3612b46721",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 771,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/portable-deploy-ci.yml",
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "feature/portable-one-command-deploy-v2",
+      "tip": "6cea371984de76007e73d9ab75591044f4010bd6",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 764
+    },
+    {
+      "branch": "feature/windows-one-command-deploy",
+      "tip": "30af4bc37a31b3916078b319402b7f2ea9c24556",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 751,
+      "patch_unique_main": 4,
+      "conflicts": [
+        ".github/workflows/windows-deploy-ci.yml",
+        "scripts/bootstrap.ps1"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/windows-one-command-deploy-v2",
+      "tip": "8f5c33d61e4819bfcef120991e76f0dee170059b",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 738
+    },
+    {
+      "branch": "feature/lan-ai-server-one-command",
+      "tip": "ad658d3266fc12aaaa062dd332cc17f80b6c5a7a",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 734
+    },
+    {
+      "branch": "feature/secure-skill-registry-001",
+      "tip": "eee36df4e62570bffad7a67e529bcc5882be8b3c",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 652
+    },
+    {
+      "branch": "feature/workspace-secure-local-001",
+      "tip": "11e44ebebafb422c40d1cc74343ffee980b0b1fe",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 651
+    },
+    {
+      "branch": "fix/workspace-egress-path-closure-001",
+      "tip": "4f1b4242b5893780a5a61adc2abf127279fb8267",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 650
+    },
+    {
+      "branch": "feature/workspace-airgap-public-zone-001",
+      "tip": "f20b813b048b0a233598a78e9d61abb2378340c4",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 650,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "AGENTS.md",
+        "README.md",
+        "config/workspace.public-research.json"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feature/workspace-knowledge-ingestion-doctrine-001",
+      "tip": "82c5ddcb0d1c8ceb37771f6e7afa1e503edeae55",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 649,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/installer-ci.yml",
+        "config/workspace.secure.json",
+        "pyproject.toml",
+        "src/three_agent/context_engine.py",
+        "src/three_agent/task_contract.py",
+        "tests/test_workspace_doctrine.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "feature/workspace-runtime-efficiency-v23-001",
+      "tip": "4d95d1946faf38c697949496c9d07197973c1051",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 648
+    },
+    {
+      "branch": "docs/workspace-doctrine-master-checklist",
+      "tip": "43a388f3c5522060d308fa3e1d1e4f9c031f42da",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 647,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "docs/research/05_MASTER_IMPLEMENTATION_CHECKLIST.md"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-01",
+      "tip": "e7d6ac9e6dd175a8676d8811434e4ad5386953a3",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 646,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "docs/pico-first-doctrine-checklist-001",
+      "tip": "e266a59e3bbd5516f4880ed57141bc31d1f19a46",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 647,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/research_quality.py",
+        "tests/test_research_quality.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/pico-roadmap-d1-02-001",
+      "tip": "80a5ec0c95a02ee015a0fa60eea20ecc96ddc2fb",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 645,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-02",
+      "tip": "3f86e310633abd616fee2a589c7742865d93e6e4",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 645,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-03",
+      "tip": "4af77eed6459553c93d4804a29facae402b1e85f",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 644,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/workspace-handoff-security-d1-04-d1-05",
+      "tip": "a8960e1c48ee2c531ba7881bb4300e6da3801613",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 643,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "src/three_agent/research_quality.py"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-01",
+      "tip": "d53067825e33ab47a0fda1d9158961cfb32e8221",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 10,
+      "behind_main": 643,
+      "patch_unique_main": 10,
+      "conflicts": [
+        "src/three_agent/research_quality.py",
+        "src/three_agent/structured_output_policy.py",
+        "tests/test_structured_output_policy.py"
+      ],
+      "patch_unique_integration": 10
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-01-clean",
+      "tip": "71407fdcc4544b962d0fffda31c4a9b966e64d53",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 642
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-02-d2-03-stacked",
+      "tip": "b022cc799fba1890fb27af174106ca2b2f7f6c09",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 642,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/structured_output_policy.py",
+        "tests/test_structured_output_policy.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/workspace-structured-schema-d2-02-d2-03-clean",
+      "tip": "ac31bebc6a38ff00775228eeac3b84436ac1b7d8",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 641
+    },
+    {
+      "branch": "feature/workspace-schema-validation-d2-04-d2-05-stacked",
+      "tip": "36f6b3f58c89b70dbc2bfd58aac2646b9fc3b204",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 641,
+      "patch_unique_main": 2,
+      "conflicts": [
+        "src/three_agent/structured_output_policy.py",
+        "tests/test_structured_output_policy.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "feature/workspace-semantic-validation-d2-04",
+      "tip": "5e31f7d11bb1c53523aa56c40acce2a2f8d590ef",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 640
+    },
+    {
+      "branch": "feature/workspace-schema-telemetry-d2-05-stacked",
+      "tip": "a5281672c72e94c27e7df1e0b485f271becba64b",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 640,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/workspace-schema-telemetry-d2-05-clean",
+      "tip": "5f4fa776da4adc505cf5e5b81ca62afb1fc6fff5",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 639
+    },
+    {
+      "branch": "feature/workspace-validator-ledger-d3-prereq",
+      "tip": "da4ae32e55373338c521f539dd47490608229543",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 638,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "src/three_agent/store.py"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feature/workspace-verified-metrics-d3-01-d3-02-stacked",
+      "tip": "b2eb0408af2e29413503929c8c1af21c68f0e6ee",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 638,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "src/three_agent/store.py",
+        "tests/test_verified_metrics.py"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "feature/workspace-verified-metrics-d3-01-d3-02-clean",
+      "tip": "70c4210ab0ae4c32d4e54fcc2cce5e942265ff0e",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 637,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/workspace-token-per-verified-d3-03",
+      "tip": "2eb2d4e3d040376efd942432c4432fbf4ee02c19",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 636,
+      "patch_unique_main": 8,
+      "conflicts": [
+        "src/three_agent/cli.py",
+        "src/three_agent/inference_scope.py",
+        "src/three_agent/workflow.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "feature/workspace-resource-per-verified-d3-04",
+      "tip": "959c8d610de4c26dfdad411e0dcc393e4f0b1c3a",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 635,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "src/three_agent/metered_runtime.py",
+        "src/three_agent/orchestrator.py"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/workspace-evidence-coverage-d3-05-stacked",
+      "tip": "e4a5f06e51a66ac750ef19b9a52c1a89690e070b",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 9,
+      "behind_main": 635,
+      "patch_unique_main": 9,
+      "conflicts": [
+        "src/three_agent/metered_runtime.py",
+        "src/three_agent/orchestrator.py",
+        "src/three_agent/research_quality.py"
+      ],
+      "patch_unique_integration": 9
+    },
+    {
+      "branch": "feature/workspace-evidence-coverage-d3-05-clean",
+      "tip": "89122c75fa66c26ca83c8df9e61ddf7a6c511234",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 633
+    },
+    {
+      "branch": "feature/workspace-context-precision-proxy-d3-06",
+      "tip": "52b2efb8a805cdcd61d559004ea0db3f53aa9ca6",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 631
+    },
+    {
+      "branch": "feature/workspace-context-recall-proxy-d3-07",
+      "tip": "c2d8a5f19e984a8b1287d624087be66a8bc8d5e5",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 630
+    },
+    {
+      "branch": "feature/workspace-unified-metrics-d3-08",
+      "tip": "db193965bddc78d52fd8481b7a7e652f035cd1a4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 629
+    },
+    {
+      "branch": "docs/workspace-d3-metrics-closure",
+      "tip": "74695ba6dd3fe5023281debd4dc12de68238dd9f",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 628
+    },
+    {
+      "branch": "feature/workspace-optimization-acceptance-gate",
+      "tip": "e0d9476582443cfb0705b5ab5efea58bf6d59f21",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 625
+    },
+    {
+      "branch": "feature/workspace-benchmark-lineage-v1",
+      "tip": "207134ed18ad77e6920591e1356f823e05967162",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 621
+    },
+    {
+      "branch": "feature/workspace-evidence-packing-rank-v1",
+      "tip": "7551e06c2c490afa0f9192ef496ed9788273f87d",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 619
+    },
+    {
+      "branch": "feature/workspace-packing-receipt-v1",
+      "tip": "6d8e19b4b0a966504de97d0515c24e9a8d610e11",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 617
+    },
+    {
+      "branch": "feature/workspace-runtime-validator-bridge-v1",
+      "tip": "82d2e21d9757177a5901a4ace77eb0180c28247c",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 615
+    },
+    {
+      "branch": "feature/workspace-benchmark-isolation-v1",
+      "tip": "3a3ec4668dbeb962d46797a19bc17b3031bdb34c",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 613
+    },
+    {
+      "branch": "feature/runtime-validator-bridge-v1",
+      "tip": "770c6b98947b7bbf8c6ffdfa2fc71b84cbf433a7",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 612
+    },
+    {
+      "branch": "feature/fixed-task-benchmark-execution-v1",
+      "tip": "4f83fa40fb969778fac1c0a0d14c86299168e709",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 611
+    },
+    {
+      "branch": "feature/d4-durable-prefix-reuse-v1",
+      "tip": "309975ae5e8879dc7d8795065e07cf521d925fbc",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 610
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-final",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 609
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-final2",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 609
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-r2",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 609
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1-r2-check",
+      "tip": "c10031b49371e82d2af3a4c04ac9b951fce15abf",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 609
+    },
+    {
+      "branch": "feature/d5-structural-map-trace-v1",
+      "tip": "b929c60aaf818cfc821894d20331deddc47b969d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 609
+    },
+    {
+      "branch": "feature/d5-hard-pack-critical-spans-v2",
+      "tip": "4bf31f67b4dcb2c2bff86c6c8decfcca9122abb7",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 608
+    },
+    {
+      "branch": "feature/d6-no-llm-retrieval-v1",
+      "tip": "fa1c01c343ae3909e3c3c9075b80199fdae4c0f7",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 607
+    },
+    {
+      "branch": "feature/d6-persistent-execution-budget-v1",
+      "tip": "a6fe0f72367641cf197c298ca279cbf96fc6f97f",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 606
+    },
+    {
+      "branch": "feature/d6-model-authority-monotonicity-v1",
+      "tip": "3ac4b94175845da708509e8b06f3c394e8ac7651",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 605
+    },
+    {
+      "branch": "feature/d7-evaluation-promotion-v1",
+      "tip": "5abea1ed1986db9b14f88651f144f9295092947c",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 1,
+      "behind_main": 604,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/evaluation_lab.py",
+        "tests/test_evaluation_lab.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feature/d7-golden-replay-v1",
+      "tip": "a644ceb889d8f7bfb6c6235c030ce346d8240c91",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 604
+    },
+    {
+      "branch": "feature/d7-metric-registry-v1",
+      "tip": "b1a487e4db991b762828e24e109585b0513bf638",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 603
+    },
+    {
+      "branch": "feature/d7-regression-adversarial-corpora-v1",
+      "tip": "fc81b7002895c366540f30f4a2823b9872665f17",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 602
+    },
+    {
+      "branch": "feature/d7-production-promotion-gate-v1",
+      "tip": "a5a4c7c545b4b3580c52b730f99b38a88d046836",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 601
+    },
+    {
+      "branch": "feature/d7-edge-efficiency-profiles-v1",
+      "tip": "e5f355ac6ed85f041740d6444eeb5b3193dce03c",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 600
+    },
+    {
+      "branch": "docs/sync-master-checklist-d7-v1",
+      "tip": "886a6b372793ee084fe41e9824f1380a3d344b4d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 599
+    },
+    {
+      "branch": "feature/d0-unified-capability-broker-v1",
+      "tip": "8c3b1c8a6b68e46ea85b268b9d86fb1b068b8df4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 594
+    },
+    {
+      "branch": "feature/d0-complete-execution-budget-v1",
+      "tip": "4ef0fadf21e5b6ee2c074aa899629a8c9cd6ac5f",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 592
+    },
+    {
+      "branch": "feature/d0-failure-taxonomy-v1",
+      "tip": "22f3fddd19c5fef662ac5bf2a816b7f36c663c35",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 590
+    },
+    {
+      "branch": "feature/d0-persistent-capability-revocation-v1",
+      "tip": "c5972d53a087bf6f54cd995c3ae7ad4a0f41ce3e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 588
+    },
+    {
+      "branch": "feature/d7-regression-pin-complete-execution-budget",
+      "tip": "2a97a59f9a69f81a6319a057f21a98ef54b08682",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 586
+    },
+    {
+      "branch": "docs/sync-master-checklist-after-d0-closure",
+      "tip": "c053f4c8c2e6fa36e3d3cbb516b8e7a53eab8c3c",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 585
+    },
+    {
+      "branch": "feature/benchmark-readiness-receipt-v1",
+      "tip": "60026b87ed840aa5b1034123572d71c09a39d0a7",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 585
+    },
+    {
+      "branch": "feature/benchmark-evidence-verifier-v1",
+      "tip": "c79967a9727e29ebfa976d0b74606f6accf1d61a",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 583
+    },
+    {
+      "branch": "feature/d7-efficiency-concurrency-observer-v1",
+      "tip": "5e452bed0e7d7b86a007de2d270e57704cbc626c",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 582
+    },
+    {
+      "branch": "feature/fix-hardware-workflow-validation",
+      "tip": "a4df7a07cdc8dec9c9cdaef9b7dc53d9c1c788ce",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 581,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "tests/test_hardware_workflow_contract.py"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feature/d7-edge-evidence-close",
+      "tip": "9cf2782732cd9826fd01d42d7cabcf6ce545a2cb",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 581,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/promote-quality-ranked-40k-v1",
+      "tip": "303749d5021c409ba099a4cdf46240e4254c1abe",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 578
+    },
+    {
+      "branch": "fix/benchmark-repo-relative-profiles",
+      "tip": "303749d5021c409ba099a4cdf46240e4254c1abe",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 578
+    },
+    {
+      "branch": "evidence/d7-edge-holdout-20260830",
+      "tip": "fdea3fb4c345b62f1d1d4c387f4bfcdfabec49e3",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 581,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "ops/rtx5090-runner-bootstrap-20260830",
+      "tip": "a6fc14d48aba1c614eb7df28d91227963f2c8d52",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 578,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "fix/ollama-structured-schema-grammar",
+      "tip": "e7a3b6dc9445354774951f035b764b0646425d69",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 578
+    },
+    {
+      "branch": "docs/final-closure-sync",
+      "tip": "5472ebbad650d8c466ae0353c3f99408680a770d",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 577
+    },
+    {
+      "branch": "evidence/closure-rtx5090-20260830",
+      "tip": "ae126cc391f9e83c663b3bc4bab91b473479154a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 26,
+      "behind_main": 581,
+      "patch_unique_main": 26
+    },
+    {
+      "branch": "docs/representative-hardware-closure-20260830",
+      "tip": "9b07f977df0ca26d44ff46c888c499a82e3b850b",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 576
+    },
+    {
+      "branch": "docs/master-checklist-evidence-sync-20260830",
+      "tip": "24dac7dca5c9d3389152021f75efad5dd4565f0d",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 574
+    },
+    {
+      "branch": "evidence/d4-reuse-20260830",
+      "tip": "5dbd78da95e2cf04df91c3c730280cec51f834aa",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 573,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "docs/d4-representative-insufficient-data-20260830",
+      "tip": "9cacbe929279eba4e96be8a028b3206deedb04e4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 572
+    },
+    {
+      "branch": "feat/d7-05-external-evaluator-handoff-20260830",
+      "tip": "e20d9d1d704c6138f12226b076b4957e28ac7dec",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 570
+    },
+    {
+      "branch": "feat/workspace-chat-frontend-20260830",
+      "tip": "17e3bf20801b5cf38d27383eaebddb6f3011f57d",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 568
+    },
+    {
+      "branch": "feat/workspace-sidebar-history-20260830",
+      "tip": "f03cb2a6464b97ebea36b1c947538f8435a78cfc",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 566
+    },
+    {
+      "branch": "feat/workspace-local-accounts-rbac-20260830",
+      "tip": "a82f306a4c341cefda7ba179bf45e81f94af5aed",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 12,
+      "behind_main": 565,
+      "patch_unique_main": 12,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 12
+    },
+    {
+      "branch": "feat/workspace-conversation-management-20260830",
+      "tip": "804b958f14965142a1da907eb3ad1b04bc7a0dbb",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 564,
+      "patch_unique_main": 7,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 7
+    },
+    {
+      "branch": "noop",
+      "tip": "07c7cca1d2bc1f0359f4cd34edad97f2d7302ee7",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 563
+    },
+    {
+      "branch": "feat/workspace-projects-20260830",
+      "tip": "c9e6645b055276cbb56efbe7d3a72bcb2fcdb8ab",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 17,
+      "behind_main": 563,
+      "patch_unique_main": 17,
+      "conflicts": [
+        "pyproject.toml",
+        "scripts/update_workspace_linux.sh",
+        "tests/test_update_workspace_linux.py"
+      ],
+      "patch_unique_integration": 17
+    },
+    {
+      "branch": "feature/enterprise-lean-skills-v1",
+      "tip": "d919a8f04054f43588cf11e5b9bc4060023cb8d4",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 562
+    },
+    {
+      "branch": "feature/query-aware-context-packer-v1",
+      "tip": "a18f897158340bc720045451ca2ac47c647b7430",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 561
+    },
+    {
+      "branch": "feature/d7-resource-benefit-measurement-v2",
+      "tip": "05944b0afbcab1bf0f2efc9c0e5880614b2319c2",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 561
+    },
+    {
+      "branch": "feat/workspace-external-login-4way-20260830",
+      "tip": "2fbc576ed6b32f6b26f8099c0f7bcde76786d14d",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 16,
+      "behind_main": 560,
+      "patch_unique_main": 15,
+      "conflicts": [
+        "AGENTS.md",
+        "pyproject.toml",
+        "src/three_agent/__init__.py"
+      ],
+      "patch_unique_integration": 15
+    },
+    {
+      "branch": "feature/d706-evaluator-handoff-v1",
+      "tip": "3adda8bb859d9bf0d2eec43de94e0829b7df5f06",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 559,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/workflow-dispatch-studio-v1",
+      "tip": "4069ffae6e7d84ff4412c4c26127c1cfad58a6a8",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 559,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/workspace-dispatch-v1",
+      "tip": "602e3ed7401e9f761242afaf26d87b5afe3b360f",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 1,
+      "behind_main": 558,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v11.py",
+        "src/three_agent/workflow_dispatch.py",
+        "src/three_agent/workspace_frontend_v8.py",
+        "tests/test_chat_gateway_v11.py",
+        "tests/test_workflow_dispatch.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feat/prompt-compiler-dlp-20260830",
+      "tip": "7df2ab566f6a9b272a657053b8b2ae751c578373",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 22,
+      "behind_main": 557,
+      "patch_unique_main": 20,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/agents/research_compiled.py",
+        "src/three_agent/public_query_compiler.py",
+        "tests/test_prompt_compiler.py"
+      ],
+      "patch_unique_integration": 20
+    },
+    {
+      "branch": "feat/prompt-compiler-dlp-v2-20260830",
+      "tip": "54d9ab43a2979cee883bf49364607f241fb632d5",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 23,
+      "behind_main": 557,
+      "patch_unique_main": 21,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/agents/research_compiled.py",
+        "src/three_agent/public_query_compiler.py"
+      ],
+      "patch_unique_integration": 21
+    },
+    {
+      "branch": "feature/workflow-dispatch-execution-v2",
+      "tip": "209fa964b347d9631022fa83ecb0db74556ba3b8",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 9,
+      "behind_main": 557,
+      "patch_unique_main": 9,
+      "conflicts": [
+        "docs/WORKFLOW_DISPATCH_V2.md",
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v12.py",
+        "src/three_agent/workflow_dispatch.py",
+        "tests/test_chat_gateway_v12.py",
+        "tests/test_workflow_dispatch.py"
+      ],
+      "patch_unique_integration": 9
+    },
+    {
+      "branch": "feature/workflow-dispatch-execution-v2-r2",
+      "tip": "2500a55c7d56b2a86714c489dce09a9d3acb8911",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 556,
+      "patch_unique_main": 7,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 7
+    },
+    {
+      "branch": "fix/chat-language-intent-fidelity-20260830",
+      "tip": "f56b9638116e87c33534ca962b6717b8dea6ffef",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 556,
+      "patch_unique_main": 8,
+      "conflicts": [
+        "docs/WORKSPACE_CHAT_FIDELITY.md",
+        "pyproject.toml",
+        "src/three_agent/chat_fidelity.py",
+        "src/three_agent/chat_gateway_v13.py",
+        "src/three_agent/workspace_frontend_v9.py",
+        "tests/test_chat_fidelity.py",
+        "tests/test_chat_gateway_v13.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "fix/chat-language-intent-fidelity-v2-20260830",
+      "tip": "5f546e555249831671220377825870bc145af3c7",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 9,
+      "behind_main": 555,
+      "patch_unique_main": 9,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_fidelity.py",
+        "tests/test_chat_fidelity.py"
+      ],
+      "patch_unique_integration": 9
+    },
+    {
+      "branch": "feature/d502a-exact-body-dedupe-v1",
+      "tip": "909b29b26e11b4de57dfe3c509e391f578743524",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 554
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching",
+      "tip": "450a8b095b387c46e8503ced9917117beb53ede6",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 10,
+      "behind_main": 555,
+      "patch_unique_main": 10,
+      "conflicts": [
+        "docs/WORKFLOW_V3_SECURITY.md",
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v14.py",
+        "src/three_agent/runtime_validation.py",
+        "src/three_agent/workflow_design_v3.py",
+        "src/three_agent/workflow_state_machine.py",
+        "src/three_agent/workspace_frontend_v10.py",
+        "tests/test_chat_gateway_v14.py",
+        "tests/test_runtime_validation_precompiled_contract.py",
+        "tests/test_workflow_state_machine_v3.py"
+      ],
+      "patch_unique_integration": 10
+    },
+    {
+      "branch": "feat/chat-fidelity-acceptance-20260830",
+      "tip": "0463901a11bd611cac411aec8b0c12674f6fa5d4",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 553,
+      "patch_unique_main": 7,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 7
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching-r2",
+      "tip": "cc9f1667d348c014a1a63c9628213d47473f0f31",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 13,
+      "behind_main": 553,
+      "patch_unique_main": 13,
+      "conflicts": [
+        "pyproject.toml"
+      ],
+      "patch_unique_integration": 13
+    },
+    {
+      "branch": "feature/workflow-v3-pause-resume-branching-r3",
+      "tip": "2f2fbeb1ee067b475494e1a239111783573e176d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 552
+    },
+    {
+      "branch": "feature/workflow-v4-bounded-parallel-dag",
+      "tip": "f9ed7f2c0e43999ba2b8cd58352d4ca7a2766047",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 552,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/version.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feat/chat-context-fidelity-20260830",
+      "tip": "0ef171f17624eb0b31235079bb3a0785b6320587",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 13,
+      "behind_main": 552,
+      "patch_unique_main": 13,
+      "conflicts": [
+        "docs/WORKSPACE_CHAT_CONTEXT.md",
+        "pyproject.toml",
+        "src/three_agent/chat_context.py",
+        "src/three_agent/chat_gateway_v15.py",
+        "tests/test_chat_gateway_v15.py"
+      ],
+      "patch_unique_integration": 13
+    },
+    {
+      "branch": "feat/chat-context-fidelity-v16-20260830",
+      "tip": "ec62b87ae0db663985844a646897c10ccefb0520",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 551,
+      "patch_unique_main": 8,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_context.py",
+        "src/three_agent/chat_gateway_v16.py",
+        "tests/test_chat_gateway_v16_contract.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "feat/multiturn-live-acceptance-20260830",
+      "tip": "3f53332346c42879a2ac45e4c6ab219d16ba8974",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 9,
+      "behind_main": 550,
+      "patch_unique_main": 9,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        "pyproject.toml",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 9
+    },
+    {
+      "branch": "fix/live-acceptance-runner-labels-20260830",
+      "tip": "8e6145bd61d3424fcacaf0423d320e47a307a311",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 549,
+      "patch_unique_main": 6,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        ".github/workflows/portable-deploy-ci.yml",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/rtx5090-runner-bootstrap-v1",
+      "tip": "818d770dcbf880ba8a7f0d7005ee52575c67db24",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 548,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/workflow-v4-bounded-parallel-dag-r2",
+      "tip": "b10c0c61ba772a969db48d77cfa38ab52afe0da3",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 545
+    },
+    {
+      "branch": "feature/d502a-oneclick-representative-benchmark",
+      "tip": "8228f526a4ce3e37317aa0215bc8ed6890c70079",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 548
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-20260830",
+      "tip": "06ec3c361edaa67357c25b205b56b45a0373fcef",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 548,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-v2-20260830",
+      "tip": "b00d42655fa2d1a61a6c313766d79fe64aeed471",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 547,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "fix/live-acceptance-config-path-v3-20260830",
+      "tip": "0072149514bfe7311128baf530f0c7667a62b508",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 543,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "fix/workflow-v4-sqlite-budget-lock-20260830",
+      "tip": "57ea878a0d9a8c763d0b00bb83471fbf9fef6812",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 7,
+      "behind_main": 543,
+      "patch_unique_main": 7
+    },
+    {
+      "branch": "fix/p2-output-contract-fidelity-20260830",
+      "tip": "3c738e8395497a161d21aee407847b4808c59841",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 33,
+      "behind_main": 542,
+      "patch_unique_main": 33,
+      "conflicts": [
+        ".github/workflows/live-chat-multiturn-acceptance.yml",
+        ".github/workflows/portable-deploy-ci.yml",
+        "src/three_agent/chat_multiturn_acceptance_v2.py",
+        "src/three_agent/chat_output_contract.py",
+        "src/three_agent/chat_service_fidelity_v2.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_chat_output_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py"
+      ],
+      "patch_unique_integration": 33
+    },
+    {
+      "branch": "fix/d502a-source-runner-pep668",
+      "tip": "97e5d2676ac0f318408a100e3820276ac95098b9",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 540
+    },
+    {
+      "branch": "fix/p2-runtime-evidence-20260830",
+      "tip": "97b4e7dfd8bcd7e7c7834291aef8cc4e3acc163e",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 541,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/chat_multiturn_acceptance_v2.py",
+        "tests/test_chat_multiturn_acceptance_v2.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "fix/p2-runtime-evidence-v2-20260830",
+      "tip": "c238d05bbbc13c63f8cb1f433b3465722576735c",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 539,
+      "patch_unique_main": 2,
+      "conflicts": [
+        "src/three_agent/chat_multiturn_acceptance_v2.py",
+        "tests/test_chat_multiturn_acceptance_v2.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "fix/d502a-isolated-runtime-deps",
+      "tip": "0bc89720b1a92851d38921f006fb72c0651a7453",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 538
+    },
+    {
+      "branch": "fix/p2-isolate-runner-runtime-20260831",
+      "tip": "f919244d1d458b3b62a4badb44c7f9bb219ac4e2",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 537
+    },
+    {
+      "branch": "fix/d502a-sanitized-failure-evidence-rebuild",
+      "tip": "af11e9820b9bf0967d4416366d1e2affe69a3a7c",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 536
+    },
+    {
+      "branch": "fix/d502a-sanitized-failure-evidence",
+      "tip": "16293a2c7d85ba0bed1e3c19bec811aafb6f61d8",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 536
+    },
+    {
+      "branch": "fix/p2-validation-reason-evidence-20260831",
+      "tip": "aa44570595ff0267972d499345fd4a569b630309",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 536,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/ubuntu-dual-gpu-transactional-update",
+      "tip": "2735dd18119d4fd25d9d0dbbd8982e45dbc16523",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 536,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "scripts/update_workspace_linux.sh",
+        "tests/test_update_workspace_linux.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "fix/p2-deterministic-constrained-generation-20260831",
+      "tip": "14e4c29a6783a39a2dd09e34ac17dd49a2149776",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 533,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/chat_service_fidelity_v2.py",
+        "tests/test_p2_constrained_generation.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "fix/linux-updater-dependency-contract-venv-relocation",
+      "tip": "cd63206a681b5c7c15eead8957a7490a0733675d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 528
+    },
+    {
+      "branch": "claude/3agent-optimization-review-nye0xr",
+      "tip": "d603cbe050200ec6119069e29f128bee32ec96fa",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 8,
+      "behind_main": 557,
+      "patch_unique_main": 8
+    },
+    {
+      "branch": "evidence/lean-profile-validate-20260830",
+      "tip": "194ce7c9855712c0537f139e3d7d55962f133f71",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 5,
+      "behind_main": 557,
+      "patch_unique_main": 5
+    },
+    {
+      "branch": "fix/p2-structured-output-20260831",
+      "tip": "c844bf9fef0797a1127f7e05df11f89ea1fdc805",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 519
+    },
+    {
+      "branch": "feature/adaptive-learning-phase3",
+      "tip": "6042c4f4874d3ee377c63ed85a481dad9a66393b",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 520,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "docs/knowledge/ADAPTIVE_LEARNING_PHASE3.md",
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "fix/vi-structured-language-recovery-20260831",
+      "tip": "987a0587af4bcae6796403f07eb139076969d979",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 505
+    },
+    {
+      "branch": "feature/adaptive-learning-phase3-1-checkpoint",
+      "tip": "3de925b8ce14cea214b0e85263b6165601f89038",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 493
+    },
+    {
+      "branch": "fix/p2-followup-structured-runtime-20260831",
+      "tip": "001b80f8d4458c1afb77bc6d7c699564fb1aa8ac",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 496
+    },
+    {
+      "branch": "feature/security-analyst-network-monitoring-v001",
+      "tip": "ee8b6c3ec09c3028ff3c38ef6f878a00051ea127",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 149,
+      "behind_main": 543,
+      "patch_unique_main": 149,
+      "conflicts": [
+        "docs/SECURITY_ANALYST_NETWORK_MONITORING_FINAL_RESEARCH_NOTE_V1.md",
+        "docs/SECURITY_ANALYST_NETWORK_MONITORING_NO_CODE_NOTICE_V1.md",
+        "docs/SECURITY_ANALYST_NETWORK_MONITORING_STATUS_V1.md",
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v17.py",
+        "src/three_agent/chat_gateway_v18.py",
+        "src/three_agent/security_monitoring/__init__.py",
+        "src/three_agent/security_monitoring/ai_analyst.py",
+        "src/three_agent/security_monitoring/collectors.py",
+        "src/three_agent/security_monitoring/hourly.py",
+        "src/three_agent/security_monitoring/plan.py",
+        "src/three_agent/security_monitoring/ui_read_model.py",
+        "src/three_agent/security_monitoring_cli.py",
+        "src/three_agent/workspace_frontend_v13.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py",
+        "tests/test_security_monitoring_ns1_collectors.py",
+        "tests/test_security_monitoring_pcap_approval_confirmation.py",
+        "tests/test_security_monitoring_pcap_integration.py",
+        "tests/test_security_monitoring_ui_gateway.py",
+        "tests/test_security_monitoring_ui_surface.py",
+        "tests/test_versioning_v4.py"
+      ],
+      "patch_unique_integration": 149
+    },
+    {
+      "branch": "fix/simple-chat-briefness-20260831",
+      "tip": "79fa18de5e2075966e33c8bc266f43f6ae73a7ef",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 493
+    },
+    {
+      "branch": "fix/v18-frontend-contract-regression-20260831",
+      "tip": "55c93b78743058df266a7251760499e81a0fc88d",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 475,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "src/three_agent/workspace_frontend_v13.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py",
+        "tests/test_versioning_v4.py",
+        "tests/test_workspace_frontend_v13.py"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "fix/chat-v18-contract-regression",
+      "tip": "c5661f5cf3356f777b8efcc23f9b0cb5440be2ea",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 471,
+      "patch_unique_main": 7,
+      "conflicts": [
+        "src/three_agent/workspace_frontend_v13.py",
+        "tests/test_workspace_frontend_v13.py"
+      ],
+      "patch_unique_integration": 7
+    },
+    {
+      "branch": "fix/v13-render-contract-20260831",
+      "tip": "a973a450e7ed90e06b3753373bcd9e911b063f28",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 464
+    },
+    {
+      "branch": "fix/missing-reference-plain-first-20260831",
+      "tip": "10b1f15da0d4540250a8b38fc100bbc9f2ba2eed",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 463
+    },
+    {
+      "branch": "feature/ui-compact-answer-actions-ci",
+      "tip": "6d20db7bb1b3ddf96dac615c39ff96fd8146222e",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 7,
+      "behind_main": 463,
+      "patch_unique_main": 7
+    },
+    {
+      "branch": "fix/p2-live-language-semantic-20260831",
+      "tip": "d99f420708c65a76b5d0433bd099a30dbc412862",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 462,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "feature/ui-compact-answer-actions",
+      "tip": "6ea2b9a3ae67ad55079ef262015b4c1b8b720047",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 459
+    },
+    {
+      "branch": "feature/workspace-network-data-plane-v1",
+      "tip": "33c32ab7cb771aef4ad47eb53f130fd5215a2232",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 392
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4a-admission",
+      "tip": "eba02feff533760de622decb131eace5d87252cb",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 390
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-real-source-acceptance",
+      "tip": "98ae8490b86d75cf1ea5fc9b5b0850fe0437da73",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 380
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4b-reflection",
+      "tip": "5e8440686c4c76d49125cb93da9e5bed97be8fce",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 379,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-runner",
+      "tip": "c7a3eb21f8279dfe7bfe10a80c4e13952247e3d0",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 367
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-cic-real-source-evidence",
+      "tip": "72b06cd9714ca9c065fd3d2fc34f3913c06fa514",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 357
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4c-retrieval",
+      "tip": "5c481e6405385c888cf982b5b2b8c3c4ba75e5af",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 356,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/agents/research_compiled.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "fix/cic-real-source-pr-trigger-scope",
+      "tip": "4d7e50d1c3fb7a50f770e2ca547bba2cbb0c5986",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 353
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4d-runtime-wiring",
+      "tip": "9ec0352864198bc3b829eecea98b8b721230642b",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 352,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4e-authenticated-promotion",
+      "tip": "6a3f49f261b356c8404f0c84e4338f18ebb7fc66",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 351,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-lanl-publisher-access-plan",
+      "tip": "601de21ab452b8484da8eb77d2b02561864bb059",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 341
+    },
+    {
+      "branch": "feature/workspace-network-v3-02e-lanl-operator-handoff",
+      "tip": "38ba7a01c70e00947174ad4ba197e0400ed180d6",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 333
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4f-bootstrap",
+      "tip": "dde50ce2c26bded96d163931be35ff2305d0870b",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 7,
+      "behind_main": 332,
+      "patch_unique_main": 5
+    },
+    {
+      "branch": "fix/lanl-publisher-access-pr-trigger-scope",
+      "tip": "db5c17f3ff2775f0be690f74a73e972cde0c1c93",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 329
+    },
+    {
+      "branch": "fix/update-auth-credential-invariant",
+      "tip": "ff42810ce86b077505f323aad47ad1fea9f65e2f",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 326
+    },
+    {
+      "branch": "docs/adaptive-learning-phase4f-index",
+      "tip": "382aaf5997b34b3e84ab82d543b407730a5e4ac6",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 327
+    },
+    {
+      "branch": "docs/security-analyst-network-monitoring-research-v1",
+      "tip": "0e5c9f086e1b07b80cb4bb948464a6c67fa9d6af",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 40,
+      "behind_main": 543,
+      "patch_unique_main": 40,
+      "conflicts": [
+        "docs/SECURITY_ANALYST_NETWORK_MONITORING_STATUS_V1.md"
+      ],
+      "patch_unique_integration": 40
+    },
+    {
+      "branch": "fix/adaptive-learning-phase4a1-classification-identity",
+      "tip": "25a84f90d91a1b8529232a76d235b130337ccc96",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 324
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4g-bounded-scheduler",
+      "tip": "5c9c1d053e0d57fade67a1001524781f13e1c25e",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 1,
+      "behind_main": 323,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "src/three_agent/adaptive_learning_scheduler.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feature/security-analyst-network-monitoring-integration-v1",
+      "tip": "30c9fce6debc952822372bda8652e7a401352640",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 321
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4g-scheduler",
+      "tip": "58bf40c14c2d1ec1441c3c1f24a11f48cdf8e252",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 322,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4h-effectiveness",
+      "tip": "d929503cfa7798c6b1a8a6a38745efccff0cb3c6",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 321
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4i-curation-proposals",
+      "tip": "344ae366fdb806aa84011cb3b1f8ed7d2cc59269",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 316,
+      "patch_unique_main": 2,
+      "conflicts": [
+        "docs/knowledge/README.md"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "fix/update-security-entrypoint-validation",
+      "tip": "54df39480abb72a624ebaa4a06d9444b40101f6a",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 312
+    },
+    {
+      "branch": "docs/workspace-network-v3-02e-lanl-operator-runbook",
+      "tip": "b383f962a9fdefc3ba55b5309e6e853626aeff2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 298
+    },
+    {
+      "branch": "feature/network-security-intelligence-v002",
+      "tip": "69f30ff32300584992ae2c9a6dcf1c47498aaf9b",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 30,
+      "behind_main": 297,
+      "patch_unique_main": 26,
+      "conflicts": [
+        "docs/knowledge/README.md",
+        "src/three_agent/network_public_corpus_acquisition.py"
+      ],
+      "patch_unique_integration": 26
+    },
+    {
+      "branch": "fix/network-public-corpus-dns-pinning",
+      "tip": "3ae26c5b54e451882bebdc2b0f9be3bb60f8e37c",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 293
+    },
+    {
+      "branch": "feature/network-security-intelligence-v003-correlation-reconciled",
+      "tip": "cb01722db4945955e0110e5f4322c097cd31b7eb",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 260
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4j-curation-revision",
+      "tip": "421dfafccb91df7656402bced9ae805865a27ef5",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 287
+    },
+    {
+      "branch": "feature/network-security-intelligence-v003-correlation",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 252
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 252
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-final",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 252
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-work",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 252
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-work2",
+      "tip": "54a876fdd88688592ea2963dda2d6cad43751b2e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 252
+    },
+    {
+      "branch": "codex/v0.0.4-network-incident-triage-v1",
+      "tip": "1e57b95296d47f33db1c1a96741d18c9f0da5064",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 245
+    },
+    {
+      "branch": "feature/adaptive-learning-phase4k-revision-evaluation",
+      "tip": "c0a45bc300d3373ae1d1fac73e311e445ef6bff7",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 245
+    },
+    {
+      "branch": "feature/network-security-intelligence-v004-dns-behavior",
+      "tip": "efa46fc9712d89a2504fd03501c550984b9d53d1",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 236,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py",
+        "src/three_agent/security_monitoring/behavior_store.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "feature/network-security-intelligence-v004-final",
+      "tip": "efa46fc9712d89a2504fd03501c550984b9d53d1",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 236,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py",
+        "src/three_agent/security_monitoring/behavior_store.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "fix/chat-memory-attachments-v3-final2",
+      "tip": "b231f037a78a493885cef796597e84860831c6c4",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 11,
+      "behind_main": 235,
+      "patch_unique_main": 11,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v19.py",
+        "src/three_agent/workspace_frontend_v15.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py",
+        "tests/test_security_monitoring_pcap_integration.py",
+        "tests/test_versioning_v4.py"
+      ],
+      "patch_unique_integration": 10
+    },
+    {
+      "branch": "feature/vulnerability-intelligence-v005-cleanroom",
+      "tip": "4e983dc83f16b0be4b198f3121f12ff8740e08e6",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 5,
+      "behind_main": 235,
+      "patch_unique_main": 5
+    },
+    {
+      "branch": "feature/vulnerability-intelligence-v005-cleanroom-ready",
+      "tip": "4e983dc83f16b0be4b198f3121f12ff8740e08e6",
+      "status": "absorbed_by_prior_reconcile",
+      "ahead_main": 5,
+      "behind_main": 235,
+      "patch_unique_main": 5
+    },
+    {
+      "branch": "ci/trusted-self-hosted-r9",
+      "tip": "de2dcc4541579fb5899f1f55863e728ac791cbf9",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 234,
+      "patch_unique_main": 2,
+      "conflicts": [
+        ".github/workflows/trusted-self-hosted-r9-ci.yml",
+        "tests/test_trusted_self_hosted_runner_workflow_contract.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "feature/security-configuration-center-v001",
+      "tip": "29f0de2bd15366bde81356dd2c90114ec93a5166",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 5,
+      "behind_main": 235,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "scripts/install_chat_gateway.sh",
+        "src/three_agent/chat_gateway_v18.py",
+        "src/three_agent/workspace_frontend_v15.py"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "fix/trusted-self-hosted-r9-yaml",
+      "tip": "88373c3983147f9231931f9daefd278ccce7a1b6",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 233,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "test/read-only-lan-probe-20260901",
+      "tip": "e044a82b126be1afd267d59653687bcce10ae10a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 10,
+      "behind_main": 235,
+      "patch_unique_main": 10
+    },
+    {
+      "branch": "research/oss-network-security-blueprint",
+      "tip": "0d0d79fa8e6839bb463ec04aec3f7fcffc408572",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 232
+    },
+    {
+      "branch": "archive/pr-187-pre-reconcile-048fc550",
+      "tip": "048fc5505266ef433f1bbf81520d66ee982217a7",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 6,
+      "behind_main": 229,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "validation/security-monitoring-phase1d",
+      "tip": "ee026b5216dba71543e502399bff5e9f4b90aa19",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 226,
+      "patch_unique_main": 8,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "validation/security-monitoring-phase2a",
+      "tip": "5404592bcc1430cc81923f548174f1bc0d01d5f1",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 225,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "noop-validation-check",
+      "tip": "2adc9feb59e9a70bdf345f35228d2905060deb40",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 224
+    },
+    {
+      "branch": "validation/security-monitoring-phase2b",
+      "tip": "087752f8397b67150335b74297abd5d345dad807",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 2,
+      "behind_main": 224,
+      "patch_unique_main": 2,
+      "conflicts": [
+        "src/three_agent/security_monitoring/health_evaluator.py"
+      ],
+      "patch_unique_integration": 2
+    },
+    {
+      "branch": "validation/security-monitoring-phase2c",
+      "tip": "e6db5d6e6ff297ba77ea4a3d9bc305ed2a2e60ec",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 223,
+      "patch_unique_main": 4,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "validation/security-monitoring-phase3a",
+      "tip": "a14a09bbf50e831972ea1b36485370f7ff415a21",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 223,
+      "patch_unique_main": 6,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 6
+    },
+    {
+      "branch": "validation/security-monitoring-phase3b",
+      "tip": "1cf7cd5e5733867d76a8f9a6790da60b9fe15352",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 223,
+      "patch_unique_main": 8,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "validation/security-monitoring-phase3c",
+      "tip": "5b1c659733de2196ccc6fd1ab23197b838b64f6e",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 12,
+      "behind_main": 223,
+      "patch_unique_main": 12,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 12
+    },
+    {
+      "branch": "validation/security-monitoring-phase4a",
+      "tip": "e1f49783431e90f49b70cee4cd3a2a2cd35b58f9",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 14,
+      "behind_main": 223,
+      "patch_unique_main": 14,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 14
+    },
+    {
+      "branch": "validation/security-monitoring-phase4b",
+      "tip": "126a33069d587b61f986a789240f992f3a298f10",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 16,
+      "behind_main": 223,
+      "patch_unique_main": 16,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 16
+    },
+    {
+      "branch": "validation/security-monitoring-phase4c",
+      "tip": "6b5a3d70fc9538efeba12b1ad96294814d2078a4",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 20,
+      "behind_main": 223,
+      "patch_unique_main": 20,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 20
+    },
+    {
+      "branch": "feature/security-monitoring-enterprise-governance",
+      "tip": "709c4b38739deb576a0562815d12b917ef1974bb",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 12,
+      "behind_main": 225,
+      "patch_unique_main": 12,
+      "conflicts": [
+        "src/three_agent/chat_gateway_v19.py",
+        "src/three_agent/security_monitoring/ui_config.py",
+        "src/three_agent/workspace_frontend_v16.py",
+        "tests/test_security_monitoring_ui_config.py"
+      ],
+      "patch_unique_integration": 12
+    },
+    {
+      "branch": "validation/security-monitoring-phase5a",
+      "tip": "99c11cd2ae0aaab788fbdf4ae046432fc110f163",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 22,
+      "behind_main": 223,
+      "patch_unique_main": 22,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 22
+    },
+    {
+      "branch": "validation/security-monitoring-phase5b",
+      "tip": "4e8f126cb7525771a9dddb78fd9088668edcf074",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 24,
+      "behind_main": 223,
+      "patch_unique_main": 24,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 24
+    },
+    {
+      "branch": "validation/security-monitoring-phase5c",
+      "tip": "29323c94c8be66fc57a7e577494a773b6a0ad598",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 27,
+      "behind_main": 223,
+      "patch_unique_main": 27,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 27
+    },
+    {
+      "branch": "validation/security-monitoring-phase6a",
+      "tip": "4108729b6203569a78a8a056098fe5366f977e22",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 30,
+      "behind_main": 223,
+      "patch_unique_main": 30,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 30
+    },
+    {
+      "branch": "validation/security-monitoring-phase6b",
+      "tip": "d9d5488eea224cbb3722b71b71f754148d1ec975",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 33,
+      "behind_main": 223,
+      "patch_unique_main": 33,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 33
+    },
+    {
+      "branch": "validation/security-monitoring-phase6c",
+      "tip": "11793f4d36600d5aa7982510ef9eccd530164d2a",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 37,
+      "behind_main": 223,
+      "patch_unique_main": 37,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 37
+    },
+    {
+      "branch": "validation/security-monitoring-phase7",
+      "tip": "6b309a37f71685a385a434ded39c1fc8b8a0b309",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 40,
+      "behind_main": 223,
+      "patch_unique_main": 40,
+      "conflicts": [
+        "src/three_agent/security_monitoring/__init__.py"
+      ],
+      "patch_unique_integration": 40
+    },
+    {
+      "branch": "feature/security-monitoring-phase1",
+      "tip": "f98227f1887340c9890eb5041e0f1a5b2904c42e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 209
+    },
+    {
+      "branch": "integration/security-monitoring-main-reconcile",
+      "tip": "fbb6a436fc5d30e47d8eeadc89df5f81205556a0",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 194
+    },
+    {
+      "branch": "integration/security-monitoring-main-reconcile-v2",
+      "tip": "f6fbc6f5a585c2fbb4a7fb2436ec62237c4266f7",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 192
+    },
+    {
+      "branch": "validation/ubuntu-pc-deploy-entrypoint",
+      "tip": "6ee4a44e062d6f7a884ae9251be95b5befdeafea",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 8,
+      "behind_main": 192,
+      "patch_unique_main": 8,
+      "conflicts": [
+        ".github/workflows/portable-deploy-ci.yml",
+        "docs/PORTABLE_DEPLOY.md",
+        "scripts/deploy_ubuntu_pc.sh",
+        "scripts/test_deploy_ubuntu_pc_contract.sh"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "fix/chat-multimodal-attachments-v4",
+      "tip": "58b939e6f7d3b56994ddb76c244344afa6ce793f",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 17,
+      "behind_main": 188,
+      "patch_unique_main": 14,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v20.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py",
+        "tests/test_security_monitoring_pcap_integration.py",
+        "tests/test_versioning_v4.py"
+      ],
+      "patch_unique_integration": 14
+    },
+    {
+      "branch": "fix/deploy-preserve-local-state",
+      "tip": "fb84e298b6fcfc5e1765bf582e6418ec91e9be3d",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 4,
+      "behind_main": 187,
+      "patch_unique_main": 4,
+      "conflicts": [
+        ".github/workflows/portable-deploy-ci.yml",
+        "scripts/bootstrap.sh",
+        "scripts/test_bootstrap_contract.sh"
+      ],
+      "patch_unique_integration": 4
+    },
+    {
+      "branch": "validation/deploy-preserve-local-state-latest",
+      "tip": "a06973fa1e38d1b6c069307f43a10db136d0fc4f",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 184
+    },
+    {
+      "branch": "validation/portable-bootstrap-preserve-local-state-final",
+      "tip": "f323d91eff5cb6cb7019cb47ecfa2d9b20bb7496",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 180
+    },
+    {
+      "branch": "validation/portable-bootstrap-preserve-local-state-final-v2",
+      "tip": "10ef65d959313cc4d17a646845dfdb04d0652b1a",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 178
+    },
+    {
+      "branch": "feature/non-destructive-immutable-updater-v1",
+      "tip": "ba8f0ae977ba446db5e36ef7f445ec2f3c11c142",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 175
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output",
+      "tip": "6cb247662eb864c5ed41651c8a14dbb208d24bac",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 174,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v2",
+      "tip": "cc8177b713760a9bc2863dd17f90103dca7f2bff",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 173,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v3",
+      "tip": "f9b9b92fc2e57425da2c1583f6a7952bed90d648",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 172,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v4",
+      "tip": "7c3c873699741a869f0a60a963f3b2a988933f6a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 171,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v5",
+      "tip": "e9cbd8abf669c910aa35d7b7cc28e7c6acaafdc0",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 170,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/workflow-studio-draft-library-v1",
+      "tip": "e72f151327f1f983c89f98b27cd2cafc596d28be",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 144
+    },
+    {
+      "branch": "release/workflow-studio-draft-library-v1-ready",
+      "tip": "0819651934a49ddcdb6832b6efc3ab6e8cdbc220",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 142
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v6",
+      "tip": "0b81689c3bd23c3fee27559d9fab3dfd4c9cda07",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 167,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "fix/trusted-rtx5090-runner-contract",
+      "tip": "a1ab01af1786a3c20769e90fc0c153c432f1cecf",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 167,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v7",
+      "tip": "214fe8fd60731b78e70168c0e3fff6323dcad5f4",
+      "status": "absorbed_by_later_reconcile",
+      "ahead_main": 1,
+      "behind_main": 141,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "tests/test_live_chat_multiturn_workflow_contract.py"
+      ]
+    },
+    {
+      "branch": "fix/trusted-rtx5090-runner-contract-v2",
+      "tip": "8327edb08f5d9e7b3d262634847b6128f229f663",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 141,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/security-capability-router-v02",
+      "tip": "cb9559c8a5bf381db1e5780fb38ac8ced892d3dd",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 137
+    },
+    {
+      "branch": "feature/security-operation-plan-v03-r2",
+      "tip": "958e0c2d25f2a603d96cef831eb2125c526d69ab",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 136
+    },
+    {
+      "branch": "feature/security-operation-plan-v03",
+      "tip": "c2681c5c8c11d2d8b652ed98a9f1e58abfda31e8",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 137,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/security-operation-binding-v04",
+      "tip": "6990bb8097902b25aa2fb53685bbbc2f977d3a94",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 134,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v8",
+      "tip": "996da9d1da5717afadf42d7f45037d6987841258",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 132,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/security-typed-invocation-v05",
+      "tip": "97dc2f0417e0da3fd88997ce932ac3afe5ffcddb",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 128
+    },
+    {
+      "branch": "feature/security-workflow-audit-v06",
+      "tip": "5ecb893d2938df88aa86cebce9b0613ab578025e",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 125
+    },
+    {
+      "branch": "feature/security-pcap-task-read-v07",
+      "tip": "a1f810617963b4e4a927a8af4391d16eca8bd972",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 120
+    },
+    {
+      "branch": "fix/security-pcap-read-hardening-v071",
+      "tip": "e575585d04b53b0d421c4954b1b4070cbb4f41a9",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 120,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "fix/security-pcap-v071-latest",
+      "tip": "6ce2def620613e416ad2c87f2aeb3a507767fe59",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 118
+    },
+    {
+      "branch": "feature/security-flow-analysis-v08",
+      "tip": "ed79f1510636c2800ab91b7d5cd0b732b9c464fe",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 1,
+      "behind_main": 118,
+      "patch_unique_main": 1,
+      "conflicts": [
+        "src/three_agent/security_monitoring/flow_analysis.py"
+      ],
+      "patch_unique_integration": 1
+    },
+    {
+      "branch": "feat/chat-current-multimodal-understanding",
+      "tip": "dbff7c078a8fbe7ffcf73343c6e799a12999f38f",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 6,
+      "behind_main": 168,
+      "patch_unique_main": 5,
+      "conflicts": [
+        "pyproject.toml",
+        "src/three_agent/chat_gateway_v20.py",
+        "tests/test_chat_gateway_v16_contract.py",
+        "tests/test_live_multiturn_workflow_contract.py",
+        "tests/test_security_monitoring_pcap_integration.py",
+        "tests/test_versioning_v4.py"
+      ],
+      "patch_unique_integration": 5
+    },
+    {
+      "branch": "feature/security-flow-analysis-v09",
+      "tip": "ee60de28a4553af0bcfc9de7b452047b4efd5978",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 111
+    },
+    {
+      "branch": "fix/security-monitoring-cross-platform-icmp",
+      "tip": "3c5381e4ff6583231131dd4b77c9065a95443c46",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 110,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "reconcile/pr-187-icmp-a490cc",
+      "tip": "3c5381e4ff6583231131dd4b77c9065a95443c46",
+      "status": "absorbed_by_prior_reconcile",
+      "ahead_main": 3,
+      "behind_main": 110,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/security-e2e-closure-v001",
+      "tip": "3e2fbabad51c23cbc281b79d4d0d5e0857c46735",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 108
+    },
+    {
+      "branch": "fix/chat-intelligence-integration-v1",
+      "tip": "caeaa0d2868c5d5e7a2d11ebfdd16edf2880914a",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 105
+    },
+    {
+      "branch": "feature/security-flow-analysis-v09-mainline",
+      "tip": "7016bd017b26c8415bb29203dc7b7e39c336c020",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 106
+    },
+    {
+      "branch": "fix/chat-capability-truth-v1",
+      "tip": "629a7a95421e127e33138d16105e2d803a72db46",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 4,
+      "behind_main": 105
+    },
+    {
+      "branch": "feature/security-collector-lifecycle-v001",
+      "tip": "70c2c7888e7f2a4a4828a076407a0b3f454f21ce",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 108,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "src/three_agent/chat_gateway_v21.py"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feature/security-approved-asset-onboarding-v001",
+      "tip": "16ed9fe11115dbff64da9943b13ac9c4c8068116",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 3,
+      "behind_main": 108,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "src/three_agent/chat_gateway_v21.py"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feat/chat-reference-provenance-v1",
+      "tip": "97c5ed56f263579ba46391581084ad0b54f539d6",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 98,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "fix/chat-capability-truth-v2",
+      "tip": "97c5ed56f263579ba46391581084ad0b54f539d6",
+      "status": "absorbed_by_prior_reconcile",
+      "ahead_main": 1,
+      "behind_main": 98,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/security-incident-timeline-v010",
+      "tip": "255b568986db087e20d4d19fcc84b7633fea4889",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 92
+    },
+    {
+      "branch": "fix/chat-capability-truth-v3-mainline",
+      "tip": "8f7d77b124a12e0a81d46a7add7312b80de44cbf",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 83
+    },
+    {
+      "branch": "reconcile/chat-memory-docs-v22-main",
+      "tip": "7ce49d97c70eb4e76560cb3e4b93b4ff7bf9ecd0",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 9,
+      "behind_main": 87,
+      "patch_unique_main": 9
+    },
+    {
+      "branch": "fix/chat-intelligence-integration-v2",
+      "tip": "ccf134f66bef9a84ef366945b929e2170931c6ff",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 109,
+      "patch_unique_main": 3,
+      "conflicts": [
+        "docs/WORKSPACE_CHAT_INTELLIGENCE_INTEGRATION_V1.md",
+        "src/three_agent/chat_gateway_v20.py"
+      ],
+      "patch_unique_integration": 3
+    },
+    {
+      "branch": "feature/security-approved-asset-onboarding-v011",
+      "tip": "40334341d21ce09afe2d17ea6be8be46fb59b622",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 7,
+      "behind_main": 87,
+      "patch_unique_main": 7,
+      "conflicts": [
+        "src/three_agent/chat_gateway_v22.py",
+        "src/three_agent/workspace_frontend_v18.py"
+      ],
+      "patch_unique_integration": 7
+    },
+    {
+      "branch": "fix/ollama-qwen-structured-output-v9-mainline",
+      "tip": "384676ef51d843a372f9a2044a1d0e7ae6a25bf8",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 87,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "fix/v21-preserve-chat-intelligence-v1",
+      "tip": "d6f07e2b1ec03ceeee09df1cb79cd94d2ad87982",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 2,
+      "behind_main": 78
+    },
+    {
+      "branch": "feature/curated-document-skills-v1",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 75
+    },
+    {
+      "branch": "feature/curated-document-skills-v2",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 75
+    },
+    {
+      "branch": "fix/v21-preserve-chat-intelligence-v2",
+      "tip": "e1ef25312e5fb6e9302e9f5b02abb5b7cc9fc187",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 75
+    },
+    {
+      "branch": "feat/enterprise-document-skill-registry-v1",
+      "tip": "eaf319314ba9094a5952338d41820d6c8128c4c9",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 77,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/dfir-evidence-case-v011",
+      "tip": "6c612d5fc774a7a2d50711b559e68b7319dafded",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 69
+    },
+    {
+      "branch": "feat/dfir-case-evidence-contract-v1",
+      "tip": "f03361691845c00d0fbbc19c537b4aa11437386a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 6,
+      "behind_main": 77,
+      "patch_unique_main": 6
+    },
+    {
+      "branch": "feature/dfir-forensic-store-v012",
+      "tip": "520cbb36a7073df440fb93ffb2c67d7c2af73ead",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 64
+    },
+    {
+      "branch": "fix/security-route-plan-integrity-l9",
+      "tip": "3ccc064c07fc50004238065232bfb98111701bbd",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 68,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "fix/updater-release-trust-l10",
+      "tip": "ac42a83df4ae923f21abe8fd503d617d087412f9",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 58
+    },
+    {
+      "branch": "feature/dfir-case-report-v015",
+      "tip": "fce5c11310d9c585968f682a52627780b59f8e06",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 41
+    },
+    {
+      "branch": "feature/dfir-normalized-admission-v016",
+      "tip": "cb1ebe53c1bae2777f46286d459fb01d391dc6cd",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 58,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/dfir-conformance-harness-v017",
+      "tip": "9996e425dfe7a5651207059de439bc0c36929e79",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 5,
+      "behind_main": 58,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "feature/dfir-forensic-clock-v018",
+      "tip": "d6a685b40eeb7a35887b9c259982f1bebae261be",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 58,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/dfir-windows-auth-v019",
+      "tip": "4fea766b5e155eb2ff4553b51aa917072c120e56",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 58,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/dfir-network-protocol-v020",
+      "tip": "205eec960bc77681be4633646f759e58fb51d9c6",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 58,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/dfir-timeline-evidence-v013",
+      "tip": "cb4bf325b89e7d579b9319c8b21c6b04aaee2b8d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 1,
+      "behind_main": 53
+    },
+    {
+      "branch": "fix/dfir-strict-boolean-contract-v012",
+      "tip": "87acc3ea5e4d357dcc83e51afd00c1d0dbd8f4d4",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 58,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-hypothesis-engine-v014",
+      "tip": "0e3a411a696b6a62cfba70d31d1e66194da14d6d",
+      "status": "absorbed_patch_equivalent",
+      "ahead_main": 2,
+      "behind_main": 48
+    },
+    {
+      "branch": "integration/dfir-v016-v020",
+      "tip": "61af1535d95c191a163b5d2be7bb69a1f4a4e98f",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 41,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-document-full-ingestion",
+      "tip": "1b985dd27365b24fc245e4a2b79946a8b41eace9",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 61
+    },
+    {
+      "branch": "feature/skill-document-visual-understanding",
+      "tip": "a274d6cfc7eea59e33ddee28b20e5b4278ea8472",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-pdf-understanding",
+      "tip": "8c93c55e78a5fcd31bcb2302e9b8f82d4c07a04d",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-docx-understanding",
+      "tip": "5c4c7bc3101e7b5dd4c3bfc082bc2ddadb8ed6e9",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-xlsx-understanding",
+      "tip": "bade2f02923b43845586eaea1a7f8a85a79a4ecc",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-pptx-understanding",
+      "tip": "2b3ca752396b4040364ccaafe3c84efc4cf81b5f",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-web-document-understanding",
+      "tip": "a4744aedc2b55781904e5d3dcf95dc1985db09ef",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-archive-zip-understanding",
+      "tip": "1dfdcdf78c404fd3ad1ba1ecaf614ba8e6905988",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-provenance-audit",
+      "tip": "3fe9a87db6880b4e17ced55209aff4ad3f221c56",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/security-dhcp-ip-triage-v001",
+      "tip": "e9d83487e73a6ced9115a5e61271f16acc0c8619",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 41,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/dfir-v021-process-tree-reconstruction",
+      "tip": "63d6357a5048c01df778fe7d449efcc3833c003a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v022-persistence-hunt",
+      "tip": "eb9a56693154d82c56c2039c5b7fdf23d5fdf1ec",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v023-lateral-movement-trace",
+      "tip": "7cbe7006724899135e70616fc2469e177a7706b1",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v024-filesystem-artifact-analysis",
+      "tip": "153e2398b032511a1db9aa1d22739d35334c5467",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v025-memory-forensics-contract",
+      "tip": "afb07a6e5c892edd5bcc7d423f728c4cbfd7729c",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v026-anti-forensics-detection",
+      "tip": "5b31a5c3b3a8e347b5ccafedec59a08bbe58b4be",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v027-credential-abuse-trace",
+      "tip": "898bf7befef313a0ac4d1b95633097d16fe53564",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v028-exfiltration-analysis",
+      "tip": "c9935d48ff649cf96bb40134a87c3b7caf0804a3",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 41,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "feature/dfir-v029-incident-scope-builder",
+      "tip": "eb87ee388e694dc0744a1efd6faeb118046f52c8",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 5,
+      "behind_main": 41,
+      "patch_unique_main": 5
+    },
+    {
+      "branch": "integration/dfir-v021-v029-validation",
+      "tip": "634577f089f12c5da6128b484fd101ad52d75cfe",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 41,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "feature/skill-registry-admission",
+      "tip": "6c1a4b13075778c636851a52de891abf20126e13",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 63,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feature/skill-docx-understanding-v2",
+      "tip": "66938b0885fbbc65aa87ed404dbad7b2bfe6b3a3",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-xlsx-understanding-v2",
+      "tip": "3b605a90f659f2c600cad9cdd979f59f06bf857b",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-pptx-understanding-v2",
+      "tip": "90f012c6034b5bf93e6d2ccc84b5a547cfe2b608",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-web-document-understanding-v2",
+      "tip": "c8a74205d4703496fbd7c3d4104687c27011e2db",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-archive-zip-understanding-v2",
+      "tip": "6562f1e891a143e068e176691c8940b8b0a4edd5",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-provenance-audit-v2",
+      "tip": "6bee70e4a255dc3f9661d7bc84f926f13d46a405",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-registry-admission-v2",
+      "tip": "05c57079a27bd808ec2453208902abccddd90a8e",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 37,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/execution-governance-v001",
+      "tip": "daafc8897c27b6958e452a0de8de200ac19b2705",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 35
+    },
+    {
+      "branch": "feature/harness-h1-task-acceptance",
+      "tip": "6e57c5ce86e046687d3345e20d17e3763ce9548f",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 34
+    },
+    {
+      "branch": "feat/harness-composite-strategy-policy-001",
+      "tip": "3faf4a534ab77bbd727975e0636843454593aa88",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 28
+    },
+    {
+      "branch": "feature/skill-document-visual-understanding-v2",
+      "tip": "7705f3888ee2528746f19f26e5371a713f8d617e",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 26,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feature/skill-pdf-understanding-v2",
+      "tip": "f39bc81e6675bebe8408aa3434deda0499aa8ac6",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 26,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "ci/windows-deploy-throughput-v1",
+      "tip": "b5e569e241c021205a68a8eb472f4b176ac66276",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 37,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "fix/security-l9-integrity-main-20260903",
+      "tip": "7597645c9437ff8521ea3842693a9397feb789ee",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 25,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feat/harness-h2-memory-foundation",
+      "tip": "d6e1d19cf558f5426aaf9a68658f4e509626a3be",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 22
+    },
+    {
+      "branch": "feat/harness-h2-checkpoint-foundation",
+      "tip": "6e4d3a19ac93708b6da40af4493be65542f9e320",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 14
+    },
+    {
+      "branch": "feature/security-asset-dependency-impact-v001",
+      "tip": "b6cebfa53297014c35686ee5632bade266ea004a",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 4
+    },
+    {
+      "branch": "feature/internet-egress-policy-v1-20260903",
+      "tip": "6d80a6aeb9eb444d40a89552610e3cf10233e69a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 8,
+      "behind_main": 13,
+      "patch_unique_main": 8
+    },
+    {
+      "branch": "lane/egress-01-runtime-chokepoint",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-03-plugin-connector-boundary",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-04-browser-boundary",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-05-audit-privacy",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-06-warning-ux",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-08-ci-security-gate",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-09-os-network-policy",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "lane/egress-10-docs-evidence",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "tmp-ignore",
+      "tip": "d2766b823af2b539799019320548d3f5b90976f4",
+      "status": "absorbed_ancestor",
+      "ahead_main": 0,
+      "behind_main": 2
+    },
+    {
+      "branch": "feat/harness-h3-context-manifest",
+      "tip": "09fda7495d52afe386b15c2f5874b9a8879406af",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 2,
+      "behind_main": 2,
+      "patch_unique_main": 1
+    },
+    {
+      "branch": "feat/harness-h3-context-compiler",
+      "tip": "510d47c33cf98d4637bf75ae44b259fa4ec9be9f",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 2,
+      "patch_unique_main": 2
+    },
+    {
+      "branch": "feat/harness-h3-context-rehydration",
+      "tip": "040d4d0ec911f8185cc9d3c5bbdef3443edd06cb",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 6,
+      "behind_main": 2,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "integration/chat-attachment-pipeline-v22-20260903",
+      "tip": "cb0938a090a8c807b62f14dc965bae39affdec10",
+      "status": "conflict_requires_manual_reconcile",
+      "ahead_main": 13,
+      "behind_main": 2,
+      "patch_unique_main": 11,
+      "conflicts": [
+        "docs/CHAT_ATTACHMENT_PIPELINE_V22.md",
+        "pyproject.toml",
+        "src/three_agent/chat_context_v3.py",
+        "src/three_agent/chat_gateway_v22.py",
+        "src/three_agent/document_extractors.py",
+        "src/three_agent/knowledge_gateway_v2.py",
+        "tests/test_chat_memory_attachments_v22.py"
+      ],
+      "patch_unique_integration": 8
+    },
+    {
+      "branch": "lane/egress-07-bypass-regression",
+      "tip": "b4b4c3304643a549aa094463e27a2ce82b2f3495",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 2,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "lane/egress-02-ssrf-redirect",
+      "tip": "a8951f07d3bcc54d0d0f6a492361470e50aa09e3",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 3,
+      "behind_main": 2,
+      "patch_unique_main": 3
+    },
+    {
+      "branch": "lane/egress-09a1-core-broker-ipc",
+      "tip": "8c872de32b369a257e5487166e0f5e1315928634",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 4,
+      "behind_main": 0,
+      "patch_unique_main": 4
+    },
+    {
+      "branch": "fix/baseline-secure-public-search-gate",
+      "tip": "f400ba8758be28b7f27615030f71e424108f7b5a",
+      "status": "merged_clean_pending_full_test",
+      "ahead_main": 1,
+      "behind_main": 0,
+      "patch_unique_main": 1
+    }
+  ]
+}

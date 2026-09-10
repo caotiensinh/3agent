@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from three_agent.workflow_design import WorkflowDesignError
-from three_agent.workflow_design_v4 import (
+from three_agent.workflow_design import (
     V4_WORKFLOW_SCHEMA,
     V4_WORKFLOW_SCHEMA_VERSION,
     WorkflowDesignCompilerV4,
+    WorkflowDesignError,
     render_mermaid_v4,
     validate_contract_v4,
 )

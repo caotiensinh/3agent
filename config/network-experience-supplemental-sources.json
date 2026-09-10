@@ -1,0 +1,42 @@
+{
+  "schema_version": "workspace-network-experience-supplemental-sources/v1",
+  "reviewed_at": "2026-08-31",
+  "sources": [
+    {
+      "id": "otrf-security-datasets",
+      "kind": "attack-log-corpus",
+      "status": "review_required",
+      "commercial_use": null,
+      "source": "https://github.com/OTRF/Security-Datasets",
+      "reason": "High-value Windows/Sysmon/PowerShell/network attack scenarios, including APT29, but the repository currently has conflicting license signals: LICENSE is MIT while README footer says GPL-3.0. Fail closed until clarified and recorded.",
+      "allowed_use": ["metadata_catalog_only"]
+    },
+    {
+      "id": "atomic-evtx",
+      "kind": "windows-attack-log-corpus",
+      "status": "review_required",
+      "commercial_use": null,
+      "source": "https://github.com/arniki/atomic-evtx",
+      "reason": "Contains EVTX/JSON from many Atomic Red Team simulations and benign activity, but no explicit repository license was found during review. Fail closed for enterprise extraction until license is recorded.",
+      "allowed_use": ["metadata_catalog_only"]
+    },
+    {
+      "id": "loghub-2.0",
+      "kind": "system-log-corpus",
+      "status": "research_only",
+      "commercial_use": false,
+      "source": "https://github.com/logpai/loghub-2.0",
+      "reason": "Repository license states datasets are freely available for research or academic work. Research/evaluator isolation only; no enterprise skill promotion.",
+      "allowed_use": ["research", "algorithm_evaluation"]
+    },
+    {
+      "id": "mitre-attack-stix-data",
+      "kind": "authoritative-behavior-reference",
+      "status": "enterprise_reference",
+      "commercial_use": true,
+      "source": "https://github.com/mitre-attack/attack-stix-data",
+      "reason": "ATT&CK STIX knowledge is used only as a reviewed behavior/data-source reference for mapping evidence-supported activity; it is not incident ground truth and cannot prove that a technique occurred by itself.",
+      "allowed_use": ["reference_mapping", "evaluation_taxonomy", "skill_review_reference"]
+    }
+  ]
+}

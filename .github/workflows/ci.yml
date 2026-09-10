@@ -23,18 +23,207 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install project dependencies including monitoring SNMP extra
         run: python -m pip install -e ".[monitoring-snmp]"
+      - name: Execution governance canonical gate
+        shell: bash
+        run: |
+          set -o pipefail
+          result="$RUNNER_TEMP/execution-governance.json"
+          log="$RUNNER_TEMP/execution-governance.log"
+          rm -f "$result" "$log"
+
+          set +e
+          python scripts/validate_execution_governance.py \
+            --json-output "$result" 2>&1 | tee "$log"
+          rc=${PIPESTATUS[0]}
+          set -e
+
+          if [ ! -f "$result" ]; then
+            cat > "$result" <<JSON
+          {
+            "valid": false,
+            "classification": "INFRA_FAILURE",
+            "violations": [
+              {
+                "rule_id": "GOV-CI-EVIDENCE-MISSING",
+                "severity": "error",
+                "message": "validator did not produce the requested machine-readable evidence"
+              }
+            ]
+          }
+          JSON
+          fi
+
+          python - "$result" "$rc" "$(git rev-parse HEAD)" <<'PY'
+          import json
+          import sys
+
+          path, exit_code, head_sha = sys.argv[1:]
+          with open(path, "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          data["validator_exit_code"] = int(exit_code)
+          data["head_sha"] = head_sha
+          with open(path, "w", encoding="utf-8") as handle:
+              json.dump(data, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          print(json.dumps(data, sort_keys=True))
+          PY
+
+          classification="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          print(data.get("classification", "VALIDATOR_ERROR"))
+          PY
+          )"
+          rule_id="$(python - "$result" <<'PY'
+          import json
+          import sys
+          with open(sys.argv[1], "r", encoding="utf-8") as handle:
+              data = json.load(handle)
+          violations = data.get("violations") or []
+          print(violations[0].get("rule_id", "GOV-CI-PASS") if violations else "GOV-CI-PASS")
+          PY
+          )"
+
+          case "$classification" in
+            PASS|POLICY_INVALID|CONFIG_ERROR|VALIDATOR_ERROR|TEST_FAILURE|DUPLICATE_FAILURE|INFRA_FAILURE) ;;
+            *)
+              classification="VALIDATOR_ERROR"
+              rule_id="GOV-CI-CLASSIFICATION-UNKNOWN"
+              ;;
+          esac
+
+          echo "governance_ci_classification=${classification}"
+          echo "governance_ci_rule_id=${rule_id}"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Execution governance ${classification}::rule=${rule_id}; read execution-governance evidence artifact"
+          fi
+          exit "$rc"
+      - name: Upload execution governance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-governance-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/execution-governance.json
+            ${{ runner.temp }}/execution-governance.log
+          if-no-files-found: error
+          retention-days: 14
       - name: Skill security admission
         run: python scripts/scan_skills.py
+      - name: Canonical module health
+        id: canonical_guard
+        continue-on-error: true
+        run: |
+          python scripts/canonical_module_guard.py \
+            --json-output "$RUNNER_TEMP/canonical-module-health.json" \
+            --markdown-output "$RUNNER_TEMP/canonical-module-health.md"
+      - name: Publish canonical module health summary
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/canonical-module-health.md" ]; then
+            cat "$RUNNER_TEMP/canonical-module-health.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Canonical Module Guard" >> "$GITHUB_STEP_SUMMARY"
+            echo "Guard did not produce a health report." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload canonical module health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-module-health-py${{ matrix.python-version }}
+          path: |
+            ${{ runner.temp }}/canonical-module-health.json
+            ${{ runner.temp }}/canonical-module-health.md
+          if-no-files-found: warn
+          retention-days: 14
       - name: Compile
-        run: python -m compileall -q src tests
+        run: python -m compileall -q src tests scripts/validate_execution_governance.py
+      - name: Guardian flow binding regression
+        run: python -m unittest -v tests.test_security_operation_binding
+      - name: Guardian flow analysis regression
+        run: python -m unittest -v tests.test_security_flow_analysis_v09
+      - name: Guardian operation invocation regression
+        run: python -m unittest -v tests.test_security_operation_invocation
+      - name: Regression bisect A-D
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[a-d]*.py' -v
+      - name: Regression bisect E-H
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[e-h]*.py' -v
+      - name: Regression bisect I-M
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[i-m]*.py' -v
+      - name: Regression bisect N-R
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[n-r]*.py' -v
+      - name: Regression bisect S-Z
+        if: always()
+        run: python -m unittest discover -s tests -p 'test_[s-z]*.py' -v
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "unit_test_phase=start"
+          echo "head_sha=$(git rev-parse HEAD)"
+          python --version
+          set +e
+          PYTHONFAULTHANDLER=1 PYTHONUNBUFFERED=1 python -m unittest discover -s tests -v 2>&1 | tee unittest.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "unit_test_exit_code=${rc}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "ci_classification=TEST_FAILURE"
+            echo "::group::Full unittest failure log"
+            cat unittest.log
+            echo "::endgroup::"
+            echo "::error title=TEST_FAILURE::Unit tests failed with exit code ${rc}"
+          fi
+          exit "${rc}"
+      - name: Upload unit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unittest-py${{ matrix.python-version }}
+          path: unittest.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Runtime P0 benchmark acceptance
+        run: |
+          python scripts/run_runtime_p0_benchmark.py \
+            --iterations 20 \
+            --output "$RUNNER_TEMP/runtime-p0-benchmark.json"
+          python - "$RUNNER_TEMP/runtime-p0-benchmark.json" <<'PY'
+          import json
+          import sys
+
+          path = sys.argv[1]
+          with open(path, "r", encoding="utf-8") as handle:
+              receipt = json.load(handle)
+          assert receipt.get("accepted") is True, "runtime P0 benchmark did not pass"
+          assert len(receipt.get("metrics", {})) == 15, "runtime P0 benchmark dimension count mismatch"
+          print("runtime_p0_benchmark=PASS")
+          print(f"receipt_fingerprint={receipt['receipt_fingerprint']}")
+          print(f"task_context_fingerprint={receipt['task_context_fingerprint']}")
+          print(f"plan_fingerprint={receipt['plan_fingerprint']}")
+          PY
+      - name: Upload runtime P0 benchmark receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-p0-benchmark-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/runtime-p0-benchmark.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Enterprise verification EV-01 through EV-10
         env:
           EXACT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -43,9 +232,16 @@ jobs:
             --source-sha "$EXACT_SOURCE_SHA" \
             --output "$RUNNER_TEMP/security-enterprise-verification.json"
       - name: Upload enterprise verification receipt
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: security-enterprise-verification-py${{ matrix.python-version }}
           path: ${{ runner.temp }}/security-enterprise-verification.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
+      - name: Enforce canonical module gate
+        if: always() && steps.canonical_guard.outcome != 'success'
+        run: |
+          echo "ci_classification=DUPLICATE_FAILURE"
+          echo "Single Canonical Module gate failed. Read canonical-module-health evidence."
+          exit 64

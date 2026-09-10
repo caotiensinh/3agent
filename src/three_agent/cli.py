@@ -6,6 +6,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 
+from .application_bootstrap import build_orchestrator
 from .benchmark_snapshot import build_benchmark_manifest, write_benchmark_manifest
 from .config import load_config
 from .execution_budget import ExecutionBudgetExceeded
@@ -227,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
-    orchestrator = Orchestrator(load_config())
+    orchestrator = build_orchestrator(load_config())
     orchestrator.initialize()
 
     if args.command == "init":
@@ -297,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
         for artifact_path in presentation_payload.get("generated_artifacts", {}).values():
             print(artifact_path)
     elif args.command == "daily-report":
+        # Daily reports may aggregate many tasks; no single task scope is assigned.
         paths = orchestrator.daily_report(args.date, live=args.live)
         print("\n".join(str(path) for path in paths))
     elif args.command == "metrics":

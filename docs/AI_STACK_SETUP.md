@@ -31,10 +31,11 @@ Models are stored on disk and may remain resident in VRAM when resources permit.
 
 Before 3Agent starts a model request, the runtime reads live resource state and calculates whether the candidate can be admitted safely.
 
-Default limits:
+Default limits (aligned with the canonical `config/workspace.secure.json` profile so the
+one-command installer and the reviewed secure baseline never silently drift apart):
 
-- aggregate GPU VRAM budget: **90%**
-- system RAM budget: **90%**
+- aggregate GPU VRAM budget: **88%**
+- system RAM budget: **82%**
 - pre-start GPU utilization guard: **95%**
 - pre-start GPU power-ratio guard: **95% of the reported power limit**
 - pre-start GPU temperature guard: **85°C**
@@ -128,8 +129,8 @@ THREE_AGENT_PRESENTATION_MODEL='qwen3:14b'
 THREE_AGENT_REPORT_MODEL='qwen3:14b'
 THREE_AGENT_DEEP_MODEL='deepseek-r1:32b'
 
-THREE_AGENT_MAX_VRAM_PERCENT=90
-THREE_AGENT_MAX_RAM_PERCENT=90
+THREE_AGENT_MAX_VRAM_PERCENT=88
+THREE_AGENT_MAX_RAM_PERCENT=82
 THREE_AGENT_MAX_GPU_UTIL_PERCENT=95
 THREE_AGENT_MAX_GPU_POWER_PERCENT=95
 THREE_AGENT_MAX_GPU_TEMP_C=85

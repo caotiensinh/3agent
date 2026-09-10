@@ -1,0 +1,251 @@
+name: reconcile-all-branches-v2
+
+on:
+  push:
+    branches:
+      - reconcile/all-branches-v2-20260903
+    paths:
+      - .github/workflows/reconcile-all-branches-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout exact reconciliation base
+        uses: actions/checkout@v4
+        with:
+          ref: reconcile/all-branches-v2-20260903
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "workspace-reconcile-bot"
+          git config user.email "workspace-reconcile-bot@users.noreply.github.com"
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pytest
+
+      - name: Reconcile original 345-branch snapshot
+        shell: bash
+        run: |
+          set -uo pipefail
+          export PYTHONPATH="$PWD:$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+          BASE_REF="origin/main"
+          TARGET_BRANCH="reconcile/all-branches-v2-20260903"
+          WORK="$(mktemp -d)"
+          EVENTS="$WORK/events.ndjson"
+          BASELINE_OUT="$WORK/baseline.txt"
+          FINAL_OUT="$WORK/final.txt"
+          MANIFEST="$WORK/branch_reconciliation_v2.json"
+
+          python -m compileall -q src tests scripts
+
+          # Real repository-wide baseline. Using `python -m pytest` plus repository-root
+          # PYTHONPATH is intentional: the v1 gate used the pytest console script and
+          # stopped during collection because `scripts` was not importable.
+          set +e
+          python -m pytest tests/ -q >"$BASELINE_OUT" 2>&1
+          BASELINE_RC=$?
+          set -e
+
+          python - "$BASELINE_OUT" "$WORK/baseline_failures.json" <<'PY'
+          import json, sys
+          p, out = sys.argv[1:]
+          keys=[]
+          for line in open(p, encoding='utf-8', errors='replace'):
+              s=line.strip()
+              if s.startswith(('FAILED ', 'ERROR ')):
+                  keys.append(s.split(' - ',1)[0])
+          json.dump(sorted(set(keys)), open(out,'w',encoding='utf-8'), indent=2)
+          PY
+
+          # Freeze the original repository population requested by the owner: main + 344
+          # pre-existing branches. Exclude only reconciliation control branches created
+          # by this operation itself.
+          mapfile -t REFS < <(
+            git for-each-ref --format='%(committerdate:unix)|%(refname:short)' refs/remotes/origin/ \
+              | grep -v '|origin/HEAD$' \
+              | grep -v '|origin/main$' \
+              | grep -v '|origin/reconcile/all-branches-20260903$' \
+              | grep -v '|origin/reconcile/all-branches-v2-20260903$' \
+              | sort -n \
+              | cut -d'|' -f2-
+          )
+
+          if [[ "${#REFS[@]}" -ne 344 ]]; then
+            echo "Expected 344 original non-main branches, found ${#REFS[@]}" >&2
+            exit 41
+          fi
+
+          for ref in "${REFS[@]}"; do
+            branch="${ref#origin/}"
+            tip="$(git rev-parse "$ref")"
+            ahead_main="$(git rev-list --count "$BASE_REF..$ref")"
+            behind_main="$(git rev-list --count "$ref..$BASE_REF")"
+
+            if git merge-base --is-ancestor "$ref" "$BASE_REF"; then
+              B="$branch" T="$tip" A="$ahead_main" D="$behind_main" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"absorbed_ancestor","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D'])}))
+          PY
+              continue
+            fi
+
+            patch_unique="$(git cherry "$BASE_REF" "$ref" | awk '$1=="+"{n++} END{print n+0}')"
+            if [[ "$patch_unique" -eq 0 ]]; then
+              B="$branch" T="$tip" A="$ahead_main" D="$behind_main" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"absorbed_patch_equivalent","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D'])}))
+          PY
+              continue
+            fi
+
+            if git merge-base --is-ancestor "$ref" HEAD; then
+              B="$branch" T="$tip" A="$ahead_main" D="$behind_main" P="$patch_unique" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"absorbed_by_prior_reconcile","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D']),"patch_unique_main":int(os.environ['P'])}))
+          PY
+              continue
+            fi
+
+            before="$(git rev-parse HEAD)"
+            set +e
+            git merge --no-ff --no-edit "$ref" >"$WORK/merge.txt" 2>&1
+            merge_rc=$?
+            set -e
+            if [[ "$merge_rc" -ne 0 ]]; then
+              conflicts="$(git diff --name-only --diff-filter=U | paste -sd ',' -)"
+              git merge --abort >/dev/null 2>&1 || true
+              git reset --hard "$before" >/dev/null
+              B="$branch" T="$tip" A="$ahead_main" D="$behind_main" P="$patch_unique" C="$conflicts" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"conflict_pending_postpass","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D']),"patch_unique_main":int(os.environ['P']),"conflicts":[x for x in os.environ.get('C','').split(',') if x]}))
+          PY
+              continue
+            fi
+
+            # Syntax/import-shape gate on every clean merge; full suite is intentionally
+            # run once for the reconciled set, then only narrowed if a regression appears.
+            if ! python -m compileall -q src tests scripts; then
+              git reset --hard "$before" >/dev/null
+              B="$branch" T="$tip" A="$ahead_main" D="$behind_main" P="$patch_unique" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"rejected_compile_regression","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D']),"patch_unique_main":int(os.environ['P'])}))
+          PY
+              continue
+            fi
+
+            B="$branch" T="$tip" A="$ahead_main" D="$behind_main" P="$patch_unique" python - <<'PY' >> "$EVENTS"
+          import json, os
+          print(json.dumps({"branch":os.environ['B'],"tip":os.environ['T'],"status":"merged_clean_pending_full_test","ahead_main":int(os.environ['A']),"behind_main":int(os.environ['D']),"patch_unique_main":int(os.environ['P'])}))
+          PY
+          done
+
+          # Post-pass: an older branch that conflicted may be fully represented by a later
+          # descendant/patch-equivalent branch that merged cleanly. Reclassify against the
+          # final integration tree before calling anything a manual conflict.
+          python - "$EVENTS" "$WORK/events-post.ndjson" <<'PY'
+          import json, subprocess, sys
+          inp, out = sys.argv[1:]
+          events=[json.loads(x) for x in open(inp,encoding='utf-8') if x.strip()]
+          with open(out,'w',encoding='utf-8') as f:
+              for e in events:
+                  if e['status']=='conflict_pending_postpass':
+                      ref='origin/'+e['branch']
+                      ancestor=subprocess.run(['git','merge-base','--is-ancestor',ref,'HEAD']).returncode==0
+                      if ancestor:
+                          e['status']='absorbed_by_later_reconcile'
+                      else:
+                          cherry=subprocess.check_output(['git','cherry','HEAD',ref], text=True)
+                          unique=sum(1 for line in cherry.splitlines() if line.startswith('+'))
+                          if unique==0:
+                              e['status']='absorbed_patch_equivalent_after_reconcile'
+                          else:
+                              e['status']='conflict_requires_manual_reconcile'
+                              e['patch_unique_integration']=unique
+                  f.write(json.dumps(e,ensure_ascii=False)+'\n')
+          PY
+          mv "$WORK/events-post.ndjson" "$EVENTS"
+
+          set +e
+          python -m pytest tests/ -q >"$FINAL_OUT" 2>&1
+          FINAL_RC=$?
+          set -e
+
+          python - "$FINAL_OUT" "$WORK/final_failures.json" <<'PY'
+          import json, sys
+          p, out = sys.argv[1:]
+          keys=[]
+          for line in open(p, encoding='utf-8', errors='replace'):
+              s=line.strip()
+              if s.startswith(('FAILED ', 'ERROR ')):
+                  keys.append(s.split(' - ',1)[0])
+          json.dump(sorted(set(keys)), open(out,'w',encoding='utf-8'), indent=2)
+          PY
+
+          python - "$EVENTS" "$BASELINE_OUT" "$FINAL_OUT" "$WORK/baseline_failures.json" "$WORK/final_failures.json" "$BASELINE_RC" "$FINAL_RC" "$MANIFEST" <<'PY'
+          import json, sys
+          evp, bp, fp, bfail, ffail, brc, frc, out = sys.argv[1:]
+          events=[json.loads(x) for x in open(evp,encoding='utf-8') if x.strip()]
+          counts={}
+          for e in events: counts[e['status']]=counts.get(e['status'],0)+1
+          b=set(json.load(open(bfail))); f=set(json.load(open(ffail)))
+          def tail(path):
+              lines=open(path,encoding='utf-8',errors='replace').read().splitlines()
+              return lines[-60:]
+          payload={
+              'schema':'workspace-branch-reconciliation/v2',
+              'base':'main',
+              'base_sha':subprocess.check_output(['git','rev-parse','origin/main'],text=True).strip() if False else None,
+              'target':'reconcile/all-branches-v2-20260903',
+              'branch_count':345,
+              'non_main_branch_count':344,
+              'counts':counts,
+              'baseline_pytest_rc':int(brc),
+              'final_pytest_rc':int(frc),
+              'baseline_failures':sorted(b),
+              'final_failures':sorted(f),
+              'new_failures':sorted(f-b),
+              'removed_failures':sorted(b-f),
+              'baseline_tail':tail(bp),
+              'final_tail':tail(fp),
+              'events':events,
+          }
+          json.dump(payload,open(out,'w',encoding='utf-8'),indent=2,ensure_ascii=False)
+          PY
+
+          mkdir -p artifacts/reconciliation
+          cp "$MANIFEST" artifacts/reconciliation/branch_reconciliation_v2_20260903.json
+          cp "$BASELINE_OUT" artifacts/reconciliation/baseline_pytest_v2_20260903.txt
+          cp "$FINAL_OUT" artifacts/reconciliation/final_pytest_v2_20260903.txt
+
+          git add artifacts/reconciliation
+          git commit -m "chore(reconcile): record corrected 345-branch evidence" || true
+          git push origin HEAD:"$TARGET_BRANCH"
+
+          python - <<'PY'
+          import json
+          p=json.load(open('artifacts/reconciliation/branch_reconciliation_v2_20260903.json'))
+          print(json.dumps({k:p[k] for k in ('branch_count','non_main_branch_count','counts','baseline_pytest_rc','final_pytest_rc','new_failures')},indent=2))
+          PY
+
+      - name: Upload corrected reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-reconciliation-v2-20260903
+          path: artifacts/reconciliation/

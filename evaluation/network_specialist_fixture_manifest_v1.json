@@ -1,0 +1,72 @@
+{
+  "schema_version": "workspace-network-specialist-corpus-manifest/v1",
+  "manifest_id": "network-specialist-g1-synthetic-v1",
+  "purpose": "fixture",
+  "cases": [
+    {
+      "case_id": "fixture-intrusion-positive-001",
+      "dataset_id": "lanl-comprehensive",
+      "dataset_status": "enterprise_approved",
+      "specialist_target": "intrusion-trace-hunting",
+      "case_class": "positive",
+      "source_object_refs": ["lanl/auth-synthetic-window", "lanl/flow-synthetic-window"],
+      "source_sha256": [
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ],
+      "provenance_ref": "provenance/fixture-intrusion-positive-001.json",
+      "incident_start": "2026-01-01T00:00:00Z",
+      "incident_end": "2026-01-01T00:10:00Z",
+      "visible_evidence_refs": ["e-auth-001", "e-flow-001"],
+      "hidden_ground_truth_ref": "hidden-truth/fixture-intrusion-positive-001.json"
+    },
+    {
+      "case_id": "fixture-intrusion-negative-001",
+      "dataset_id": "lanl-comprehensive",
+      "dataset_status": "enterprise_approved",
+      "specialist_target": "intrusion-trace-hunting",
+      "case_class": "negative",
+      "source_object_refs": ["lanl/auth-benign-synthetic-window"],
+      "source_sha256": [
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      ],
+      "provenance_ref": "provenance/fixture-intrusion-negative-001.json",
+      "incident_start": "2026-01-02T00:00:00Z",
+      "incident_end": "2026-01-02T00:05:00Z",
+      "visible_evidence_refs": ["e-auth-benign-001"],
+      "hidden_ground_truth_ref": "hidden-truth/fixture-intrusion-negative-001.json"
+    },
+    {
+      "case_id": "fixture-diagnosis-positive-001",
+      "dataset_id": "cse-cic-ids2018",
+      "dataset_status": "enterprise_approved",
+      "specialist_target": "log-incident-diagnosis",
+      "case_class": "positive",
+      "source_object_refs": ["cic/synthetic-flow-window"],
+      "source_sha256": [
+        "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "provenance_ref": "provenance/fixture-diagnosis-positive-001.json",
+      "incident_start": "2026-01-03T00:00:00Z",
+      "incident_end": "2026-01-03T00:15:00Z",
+      "visible_evidence_refs": ["e-flow-101", "e-flow-102"],
+      "hidden_ground_truth_ref": "hidden-truth/fixture-diagnosis-positive-001.json"
+    },
+    {
+      "case_id": "fixture-forensics-positive-001",
+      "dataset_id": "splunk-bots-v2",
+      "dataset_status": "enterprise_approved",
+      "specialist_target": "host-log-forensics",
+      "case_class": "positive",
+      "source_object_refs": ["bots/synthetic-host-window"],
+      "source_sha256": [
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "provenance_ref": "provenance/fixture-forensics-positive-001.json",
+      "incident_start": "2026-01-04T00:00:00Z",
+      "incident_end": "2026-01-04T00:20:00Z",
+      "visible_evidence_refs": ["e-proc-201", "e-auth-201"],
+      "hidden_ground_truth_ref": "hidden-truth/fixture-forensics-positive-001.json"
+    }
+  ]
+}

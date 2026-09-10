@@ -1,0 +1,13 @@
+tests/test_chat_context.py
+tests/test_chat_context_v2.py
+tests/test_chat_gateway_v15_contract.py
+tests/test_chat_gateway_v16_context.py
+tests/test_chat_gateway_v16_contract.py
+tests/test_chat_history.py
+tests/test_chat_history_v2.py
+tests/test_chat_history_v3.py
+tests/test_chat_memory_attachments_v22.py
+tests/test_chat_memory_attachments_v3.py
+tests/test_chat_multiturn_acceptance.py
+tests/test_chat_output_contract.py
+tests/test_live_multiturn_workflow_contract.py

@@ -49,19 +49,57 @@ class D502AWorkflowContractTests(unittest.TestCase):
         self.assertIn("ref: ${{ env.EXPECTED_SHA }}", self.text)
         self.assertIn("persist-credentials: false", self.text)
         self.assertIn("test \"$(git rev-parse HEAD)\" = \"$EXPECTED_SHA\"", self.text)
-        self.assertIn("python3 -m pip install --no-deps -e .", self.text)
+        self.assertIn("PYTHONPATH: ${{ github.workspace }}/src", self.text)
 
-    def test_one_click_lane_runs_both_variants_and_independent_verification(self):
-        self.assertIn("three_agent.d502a_benchmark run", self.text)
-        self.assertIn("three_agent.d502a_benchmark verify", self.text)
+    def test_benchmark_uses_fingerprinted_isolated_dependency_runtime(self):
+        self.assertIn("Prepare isolated cached benchmark dependency runtime", self.text)
+        self.assertIn('$HOME/.cache/workspace-benchmark', self.text)
+        self.assertIn('ENV_KEY="${PYTHON_ID}-${DEP_SHA}"', self.text)
+        self.assertIn('python3 -m venv "$TMP_VENV"', self.text)
+        self.assertIn('"$TMP_VENV/bin/python" -m pip install --only-binary=:all:', self.text)
+        self.assertIn('.workspace-dependency-fingerprint', self.text)
+        self.assertIn("PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_NO_INPUT=1", self.text)
+        self.assertIn("import PIL, docx, pptx, reportlab", self.text)
+        self.assertIn("BENCH_PYTHON", self.text)
+
+    def test_dependency_runtime_never_mutates_system_python_or_uses_privileged_package_install(self):
+        self.assertNotIn("python3 -m pip install", self.text)
+        self.assertNotIn("--break-system-packages", self.text)
+        self.assertNotIn("pip install --user", self.text)
+        self.assertNotIn("apt install", self.text)
+        self.assertNotIn("sudo ", self.text)
+
+    def test_one_click_lane_runs_exact_source_with_isolated_python_and_independent_verification(self):
+        self.assertIn("Validate exact WorkSpace source in isolated runtime", self.text)
+        self.assertIn('"$BENCH_PYTHON" -m three_agent.benchmark_readiness', self.text)
+        self.assertIn('"$BENCH_PYTHON" -m three_agent.d502a_benchmark run', self.text)
+        self.assertIn('"$BENCH_PYTHON" -m three_agent.d502a_benchmark verify', self.text)
         self.assertIn("d502a_exact_body_dedupe_task_set_v1.json", self.text)
         self.assertIn("d502a-decision.json", self.text)
         self.assertIn("d502a-verification.json", self.text)
         self.assertIn("baseline-legacy-48k/benchmark.json", self.text)
         self.assertIn("exact-dedupe-legacy-48k/benchmark.json", self.text)
 
+    def test_runtime_failure_is_preserved_as_sanitized_metadata_only_evidence(self):
+        run_step = self.text.split(
+            "Run baseline and exact-dedupe candidate in one isolated suite", 1
+        )[1].split("Independently recompute D5-02a evidence verdict", 1)[0]
+        self.assertIn('RUN_RESULT="$BENCH_ROOT/d502a-run-result.json"', run_step)
+        self.assertIn('FAILURE_RECEIPT="$BENCH_ROOT/d502a-failure.json"', run_step)
+        self.assertIn('> "$RUN_RESULT"', run_step)
+        self.assertNotIn(">/dev/null", run_step)
+        self.assertIn("workspace-d502a-sanitized-failure/v1", run_step)
+        self.assertIn("error_sha256", run_step)
+        self.assertIn("raw_prompt_logged", run_step)
+        self.assertIn("raw_evidence_logged", run_step)
+        self.assertIn('rm -f "$RUN_RESULT"', run_step)
+        self.assertIn("Write sanitized benchmark failure summary", self.text)
+
     def test_publishable_artifact_paths_do_not_include_raw_runtime_state(self):
         publish = self.text.split("Publish metadata-only D5-02a benchmark evidence", 1)[1]
+        self.assertIn("if: always()", publish)
+        self.assertIn("d502a-failure.json", publish)
+        self.assertNotIn("d502a-run-result.json", publish)
         self.assertNotIn("/data/", publish)
         self.assertNotIn("/state/", publish)
         self.assertNotIn("inference.jsonl", publish)

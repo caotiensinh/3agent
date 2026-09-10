@@ -1,0 +1,66 @@
+{
+  "schema_version": "workspace-internet-egress-policy/v1",
+  "rule_id": "workspace.internet-egress/v1",
+  "default_mode": "sanitized",
+  "purpose": "Permit current public Internet research while preventing internal or sensitive WorkSpace context from leaving the trust boundary.",
+  "invariants": [
+    "No Agent, tool, browser, search provider, public plugin, or public connector may bypass InternetGateway.",
+    "Raw internal context is never an authorized public web query.",
+    "The final outbound payload must pass deterministic DLP immediately before public egress.",
+    "A blocked raw payload may be replaced only by a safe minimum public research query; it must never fall back to the original input.",
+    "Public web content is untrusted data and never grants tool or policy authority."
+  ],
+  "levels": {
+    "PUBLIC": {
+      "action": "ALLOW",
+      "warning_required": false,
+      "raw_public_query_allowed": true
+    },
+    "INTERNAL": {
+      "action": "SANITIZE_WARN_ALLOW",
+      "warning_required": true,
+      "raw_public_query_allowed": false
+    },
+    "CONFIDENTIAL": {
+      "action": "TOKENIZE_GENERALIZE_WARN_ALLOW",
+      "warning_required": true,
+      "raw_public_query_allowed": false
+    },
+    "RESTRICTED": {
+      "action": "DENY_RAW_DERIVE_ABSTRACT_ALLOW",
+      "warning_required": true,
+      "raw_public_query_allowed": false,
+      "fallback": "BLOCK when no safe abstract query remains"
+    }
+  },
+  "legacy_task_sensitivity": {
+    "secret": "network-denied in v1; do not downgrade automatically"
+  },
+  "required_controls": {
+    "application_egress_chokepoint": "InternetGateway",
+    "broker": "EgressBroker",
+    "direct_egress": false,
+    "public_search_allowlist": true,
+    "final_query_dlp": true,
+    "arbitrary_post_bodies": false,
+    "caller_supplied_auth_headers": false,
+    "caller_supplied_cookies": false,
+    "search_result_fetch_grants": "short_lived_one_time",
+    "ssrf_private_networks": "deny",
+    "web_content_trust": "untrusted_external",
+    "raw_secret_audit_logging": false
+  },
+  "failure_policy": {
+    "dlp_or_policy_unavailable": "deny_raw_egress",
+    "safe_abstraction_available": "allow_sanitized_research",
+    "safe_abstraction_unavailable": "block_public_egress_keep_local_processing"
+  },
+  "audit": {
+    "store_raw_sensitive_input": false,
+    "store_final_query_hash": true,
+    "store_sensitivity": true,
+    "store_action": true,
+    "store_warning_required": true,
+    "store_reason_codes": true
+  }
+}

@@ -1,0 +1,329 @@
+name: closure-rtx5090-one-shot
+
+on:
+  push:
+    branches:
+      - evidence/closure-rtx5090-20260830
+    paths:
+      - '.github/workflows/closure-rtx5090-one-shot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workspace-closure-selfhosted-probe-303749d5
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    runs-on: [self-hosted]
+    timeout-minutes: 300
+    env:
+      CANDIDATE_SHA: 303749d5021c409ba099a4cdf46240e4254c1abe
+      MODEL: qwen3:30b
+      WORKSPACE_FAST_MODEL: qwen3:30b
+      WORKSPACE_RESEARCH_MODEL: qwen3:30b
+      WORKSPACE_PRESENTATION_MODEL: qwen3:30b
+      WORKSPACE_REPORT_MODEL: qwen3:30b
+      WORKSPACE_DEEP_MODEL: qwen3:30b
+      WORKSPACE_MODEL_KEEP_ALIVE: 20m
+      WORKSPACE_SERIALIZE_GENERATION: 'true'
+    steps:
+      - name: Checkout exact main candidate
+        uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          path: candidate
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify Linux x64 execution host and exact source boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(uname -s)" = "Linux"
+          case "$(uname -m)" in x86_64|amd64) ;; *) exit 3 ;; esac
+          test "$(git -C candidate rev-parse HEAD)" = "$CANDIDATE_SHA"
+          test -z "$(git -C candidate status --porcelain --untracked-files=no)"
+
+      - name: Create isolated Python environment
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          VENV_ROOT="$RUNNER_TEMP/workspace-closure-venv-$GITHUB_RUN_ID"
+          python3 -m venv --system-site-packages "$VENV_ROOT"
+          test -x "$VENV_ROOT/bin/python"
+          test -x "$VENV_ROOT/bin/pip"
+          echo "$VENV_ROOT/bin" >> "$GITHUB_PATH"
+          echo "WORKSPACE_CLOSURE_VENV=$VENV_ROOT" >> "$GITHUB_ENV"
+
+      - name: Install exact candidate and declared runtime dependencies in venv
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python -m pip install -e candidate
+          python - <<'PY'
+          import docx, PIL, pptx, reportlab, zoneinfo
+          print('runtime dependency import check: PASS')
+          PY
+          workspace-benchmark --help >/dev/null
+          workspace-benchmark-canonicalize --help >/dev/null
+          workspace-benchmark-readiness --help >/dev/null
+          workspace-benchmark-verify --help >/dev/null
+          workspace-eval-efficiency-observe --help >/dev/null
+
+      - name: Capture metadata-only readiness
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          mkdir -p "$EVIDENCE_ROOT"
+          workspace-benchmark-readiness \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --model "$MODEL" \
+            --output "$EVIDENCE_ROOT/environment.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/environment.json"
+
+      - name: Diagnose WorkSpace local model runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          EVIDENCE_ROOT="$EVIDENCE_ROOT" MODEL="$MODEL" CANDIDATE_ROOT="$GITHUB_WORKSPACE/candidate" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          from three_agent.benchmark_isolation import BenchmarkIsolation, BenchmarkVariantSpec
+          from three_agent.config import load_config
+          from three_agent.orchestrator import Orchestrator
+          from three_agent.resource_budget import ResourceAdmissionError
+
+          root = Path(os.environ['EVIDENCE_ROOT'])
+          model = os.environ['MODEL']
+          result = {
+              'schema_version': 'workspace-model-runtime-diagnostic/v1',
+              'model': model,
+              'isolated_storage_passed': False,
+              'resource_admission_passed': False,
+              'structured_inference_passed': False,
+              'failure_type': None,
+              'failure_reason_code': None,
+              'resource_admission_detail': None,
+              'raw_prompt_recorded': False,
+              'raw_response_recorded': False,
+          }
+          try:
+              config = load_config(Path(os.environ['CANDIDATE_ROOT']) / 'config/workspace.secure.json')
+              isolation = BenchmarkIsolation(config, root / 'diagnostic-sandbox')
+              with isolation.activate(BenchmarkVariantSpec('diagnostic')) as prepared:
+                  orchestrator = Orchestrator(prepared.config)
+                  orchestrator.initialize()
+                  result['isolated_storage_passed'] = True
+                  manager = orchestrator.resource_manager
+                  if manager is not None:
+                      try:
+                          with manager.admit(model):
+                              result['resource_admission_passed'] = True
+                      except ResourceAdmissionError as exc:
+                          result['failure_type'] = type(exc).__name__
+                          result['failure_reason_code'] = type(exc).__name__
+                          result['resource_admission_detail'] = ' '.join(str(exc).split())[:320]
+                  else:
+                      result['resource_admission_passed'] = True
+                  if result['resource_admission_passed']:
+                      payload = orchestrator.research_llm.generate_json(
+                          'Return only the requested JSON object.',
+                          'Return ok=true.',
+                          schema={
+                              'type': 'object',
+                              'properties': {'ok': {'type': 'boolean'}},
+                              'required': ['ok'],
+                              'additionalProperties': False,
+                          },
+                          schema_id='workspace-model-runtime-diagnostic-v1',
+                          think=False,
+                          num_predict=32,
+                          trust_domain='workspace-benchmark-diagnostic',
+                          template_version='workspace.benchmark.diagnostic.v1',
+                      )
+                      result['structured_inference_passed'] = payload == {'ok': True}
+                      if not result['structured_inference_passed']:
+                          result['failure_type'] = 'SemanticMismatch'
+                          result['failure_reason_code'] = 'STRUCTURED_DIAGNOSTIC_SEMANTIC_MISMATCH'
+          except Exception as exc:
+              if result['failure_type'] is None:
+                  result['failure_type'] = type(exc).__name__
+                  result['failure_reason_code'] = str(getattr(exc, 'reason_code', None) or type(exc).__name__)[:160]
+          (root / 'model-runtime-diagnostic.json').write_text(json.dumps(result, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(result, sort_keys=True))
+          if not (
+              result['isolated_storage_passed']
+              and result['resource_admission_passed']
+              and result['structured_inference_passed']
+          ):
+              raise SystemExit(3)
+          PY
+
+      - name: Execute fixed-task benchmark and diagnose gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          BENCH_ROOT="$EVIDENCE_ROOT/benchmark"
+          mkdir -p "$BENCH_ROOT"
+          cp "$EVIDENCE_ROOT/environment.json" "$BENCH_ROOT/environment.json"
+          workspace-benchmark \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
+            --config "$GITHUB_WORKSPACE/candidate/config/workspace.secure.json" \
+            >/dev/null
+          BENCH_ROOT="$BENCH_ROOT" EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
+          import json, os, sqlite3
+          from pathlib import Path
+
+          bench = Path(os.environ['BENCH_ROOT'])
+          out = {'schema_version': 'workspace-benchmark-gate-diagnostic/v1', 'variants': {}}
+          safe_actions = {
+              'runtime_validator_bridge_bound', 'route_selected', 'execution_budget_active',
+              'research_started', 'knowledge_gateway_completed', 'web_search_completed',
+              'source_suitability_gate', 'research_quality_gate', 'presentation_skipped',
+              'workflow_stage_failed', 'runtime_verification_failed'
+          }
+          for variant in ('baseline-legacy-48k','ranked-48k','ranked-40k','ranked-32k'):
+              db = bench / variant / 'state' / 'tasks.db'
+              entries = []
+              if not db.is_file():
+                  out['variants'][variant] = {'database_missing': True, 'tasks': []}
+                  continue
+              conn = sqlite3.connect(db)
+              conn.row_factory = sqlite3.Row
+              for task in conn.execute('SELECT task_id,status FROM tasks ORDER BY task_id'):
+                  tid = task['task_id']
+                  validators = [dict(row) for row in conn.execute(
+                      'SELECT validator,status,reason_code,attempt FROM validator_results WHERE task_id=? ORDER BY id',
+                      (tid,)
+                  )]
+                  activities = []
+                  for row in conn.execute(
+                      'SELECT action,status,details FROM activities WHERE task_id=? ORDER BY id',
+                      (tid,)
+                  ):
+                      if row['action'] in safe_actions:
+                          activities.append({
+                              'action': row['action'],
+                              'status': row['status'],
+                              'details': ' '.join(str(row['details']).split())[:500],
+                          })
+                  research_error = None
+                  synthesis_error = None
+                  handoff_blockers = []
+                  artifact = conn.execute(
+                      "SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_json' ORDER BY id DESC LIMIT 1",
+                      (tid,)
+                  ).fetchone()
+                  if artifact:
+                      try:
+                          payload = json.loads(Path(artifact['path']).read_text(encoding='utf-8'))
+                          research_error = payload.get('source_assessment_error')
+                          synthesis_error = payload.get('synthesis_error')
+                      except Exception as exc:
+                          research_error = type(exc).__name__
+                  handoff = conn.execute(
+                      "SELECT path FROM artifacts WHERE task_id=? AND artifact_type='research_handoff_json' ORDER BY id DESC LIMIT 1",
+                      (tid,)
+                  ).fetchone()
+                  if handoff:
+                      try:
+                          hp = json.loads(Path(handoff['path']).read_text(encoding='utf-8'))
+                          if isinstance(hp.get('blockers'), list):
+                              handoff_blockers = [str(x)[:160] for x in hp['blockers']]
+                      except Exception:
+                          pass
+                  entries.append({
+                      'task_id': tid,
+                      'task_status': task['status'],
+                      'validators': validators,
+                      'activities': activities,
+                      'source_assessment_error': research_error,
+                      'synthesis_error': synthesis_error,
+                      'handoff_blockers': handoff_blockers,
+                  })
+              conn.close()
+              out['variants'][variant] = {'database_missing': False, 'tasks': entries}
+          target = Path(os.environ['EVIDENCE_ROOT']) / 'benchmark-gate-diagnostic.json'
+          target.write_text(json.dumps(out, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(out, ensure_ascii=False, sort_keys=True))
+          PY
+          workspace-benchmark-canonicalize --root "$BENCH_ROOT" >/dev/null
+          workspace-benchmark-verify \
+            --source-ref "$CANDIDATE_SHA" \
+            --root "$BENCH_ROOT" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --task-set "$GITHUB_WORKSPACE/candidate/benchmarks/fixed_task_set_v1.json" \
+            --output "$BENCH_ROOT/verification.json"
+          test -s "$BENCH_ROOT/suite.json"
+          test -s "$BENCH_ROOT/verification.json"
+
+      - name: Execute D7-06 concurrency observation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          workspace-eval-efficiency-observe \
+            --source-ref "$CANDIDATE_SHA" \
+            --repo-root "$GITHUB_WORKSPACE/candidate" \
+            --environment "$EVIDENCE_ROOT/environment.json" \
+            --model "$MODEL" \
+            --concurrency 4 \
+            --samples 8 \
+            --output "$EVIDENCE_ROOT/observation.json" \
+            >/dev/null
+          test -s "$EVIDENCE_ROOT/observation.json"
+
+      - name: Publish closure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-closure-rtx5090-${{ env.CANDIDATE_SHA }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/environment.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/model-runtime-diagnostic.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark-gate-diagnostic.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/observation.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/environment.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/verification.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/suite.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/*/benchmark.json
+            ${{ runner.temp }}/workspace-closure-${{ github.run_id }}/benchmark/*/isolation.json
+
+      - name: Require complete evidence
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          EVIDENCE_ROOT="$RUNNER_TEMP/workspace-closure-$GITHUB_RUN_ID"
+          test -s "$EVIDENCE_ROOT/environment.json"
+          test -s "$EVIDENCE_ROOT/model-runtime-diagnostic.json"
+          test -s "$EVIDENCE_ROOT/benchmark-gate-diagnostic.json"
+          test -s "$EVIDENCE_ROOT/observation.json"
+          test -s "$EVIDENCE_ROOT/benchmark/verification.json"
+          EVIDENCE_ROOT="$EVIDENCE_ROOT" python - <<'PY'
+          import json, os
+          root = os.environ['EVIDENCE_ROOT']
+          with open(root + '/model-runtime-diagnostic.json', encoding='utf-8') as f:
+              diagnostic = json.load(f)
+          with open(root + '/benchmark/verification.json', encoding='utf-8') as f:
+              verification = json.load(f)
+          with open(root + '/observation.json', encoding='utf-8') as f:
+              observation = json.load(f)
+          assert diagnostic.get('isolated_storage_passed') is True, diagnostic
+          assert diagnostic.get('resource_admission_passed') is True, diagnostic
+          assert diagnostic.get('structured_inference_passed') is True, diagnostic
+          assert verification.get('passed') is True, verification
+          assert observation.get('observation_complete') is True, observation
+          PY

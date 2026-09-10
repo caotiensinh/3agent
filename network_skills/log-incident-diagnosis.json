@@ -1,0 +1,78 @@
+{
+  "schema_version": "workspace-network-skill-blueprint/v1",
+  "skill_id": "log-incident-diagnosis",
+  "name": "Log-based Incident Diagnosis",
+  "stage": "candidate_blueprint",
+  "authority": "advisory",
+  "auto_promotable": false,
+  "objective": "Diagnose network, host and service failures from time-correlated logs, counters and events by separating symptoms from root cause and by explicitly testing alternative explanations.",
+  "evidence_domains": [
+    "router-switch-syslog",
+    "interface-counter",
+    "snmp-metric",
+    "netflow-ipfix",
+    "dns-dhcp",
+    "vpn",
+    "windows-event",
+    "linux-journal-audit",
+    "application-service",
+    "container-runtime",
+    "latency-loss-jitter",
+    "camera-rtsp"
+  ],
+  "method": [
+    "define the failure time window, impacted service and affected scope",
+    "order symptoms and state changes chronologically",
+    "correlate events across network, host and application layers",
+    "identify the earliest abnormal evidence rather than the loudest downstream error",
+    "generate bounded candidate root causes",
+    "for each candidate record supporting, contradicting and discriminator evidence",
+    "distinguish common-cause failure from cascading secondary symptoms",
+    "request the smallest additional evidence needed to separate remaining hypotheses",
+    "only mark a cause confirmed when ground truth or operator verification exists",
+    "recommend remediation only when its basis is reviewed or outcome-verified"
+  ],
+  "required_output": [
+    "symptom_timeline",
+    "impact_scope",
+    "candidate_causes",
+    "supporting_evidence_ids",
+    "contradicting_evidence_ids",
+    "discriminator_evidence_ids",
+    "likely_root_cause",
+    "confirmed_root_cause",
+    "evidence_gaps",
+    "confidence",
+    "recommended_next_checks",
+    "verified_remediation_refs"
+  ],
+  "stop_conditions": [
+    "available evidence cannot isolate the failing layer",
+    "multiple causes remain materially indistinguishable",
+    "source freshness or collection gaps invalidate the time correlation",
+    "a remediation would be based only on model inference"
+  ],
+  "source_curriculum": {
+    "enterprise_approved": [
+      "lanl-comprehensive",
+      "splunk-bots-v2",
+      "cse-cic-ids2018"
+    ],
+    "research_only": [
+      "loghub-2.0",
+      "ton-iot",
+      "mawi"
+    ],
+    "future_high_value": [
+      "verified-local-enterprise-incidents"
+    ]
+  },
+  "promotion_gate": {
+    "requires_multiple_independent_cases": true,
+    "requires_held_out_evaluation": true,
+    "requires_root_cause_vs_symptom_separation": true,
+    "requires_contradicting_evidence_handling": true,
+    "requires_zero_unverified_remediation": true,
+    "requires_independent_skill_review": true
+  }
+}

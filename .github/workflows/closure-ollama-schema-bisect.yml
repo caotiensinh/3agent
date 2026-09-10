@@ -1,0 +1,123 @@
+name: closure-ollama-schema-bisect
+
+on:
+  push:
+    branches: [evidence/closure-rtx5090-20260830]
+    paths: ['.github/workflows/closure-ollama-schema-bisect.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: [self-hosted]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 303749d5021c409ba099a4cdf46240e4254c1abe
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bisect synthetic synthesis schemas
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import copy, json
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+          from src.three_agent.research_schemas import RESEARCH_SYNTHESIS_SCHEMA_V1
+
+          endpoint='http://127.0.0.1:11434/api/generate'
+          full=RESEARCH_SYNTHESIS_SCHEMA_V1
+
+          simple_claim={
+            'type':'object','additionalProperties':False,
+            'required':['claim','source_ids'],
+            'properties':{
+              'claim':{'type':'string'},
+              'source_ids':{'type':'array','items':{'type':'string'}},
+            },
+          }
+          quote={
+            'type':'object','additionalProperties':False,
+            'required':['source_id','quote'],
+            'properties':{'source_id':{'type':'string'},'quote':{'type':'string'}},
+          }
+          claim_optional_quote=copy.deepcopy(simple_claim)
+          claim_optional_quote['properties']['evidence_quotes']={'type':'array','items':quote}
+          claim_required_quote=copy.deepcopy(claim_optional_quote)
+          claim_required_quote['required'].append('evidence_quotes')
+          conflict={
+            'type':'object','additionalProperties':False,
+            'required':['topic','description','severity','source_ids'],
+            'properties':{
+              'topic':{'type':'string'},'description':{'type':'string'},
+              'severity':{'type':'string','enum':['low','medium','critical']},
+              'source_ids':{'type':'array','items':{'type':'string'}},
+            },
+          }
+          def top(claim_schema=None, conflict_schema=None):
+            props={
+              'verified_facts':{'type':'array','items':claim_schema or simple_claim},
+              'inferences':{'type':'array','items':claim_schema or simple_claim},
+              'conflicts':{'type':'array','items':conflict_schema or conflict},
+              'unresolved':{'type':'array','items':{'type':'string'}},
+              'conclusion':{'type':'string'},
+              'recommended_next_actions':{'type':'array','items':{'type':'string'}},
+            }
+            return {'type':'object','additionalProperties':False,'required':list(props),'properties':props}
+
+          full_no_limits=copy.deepcopy(full)
+          def strip_limits(obj):
+            if isinstance(obj,dict):
+              for k in list(obj):
+                if k in {'minLength','maxLength','minItems','maxItems'}: obj.pop(k,None)
+                else: strip_limits(obj[k])
+            elif isinstance(obj,list):
+              for x in obj: strip_limits(x)
+          strip_limits(full_no_limits)
+
+          full_no_quotes=copy.deepcopy(full)
+          for key in ('verified_facts','inferences'):
+            item=full_no_quotes['properties'][key]['items']
+            item['properties'].pop('evidence_quotes',None)
+            item['required']=[x for x in item['required'] if x!='evidence_quotes']
+
+          full_quotes_required=copy.deepcopy(full)
+          for key in ('verified_facts','inferences'):
+            item=full_quotes_required['properties'][key]['items']
+            if 'evidence_quotes' not in item['required']:
+              item['required'].append('evidence_quotes')
+
+          variants={
+            'simple-top':top(),
+            'optional-nested-quotes':top(claim_optional_quote),
+            'required-nested-quotes':top(claim_required_quote),
+            'full-no-limits':full_no_limits,
+            'full-no-quotes':full_no_quotes,
+            'full-quotes-required':full_quotes_required,
+            'full-original':full,
+          }
+
+          def run(name,schema):
+            payload={'model':'qwen3:30b','prompt':'Synthetic only. Return valid empty/short JSON.','stream':False,'think':False,'keep_alive':'20m','format':schema,'options':{'num_predict':64,'temperature':0}}
+            req=Request(endpoint,data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'},method='POST')
+            result={'name':name,'status':None,'grammar_accepted':False}
+            try:
+              with urlopen(req,timeout=120) as r:
+                r.read(); result['status']=r.status; result['grammar_accepted']=True
+            except HTTPError as exc:
+              result['status']=exc.code
+              try:
+                raw=exc.read().decode(errors='replace')
+                result['grammar_error']='parse grammar' in raw.lower()
+              except Exception:
+                result['grammar_error']=None
+            except Exception as exc:
+              result['error_type']=type(exc).__name__
+            return result
+
+          results=[run(name,schema) for name,schema in variants.items()]
+          print(json.dumps({'schema_version':'workspace-ollama-schema-bisect/v1','results':results},sort_keys=True))
+          PY

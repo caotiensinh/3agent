@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+UPDATER="${ROOT}/scripts/update_code_safe.sh"
+UBUNTU_ENTRYPOINT="${ROOT}/scripts/update_workspace_ubuntu.sh"
+TMP_DIR=""
+
+fail() {
+  printf '[safe-update-contract][FAIL] %s\n' "$*" >&2
+  exit 1
+}
+
+pass() {
+  printf '[safe-update-contract][PASS] %s\n' "$*"
+}
+
+cleanup() {
+  if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
+    rm -rf "$TMP_DIR"
+  fi
+}
+trap cleanup EXIT
+
+[[ -f "$UPDATER" ]] || fail "update_code_safe.sh is missing"
+[[ -f "$UBUNTU_ENTRYPOINT" ]] || fail "update_workspace_ubuntu.sh is missing"
+bash -n "$UPDATER" || fail "bash syntax"
+bash "$UPDATER" --self-test >/dev/null || fail "self-test"
+
+grep -Fq 'active-releases.log' "$UPDATER" || fail "append-only activation log missing"
+# shellcheck disable=SC2016
+grep -Fq '>> "$ACTIVATION_LOG"' "$UPDATER" || fail "activation must append instead of replace history"
+# shellcheck disable=SC2016
+grep -Fq 'mktemp -d "${RELEASES_DIR}/release-' "$UPDATER" || fail "immutable release directory creation missing"
+grep -Fq 'git clone --filter=blob:none --no-checkout' "$UPDATER" || fail "isolated release checkout missing"
+grep -Fq 'backup_launcher' "$UPDATER" || fail "launcher backup missing"
+grep -Fq 'workspace-security-ui' "$UPDATER" || fail "stable security UI launcher missing"
+grep -Fq 'Previous installation preserved' "$UPDATER" || fail "preservation audit message missing"
+grep -Fq 'THREE_AGENT_UPDATE_VERIFY' "$UPDATER" || fail "verification policy missing"
+# shellcheck disable=SC2016
+grep -Fq 'verify_release "$active"' "$UPDATER" || fail "already-current releases must honor the verification policy"
+grep -Fq '3agent-update.sh' "$UPDATER" || fail "trusted local updater payload missing"
+# shellcheck disable=SC2016
+grep -Fq 'export THREE_AGENT_REPO_REF=$(printf' "$UPDATER" || fail "tracking ref launcher export missing"
+
+if grep -Eq '(^|[[:space:];|&])rm([[:space:]]|$)|git[[:space:]].*(clean|reset[[:space:]]+--hard)|rsync[[:space:]].*--delete|find[[:space:]].*[[:space:]]-delete' "$UPDATER"; then
+  fail "destructive operation detected in safe updater"
+fi
+
+if grep -Eq 'checkout[[:space:]].*LEGACY_INSTALL_DIR|checkout[[:space:]].*INSTALL_DIR|git[[:space:]]+-C[[:space:]]+"?\$\{?LEGACY_INSTALL_DIR' "$UPDATER"; then
+  fail "safe updater must never checkout into the legacy installation"
+fi
+
+TMP_DIR="$(mktemp -d)"
+release="${TMP_DIR}/release"
+bin_dir="${TMP_DIR}/bin"
+state_dir="${TMP_DIR}/state"
+config_dir="${TMP_DIR}/config"
+python_log="${TMP_DIR}/python.log"
+ui_log="${TMP_DIR}/ui.log"
+
+mkdir -p "${release}/.venv/bin" "${release}/src" "${release}/tests" "${release}/scripts" "$bin_dir" "$state_dir" "$config_dir"
+
+git init -q "$release"
+git -C "$release" config user.name "WorkSpace CI"
+git -C "$release" config user.email "workspace-ci@example.invalid"
+printf 'fixture\n' >"${release}/fixture.txt"
+cp -p "$UBUNTU_ENTRYPOINT" "${release}/scripts/update_workspace_ubuntu.sh"
+cp -p "$UPDATER" "${release}/scripts/update_code_safe.sh"
+git -C "$release" add fixture.txt scripts/update_workspace_ubuntu.sh scripts/update_code_safe.sh
+git -C "$release" commit -qm "test: create updater fixture"
+target_sha="$(git -C "$release" rev-parse HEAD)"
+
+cat >"${release}/.venv/bin/python" <<'EOF_PYTHON'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${FAKE_PYTHON_LOG:?}"
+exit 0
+EOF_PYTHON
+chmod 0755 "${release}/.venv/bin/python"
+
+cat >"${release}/.venv/bin/three-agent" <<'EOF_AGENT'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == "smoke" ]] || exit 2
+exit 0
+EOF_AGENT
+chmod 0755 "${release}/.venv/bin/three-agent"
+
+cat >"${release}/.venv/bin/workspace-security-ui" <<'EOF_UI'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == "--help" ]] || exit 2
+printf 'active-security-ui\n' >>"${FAKE_UI_LOG:?}"
+exit 0
+EOF_UI
+chmod 0755 "${release}/.venv/bin/workspace-security-ui"
+
+printf '{}\n' >"${config_dir}/local.json"
+printf '2026-01-01T00:00:00Z\t%s\t%s\n' "$target_sha" "$release" >"${state_dir}/active-releases.log"
+
+FAKE_PYTHON_LOG="$python_log" \
+FAKE_UI_LOG="$ui_log" \
+THREE_AGENT_REPO_URL="https://github.com/caotiensinh/3agent.git" \
+THREE_AGENT_REPO_REF="$target_sha" \
+THREE_AGENT_UPDATE_TRACKING_REF="main" \
+THREE_AGENT_INSTALL_DIR="${TMP_DIR}/legacy" \
+THREE_AGENT_BIN_DIR="$bin_dir" \
+THREE_AGENT_CONFIG_PATH="${config_dir}/local.json" \
+THREE_AGENT_RELEASES_DIR="${TMP_DIR}/releases" \
+THREE_AGENT_STATE_DIR="$state_dir" \
+THREE_AGENT_ACTIVATION_LOG="${state_dir}/active-releases.log" \
+THREE_AGENT_UPDATE_VERIFY=full \
+bash "$UPDATER" >/dev/null
+
+[[ -f "$python_log" ]] || fail "full verification did not invoke the active release Python"
+grep -Fq -- '-m unittest discover -s tests -v' "$python_log" \
+  || fail "full verification skipped unit tests for an already-current release"
+[[ -x "${bin_dir}/workspace-security-ui" ]] || fail "stable security UI launcher was not installed"
+FAKE_UI_LOG="$ui_log" "${bin_dir}/workspace-security-ui" --help >/dev/null \
+  || fail "stable security UI launcher did not execute the active release"
+[[ "$(wc -l <"$ui_log")" -ge 2 ]] || fail "active security UI verification was not exercised"
+grep -Fq 'active-releases.log' "${bin_dir}/workspace-security-ui" \
+  || fail "security UI launcher is not bound to active release history"
+
+[[ -x "${bin_dir}/3agent-update" ]] || fail "trusted updater launcher was not installed"
+[[ -f "${bin_dir}/3agent-update.sh" ]] || fail "trusted local updater payload was not installed"
+cmp -s "${release}/scripts/update_workspace_ubuntu.sh" "${bin_dir}/3agent-update.sh" \
+  || fail "trusted updater payload is not identical to verified release source"
+grep -Fq 'THREE_AGENT_REPO_REF=main' "${bin_dir}/3agent-update" \
+  || fail "installed updater did not preserve configured tracking ref"
+
+launcher="${bin_dir}/3agent-update"
+exec_lines="$(grep -E '^[[:space:]]*exec[[:space:]]+' "$launcher" || true)"
+exec_count="$(printf '%s\n' "$exec_lines" | sed '/^[[:space:]]*$/d' | wc -l)"
+[[ "$exec_count" -eq 1 ]] || fail "installed updater must expose exactly one execution line"
+printf '%s\n' "$exec_lines" | grep -Fq '3agent-update.sh' \
+  || fail "installed updater does not execute trusted local updater payload"
+if printf '%s\n' "$exec_lines" | grep -Eq 'https?://|(^|[[:space:]])(curl|wget)([[:space:]]|$)|[|][[:space:]]*bash|/scripts/bootstrap\.sh'; then
+  fail "installed updater execution line contains a remote execution primitive"
+fi
+if grep -Eq '^[[:space:]]*(curl|wget)[[:space:]]+' "$launcher"; then
+  fail "installed updater contains a remote-fetch command"
+fi
+
+pass "append-only updater preserves exact release semantics and installs only a trusted local updater entrypoint"

@@ -1,0 +1,124 @@
+name: model-candidate-audit-ci
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/audit_hf_model_candidate.py'
+      - 'config/model-candidates/**'
+      - '.github/workflows/model-candidate-audit-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-candidate-audit-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qwen3-embedding-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      HF_HUB_DISABLE_PROGRESS_BARS: '1'
+      SOURCE_FILE: config/model-candidates/qwen3-embedding-0.6b.source.json
+    steps:
+      - name: Checkout exact candidate head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Initialize ephemeral audit paths
+        shell: bash
+        run: |
+          printf 'HF_HOME=%s\n' "$RUNNER_TEMP/workspace-hf-home" >> "$GITHUB_ENV"
+          printf 'EVIDENCE_DIR=%s\n' "$RUNNER_TEMP/workspace-model-evidence" >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install review-only Hugging Face dependency
+        run: python -m pip install 'huggingface-hub>=0.34,<2'
+
+      - name: Validate immutable candidate source lock
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          source = json.loads(Path('config/model-candidates/qwen3-embedding-0.6b.source.json').read_text(encoding='utf-8'))
+          assert source['schema'] == 'workspace.model-candidate-source/v1'
+          assert source['status'] == 'candidate_only'
+          assert source['repo_id'] == 'Qwen/Qwen3-Embedding-0.6B'
+          assert re.fullmatch(r'[0-9a-f]{40}', source['revision'])
+          assert source['revision'] == '97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3'
+          assert source['license'] == 'apache-2.0'
+          assert source['approval']['approved'] is False
+          artifact_file = Path(source['artifact_file'])
+          assert artifact_file.is_file()
+          assert source['expected_anchors']['model.safetensors']['sha256'] == '0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd'
+          PY
+
+      - name: Produce immutable candidate hash evidence
+        shell: bash
+        run: |
+          mkdir -p "$EVIDENCE_DIR"
+          python scripts/audit_hf_model_candidate.py \
+            --repo-id Qwen/Qwen3-Embedding-0.6B \
+            --revision 97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3 \
+            --artifact-file config/model-candidates/qwen3-embedding-0.6b.artifacts.txt \
+            --output "$EVIDENCE_DIR/qwen3-embedding-0.6b.candidate-evidence.json"
+
+      - name: Verify candidate evidence and independent weight anchor
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          source = json.loads(Path('config/model-candidates/qwen3-embedding-0.6b.source.json').read_text(encoding='utf-8'))
+          artifact_lines = [
+              line.strip()
+              for line in Path(source['artifact_file']).read_text(encoding='utf-8').splitlines()
+              if line.strip() and not line.lstrip().startswith('#')
+          ]
+          evidence_path = Path(__import__('os').environ['EVIDENCE_DIR']) / 'qwen3-embedding-0.6b.candidate-evidence.json'
+          evidence = json.loads(evidence_path.read_text(encoding='utf-8'))
+          assert evidence['schema'] == 'workspace.model-candidate-evidence/v1'
+          assert evidence['status'] == 'candidate_only'
+          assert evidence['repo_id'] == source['repo_id']
+          assert evidence['revision'] == source['revision']
+          assert evidence['runtime_download'] is False
+          assert evidence['approval']['approved'] is False
+          by_path = {item['path']: item for item in evidence['artifacts']}
+          assert sorted(by_path) == sorted(artifact_lines)
+          assert len(by_path) == len(artifact_lines) == 10
+          for item in by_path.values():
+              assert len(item['sha256']) == 64
+              int(item['sha256'], 16)
+              assert item['size_bytes'] > 0
+          expected_weight = source['expected_anchors']['model.safetensors']['sha256']
+          assert by_path['model.safetensors']['sha256'] == expected_weight
+          PY
+
+      - name: Upload candidate evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen3-embedding-0.6b-candidate-evidence
+          path: ${{ runner.temp }}/workspace-model-evidence/qwen3-embedding-0.6b.candidate-evidence.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove candidate bytes and Hugging Face cache
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$EVIDENCE_DIR" "$HF_HOME"

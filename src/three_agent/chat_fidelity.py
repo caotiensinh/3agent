@@ -195,6 +195,7 @@ def requested_language_neutral_format(request: str) -> str:
         r"\bonly\s+json\b",
         r"(?:chỉ|chi)\s+(?:trả lời|tra loi|xuất|xuat|đưa|dua|ghi).{0,40}\bjson\b",
         r"\bjson\b.{0,20}(?:thôi|thoi|duy\s+nhất|duy nhat)",
+        r"\bjson\b.{0,40}(?:không|khong)\s+(?:kèm\s+)?(?:bất\s+kỳ\s+)?(?:lời\s+)?(?:giải\s+thích|giai thich)",
         r"json(?:だけ|のみ)",
     )
     if any(re.search(pattern, compact, re.DOTALL) for pattern in json_patterns):
@@ -216,7 +217,9 @@ def requested_language_neutral_format(request: str) -> str:
         r"\bonly\s+(?:the\s+)?(?:code|command)(?:\s+block)?\b",
         r"\b(?:code|command)(?:\s+block)?.{0,32}(?:no\s+explanation|without\s+explanation)\b",
         r"(?:chỉ|chi)\s+(?:trả lời|tra loi|đưa|dua|ghi|xuất|xuat).{0,40}(?:lệnh|lenh|code|mã|ma)\b",
+        r"(?:chỉ|chi)\s+(?:được|duoc)\s+(?:gồm|gom|chứa|chua).{0,48}(?:một\s+)?(?:lệnh|lenh|code|mã|ma)\b",
         r"(?:lệnh|lenh|code|mã|ma).{0,32}(?:không|khong)\s+(?:giải thích|giai thich)",
+        r"(?:lệnh|lenh|code|mã|ma).{0,64}(?:không|khong)\s+(?:kèm|kem).{0,24}(?:giải\s+thích|giai thich)",
         r"(?:コード(?:ブロック)?|コマンド).{0,40}(?:だけ|のみ)",
         r"(?:コード(?:ブロック)?|コマンド).{0,40}説明(?:文)?(?:なし|不要)",
     )

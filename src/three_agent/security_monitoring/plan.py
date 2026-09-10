@@ -28,6 +28,8 @@ def compile_collection_plan(
     The production-safe default deliberately omits ICMP/TCP active liveness. Those
     probes appear only when the operator explicitly enables `allow_active_liveness`.
     Even then, active work is hard-capped per asset and is never a bandwidth test.
+    Policy-disallowed capabilities are removed before any work item reaches an
+    executor; collectors still re-check policy as defense in depth.
     """
 
     effective_policy = (policy or MonitoringPolicy()).validate()
@@ -35,6 +37,8 @@ def compile_collection_plan(
     for asset in sorted((a.validate() for a in assets if a.enabled), key=lambda a: a.asset_id):
         active_for_asset = 0
         for capability in asset.collector_capabilities:
+            if capability not in effective_policy.allowed_capabilities:
+                continue
             if capability in ACTIVE_LIVENESS_CAPABILITIES and not effective_policy.allow_active_liveness:
                 continue
             if capability == "tcp_connect":

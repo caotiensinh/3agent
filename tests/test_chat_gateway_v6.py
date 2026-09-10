@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from three_agent.chat_gateway_v6 import HTML_V6, _job_is_owned
+from three_agent.chat_gateway import HTML_V6, _job_is_owned
 
 
 class ChatGatewayV6Tests(unittest.TestCase):

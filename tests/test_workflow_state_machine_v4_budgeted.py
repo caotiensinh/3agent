@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from three_agent.execution_budget import TaskExecutionBudgetState
-from three_agent.workflow_state_machine_v4_budgeted import BudgetedWorkflowStateMachineV4Controller
+from three_agent.workflow_state_machine import BudgetedWorkflowStateMachineV4Controller
 from test_workflow_state_machine_v4 import WorkflowStateMachineV4Tests
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .sqlite_budget_guard import run_budget_write
 from .store import TaskStore
 
 
@@ -47,7 +48,10 @@ class TaskExecutionBudgetState:
         store: TaskStore,
         task_id: str,
     ) -> "TaskExecutionBudgetState":
-        row = store.bind_task_execution_budget(task_id)
+        row = run_budget_write(
+            store,
+            lambda: store.bind_task_execution_budget(task_id),
+        )
         return cls(
             store=store,
             task_id=str(task_id),
@@ -68,12 +72,15 @@ class TaskExecutionBudgetState:
         escalations: int = 0,
     ) -> None:
         try:
-            self.store.reserve_task_execution_budget(
-                self.task_id,
-                steps=steps,
-                tool_calls=tool_calls,
-                retries=retries,
-                escalations=escalations,
+            run_budget_write(
+                self.store,
+                lambda: self.store.reserve_task_execution_budget(
+                    self.task_id,
+                    steps=steps,
+                    tool_calls=tool_calls,
+                    retries=retries,
+                    escalations=escalations,
+                ),
             )
         except ValueError as exc:
             code = str(exc)

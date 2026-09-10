@@ -1,0 +1,109 @@
+name: workspace-security-monitor-source-readonly
+
+on:
+  push:
+    branches:
+      - test/read-only-lan-probe-20260901
+    paths:
+      - '.github/workflows/workspace-security-monitor-source-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-readonly-monitor:
+    name: WorkSpace source read-only monitoring
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact test branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run bounded WorkSpace monitoring from source
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          set -Eeuo pipefail
+          CONFIG="$RUNNER_TEMP/workspace-lan-monitor.json"
+          DB="$RUNNER_TEMP/workspace-lan-monitor.db"
+          echo "SOURCE_HEAD=$(git rev-parse HEAD)"
+
+          python3 - "$CONFIG" "$DB" <<'PY'
+          import json, sys
+          from pathlib import Path
+          cfg=Path(sys.argv[1]); db=Path(sys.argv[2])
+          cfg.write_text(json.dumps({
+            "enabled": True,
+            "allow_real_network": True,
+            "database_path": str(db),
+            "secret_directory": None,
+            "policy": {
+              "profile_id": "authorized-lan-readonly-test",
+              "network_scope": "approved_inventory_only",
+              "read_only": True,
+              "production_safety_profile": "non_disruptive_v1",
+              "allow_active_liveness": True,
+              "bandwidth_measurement_mode": "counter_only",
+              "packet_analysis_mode": "passive_only",
+              "max_workers": 2,
+              "timeout_seconds": 2.0,
+              "max_retries": 0,
+              "max_catch_up_runs": 0,
+              "allowed_capabilities": ["icmp_echo", "tcp_connect"]
+            },
+            "assets": [
+              {
+                "asset_id":"cisco-192-168-11-116",
+                "role":"switch",
+                "management_host":"192.168.11.116",
+                "collector_capabilities":["icmp_echo","tcp_connect"],
+                "allowed_tcp_ports":[443],
+                "data_class":"internal",
+                "enabled":True,
+                "credential_ref":None
+              },
+              {
+                "asset_id":"router-192-168-11-1",
+                "role":"router",
+                "management_host":"192.168.11.1",
+                "collector_capabilities":["icmp_echo","tcp_connect"],
+                "allowed_tcp_ports":[80],
+                "data_class":"internal",
+                "enabled":True,
+                "credential_ref":None
+              }
+            ]
+          }, indent=2)+"\n", encoding="utf-8")
+          PY
+
+          echo '=== VALIDATE ==='
+          python3 -m three_agent.security_monitoring_cli --config "$CONFIG" validate-config
+          echo '=== INIT ==='
+          python3 -m three_agent.security_monitoring_cli --config "$CONFIG" init-db
+          echo '=== EXECUTE READ-ONLY ==='
+          python3 -m three_agent.security_monitoring_cli --config "$CONFIG" run-hourly --execute-readonly
+
+          echo '=== DATABASE RESULTS ==='
+          python3 - "$DB" <<'PY'
+          import sqlite3, sys
+          conn=sqlite3.connect(sys.argv[1]); conn.row_factory=sqlite3.Row
+          tables=[r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+          for t in tables:
+              print(f"TABLE {t} count={conn.execute(f'SELECT COUNT(*) FROM [{t}]').fetchone()[0]}")
+          for t in tables:
+              if any(x in t for x in ('observation','sample','run')):
+                  try: rows=conn.execute(f'SELECT * FROM [{t}] ORDER BY rowid LIMIT 30').fetchall()
+                  except Exception: continue
+                  print(f'=== {t} ===')
+                  for r in rows:
+                      d=dict(r)
+                      print({k:v for k,v in d.items() if 'secret' not in k.lower() and 'credential' not in k.lower()})
+          conn.close()
+          PY
+          rm -f "$CONFIG" "$DB"
+          echo 'WORKSPACE_SOURCE_READONLY_MONITOR=PASS'

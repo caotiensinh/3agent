@@ -1,0 +1,58 @@
+{
+  "schema_version": "workspace-network-data-policy/v1",
+  "paths": {
+    "incoming_cache_root": "/var/cache/workspace-datasets/incoming",
+    "normalized_staging_root": "/var/cache/workspace-datasets/normalized",
+    "experience_root": "/var/lib/workspace-network-experience/approved",
+    "candidate_skill_root": "/var/lib/workspace-network-experience/candidate-skills",
+    "research_root": "/var/lib/workspace-datasets/research",
+    "provenance_root": "/var/lib/workspace-network-experience/provenance"
+  },
+  "cache": {
+    "max_bytes": 85899345920,
+    "max_job_bytes": 21474836480,
+    "max_objects_per_job": 32,
+    "allow_full_sync": false,
+    "raw_retention": "ephemeral",
+    "normalized_retention": "until_experience_extracted",
+    "eviction_policy": "lru_unpinned"
+  },
+  "promotion": {
+    "required_digest": "sha256",
+    "enterprise_allowed_statuses": [
+      "enterprise_approved"
+    ],
+    "research_allowed_statuses": [
+      "enterprise_approved",
+      "research_only"
+    ],
+    "deny_statuses": [
+      "review_required",
+      "blocked"
+    ],
+    "require_license_source": true,
+    "require_provenance": true,
+    "durable_outputs": [
+      "experience_case",
+      "evidence_pattern",
+      "evaluation_case",
+      "provenance"
+    ],
+    "raw_logs_durable": false,
+    "normalized_events_durable": false,
+    "candidate_skills_auto_approve": false,
+    "minimum_independent_cases_for_pattern": 2
+  },
+  "network": {
+    "methods": [
+      "GET",
+      "HEAD"
+    ],
+    "https_only": true,
+    "allow_redirects": true,
+    "max_redirects": 3,
+    "deny_private_special_destinations": true,
+    "credentials_allowed": false,
+    "caller_headers_allowed": false
+  }
+}

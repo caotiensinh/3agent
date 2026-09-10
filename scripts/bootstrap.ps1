@@ -31,7 +31,6 @@ $Model = Get-EnvOrDefault 'THREE_AGENT_MODEL' ''
 $InstallOllama = Test-True (Get-EnvOrDefault 'THREE_AGENT_INSTALL_OLLAMA' '0')
 $PullModel = Test-True (Get-EnvOrDefault 'THREE_AGENT_PULL_MODEL' '0')
 $SkipSystemPackages = Test-True (Get-EnvOrDefault 'THREE_AGENT_SKIP_SYSTEM_PACKAGES' '0')
-$BootstrapUrl = 'https://raw.githubusercontent.com/caotiensinh/3agent/main/scripts/bootstrap.ps1'
 
 if ($SelfTest) {
     if ([string]::IsNullOrWhiteSpace($RepoUrl)) { Stop-Deploy 'Repository URL is empty' }
@@ -230,16 +229,17 @@ function Install-PythonEnvironment {
     Invoke-NativeChecked -File $venvPython -Arguments @('-m','pip','install','-e',$InstallDir) -Description 'pip install project'
 }
 
-function Write-ConfigIfMissing {
-    if (Test-Path $ConfigPath) {
-        Write-Log "Preserving existing configuration: $ConfigPath"
-        return
-    }
-    $configDir = Split-Path -Parent $ConfigPath
-    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-    Copy-Item -Force (Join-Path $InstallDir 'config\test.example.json') $ConfigPath
-    if (-not [string]::IsNullOrWhiteSpace($Model)) {
-        $code = @'
+function Invoke-GeneratedDefaultConfigMigration {
+    if (-not (Test-Path $ConfigPath)) { return }
+    $migrator = Join-Path $InstallDir 'scripts\migrate_default_web_search_config.py'
+    if (-not (Test-Path $migrator)) { Stop-Deploy "Missing config migration helper: $migrator" }
+    Write-Log 'Checking whether the legacy generated config needs secure Web Search migration'
+    Invoke-NativeChecked -File $script:VenvPython -Arguments @($migrator,'--config',$ConfigPath) -Description 'secure Web Search config migration'
+}
+
+function Set-ConfiguredModel {
+    if ([string]::IsNullOrWhiteSpace($Model)) { return }
+    $code = @'
 import json, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 model = sys.argv[2]
@@ -247,9 +247,20 @@ data = json.loads(path.read_text(encoding="utf-8"))
 data.setdefault("llm", {})["model"] = model
 path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 '@
-        Invoke-NativeChecked -File $script:VenvPython -Arguments @('-c',$code,$ConfigPath,$Model) -Description 'configure model'
+    Invoke-NativeChecked -File $script:VenvPython -Arguments @('-c',$code,$ConfigPath,$Model) -Description 'configure model'
+}
+
+function Write-ConfigIfMissing {
+    if (Test-Path $ConfigPath) {
+        Write-Log "Preserving existing configuration: $ConfigPath"
+    } else {
+        $configDir = Split-Path -Parent $ConfigPath
+        New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        Copy-Item -Force (Join-Path $InstallDir 'config\local.public-research.example.json') $ConfigPath
+        Write-Log "Created secure public-research configuration: $ConfigPath"
     }
-    Write-Log "Created configuration: $ConfigPath"
+    Invoke-GeneratedDefaultConfigMigration
+    Set-ConfiguredModel
 }
 
 function Add-UserPath {
@@ -283,6 +294,11 @@ cd /d "$(Escape-CmdValue $InstallDir)"
 "@
     Set-Content -Encoding ASCII -Path (Join-Path $BinDir '3agent.cmd') -Value $agentCmd
 
+    $trustedBootstrapSource = Join-Path $InstallDir 'scripts\bootstrap.ps1'
+    if (-not (Test-Path $trustedBootstrapSource)) { Stop-Deploy "Missing trusted updater source: $trustedBootstrapSource" }
+    $trustedUpdater = Join-Path $BinDir '3agent-update.ps1'
+    Copy-Item -Force $trustedBootstrapSource $trustedUpdater
+
     $updateCmd = @"
 @echo off
 setlocal
@@ -291,7 +307,8 @@ set "THREE_AGENT_REPO_REF=$(Escape-CmdValue $RepoRef)"
 set "THREE_AGENT_INSTALL_DIR=$(Escape-CmdValue $InstallDir)"
 set "THREE_AGENT_BIN_DIR=$(Escape-CmdValue $BinDir)"
 set "THREE_AGENT_CONFIG_PATH=$(Escape-CmdValue $ConfigPath)"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "irm '$BootstrapUrl' | iex"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(Escape-CmdValue $trustedUpdater)"
+exit /b %ERRORLEVEL%
 "@
     Set-Content -Encoding ASCII -Path (Join-Path $BinDir '3agent-update.cmd') -Value $updateCmd
     Add-UserPath $BinDir

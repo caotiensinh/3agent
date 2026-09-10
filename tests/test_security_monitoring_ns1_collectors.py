@@ -90,7 +90,7 @@ class CollectorTests(unittest.TestCase):
             management_host="192.0.2.2",
             collector_capabilities=("icmp_echo",),
         ).validate()
-        result = IcmpCollector(self.engine, executor=executor).collect(
+        result = IcmpCollector(self.engine, executor=executor, platform_name="posix").collect(
             asset=asset,
             run_id="run-2",
             observed_at="2026-08-30T12:00:00+00:00",

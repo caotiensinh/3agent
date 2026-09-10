@@ -1,0 +1,4 @@
+tests/test_chat_gateway_v16_contract.py
+tests/test_chat_multiturn_acceptance_v2.py
+tests/test_live_multiturn_workflow_contract.py
+tests/test_p2_constrained_generation.py

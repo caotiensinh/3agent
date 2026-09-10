@@ -5,11 +5,12 @@ from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from .adaptive_learning_runtime import build_runtime_learning_binding
 from .agents import DailyReportAgent, PresentationAgent, ResearchAgent
 from .artifacts import ArtifactManager
 from .config import AppConfig, legacy_model_policy
 from .gateways import ExecutionGateway, InternetGateway
-from .knowledge_gateway import KnowledgeGateway
+from .knowledge_gateway import KnowledgeGatewayV3
 from .llm import OllamaClient
 from .metered_runtime import (
     MeteredAdaptiveOllamaClient,
@@ -17,10 +18,17 @@ from .metered_runtime import (
     MeteredInternetGateway,
     MeteredOllamaWorkerPool,
 )
+from .model_residency import (
+    ModelResidencyConfig,
+    ModelResidencyManager,
+    OllamaResidencyBackend,
+    ResidencyManagedClient,
+)
 from .resource_budget import ResourceBudgetConfig, ResourceBudgetManager
 from .resource_events import ResourceEventRecorder
 from .runtime_validation import RuntimeValidatorBridge
 from .store import TaskStore
+from .trusted_runtime_context import TrustedRuntimeContextLLM
 from .web_research import WebResearchClient
 from .workflow import WorkflowRunner
 
@@ -65,6 +73,15 @@ class Orchestrator:
         self.config = config
         self.store = TaskStore(config.database_path)
         self.artifacts = ArtifactManager(config.artifact_root)
+
+        # Phase 4D is a trusted production-consumption boundary. Disabled is an
+        # exact no-op; enabled mode opens only an existing authenticated learning
+        # generation through a read-only SQLite adapter. It never bootstraps,
+        # repairs, signs, promotes, or otherwise mutates learning state.
+        learning_binding = build_runtime_learning_binding(config)
+        self.learning_retrieval = learning_binding.gateway
+        self.learning_retrieval_domain = learning_binding.domain
+
         self.inference_telemetry_path = os.getenv(
             "WORKSPACE_INFERENCE_TELEMETRY",
             str(config.artifact_root / "activity" / "inference.jsonl"),
@@ -90,7 +107,7 @@ class Orchestrator:
             raw_execution_gateway, self.resource_events
         )
         self.web_research = WebResearchClient(self.internet_gateway)
-        self.knowledge_gateway = KnowledgeGateway(config.artifact_root, self.web_research)
+        self.knowledge_gateway = KnowledgeGatewayV3(config.artifact_root, self.web_research)
 
         policy = config.model_policy or legacy_model_policy(config.llm)
         self.model_policy = policy
@@ -108,6 +125,17 @@ class Orchestrator:
             model_ram_overhead_factor=policy.model_ram_overhead_factor,
             serialize_generation=policy.serialize_generation,
             reservation_ttl_seconds=policy.reservation_ttl_seconds,
+        )
+        self.residency_config = (
+            ModelResidencyConfig(
+                enabled=True,
+                strategy=policy.residency_strategy,
+                idle_ttl_seconds=policy.residency_idle_ttl_seconds,
+                eviction_policy=policy.residency_eviction_policy,
+                runtime_download=policy.runtime_model_download,
+            )
+            if policy.enabled and policy.residency_enabled
+            else None
         )
 
         raw_policy = config.raw.get("model_policy", {}) if isinstance(config.raw, dict) else {}
@@ -132,6 +160,16 @@ class Orchestrator:
         if policy.enabled and policy.resource_control_enabled and not self.worker_pool_enabled:
             self.resource_manager = ResourceBudgetManager(config.llm.base_url, resource_config)
 
+        self.model_residency = None
+        if self.residency_config is not None and not self.worker_pool_enabled:
+            self.model_residency = ModelResidencyManager(
+                OllamaResidencyBackend(
+                    config.llm.base_url,
+                    timeout_seconds=min(config.llm.timeout_seconds, 60),
+                ),
+                self.residency_config,
+            )
+
         if policy.enabled:
             if self.worker_pool_enabled:
                 def routed(model: str):
@@ -141,6 +179,7 @@ class Orchestrator:
                         gpu0_url=self.worker_urls["gpu0"],
                         gpu1_url=self.worker_urls["gpu1"],
                         dual_url=self.worker_urls["dual"],
+                        residency_config=self.residency_config,
                         resource_events=self.resource_events,
                     )
 
@@ -149,26 +188,19 @@ class Orchestrator:
                 report_primary = routed(policy.report_model)
                 deep = routed(policy.deep_model) if policy.deep_model else None
             else:
-                research_primary = OllamaClient(
-                    replace(config.llm, model=policy.research_model),
-                    self.resource_manager,
-                )
-                presentation_primary = OllamaClient(
-                    replace(config.llm, model=policy.presentation_model),
-                    self.resource_manager,
-                )
-                report_primary = OllamaClient(
-                    replace(config.llm, model=policy.report_model),
-                    self.resource_manager,
-                )
-                deep = (
-                    OllamaClient(
-                        replace(config.llm, model=policy.deep_model),
+                def local_client(model: str):
+                    client = OllamaClient(
+                        replace(config.llm, model=model),
                         self.resource_manager,
                     )
-                    if policy.deep_model
-                    else None
-                )
+                    if self.model_residency is None:
+                        return client
+                    return ResidencyManagedClient(client, self.model_residency)
+
+                research_primary = local_client(policy.research_model)
+                presentation_primary = local_client(policy.presentation_model)
+                report_primary = local_client(policy.report_model)
+                deep = local_client(policy.deep_model) if policy.deep_model else None
             self.research_llm = MeteredAdaptiveOllamaClient(
                 research_primary,
                 deep=deep,
@@ -202,12 +234,14 @@ class Orchestrator:
             self.presentation_llm = shared
             self.report_llm = shared
 
-        self.llm = self.research_llm
+        self.llm = TrustedRuntimeContextLLM(self.research_llm)
         self.research_agent = ResearchAgent(
             config.profile_root,
             self.research_llm,
             self.web_research,
             self.knowledge_gateway,
+            learning_retrieval=self.learning_retrieval,
+            learning_domain=self.learning_retrieval_domain,
         )
         self.presentation_agent = PresentationAgent(config.profile_root, self.presentation_llm)
         self.daily_agent = DailyReportAgent(config.profile_root, self.report_llm)
@@ -270,6 +304,12 @@ class Orchestrator:
             "gpu_queue_wait_seconds": policy.queue_wait_seconds,
             "model_ram_overhead_factor": policy.model_ram_overhead_factor,
             "serialize_generation": policy.serialize_generation,
+            "model_residency_policy_enabled": bool(policy.enabled and policy.residency_enabled),
+            "model_residency_runtime_enabled": self.residency_config is not None,
+            "model_residency_strategy": policy.residency_strategy,
+            "model_idle_ttl_seconds": policy.residency_idle_ttl_seconds,
+            "model_eviction_policy": policy.residency_eviction_policy,
+            "runtime_model_download": policy.runtime_model_download,
             "fixed_model_count_limit": False,
             "worker_pool_enabled": self.worker_pool_enabled,
             "worker_gpu0_url": self.worker_urls["gpu0"],
@@ -282,6 +322,12 @@ class Orchestrator:
             "runtime_validator_bridge_enabled": True,
             "runtime_validator_contract": "policy+evidence+schema",
             "runtime_validator_public_web": self.runtime_validator_bridge.public_web,
+            "adaptive_learning_retrieval_enabled": self.learning_retrieval is not None,
+            "adaptive_learning_retrieval_domain": (
+                self.learning_retrieval_domain
+                if self.learning_retrieval is not None
+                else None
+            ),
             "structured_output_mode": "ollama_native_json_schema",
             "inference_telemetry": self.inference_telemetry_path,
             "inference_telemetry_raw_prompt": False,
