@@ -6,21 +6,17 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 from .computer_use import ComputerObservation
+from .computer_use_privacy import ComputerPrivacyError, sanitize_computer_content
 
 MAX_BROWSER_DOM_BYTES = 24 * 1024
 MAX_BROWSER_ACCESSIBILITY_BYTES = 24 * 1024
 MAX_BROWSER_METADATA_BYTES = 8 * 1024
 MAX_BROWSER_SCREENSHOT_BYTES = 8 * 1024 * 1024
-MAX_BROWSER_SANITIZE_DEPTH = 12
 _PROFILE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _TARGET_PART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_REDACTED = "[REDACTED]"
-_SENSITIVE_KEYS = frozenset({"password", "passwd", "secret", "token", "access_token", "refresh_token", "authorization", "cookie", "set_cookie", "session_cookie", "credential", "credentials", "api_key", "apikey", "private_key"})
-_SECURE_NODE_MARKERS = frozenset({"password", "current-password", "new-password", "one-time-code"})
-_SECURE_VALUE_KEYS = frozenset({"value", "text", "inner_text", "innertext", "textcontent"})
 
 
 class BrowserObservationError(ValueError):
@@ -63,7 +59,12 @@ class BrowserReadOnlyCapture:
 class BrowserReadOnlyBackend(Protocol):
     """Backend contract for isolated read-only browser state acquisition only."""
 
-    def capture_read_only(self, *, profile_id: str, include_screenshot: bool) -> BrowserReadOnlyCapture:
+    def capture_read_only(
+        self,
+        *,
+        profile_id: str,
+        include_screenshot: bool,
+    ) -> BrowserReadOnlyCapture:
         ...
 
 
@@ -71,7 +72,13 @@ def _canonical_bytes(value: Mapping[str, Any], *, limit: int, error_code: str) -
     if not isinstance(value, Mapping):
         raise BrowserObservationError(f"{error_code}_MUST_BE_OBJECT")
     try:
-        payload = json.dumps(dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        payload = json.dumps(
+            dict(value),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise BrowserObservationError(f"{error_code}_NOT_CANONICAL_JSON") from exc
     if len(payload) > limit:
@@ -108,61 +115,35 @@ def _target_part(value: str, field_name: str) -> str:
     return value
 
 
-def _safe_url(value: str) -> str:
+def _sanitize_mapping(value: Mapping[str, Any], *, error_code: str) -> Mapping[str, Any]:
     try:
-        parsed = urlparse(value)
-        port = parsed.port
-    except ValueError:
-        return _REDACTED
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return _REDACTED
-    host = parsed.hostname
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    if port is not None:
-        host = f"{host}:{port}"
-    return urlunparse((parsed.scheme, host, parsed.path, "", "", ""))
+        sanitized = sanitize_computer_content(value)
+    except ComputerPrivacyError as exc:
+        raise BrowserObservationError(error_code) from exc
+    if not isinstance(sanitized, Mapping):
+        raise BrowserObservationError(error_code)
+    return sanitized
 
 
-def _secure_node(mapping: Mapping[str, Any]) -> bool:
-    if any(mapping.get(key) is True for key in ("secure", "protected", "is_password", "password_field")):
-        return True
-    for key in ("type", "autocomplete", "role"):
-        value = mapping.get(key)
-        if isinstance(value, str) and value.strip().lower() in _SECURE_NODE_MARKERS:
-            return True
-    return False
-
-
-def _sanitize_browser_value(value: Any, *, depth: int = 0, secure_parent: bool = False) -> Any:
-    if depth > MAX_BROWSER_SANITIZE_DEPTH:
-        raise BrowserObservationError("BROWSER_OBSERVATION_SANITIZE_DEPTH_EXCEEDED")
-    if isinstance(value, Mapping):
-        secure_here = secure_parent or _secure_node(value)
-        sanitized: dict[str, Any] = {}
-        for raw_key, raw_value in value.items():
-            key = str(raw_key)
-            normalized_key = key.strip().lower().replace("-", "_")
-            if normalized_key in _SENSITIVE_KEYS or (secure_here and normalized_key in _SECURE_VALUE_KEYS):
-                sanitized[key] = _REDACTED
-            elif normalized_key == "url" and isinstance(raw_value, str):
-                sanitized[key] = _safe_url(raw_value)
-            else:
-                sanitized[key] = _sanitize_browser_value(raw_value, depth=depth + 1, secure_parent=secure_here)
-        return sanitized
-    if isinstance(value, (list, tuple)):
-        return [_sanitize_browser_value(item, depth=depth + 1, secure_parent=secure_parent) for item in value]
-    return value
-
-
-def capture_isolated_browser_observation(*, config: BrowserObservationConfig, backend: BrowserReadOnlyBackend, session_id: str, task_id: str, include_screenshot: bool = False) -> ComputerObservation:
-    """Capture one bounded and sanitized observation from an isolated browser profile.
+def capture_isolated_browser_observation(
+    *,
+    config: BrowserObservationConfig,
+    backend: BrowserReadOnlyBackend,
+    session_id: str,
+    task_id: str,
+    include_screenshot: bool = False,
+) -> ComputerObservation:
+    """Capture one bounded and privacy-sanitized isolated browser observation.
 
     This adapter has no navigation, click, typing, clipboard-write, download, or
     arbitrary CDP command surface. Sensitive values are removed before retention.
     """
+
     config.validate()
-    capture = backend.capture_read_only(profile_id=config.profile_id, include_screenshot=include_screenshot)
+    capture = backend.capture_read_only(
+        profile_id=config.profile_id,
+        include_screenshot=include_screenshot,
+    )
     if not isinstance(capture, BrowserReadOnlyCapture):
         raise BrowserObservationError("INVALID_BROWSER_BACKEND_CAPTURE")
     if capture.profile_id != config.profile_id:
@@ -170,9 +151,24 @@ def capture_isolated_browser_observation(*, config: BrowserObservationConfig, ba
 
     window_id = _target_part(capture.window_id, "window_id")
     tab_id = _target_part(capture.tab_id, "tab_id")
-    metadata_bytes = _canonical_bytes(_sanitize_browser_value(capture.metadata), limit=MAX_BROWSER_METADATA_BYTES, error_code="BROWSER_METADATA")
-    dom_bytes = _canonical_bytes(_sanitize_browser_value(capture.dom_snapshot), limit=MAX_BROWSER_DOM_BYTES, error_code="BROWSER_DOM_SNAPSHOT")
-    accessibility_bytes = _canonical_bytes(_sanitize_browser_value(capture.accessibility_snapshot), limit=MAX_BROWSER_ACCESSIBILITY_BYTES, error_code="BROWSER_ACCESSIBILITY_SNAPSHOT")
+    metadata_bytes = _canonical_bytes(
+        _sanitize_mapping(capture.metadata, error_code="BROWSER_METADATA_PRIVACY_REJECTED"),
+        limit=MAX_BROWSER_METADATA_BYTES,
+        error_code="BROWSER_METADATA",
+    )
+    dom_bytes = _canonical_bytes(
+        _sanitize_mapping(capture.dom_snapshot, error_code="BROWSER_DOM_PRIVACY_REJECTED"),
+        limit=MAX_BROWSER_DOM_BYTES,
+        error_code="BROWSER_DOM_SNAPSHOT",
+    )
+    accessibility_bytes = _canonical_bytes(
+        _sanitize_mapping(
+            capture.accessibility_snapshot,
+            error_code="BROWSER_ACCESSIBILITY_PRIVACY_REJECTED",
+        ),
+        limit=MAX_BROWSER_ACCESSIBILITY_BYTES,
+        error_code="BROWSER_ACCESSIBILITY_SNAPSHOT",
+    )
 
     screenshot_sha256 = None
     if include_screenshot:
@@ -195,7 +191,17 @@ def capture_isolated_browser_observation(*, config: BrowserObservationConfig, ba
         "dom": json.loads(dom_bytes.decode("utf-8")),
         "accessibility": json.loads(accessibility_bytes.decode("utf-8")),
     }
-    state_payload = json.dumps({"target_ref": target_ref, "structured": structured, "screenshot_sha256": screenshot_sha256}, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    state_payload = json.dumps(
+        {
+            "target_ref": target_ref,
+            "structured": structured,
+            "screenshot_sha256": screenshot_sha256,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
     state_sha256 = _sha256_bytes(state_payload)
     return ComputerObservation(
         session_id=session_id,
