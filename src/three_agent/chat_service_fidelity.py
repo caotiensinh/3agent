@@ -94,22 +94,15 @@ _STATUS_CODE_FIDELITY_INSTRUCTION = (
     "STANDARD STATUS-CODE FIDELITY (mandatory): When the current request asks what a standardized protocol/status/error code means, state the canonical meaning accurately and express that meaning explicitly in the target response language. "
     "Do not substitute a different status or error condition merely to make the answer shorter."
 )
+_TRANSLATION_QUOTED_SOURCE_RE = re.compile(
+    r"'([^'\n]{1,4000})'|\"([^\"\n]{1,4000})\"|`([^`\n]{1,4000})`|「([^」\n]{1,4000})」|『([^』\n]{1,4000})』"
+)
 
 
 def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
-    """Bound standard direct-chat output tokens to the deterministic char contract.
-
-    High-effort thinking keeps its established floor because Ollama thinking tokens
-    share the generation budget on supported reasoning models. Standard chat does
-    not need that reasoning reserve, so its visible-output budget is capped
-    conservatively against max_chars instead of allowing the decoder to outrun the
-    authoritative final-answer validator.
-    """
-
     configured = max(1, int(getattr(contract, "num_predict", 0) or 1))
     if high_effort:
         return max(configured, 768)
-
     max_chars = max(0, int(getattr(contract, "max_chars", 0) or 0))
     if not max_chars:
         return configured
@@ -122,28 +115,12 @@ def _bounded_generation_num_predict(contract: Any, high_effort: bool) -> int:
 
 
 def _structured_generation_num_predict(contract: Any, visible_num_predict: int) -> int:
-    """Reserve decoder budget for the internal JSON envelope.
-
-    The final user-visible answer may be tiny (for example one number), but a
-    structured decoder must first emit a JSON object containing property names,
-    punctuation, and the value. Reusing the visible-answer character cap for that
-    internal representation can truncate valid structured output before the
-    deterministic renderer ever sees it. The final answer remains bounded by the
-    unchanged output-contract validator; this floor applies only to the private
-    intermediate JSON generation.
-    """
-
     if strict_structured_schema(contract) is None:
         return max(1, int(visible_num_predict or 1))
-    return max(
-        max(1, int(visible_num_predict or 1)),
-        _STRUCTURED_INTERNAL_MIN_NUM_PREDICT,
-    )
+    return max(max(1, int(visible_num_predict or 1)), _STRUCTURED_INTERNAL_MIN_NUM_PREDICT)
 
 
 def _strict_structured_mode(llm: Any, contract: Any, high_effort: bool) -> bool:
-    """Use decoder-time shape control only where it cannot steal reasoning budget."""
-
     return bool(
         not high_effort
         and strict_structured_schema(contract) is not None
@@ -152,8 +129,6 @@ def _strict_structured_mode(llm: Any, contract: Any, high_effort: bool) -> bool:
 
 
 def _preserve_structured_retry(contract_kind: str, translation_request: bool) -> bool:
-    """Keep shape-constrained retries where plain fallback weakens the contract."""
-
     return bool(
         translation_request
         or str(contract_kind or "").strip().lower() in {"bullets", "json_only"}
@@ -167,17 +142,6 @@ def _use_structured_attempt(
     *,
     preserve_structured: bool = False,
 ) -> bool:
-    """Use plain fallback only where an independent path improves fidelity.
-
-    Structured decoding remains the preferred first attempt. JSON, bullets, and
-    translation requests preserve decoder-time shape control during the bounded
-    repair attempt because plain fallback can violate their authoritative output
-    family. Other output kinds retain the established plain fallback for specific
-    language/format/runtime failures; this preserves the proven command-only
-    recovery path. Resource-admission and resource-busy failures are not
-    LocalLLMError and therefore remain fail-closed.
-    """
-
     if not structured_mode:
         return False
     if preserve_structured:
@@ -189,8 +153,6 @@ def _use_structured_attempt(
 
 
 def _missing_reference_clarification(language: str) -> str:
-    """Return a bounded local clarification with no model, tool, or network authority."""
-
     return _MISSING_REFERENCE_CLARIFICATIONS.get(
         str(language or "").strip().lower(),
         _MISSING_REFERENCE_CLARIFICATIONS["ja"],
@@ -205,8 +167,6 @@ def _target_language_repair_instruction(language: str) -> str:
 
 
 def _internal_instruction_leak_reason(answer: str, request: str) -> str:
-    """Reject characteristic private prompt fragments unless the user supplied them."""
-
     answer_normalized = " ".join(str(answer or "").casefold().split())
     request_normalized = " ".join(str(request or "").casefold().split())
     for fragment in _INTERNAL_INSTRUCTION_FRAGMENTS:
@@ -231,17 +191,42 @@ def _is_translation_request(request: str) -> bool:
     )
 
 
-def _translation_structured_schema() -> dict[str, Any]:
-    """Use a semantic field name so decoder-time constraints reinforce the task."""
+def _translation_source_text(request: str) -> str:
+    """Return one unambiguous quoted translation source, otherwise fail closed to fallback."""
 
+    matches: list[str] = []
+    for match in _TRANSLATION_QUOTED_SOURCE_RE.finditer(str(request or "")):
+        value = next((group for group in match.groups() if group is not None), "").strip()
+        if value:
+            matches.append(value)
+    if len(matches) != 1:
+        return ""
+    return matches[0]
+
+
+def _translation_generation_prompt(request: str, target_language: str) -> str:
+    source_text = _translation_source_text(request)
+    if not source_text:
+        return ""
+    return json.dumps(
+        {
+            "source_text": source_text,
+            "target_language": str(target_language or ""),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _translation_structured_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
             "translation": {
                 "type": "string",
                 "description": (
-                    "The faithful translation of the source text requested by the user, and nothing else. "
-                    "Translate the source text itself rather than the surrounding instruction or commentary. "
+                    "The faithful translation of source_text into target_language, and nothing else. "
                     "Preserve the source subject, action/state, and outcome."
                 ),
             }
@@ -273,8 +258,6 @@ def _translation_semantic_validation(
     candidate: str,
     target_language: str,
 ) -> tuple[bool, str]:
-    """Fail closed unless a local structured verifier confirms translation fidelity."""
-
     verifier_input = json.dumps(
         {
             "request": str(request or ""),
@@ -298,7 +281,6 @@ def _translation_semantic_validation(
         )
     except LocalLLMError:
         return False, "translation_verifier_error"
-
     if not isinstance(payload, dict):
         return False, "translation_verifier_error"
     faithful = payload.get("faithful")
@@ -316,8 +298,6 @@ def _is_standard_status_code_request(request: str) -> bool:
 
 
 class _ContractAwareProjectChatServiceMixin:
-    """Reference-gated local chat plus deterministic response-shape enforcement."""
-
     def _effective_output_contract(self, job: Any, effort: str):
         contract = compile_chat_output_contract(job.message, effort=effort)
         plan = self._context_plan(job)
@@ -331,30 +311,20 @@ class _ContractAwareProjectChatServiceMixin:
         contract = self._effective_output_contract(job, effort)
         high_effort = str(effort or "").strip().lower() == "high"
         generation_num_predict = _bounded_generation_num_predict(contract, high_effort)
-        structured_num_predict = _structured_generation_num_predict(
-            contract,
-            generation_num_predict,
-        )
+        structured_num_predict = _structured_generation_num_predict(contract, generation_num_predict)
         generation_temperature = None if high_effort else 0.0
         translation_request = _is_translation_request(job.message)
+        translation_generation_prompt = (
+            _translation_generation_prompt(job.message, job.language)
+            if translation_request
+            else ""
+        )
         status_code_request = _is_standard_status_code_request(job.message)
-        structured_mode = _strict_structured_mode(
-            self.orchestrator.llm,
-            contract,
-            high_effort,
-        )
-        preserve_structured = _preserve_structured_retry(
-            contract.kind,
-            translation_request,
-        )
+        structured_mode = _strict_structured_mode(self.orchestrator.llm, contract, high_effort)
+        preserve_structured = _preserve_structured_retry(contract.kind, translation_request)
 
         self._update(job_id, status="running")
-        self._stage(
-            job_id,
-            "answer",
-            "running",
-            f"Local model · language={job.language} · output={contract.kind}",
-        )
+        self._stage(job_id, "answer", "running", f"Local model · language={job.language} · output={contract.kind}")
         self.orchestrator.store.record_activity(
             None,
             "chat_gateway",
@@ -363,8 +333,7 @@ class _ContractAwareProjectChatServiceMixin:
             (
                 f"mode=chat language={job.language} language_source={language_source} "
                 f"effort={effort} uploads={len(uploads)} output_kind={contract.kind} "
-                f"num_predict={generation_num_predict} "
-                f"structured_num_predict={structured_num_predict} "
+                f"num_predict={generation_num_predict} structured_num_predict={structured_num_predict} "
                 f"sampling={'default' if generation_temperature is None else 'temperature0'} "
                 f"structured={str(structured_mode).lower()}"
             ),
@@ -380,27 +349,17 @@ class _ContractAwareProjectChatServiceMixin:
         try:
             for attempt in range(2):
                 system_prompt = (
-                    direct_chat_system_prompt(
-                        job.language,
-                        effort=effort,
-                        repair=attempt > 0,
-                    )
+                    direct_chat_system_prompt(job.language, effort=effort, repair=attempt > 0)
                     + "\n\n"
                     + _INTERNAL_INSTRUCTION_GUARD
                     + "\n\n"
-                    + render_output_contract(
-                        contract,
-                        repair_reason=last_reason if attempt > 0 else "",
-                    )
+                    + render_output_contract(contract, repair_reason=last_reason if attempt > 0 else "")
                 )
                 if translation_request:
                     system_prompt += "\n\n" + _TRANSLATION_FIDELITY_INSTRUCTION
                 if status_code_request:
                     system_prompt += "\n\n" + _STATUS_CODE_FIDELITY_INSTRUCTION
-                if (
-                    anchored_follow_up
-                    and contract.kind in _EXPLANATORY_FOLLOW_UP_KINDS
-                ):
+                if anchored_follow_up and contract.kind in _EXPLANATORY_FOLLOW_UP_KINDS:
                     system_prompt += (
                         "\n\nFOLLOW-UP SEMANTIC ANCHOR (mandatory):\n"
                         "- Resolve the ordinal, pronoun, or shorthand reference from eligible recent context.\n"
@@ -432,20 +391,12 @@ class _ContractAwareProjectChatServiceMixin:
                         "- Do not put headings, prefaces, suffixes, bullet markers, or format commentary inside values.\n"
                         "- A deterministic local renderer will convert these values to the user's requested final shape."
                     )
-                    schema = (
-                        _translation_structured_schema()
-                        if translation_request
-                        else strict_structured_schema(contract)
-                    )
-                    schema_id = (
-                        "workspace.chat.strict.translation.v1"
-                        if translation_request
-                        else strict_structured_schema_id(contract)
-                    )
+                    schema = _translation_structured_schema() if translation_request else strict_structured_schema(contract)
+                    schema_id = "workspace.chat.strict.translation.v1" if translation_request else strict_structured_schema_id(contract)
                     try:
                         payload = self.orchestrator.llm.generate_json(
                             system_prompt,
-                            prompt,
+                            translation_generation_prompt or prompt,
                             schema=schema,
                             schema_id=schema_id,
                             think=False,
@@ -460,19 +411,12 @@ class _ContractAwareProjectChatServiceMixin:
                             "chat_gateway",
                             "direct_chat_retry",
                             "warning",
-                            (
-                                f"language={job.language} attempt={attempt + 1} "
-                                f"reason={last_reason} output_kind={contract.kind}"
-                            ),
+                            f"language={job.language} attempt={attempt + 1} reason={last_reason} output_kind={contract.kind}",
                         )
                         if attempt == 0:
                             continue
                         raise
-                    answer = (
-                        _render_translation_payload(payload)
-                        if translation_request
-                        else render_strict_structured_answer(contract, payload)
-                    )
+                    answer = _render_translation_payload(payload) if translation_request else render_strict_structured_answer(contract, payload)
                 else:
                     answer = self.orchestrator.llm.generate(
                         system_prompt,
@@ -504,11 +448,7 @@ class _ContractAwareProjectChatServiceMixin:
 
                 if not valid and attempt == 0 and missing_reference:
                     deterministic = _missing_reference_clarification(job.language)
-                    repaired, repair_reason = direct_chat_answer_valid(
-                        deterministic,
-                        job.language,
-                        job.message,
-                    )
+                    repaired, repair_reason = direct_chat_answer_valid(deterministic, job.language, job.message)
                     if repaired:
                         repaired, repair_reason = contract.validate(deterministic)
                     if repaired:
@@ -519,30 +459,18 @@ class _ContractAwareProjectChatServiceMixin:
                             "chat_gateway",
                             "direct_chat_deterministic_repair",
                             "ok",
-                            (
-                                f"language={job.language} attempt={attempt + 1} "
-                                f"reason=missing_reference output_kind={contract.kind}"
-                            ),
+                            f"language={job.language} attempt={attempt + 1} reason=missing_reference output_kind={contract.kind}",
                         )
 
                 if valid:
                     self._stage(job_id, "answer", "completed", "Direct local answer validated.")
-                    self._update(
-                        job_id,
-                        status="completed",
-                        answer=answer.strip(),
-                        error=None,
-                        artifacts=[],
-                    )
+                    self._update(job_id, status="completed", answer=answer.strip(), error=None, artifacts=[])
                     self.orchestrator.store.record_activity(
                         None,
                         "chat_gateway",
                         "direct_chat_completed",
                         "ok",
-                        (
-                            f"language={job.language} attempts={attempt + 1} validator=pass "
-                            f"output_kind={contract.kind} response_chars={len(answer.strip())}"
-                        ),
+                        f"language={job.language} attempts={attempt + 1} validator=pass output_kind={contract.kind} response_chars={len(answer.strip())}",
                     )
                     return
 
@@ -552,44 +480,23 @@ class _ContractAwareProjectChatServiceMixin:
                     "chat_gateway",
                     "direct_chat_retry",
                     "warning",
-                    (
-                        f"language={job.language} attempt={attempt + 1} reason={reason} "
-                        f"output_kind={contract.kind}"
-                    ),
+                    f"language={job.language} attempt={attempt + 1} reason={reason} output_kind={contract.kind}",
                 )
 
             if last_reason == "internal_instruction_leak":
                 deterministic = _internal_instruction_refusal(job.language)
-                repaired, repair_reason = direct_chat_answer_valid(
-                    deterministic,
-                    job.language,
-                    job.message,
-                )
+                repaired, repair_reason = direct_chat_answer_valid(deterministic, job.language, job.message)
                 if repaired and not _internal_instruction_leak_reason(deterministic, job.message):
                     repaired, repair_reason = contract.validate(deterministic)
                 if repaired:
-                    self._stage(
-                        job_id,
-                        "answer",
-                        "completed",
-                        "Internal instruction disclosure blocked by deterministic repair.",
-                    )
-                    self._update(
-                        job_id,
-                        status="completed",
-                        answer=deterministic,
-                        error=None,
-                        artifacts=[],
-                    )
+                    self._stage(job_id, "answer", "completed", "Internal instruction disclosure blocked by deterministic repair.")
+                    self._update(job_id, status="completed", answer=deterministic, error=None, artifacts=[])
                     self.orchestrator.store.record_activity(
                         None,
                         "chat_gateway",
                         "direct_chat_deterministic_repair",
                         "ok",
-                        (
-                            f"language={job.language} attempts=2 reason=internal_instruction_leak "
-                            f"output_kind={contract.kind} response_chars={len(deterministic)}"
-                        ),
+                        f"language={job.language} attempts=2 reason=internal_instruction_leak output_kind={contract.kind} response_chars={len(deterministic)}",
                     )
                     return
                 last_reason = repair_reason or last_reason
@@ -610,34 +517,21 @@ class _ContractAwareProjectChatServiceMixin:
 
 
 def _contract_aware_service_class() -> type:
-    """Compose the service only after chat_gateway has defined the context-aware base.
-
-    chat_gateway consumes this module while it is still being initialized in some
-    import orders. Deferring composition removes the reciprocal top-level import
-    without changing the public class or its MRO.
-    """
-
     cached = globals().get("ContractAwareProjectChatService")
     if isinstance(cached, type):
         return cached
-
     gateway_name = f"{__package__}.chat_gateway"
     gateway = sys.modules.get(gateway_name)
     if gateway is None or not hasattr(gateway, "ContextAwareProjectChatService"):
         from . import chat_gateway as gateway
-
         cached = globals().get("ContractAwareProjectChatService")
         if isinstance(cached, type):
             return cached
-
     context_base = getattr(gateway, "ContextAwareProjectChatService")
     service_class = type(
         "ContractAwareProjectChatService",
         (_ContractAwareProjectChatServiceMixin, context_base),
-        {
-            "__module__": __name__,
-            "__doc__": _ContractAwareProjectChatServiceMixin.__doc__,
-        },
+        {"__module__": __name__, "__doc__": _ContractAwareProjectChatServiceMixin.__doc__},
     )
     globals()["ContractAwareProjectChatService"] = service_class
     return service_class
