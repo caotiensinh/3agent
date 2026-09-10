@@ -64,6 +64,7 @@ COMPUTER_USE_TOOLS = {
     "computer.screen.observe",
     "computer.window.observe",
     "computer.accessibility.observe",
+    "computer.accessibility.interact",
     "browser.dom.observe",
     "browser.navigate",
     "browser.interact",
