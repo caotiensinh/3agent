@@ -56,7 +56,9 @@ select_models_for_capacity() {
   [[ "$vram_mib" =~ ^[0-9]+$ ]] || die "VRAM capacity must be an integer MiB value"
   [[ "$ram_mib" =~ ^[0-9]+$ ]] || die "RAM capacity must be an integer MiB value"
 
-  if (( vram_mib >= 24576 )); then
+  # qwen3:30b is ~19 GB. Keep enough headroom for the repo's 88% VRAM
+  # budget and 1.15 model-size safety factor instead of selecting it at 24 GB.
+  if (( vram_mib >= 28672 )); then
     selected_model="qwen3:30b"
     selected_fast="qwen3:14b"
   elif (( vram_mib >= 16384 )); then
