@@ -31,6 +31,7 @@ FORM_TITLE = "WorkSpace CU-170 Acceptance Window"
 VALUE_AUTOMATION_ID = "ValueBox"
 BUTTON_AUTOMATION_ID = "InvokeButton"
 VALUE_TEXT = "workspace-cu170-live-value"
+STARTUP_TIMEOUT_SECONDS = 45
 
 
 def sha(value: str) -> str:
@@ -81,13 +82,24 @@ $window.Add_ContentRendered({{ $window.Activate() }})
             stderr=subprocess.PIPE,
             text=True,
         )
-        cls._hwnd = cls._wait_for_window(FORM_TITLE, timeout_seconds=15)
+        cls._hwnd = cls._wait_for_window(
+            FORM_TITLE,
+            timeout_seconds=STARTUP_TIMEOUT_SECONDS,
+            process=cls._process,
+        )
         if not cls._hwnd:
+            returncode = cls._process.poll()
+            if returncode is None:
+                cls._terminate_process()
+                raise RuntimeError(
+                    f"CU170_ACCEPTANCE_WINDOW_START_TIMEOUT:{STARTUP_TIMEOUT_SECONDS}s"
+                )
             stderr = ""
-            if cls._process.poll() is not None and cls._process.stderr is not None:
+            if cls._process.stderr is not None:
                 stderr = cls._process.stderr.read()
-            cls._terminate_process()
-            raise RuntimeError(f"CU170_ACCEPTANCE_WINDOW_NOT_FOUND: {stderr[:1000]}")
+            raise RuntimeError(
+                f"CU170_ACCEPTANCE_FIXTURE_EXITED:rc={returncode};stderr={stderr[:1000]}"
+            )
         cls._focus_window(cls._hwnd)
 
     @classmethod
@@ -125,7 +137,12 @@ $window.Add_ContentRendered({{ $window.Activate() }})
             process.wait(timeout=5)
 
     @staticmethod
-    def _wait_for_window(title: str, *, timeout_seconds: int) -> int:
+    def _wait_for_window(
+        title: str,
+        *,
+        timeout_seconds: int,
+        process: subprocess.Popen,
+    ) -> int:
         user32 = ctypes.windll.user32
         found = {"hwnd": 0}
         callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -144,6 +161,8 @@ $window.Add_ContentRendered({{ $window.Activate() }})
         callback = callback_type(enum_callback)
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
+            if process.poll() is not None:
+                return 0
             found["hwnd"] = 0
             user32.EnumWindows(callback, 0)
             if found["hwnd"]:
