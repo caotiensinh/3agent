@@ -211,6 +211,31 @@ class ApplicationE2EMultilingualContractTests(unittest.TestCase):
             verifier_call["kwargs"]["trust_domain"],
             "workspace-local-chat",
         )
+        verifier_payload = json.loads(str(verifier_call["user_prompt"]))
+        self.assertEqual(
+            verifier_payload,
+            {
+                "candidate": "Dịch vụ đã khởi động thành công.",
+                "source_text": "The service started successfully.",
+                "target_language": "vi",
+            },
+        )
+        self.assertNotIn("request", verifier_payload)
+
+        fallback_llm = _StaticVerifierLLM({"faithful": True, "translation_only": True})
+        fallback_request = "Translate this into Vietnamese: The service started successfully."
+        valid, reason = _translation_semantic_validation(
+            fallback_llm,
+            fallback_request,
+            "Dịch vụ đã khởi động thành công.",
+            "vi",
+        )
+        self.assertTrue(valid)
+        self.assertEqual(reason, "ok")
+        fallback_payload = json.loads(str(fallback_llm.calls[0]["user_prompt"]))
+        self.assertEqual(fallback_payload["request"], fallback_request)
+        self.assertEqual(fallback_payload["target_language"], "vi")
+        self.assertNotIn("source_text", fallback_payload)
 
         failing_llm = _StaticVerifierLLM({"faithful": False, "translation_only": True})
         valid, reason = _translation_semantic_validation(
