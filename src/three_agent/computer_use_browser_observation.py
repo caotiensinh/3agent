@@ -26,12 +26,15 @@ class BrowserObservationError(ValueError):
 class BrowserObservationConfig:
     profile_id: str
     control_endpoint: str
+    profile_mode: str = "isolated"
     storage_identity: str = "public_browser"
     accessible_storage_classes: tuple[str, ...] = ("public_browser",)
 
     def validate(self) -> "BrowserObservationConfig":
         if not _PROFILE_ID_RE.fullmatch(self.profile_id):
             raise BrowserObservationError("INVALID_BROWSER_PROFILE_ID")
+        if self.profile_mode != "isolated":
+            raise BrowserObservationError("BROWSER_PERSONAL_PROFILE_ATTACH_FORBIDDEN")
         if self.storage_identity != "public_browser":
             raise BrowserObservationError("BROWSER_PROFILE_IDENTITY_NOT_ISOLATED")
         if self.accessible_storage_classes != ("public_browser",):
@@ -42,6 +45,7 @@ class BrowserObservationConfig:
 
 @dataclass(frozen=True)
 class BrowserReadOnlyCapture:
+    profile_id: str
     window_id: str
     tab_id: str
     metadata: Mapping[str, Any]
@@ -133,6 +137,8 @@ def capture_isolated_browser_observation(
     )
     if not isinstance(capture, BrowserReadOnlyCapture):
         raise BrowserObservationError("INVALID_BROWSER_BACKEND_CAPTURE")
+    if capture.profile_id != config.profile_id:
+        raise BrowserObservationError("BROWSER_BACKEND_PROFILE_ATTESTATION_MISMATCH")
 
     window_id = _target_part(capture.window_id, "window_id")
     tab_id = _target_part(capture.tab_id, "tab_id")
@@ -165,6 +171,7 @@ def capture_isolated_browser_observation(
     target_ref = f"browser:profile:{config.profile_id}/tab:{tab_id}"
     structured = {
         "profile_id": config.profile_id,
+        "profile_mode": config.profile_mode,
         "storage_identity": config.storage_identity,
         "window_id": window_id,
         "tab_id": tab_id,
