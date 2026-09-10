@@ -45,6 +45,7 @@ TOTAL_VRAM_MIB=0
 GPU_COUNT=0
 RTX5090_COUNT=0
 NVIDIA_AVAILABLE=0
+RESOURCE_CONTROL_ENABLED=false
 DRIVER="none"
 GPU_NAMES=""
 
@@ -91,6 +92,7 @@ detect_hardware() {
 
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
     NVIDIA_AVAILABLE=1
+    RESOURCE_CONTROL_ENABLED=true
     DRIVER="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1 | tr -d '[:space:]')"
     while IFS=',' read -r raw_name raw_mem; do
       local name mem
@@ -162,7 +164,7 @@ ensure_model() {
 render_model_config() {
   local source="$1"
   local destination="$2"
-  python3 - "$source" "$destination" "$MODEL" "$FAST_MODEL" <<'PY'
+  python3 - "$source" "$destination" "$MODEL" "$FAST_MODEL" "$RESOURCE_CONTROL_ENABLED" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -171,12 +173,16 @@ source = Path(sys.argv[1])
 destination = Path(sys.argv[2])
 main_model = sys.argv[3]
 fast_model = sys.argv[4]
+resource_control_enabled = sys.argv[5].lower() == "true"
 
 data = json.loads(source.read_text(encoding="utf-8"))
 llm = data.get("llm")
 policy = data.get("model_policy")
 if not isinstance(llm, dict) or not isinstance(policy, dict):
     raise SystemExit(f"model config contract missing in {source}")
+resource_control = policy.get("resource_control")
+if not isinstance(resource_control, dict):
+    raise SystemExit(f"resource-control config contract missing in {source}")
 
 llm["model"] = main_model
 policy["fast_model"] = fast_model
@@ -184,6 +190,7 @@ policy["research_model"] = main_model
 policy["presentation_model"] = fast_model
 policy["report_model"] = fast_model
 policy["deep_model"] = main_model
+resource_control["enabled"] = resource_control_enabled
 
 destination.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 PY
@@ -192,9 +199,23 @@ PY
 if [[ "$SELF_TEST" == "1" ]]; then
   test_vram="${WORKSPACE_TEST_VRAM_MIB:-0}"
   test_ram="${WORKSPACE_TEST_RAM_MIB:-16384}"
+  test_nvidia="${WORKSPACE_TEST_NVIDIA_AVAILABLE:-}"
+  if [[ -z "$test_nvidia" ]]; then
+    if (( test_vram > 0 )); then
+      test_nvidia=1
+    else
+      test_nvidia=0
+    fi
+  fi
+  [[ "$test_nvidia" == "0" || "$test_nvidia" == "1" ]] || die "WORKSPACE_TEST_NVIDIA_AVAILABLE must be 0 or 1"
+  if [[ "$test_nvidia" == "1" ]]; then
+    RESOURCE_CONTROL_ENABLED=true
+  else
+    RESOURCE_CONTROL_ENABLED=false
+  fi
   select_models_for_capacity "$test_vram" "$test_ram"
-  printf 'profile=%s vram_mib=%s ram_mib=%s model=%s fast_model=%s\n' \
-    "$HARDWARE_PROFILE" "$test_vram" "$test_ram" "$MODEL" "$FAST_MODEL"
+  printf 'profile=%s vram_mib=%s ram_mib=%s model=%s fast_model=%s resource_control_enabled=%s\n' \
+    "$HARDWARE_PROFILE" "$test_vram" "$test_ram" "$MODEL" "$FAST_MODEL" "$RESOURCE_CONTROL_ENABLED"
   exit 0
 fi
 
@@ -217,10 +238,10 @@ if (( NVIDIA_AVAILABLE == 1 )); then
   log "Hardware detected: NVIDIA driver=${DRIVER}, gpu_count=${GPU_COUNT}, total_vram=${TOTAL_VRAM_MIB}MiB"
   log "GPU(s): ${GPU_NAMES}"
 else
-  warn "No healthy NVIDIA runtime detected; continuing with CPU/system-RAM model profile"
+  warn "No healthy NVIDIA runtime detected; continuing with CPU/system-RAM model profile and NVIDIA resource control disabled"
 fi
 log "System RAM: ${SYSTEM_RAM_MIB}MiB"
-log "Hardware profile: ${HARDWARE_PROFILE}; selected model=${MODEL}; fast_model=${FAST_MODEL}"
+log "Hardware profile: ${HARDWARE_PROFILE}; selected model=${MODEL}; fast_model=${FAST_MODEL}; resource_control=${RESOURCE_CONTROL_ENABLED}"
 
 command -v ollama >/dev/null 2>&1 || die "Ollama must be installed locally before secure WorkSpace deployment"
 curl_local() { python3 - "$1" <<'PY'
@@ -275,5 +296,6 @@ log "Use: workspace-secure <command>"
 log "Public research remains isolated from the Confidential Core."
 log "Fresh public knowledge enters only through workspace-knowledge-export -> operator approval -> workspace-knowledge-import."
 log "Selected models: main=${MODEL}, fast=${FAST_MODEL}"
+log "GPU resource control enabled: ${RESOURCE_CONTROL_ENABLED}"
 log "Source SHA: ${EXACT_HEAD}"
 log "Bootstrap log: ${LOG_FILE}"
