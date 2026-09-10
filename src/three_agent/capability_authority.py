@@ -68,6 +68,7 @@ _EFFECTS = {
     "computer.screen.observe": "read",
     "computer.window.observe": "read",
     "computer.accessibility.observe": "read",
+    "computer.accessibility.interact": "write",
     "browser.dom.observe": "read",
     "browser.navigate": "network_read",
     "browser.interact": "write",
@@ -95,6 +96,10 @@ _COMPUTER_RESOURCE_POLICIES = {
     "computer.accessibility.observe": (
         "accessibility_tree",
         re.compile(rf"^local:desktop:accessibility:{_COMPUTER_ID}$"),
+    ),
+    "computer.accessibility.interact": (
+        "accessibility_target",
+        re.compile(rf"^local:desktop:window:{_COMPUTER_ID}$"),
     ),
     "browser.dom.observe": (
         "browser_document",
