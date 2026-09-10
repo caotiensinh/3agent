@@ -18,8 +18,8 @@ from three_agent.computer_use_windows_interaction import (
     WindowsInteractionBackendResult,
     WindowsInteractionCommand,
     WindowsInteractionError,
-    WindowsTargetInspection,
     WindowsPowerShellInteractionBackend,
+    WindowsTargetInspection,
     execute_governed_windows_action,
 )
 from three_agent.computer_use_windows_observation import (
@@ -82,12 +82,12 @@ class GovernedWindowsInteractionBoundaryTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def observation(self, *, state=None):
+    def observation(self):
         return ComputerObservation(
             session_id=self.session_id,
             task_id=self.task.task_id,
             state_id="state:cu170",
-            state_sha256=state or self.state,
+            state_sha256=self.state,
             surface="desktop",
             active_target_ref=f"windows:window:{self.window_id}/process:{self.process_id}",
             captured_at="2026-09-10T00:00:00Z",
@@ -249,39 +249,42 @@ class WindowsInteractionLiveE2ETests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         script = rf'''
-Add-Type -AssemblyName System.Windows.Forms
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "{WINDOW_TITLE}"
-$form.Width = 700
-$form.Height = 300
-$form.TopMost = $true
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+$window = New-Object System.Windows.Window
+$window.Title = "{WINDOW_TITLE}"
+$window.Width = 700
+$window.Height = 300
+$window.Topmost = $true
 
-$textbox = New-Object System.Windows.Forms.TextBox
-$textbox.Name = "InputBox"
-$textbox.Left = 24
-$textbox.Top = 35
-$textbox.Width = 420
-$form.Controls.Add($textbox)
+$panel = New-Object System.Windows.Controls.StackPanel
+$panel.Margin = New-Object System.Windows.Thickness(24)
 
-$button = New-Object System.Windows.Forms.Button
-$button.Name = "ApplyButton"
-$button.Text = "Apply"
-$button.Left = 24
-$button.Top = 85
+$textbox = New-Object System.Windows.Controls.TextBox
+$textbox.Height = 32
+$textbox.Margin = New-Object System.Windows.Thickness(0,0,0,12)
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($textbox, 'InputBox')
+$panel.Children.Add($textbox) | Out-Null
+
+$button = New-Object System.Windows.Controls.Button
+$button.Content = 'Apply'
 $button.Width = 100
-$form.Controls.Add($button)
+$button.Height = 32
+$button.HorizontalAlignment = 'Left'
+$button.Margin = New-Object System.Windows.Thickness(0,0,0,12)
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($button, 'ApplyButton')
+$panel.Children.Add($button) | Out-Null
 
-$status = New-Object System.Windows.Forms.Label
-$status.Name = "StatusLabel"
-$status.Text = "WAITING"
-$status.AutoSize = $true
-$status.Left = 24
-$status.Top = 145
-$form.Controls.Add($status)
+$status = New-Object System.Windows.Controls.TextBlock
+$status.Text = 'WAITING'
+[System.Windows.Automation.AutomationProperties]::SetAutomationId($status, 'StatusLabel')
+$panel.Children.Add($status) | Out-Null
 
 $button.Add_Click({{ $status.Text = $textbox.Text }})
-$form.Add_Shown({{ $form.Activate() }})
-[System.Windows.Forms.Application]::Run($form)
+$window.Content = $panel
+$window.Add_ContentRendered({{ $window.Activate() }})
+[void]$window.ShowDialog()
 '''
         cls._process = subprocess.Popen(
             ["powershell.exe", "-NoLogo", "-NoProfile", "-STA", "-Command", script],
@@ -414,6 +417,13 @@ $form.Add_Shown({{ $form.Activate() }})
 
     def test_governed_uia_value_then_invoke_changes_live_window(self):
         pre_text = self.capture()
+        self.assertTrue(
+            any(
+                node_id == "InputBox"
+                for node_id in self._automation_ids(pre_text.structured_observation["accessibility"])
+            ),
+            "CU170_WPF_FIXTURE_MUST_EXPOSE_INPUTBOX_AUTOMATION_ID",
+        )
         window_id = pre_text.structured_observation["window_id"]
         resource_ref = f"local:desktop:window:{window_id}"
 
@@ -507,6 +517,20 @@ $form.Add_Shown({{ $form.Activate() }})
                 E2E_TEXT,
             )
         )
+
+    @staticmethod
+    def _automation_ids(node):
+        if not isinstance(node, dict):
+            return ()
+        values = []
+        current = node.get("automation_id")
+        if isinstance(current, str):
+            values.append(current)
+        children = node.get("children")
+        if isinstance(children, list):
+            for child in children:
+                values.extend(WindowsInteractionLiveE2ETests._automation_ids(child))
+        return tuple(values)
 
 
 if __name__ == "__main__":
